@@ -20,6 +20,13 @@ jobs:
           enable-cache: true
           python-version: "3.13.3"
 
+      - name: Create .env file
+        run: |
+          echo "SECRET_KEY=dummy" >> .env
+          echo "ALGORITHM=HS256" >> .env
+          echo "ACCESS_TOKEN_EXPIRE_MINUTES=30" >> .env
+          echo "DATABASE_URL=sqlite:///./test.db" >> .env
+
       - name: Install dependencies
         run: uv sync
 
