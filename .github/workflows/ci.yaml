@@ -1,0 +1,33 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - "**"
+
+jobs:
+  ci:
+    name: Test, Lint, Format
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          python-version: "3.13.3"
+
+      - name: Install dependencies
+        run: uv sync
+
+      - name: Run formatter (black)
+        run: uv run black app/
+
+      - name: Run linter (ruff)
+        run: uv run ruff check app/
+
+      - name: Run tests (pytest)
+        run: uv run pytest
