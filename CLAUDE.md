@@ -11,9 +11,9 @@ This is a FastAPI-based backend API for managing Minecraft servers. The applicat
 | Task              | Command                       |
 |-------------------|-------------------------------|
 | Start application | `uv run fastapi dev`          |
-| Run tests         | `uv run pytest`               |
 | Lint code         | `uv run ruff check app/`      |
 | Format code       | `uv run black app/`           |
+| Run tests         | `uv run pytest`               |
 | Run single test   | `uv run pytest tests/test_filename.py::test_function_name` |
 
 ## System Requirements Overview
