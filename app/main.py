@@ -13,6 +13,7 @@ from app.templates.router import router as templates_router
 
 # Import all models to ensure they are registered with SQLAlchemy
 from app.users.router import router as users_router
+from app.websockets.router import router as websockets_router
 
 
 @asynccontextmanager
@@ -33,6 +34,11 @@ async def lifespan(app: FastAPI):
 
     await backup_scheduler.start_scheduler()
 
+    # Start WebSocket monitoring
+    from app.services.websocket_service import websocket_service
+
+    await websocket_service.start_monitoring()
+
     yield
 
     # Cleanup on shutdown
@@ -42,6 +48,9 @@ async def lifespan(app: FastAPI):
 
     # Stop backup scheduler
     await backup_scheduler.stop_scheduler()
+
+    # Stop WebSocket monitoring
+    await websocket_service.stop_monitoring()
 
 
 app = FastAPI(lifespan=lifespan)
@@ -61,3 +70,4 @@ app.include_router(groups_router, prefix="/api/v1/groups", tags=["groups"])
 app.include_router(backups_router, prefix="/api/v1", tags=["backups"])
 app.include_router(templates_router, prefix="/api/v1", tags=["templates"])
 app.include_router(files_router, prefix="/api/v1", tags=["files"])
+app.include_router(websockets_router, prefix="/api/v1/ws", tags=["websockets"])
