@@ -5,6 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.auth.router import router as auth_router
 from app.core.database import Base, engine
+from app.groups.router import router as groups_router
 from app.servers.router import router as servers_router
 
 # Import all models to ensure they are registered with SQLAlchemy
@@ -31,3 +32,4 @@ app.add_middleware(
 app.include_router(auth_router, prefix="/api/v1/auth", tags=["auth"])
 app.include_router(users_router, prefix="/api/v1/users", tags=["users"])
 app.include_router(servers_router, prefix="/api/v1/servers", tags=["servers"])
+app.include_router(groups_router, prefix="/api/v1/groups", tags=["groups"])
