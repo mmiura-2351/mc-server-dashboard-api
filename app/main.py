@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.auth.router import router as auth_router
 from app.backups.router import router as backups_router
 from app.core.database import Base, engine
+from app.files.router import router as files_router
 from app.groups.router import router as groups_router
 from app.servers.router import router as servers_router
 from app.templates.router import router as templates_router
@@ -59,3 +60,4 @@ app.include_router(servers_router, prefix="/api/v1/servers", tags=["servers"])
 app.include_router(groups_router, prefix="/api/v1/groups", tags=["groups"])
 app.include_router(backups_router, prefix="/api/v1", tags=["backups"])
 app.include_router(templates_router, prefix="/api/v1", tags=["templates"])
+app.include_router(files_router, prefix="/api/v1", tags=["files"])
