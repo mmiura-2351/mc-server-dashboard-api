@@ -1,7 +1,7 @@
 import json
-from typing import Dict, Any, Optional
+from typing import Any, Dict, Optional
 
-from sqlalchemy import Column, DateTime, Integer, String, Text, ForeignKey, JSON
+from sqlalchemy import JSON, Column, DateTime, ForeignKey, Integer, String
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 
@@ -41,7 +41,7 @@ class AuditLog(Base):
         user_id: Optional[int] = None,
         resource_id: Optional[int] = None,
         details: Optional[Dict[str, Any]] = None,
-        ip_address: Optional[str] = None
+        ip_address: Optional[str] = None,
     ):
         """Create a new audit log entry"""
         log = cls(
@@ -49,7 +49,7 @@ class AuditLog(Base):
             action=action,
             resource_type=resource_type,
             resource_id=resource_id,
-            ip_address=ip_address
+            ip_address=ip_address,
         )
         if details:
             log.set_details(details)

@@ -1,10 +1,18 @@
 import enum
 import json
-from typing import List, Dict, Any
+from typing import Any, Dict, List
 
 from sqlalchemy import (
-    Boolean, Column, DateTime, Enum, Integer, String, Text, 
-    ForeignKey, JSON, UniqueConstraint
+    JSON,
+    Boolean,
+    Column,
+    DateTime,
+    Enum,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
 )
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
@@ -28,11 +36,15 @@ class Group(Base):
     owner_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     is_template = Column(Boolean, default=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
-    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    updated_at = Column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
 
     # Relationships
     owner = relationship("User", back_populates="groups")
-    server_groups = relationship("ServerGroup", back_populates="group", cascade="all, delete-orphan")
+    server_groups = relationship(
+        "ServerGroup", back_populates="group", cascade="all, delete-orphan"
+    )
 
     def get_players(self) -> List[Dict[str, Any]]:
         """Get players as Python list"""
@@ -47,7 +59,7 @@ class Group(Base):
     def add_player(self, uuid: str, username: str) -> None:
         """Add a player to the group"""
         players = self.get_players()
-        
+
         # Check if player already exists
         for player in players:
             if player.get("uuid") == uuid:
@@ -55,13 +67,11 @@ class Group(Base):
                 if player.get("username") != username:
                     player["username"] = username
                 return
-        
+
         # Add new player
-        players.append({
-            "uuid": uuid,
-            "username": username,
-            "added_at": func.now().description
-        })
+        players.append(
+            {"uuid": uuid, "username": username, "added_at": func.now().description}
+        )
         self.set_players(players)
 
     def remove_player(self, uuid: str) -> bool:
@@ -69,7 +79,7 @@ class Group(Base):
         players = self.get_players()
         original_length = len(players)
         players = [p for p in players if p.get("uuid") != uuid]
-        
+
         if len(players) < original_length:
             self.set_players(players)
             return True
@@ -94,6 +104,4 @@ class ServerGroup(Base):
     server = relationship("Server", back_populates="server_groups")
     group = relationship("Group", back_populates="server_groups")
 
-    __table_args__ = (
-        UniqueConstraint('server_id', 'group_id'),
-    )
+    __table_args__ = (UniqueConstraint("server_id", "group_id"),)

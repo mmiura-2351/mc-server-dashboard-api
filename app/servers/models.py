@@ -1,10 +1,19 @@
 import enum
 import json
-from typing import Dict, Any, List
+from typing import Any, Dict, List
 
 from sqlalchemy import (
-    Boolean, Column, DateTime, Enum, Integer, String, Text, 
-    ForeignKey, BigInteger, JSON, UniqueConstraint
+    JSON,
+    BigInteger,
+    Boolean,
+    Column,
+    DateTime,
+    Enum,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
 )
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
@@ -43,14 +52,22 @@ class Server(Base):
     template_id = Column(Integer, ForeignKey("templates.id"), nullable=True)
     is_deleted = Column(Boolean, default=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
-    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    updated_at = Column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
 
     # Relationships
     owner = relationship("User", back_populates="servers")
     template = relationship("Template", back_populates="servers")
-    backups = relationship("Backup", back_populates="server", cascade="all, delete-orphan")
-    configurations = relationship("ServerConfiguration", back_populates="server", cascade="all, delete-orphan")
-    server_groups = relationship("ServerGroup", back_populates="server", cascade="all, delete-orphan")
+    backups = relationship(
+        "Backup", back_populates="server", cascade="all, delete-orphan"
+    )
+    configurations = relationship(
+        "ServerConfiguration", back_populates="server", cascade="all, delete-orphan"
+    )
+    server_groups = relationship(
+        "ServerGroup", back_populates="server", cascade="all, delete-orphan"
+    )
 
 
 class BackupType(enum.Enum):
@@ -89,14 +106,14 @@ class ServerConfiguration(Base):
     server_id = Column(Integer, ForeignKey("servers.id"), nullable=False)
     configuration_key = Column(String(100), nullable=False)
     configuration_value = Column(Text, nullable=False)
-    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    updated_at = Column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
 
     # Relationships
     server = relationship("Server", back_populates="configurations")
 
-    __table_args__ = (
-        UniqueConstraint('server_id', 'configuration_key'),
-    )
+    __table_args__ = (UniqueConstraint("server_id", "configuration_key"),)
 
 
 class Template(Base):
@@ -112,7 +129,9 @@ class Template(Base):
     created_by = Column(Integer, ForeignKey("users.id"), nullable=False)
     is_public = Column(Boolean, default=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
-    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    updated_at = Column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
 
     # Relationships
     creator = relationship("User", back_populates="templates")

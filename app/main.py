@@ -5,13 +5,10 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.auth.router import router as auth_router
 from app.core.database import Base, engine
-from app.users.router import router as users_router
+from app.servers.router import router as servers_router
 
 # Import all models to ensure they are registered with SQLAlchemy
-from app.users.models import User
-from app.servers.models import Server, Backup, ServerConfiguration, Template
-from app.groups.models import Group, ServerGroup
-from app.audit.models import AuditLog
+from app.users.router import router as users_router
 
 
 @asynccontextmanager
@@ -33,3 +30,4 @@ app.add_middleware(
 
 app.include_router(auth_router, prefix="/api/v1/auth", tags=["auth"])
 app.include_router(users_router, prefix="/api/v1/users", tags=["users"])
+app.include_router(servers_router, prefix="/api/v1/servers", tags=["servers"])
