@@ -10,6 +10,8 @@ from app.backups.schemas import (
     BackupOperationResponse,
     BackupResponse,
     BackupRestoreRequest,
+    BackupRestoreWithTemplateRequest,
+    BackupRestoreWithTemplateResponse,
     BackupStatisticsResponse,
     ScheduledBackupRequest,
 )
@@ -284,6 +286,85 @@ async def restore_backup(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to restore backup: {str(e)}",
+        )
+
+
+@router.post(
+    "/backups/{backup_id}/restore-with-template",
+    response_model=BackupRestoreWithTemplateResponse,
+)
+async def restore_backup_and_create_template(
+    backup_id: int,
+    request: BackupRestoreWithTemplateRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Restore a backup and create a template from it
+
+    Restores a backup to the original server or a specified target server,
+    then creates a template from the restored server configuration.
+    This is useful for creating reusable templates from backup states.
+
+    - **target_server_id**: Optional target server (defaults to original)
+    - **confirm**: Must be True to proceed with restoration
+    - **template_name**: Name for the template to create
+    - **template_description**: Optional description for the template
+    - **is_public**: Whether the template should be public
+    """
+    try:
+        # Check backup access
+        backup = check_backup_access(backup_id, current_user, db)
+
+        # Only operators and admins can restore backups
+        if current_user.role == Role.user:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Only operators and admins can restore backups",
+            )
+
+        # Check target server access if specified
+        target_server_id = request.target_server_id or backup.server_id
+        check_server_access(target_server_id, current_user, db)
+
+        result = await backup_service.restore_backup_and_create_template(
+            backup_id=backup_id,
+            template_name=request.template_name,
+            template_description=request.template_description,
+            is_public=request.is_public,
+            user=current_user,
+            server_id=target_server_id,
+            db=db,
+        )
+
+        message = f"Backup {backup_id} restored successfully to server {target_server_id}"
+        if result["template_created"]:
+            message += f" and template '{result['template_name']}' created"
+
+        return BackupRestoreWithTemplateResponse(
+            backup_restored=result["backup_restored"],
+            template_created=result["template_created"],
+            message=message,
+            backup_id=backup_id,
+            template_id=result.get("template_id"),
+            template_name=result.get("template_name"),
+            details={
+                "target_server_id": target_server_id,
+                "template_description": request.template_description,
+                "is_public": request.is_public,
+            },
+        )
+
+    except HTTPException:
+        raise
+    except BackupNotFoundError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+    except BackupRestorationError as e:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to restore backup and create template: {str(e)}",
         )
 
 

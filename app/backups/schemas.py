@@ -51,6 +51,46 @@ class BackupRestoreRequest(BaseModel):
         return v
 
 
+class BackupRestoreWithTemplateRequest(BaseModel):
+    """Request schema for restoring a backup and creating a template"""
+
+    target_server_id: Optional[int] = Field(
+        None, description="Target server ID (defaults to original server)"
+    )
+    confirm: bool = Field(
+        False, description="Confirmation flag - must be True to proceed"
+    )
+    template_name: str = Field(
+        ..., min_length=1, max_length=100, description="Name for the template to create"
+    )
+    template_description: Optional[str] = Field(
+        None, max_length=500, description="Optional template description"
+    )
+    is_public: bool = Field(False, description="Whether the template should be public")
+
+    @field_validator("confirm")
+    @classmethod
+    def validate_confirm(cls, v: bool) -> bool:
+        """Validate confirmation"""
+        if not v:
+            raise ValueError("Confirmation required to restore backup")
+        return v
+
+    @field_validator("template_name")
+    @classmethod
+    def validate_template_name(cls, v: str) -> str:
+        """Validate template name"""
+        if not v.strip():
+            raise ValueError("Template name cannot be empty")
+
+        # Check for invalid characters
+        invalid_chars = ["/", "\\", ":", "*", "?", '"', "<", ">", "|"]
+        if any(char in v for char in invalid_chars):
+            raise ValueError("Template name contains invalid characters")
+
+        return v.strip()
+
+
 class BackupResponse(BaseModel):
     """Response schema for backup information"""
 
@@ -148,4 +188,16 @@ class BackupOperationResponse(BaseModel):
     success: bool
     message: str
     backup_id: Optional[int] = None
+    details: Optional[Dict[str, Any]] = None
+
+
+class BackupRestoreWithTemplateResponse(BaseModel):
+    """Response schema for backup restore with template creation"""
+
+    backup_restored: bool
+    template_created: bool
+    message: str
+    backup_id: int
+    template_id: Optional[int] = None
+    template_name: Optional[str] = None
     details: Optional[Dict[str, Any]] = None

@@ -193,6 +193,61 @@ class BackupService:
             logger.error(f"Failed to restore backup {backup_id}: {e}")
             raise BackupRestorationError(f"Failed to restore backup: {str(e)}")
 
+    async def restore_backup_and_create_template(
+        self,
+        backup_id: int,
+        template_name: str,
+        template_description: Optional[str] = None,
+        is_public: bool = False,
+        user=None,
+        server_id: Optional[int] = None,
+        db: Session = None,
+    ) -> dict:
+        """Restore a backup and optionally create a template from the restored server"""
+        try:
+            # First restore the backup
+            success = await self.restore_backup(backup_id, server_id, db)
+
+            if not success:
+                raise BackupRestorationError("Failed to restore backup")
+
+            result = {"backup_restored": True, "template_created": False}
+
+            # If template name is provided, create template from restored server
+            if template_name:
+                from app.services.template_service import TemplateService
+
+                # Get the target server
+                backup = db.query(Backup).filter(Backup.id == backup_id).first()
+                target_server_id = server_id or backup.server_id
+
+                template_service = TemplateService()
+                template = await template_service.create_template_from_server(
+                    server_id=target_server_id,
+                    name=template_name,
+                    description=template_description
+                    or f"Template created from backup {backup.name}",
+                    is_public=is_public,
+                    creator=user,
+                    db=db,
+                )
+
+                result["template_created"] = True
+                result["template_id"] = template.id
+                result["template_name"] = template.name
+
+                logger.info(
+                    f"Successfully created template {template.id} from restored backup {backup_id}"
+                )
+
+            return result
+
+        except Exception as e:
+            logger.error(f"Failed to restore backup and create template: {e}")
+            raise BackupRestorationError(
+                f"Failed to restore backup and create template: {str(e)}"
+            )
+
     async def _restore_backup_file(self, backup: Backup, target_server: Server):
         """Restore the backup file to target server directory"""
         try:
