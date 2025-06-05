@@ -257,9 +257,8 @@ async def start_server(
                 detail="Failed to start server",
             )
 
-        # Update database status
-        server.status = ServerStatus.starting
-        db.commit()
+        # Database status will be updated automatically via callback
+        # when the server actually starts
 
         return ServerStatusResponse(
             server_id=server_id,
@@ -291,7 +290,7 @@ async def stop_server(
     """
     try:
         # Check ownership/admin access
-        server = check_server_owner_or_admin(server_id, current_user, db)
+        check_server_owner_or_admin(server_id, current_user, db)
 
         # Check current status
         current_status = minecraft_server_manager.get_server_status(server_id)
@@ -308,9 +307,8 @@ async def stop_server(
                 detail="Failed to stop server",
             )
 
-        # Update database status
-        server.status = ServerStatus.stopping
-        db.commit()
+        # Database status will be updated automatically via callback
+        # when the server actually stops
 
         return {"message": "Server stop initiated"}
 
@@ -363,8 +361,7 @@ async def restart_server(
                 detail="Failed to restart server",
             )
 
-        server.status = ServerStatus.starting
-        db.commit()
+        # Database status will be updated automatically via callback
 
         return {"message": "Server restart initiated"}
 
@@ -392,8 +389,10 @@ async def get_server_status(
         # Check ownership/admin access
         check_server_owner_or_admin(server_id, current_user, db)
 
+        from app.services.database_integration import database_integration_service
+
         status = minecraft_server_manager.get_server_status(server_id)
-        process_info = minecraft_server_manager.get_server_info(server_id)
+        process_info = database_integration_service.get_server_process_info(server_id)
 
         return ServerStatusResponse(
             server_id=server_id, status=status, process_info=process_info
@@ -499,4 +498,42 @@ async def get_supported_versions():
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to get supported versions: {str(e)}",
+        )
+
+
+@router.post("/sync")
+async def sync_server_states(current_user: User = Depends(get_current_user)):
+    """
+    Synchronize server states between database and process manager
+
+    Admin-only endpoint to manually trigger synchronization of server states.
+    This ensures database status matches actual running processes.
+    """
+    try:
+        # Only admins can trigger sync
+        if current_user.role != Role.admin:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Only admins can sync server states",
+            )
+
+        from app.services.database_integration import database_integration_service
+
+        database_integration_service.sync_server_states()
+
+        # Get current state summary
+        running_servers = database_integration_service.get_all_running_servers()
+
+        return {
+            "message": "Server states synchronized",
+            "running_servers": running_servers,
+            "total_running": len(running_servers),
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to sync server states: {str(e)}",
         )

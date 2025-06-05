@@ -460,7 +460,9 @@ eula=true
             return None
 
         # Get process information from MinecraftServerManager
-        process_info = minecraft_server_manager.get_server_info(server_id)
+        from app.services.database_integration import database_integration_service
+
+        process_info = database_integration_service.get_server_process_info(server_id)
 
         response = ServerResponse.from_orm(server)
         response.process_info = process_info
@@ -484,10 +486,14 @@ eula=true
         servers = query.offset((page - 1) * size).limit(size).all()
 
         # Enrich with process information
+        from app.services.database_integration import database_integration_service
+
         server_responses = []
         for server in servers:
             response = ServerResponse.from_orm(server)
-            response.process_info = minecraft_server_manager.get_server_info(server.id)
+            response.process_info = database_integration_service.get_server_process_info(
+                server.id
+            )
             server_responses.append(response)
 
         return {"servers": server_responses, "total": total, "page": page, "size": size}
@@ -557,7 +563,9 @@ eula=true
             return False
 
         # Stop server if running
-        if minecraft_server_manager.get_server_status(server_id) != ServerStatus.stopped:
+        from app.services.database_integration import database_integration_service
+
+        if database_integration_service.is_server_running(server_id):
             await minecraft_server_manager.stop_server(server_id, force=True)
 
         # Soft delete

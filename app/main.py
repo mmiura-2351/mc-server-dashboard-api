@@ -4,6 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.auth.router import router as auth_router
+from app.backups.router import router as backups_router
 from app.core.database import Base, engine
 from app.groups.router import router as groups_router
 from app.servers.router import router as servers_router
@@ -16,7 +17,29 @@ from app.users.router import router as users_router
 async def lifespan(app: FastAPI):
     # DBのテーブルを作成
     Base.metadata.create_all(bind=engine)
+
+    # Initialize database integration with MinecraftServerManager
+    from app.services.database_integration import database_integration_service
+
+    database_integration_service.initialize()
+
+    # Sync server states on startup
+    database_integration_service.sync_server_states()
+
+    # Start backup scheduler
+    from app.services.backup_scheduler import backup_scheduler
+
+    await backup_scheduler.start_scheduler()
+
     yield
+
+    # Cleanup on shutdown
+    from app.services.minecraft_server import minecraft_server_manager
+
+    await minecraft_server_manager.shutdown_all()
+
+    # Stop backup scheduler
+    await backup_scheduler.stop_scheduler()
 
 
 app = FastAPI(lifespan=lifespan)
@@ -33,3 +56,4 @@ app.include_router(auth_router, prefix="/api/v1/auth", tags=["auth"])
 app.include_router(users_router, prefix="/api/v1/users", tags=["users"])
 app.include_router(servers_router, prefix="/api/v1/servers", tags=["servers"])
 app.include_router(groups_router, prefix="/api/v1/groups", tags=["groups"])
+app.include_router(backups_router, prefix="/api/v1", tags=["backups"])

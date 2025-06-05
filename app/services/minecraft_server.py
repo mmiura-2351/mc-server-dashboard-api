@@ -3,7 +3,7 @@ import logging
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any, AsyncGenerator, Dict, List, Optional
+from typing import Any, AsyncGenerator, Callable, Dict, List, Optional
 
 from app.servers.models import Server, ServerStatus
 
@@ -29,6 +29,22 @@ class MinecraftServerManager:
         self.processes: Dict[int, ServerProcess] = {}
         self.base_directory = Path("servers")
         self.base_directory.mkdir(exist_ok=True)
+        # Callback for database status updates
+        self._status_update_callback: Optional[Callable[[int, ServerStatus], None]] = None
+
+    def set_status_update_callback(self, callback: Callable[[int, ServerStatus], None]):
+        """Set callback function to update database when server status changes"""
+        self._status_update_callback = callback
+
+    def _notify_status_change(self, server_id: int, status: ServerStatus):
+        """Notify about status changes to update database"""
+        if self._status_update_callback:
+            try:
+                self._status_update_callback(server_id, status)
+            except Exception as e:
+                logger.error(
+                    f"Failed to update database status for server {server_id}: {e}"
+                )
 
     async def start_server(self, server: Server) -> bool:
         """Start a Minecraft server"""
@@ -83,6 +99,9 @@ class MinecraftServerManager:
             # Start status monitoring task
             asyncio.create_task(self._monitor_server(server_process))
 
+            # Notify database of status change
+            self._notify_status_change(server.id, ServerStatus.starting)
+
             logger.info(f"Started server {server.id} with PID {process.pid}")
             return True
 
@@ -99,6 +118,9 @@ class MinecraftServerManager:
 
             server_process = self.processes[server_id]
             server_process.status = ServerStatus.stopping
+
+            # Notify database of status change
+            self._notify_status_change(server_id, ServerStatus.stopping)
 
             if not force:
                 # Send graceful stop command
@@ -125,6 +147,10 @@ class MinecraftServerManager:
 
             # Clean up
             del self.processes[server_id]
+
+            # Notify database of final stopped status
+            self._notify_status_change(server_id, ServerStatus.stopped)
+
             logger.info(f"Stopped server {server_id}")
             return True
 
@@ -233,6 +259,10 @@ class MinecraftServerManager:
                 # Check for server ready status
                 if "Done" in log_line and "For help" in log_line:
                     server_process.status = ServerStatus.running
+                    # Notify database of running status
+                    self._notify_status_change(
+                        server_process.server_id, ServerStatus.running
+                    )
                     logger.info(f"Server {server_process.server_id} is now running")
 
         except Exception as e:
@@ -249,11 +279,15 @@ class MinecraftServerManager:
 
             if return_code == 0:
                 logger.info(f"Server {server_process.server_id} stopped normally")
+                # Notify database of stopped status
+                self._notify_status_change(server_process.server_id, ServerStatus.stopped)
             else:
                 logger.warning(
                     f"Server {server_process.server_id} crashed with code {return_code}"
                 )
                 server_process.status = ServerStatus.error
+                # Notify database of error status
+                self._notify_status_change(server_process.server_id, ServerStatus.error)
 
             # Clean up if still in processes dict
             if server_process.server_id in self.processes:
@@ -262,6 +296,8 @@ class MinecraftServerManager:
         except Exception as e:
             logger.error(f"Error monitoring server {server_process.server_id}: {e}")
             server_process.status = ServerStatus.error
+            # Notify database of error status
+            self._notify_status_change(server_process.server_id, ServerStatus.error)
 
     async def shutdown_all(self):
         """Shutdown all running servers"""
