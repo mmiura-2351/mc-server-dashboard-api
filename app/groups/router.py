@@ -192,7 +192,7 @@ async def add_player_to_group(
     """
     try:
         group_service = GroupService(db)
-        group = group_service.add_player_to_group(
+        group = await group_service.add_player_to_group(
             user=current_user,
             group_id=group_id,
             uuid=request.uuid,
@@ -224,7 +224,7 @@ async def remove_player_from_group(
     """
     try:
         group_service = GroupService(db)
-        group = group_service.remove_player_from_group(
+        group = await group_service.remove_player_from_group(
             user=current_user, group_id=group_id, uuid=player_uuid
         )
 
@@ -257,7 +257,7 @@ async def attach_group_to_server(
     """
     try:
         group_service = GroupService(db)
-        group_service.attach_group_to_server(
+        await group_service.attach_group_to_server(
             user=current_user,
             server_id=request.server_id,
             group_id=group_id,
@@ -289,7 +289,7 @@ async def detach_group_from_server(
     """
     try:
         group_service = GroupService(db)
-        group_service.detach_group_from_server(
+        await group_service.detach_group_from_server(
             user=current_user, server_id=server_id, group_id=group_id
         )
 
