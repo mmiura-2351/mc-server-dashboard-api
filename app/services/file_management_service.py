@@ -388,3 +388,83 @@ class FileManagementService:
                     zip_file.write(file_path, arcname)
 
         return zip_path
+
+    async def search_files(
+        self,
+        server_id: int,
+        query: str,
+        file_type: Optional[FileType] = None,
+        include_content: bool = False,
+        max_results: int = 50,
+        db: Session = None,
+    ) -> Dict[str, Any]:
+        """Search for files in server directory"""
+        import re
+        import time
+
+        start_time = time.time()
+
+        # Get all files first
+        all_files = await self.get_server_files(
+            server_id=server_id,
+            path="",
+            file_type=file_type,
+            db=db,
+        )
+
+        results = []
+        pattern = re.compile(query, re.IGNORECASE)
+
+        for file_info in all_files:
+            matches = []
+            match_count = 0
+
+            # Search in filename
+            if pattern.search(file_info["name"]):
+                match_count += 1
+                matches.append(f"Filename: {file_info['name']}")
+
+            # Search in file content if requested and file is readable
+            if (
+                include_content
+                and not file_info["is_directory"]
+                and file_info["permissions"]["readable"]
+            ):
+                try:
+                    content = await self.read_file(
+                        server_id=server_id,
+                        file_path=file_info["path"],
+                        db=db,
+                    )
+
+                    content_matches = []
+                    for i, line in enumerate(content.split("\n"), 1):
+                        if pattern.search(line):
+                            content_matches.append(f"Line {i}: {line.strip()}")
+                            match_count += 1
+
+                    matches.extend(content_matches[:10])  # Limit content matches
+
+                except Exception:
+                    pass  # Skip files that can't be read
+
+            if match_count > 0:
+                results.append(
+                    {
+                        "file": file_info,
+                        "matches": matches,
+                        "match_count": match_count,
+                    }
+                )
+
+            if len(results) >= max_results:
+                break
+
+        search_time_ms = int((time.time() - start_time) * 1000)
+
+        return {
+            "results": results,
+            "query": query,
+            "total_results": len(results),
+            "search_time_ms": search_time_ms,
+        }

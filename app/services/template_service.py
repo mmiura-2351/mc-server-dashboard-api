@@ -480,6 +480,82 @@ class TemplateService:
         # Users can only modify their own templates
         return template.created_by == user.id
 
+    async def clone_template(
+        self,
+        original_template_id: int,
+        name: str,
+        description: Optional[str] = None,
+        is_public: bool = False,
+        user: User = None,
+        db: Session = None,
+    ) -> Template:
+        """Clone an existing template"""
+        try:
+            # Get the original template
+            original_template = (
+                db.query(Template).filter(Template.id == original_template_id).first()
+            )
+
+            if not original_template:
+                raise TemplateNotFoundError(
+                    f"Original template {original_template_id} not found"
+                )
+
+            # Check access permissions
+            if not self._can_access_template(original_template, user):
+                raise TemplateAccessError("Access denied to clone template")
+
+            # Check if name already exists for this user
+            existing_template = (
+                db.query(Template)
+                .filter(Template.created_by == user.id, Template.name == name)
+                .first()
+            )
+
+            if existing_template:
+                raise TemplateError("Template with this name already exists")
+
+            # Create new template with copied data
+            new_template = Template(
+                name=name,
+                description=description or f"Clone of {original_template.name}",
+                minecraft_version=original_template.minecraft_version,
+                server_type=original_template.server_type,
+                configuration=original_template.configuration,
+                default_groups=original_template.default_groups,
+                is_public=is_public,
+                created_by=user.id,
+            )
+
+            db.add(new_template)
+            db.commit()
+            db.refresh(new_template)
+
+            # Copy template files if they exist
+            original_filename = f"template_{original_template_id}_files.tar.gz"
+            original_path = self.templates_directory / original_filename
+
+            if original_path.exists():
+                new_filename = f"template_{new_template.id}_files.tar.gz"
+                new_path = self.templates_directory / new_filename
+
+                # Copy the template files
+                shutil.copy2(original_path, new_path)
+                logger.info(
+                    f"Copied template files from {original_filename} to {new_filename}"
+                )
+
+            logger.info(
+                f"Successfully cloned template {original_template_id} as {new_template.id}"
+            )
+            return new_template
+
+        except Exception as e:
+            if "new_template" in locals():
+                db.rollback()
+            logger.error(f"Failed to clone template {original_template_id}: {e}")
+            raise TemplateError(f"Failed to clone template: {str(e)}")
+
     def get_template_statistics(self, user: User, db: Session) -> Dict[str, Any]:
         """Get template usage statistics"""
         try:

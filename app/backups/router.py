@@ -29,36 +29,7 @@ from app.users.models import Role, User
 router = APIRouter(tags=["backups"])
 
 
-def check_server_access(server_id: int, current_user: User, db: Session):
-    """Check if user has access to the server"""
-    server = db.query(Server).filter(Server.id == server_id).first()
-    if not server:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Server not found"
-        )
-
-    if current_user.role != Role.admin and server.owner_id != current_user.id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Not authorized to access this server",
-        )
-
-    return server
-
-
-def check_backup_access(backup_id: int, current_user: User, db: Session):
-    """Check if user has access to the backup"""
-    from app.servers.models import Backup
-
-    backup = db.query(Backup).filter(Backup.id == backup_id).first()
-    if not backup:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Backup not found"
-        )
-
-    # Check server access
-    check_server_access(backup.server_id, current_user, db)
-    return backup
+# Helper functions moved to authorization_service
 
 
 @router.post(
@@ -84,7 +55,7 @@ async def create_backup(
     """
     try:
         # Check server access
-        check_server_access(server_id, current_user, db)
+        authorization_service.check_server_access(server_id, current_user, db)
 
         # Only operators and admins can create backups
         if current_user.role == Role.user:
@@ -131,7 +102,7 @@ async def list_server_backups(
     """
     try:
         # Check server access
-        check_server_access(server_id, current_user, db)
+        authorization_service.check_server_access(server_id, current_user, db)
 
         result = backup_service.list_backups(
             server_id=server_id,
@@ -219,7 +190,7 @@ async def get_backup(
     """
     try:
         # Check backup access
-        backup = check_backup_access(backup_id, current_user, db)
+        backup = authorization_service.check_backup_access(backup_id, current_user, db)
 
         return BackupResponse.from_orm(backup)
 
@@ -250,7 +221,7 @@ async def restore_backup(
     """
     try:
         # Check backup access
-        backup = check_backup_access(backup_id, current_user, db)
+        backup = authorization_service.check_backup_access(backup_id, current_user, db)
 
         # Only operators and admins can restore backups
         if current_user.role == Role.user:
@@ -261,7 +232,7 @@ async def restore_backup(
 
         # Check target server access if specified
         target_server_id = request.target_server_id or backup.server_id
-        check_server_access(target_server_id, current_user, db)
+        authorization_service.check_server_access(target_server_id, current_user, db)
 
         success = await backup_service.restore_backup(
             backup_id=backup_id,
@@ -314,7 +285,7 @@ async def restore_backup_and_create_template(
     """
     try:
         # Check backup access
-        backup = check_backup_access(backup_id, current_user, db)
+        backup = authorization_service.check_backup_access(backup_id, current_user, db)
 
         # Only operators and admins can restore backups
         if current_user.role == Role.user:
@@ -325,7 +296,7 @@ async def restore_backup_and_create_template(
 
         # Check target server access if specified
         target_server_id = request.target_server_id or backup.server_id
-        check_server_access(target_server_id, current_user, db)
+        authorization_service.check_server_access(target_server_id, current_user, db)
 
         result = await backup_service.restore_backup_and_create_template(
             backup_id=backup_id,
@@ -382,7 +353,7 @@ async def delete_backup(
     """
     try:
         # Check backup access
-        check_backup_access(backup_id, current_user, db)
+        authorization_service.check_backup_access(backup_id, current_user, db)
 
         # Only operators and admins can delete backups
         if current_user.role == Role.user:
@@ -422,7 +393,7 @@ async def get_server_backup_statistics(
     """
     try:
         # Check server access
-        check_server_access(server_id, current_user, db)
+        authorization_service.check_server_access(server_id, current_user, db)
 
         stats = backup_service.get_backup_statistics(server_id=server_id, db=db)
 

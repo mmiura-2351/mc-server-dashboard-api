@@ -248,6 +248,67 @@ class BackupService:
                 f"Failed to restore backup and create template: {str(e)}"
             )
 
+    async def create_scheduled_backups(self, server_ids: list[int], db: Session) -> dict:
+        """Create backups for multiple servers"""
+        results = {
+            "successful": [],
+            "failed": [],
+            "total_servers": len(server_ids),
+            "success_count": 0,
+            "error_count": 0,
+        }
+
+        for server_id in server_ids:
+            try:
+                # Check if server exists
+                server = (
+                    db.query(Server)
+                    .filter(and_(Server.id == server_id, not Server.is_deleted))
+                    .first()
+                )
+
+                if not server:
+                    results["failed"].append(
+                        {"server_id": server_id, "error": f"Server {server_id} not found"}
+                    )
+                    results["error_count"] += 1
+                    continue
+
+                # Create backup with automatic naming
+                backup_name = (
+                    f"Scheduled backup {datetime.now().strftime('%Y-%m-%d %H:%M')}"
+                )
+                backup = await self.create_backup(
+                    server_id=server_id,
+                    name=backup_name,
+                    description="Automatically scheduled backup",
+                    backup_type=BackupType.scheduled,
+                    db=db,
+                )
+
+                results["successful"].append(
+                    {
+                        "server_id": server_id,
+                        "server_name": server.name,
+                        "backup_id": backup.id,
+                        "backup_name": backup.name,
+                    }
+                )
+                results["success_count"] += 1
+
+            except Exception as e:
+                results["failed"].append({"server_id": server_id, "error": str(e)})
+                results["error_count"] += 1
+                logger.error(
+                    f"Failed to create scheduled backup for server {server_id}: {e}"
+                )
+
+        logger.info(
+            f"Scheduled backup batch completed: {results['success_count']} success, "
+            f"{results['error_count']} failed"
+        )
+        return results
+
     async def _restore_backup_file(self, backup: Backup, target_server: Server):
         """Restore the backup file to target server directory"""
         try:

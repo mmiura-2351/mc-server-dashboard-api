@@ -19,6 +19,7 @@ from app.files.schemas import (
     FileWriteRequest,
     FileWriteResponse,
 )
+from app.services.authorization_service import authorization_service
 from app.services.file_management_service import FileManagementService
 from app.types import FileType
 from app.users.models import User
@@ -88,7 +89,7 @@ async def write_file(
     db: Session = Depends(get_db),
 ):
     """Write content to a file"""
-    if current_user.role.value not in ["admin", "operator"]:
+    if not authorization_service.can_modify_files(current_user):
         raise HTTPException(status_code=403, detail="Insufficient permissions")
 
     result = await file_service.write_file(
@@ -114,7 +115,7 @@ async def upload_file(
     db: Session = Depends(get_db),
 ):
     """Upload a file to server directory"""
-    if current_user.role.value not in ["admin", "operator"]:
+    if not authorization_service.can_modify_files(current_user):
         raise HTTPException(status_code=403, detail="Insufficient permissions")
 
     result = await file_service.upload_file(
@@ -159,7 +160,7 @@ async def create_directory(
     db: Session = Depends(get_db),
 ):
     """Create a new directory in server"""
-    if current_user.role.value not in ["admin", "operator"]:
+    if not authorization_service.can_modify_files(current_user):
         raise HTTPException(status_code=403, detail="Insufficient permissions")
 
     full_path = f"{directory_path}/{request.name}".strip("/")
@@ -182,7 +183,7 @@ async def delete_file(
     db: Session = Depends(get_db),
 ):
     """Delete a file or directory from server"""
-    if current_user.role.value not in ["admin", "operator"]:
+    if not authorization_service.can_modify_files(current_user):
         raise HTTPException(status_code=403, detail="Insufficient permissions")
 
     result = await file_service.delete_file(
@@ -203,74 +204,31 @@ async def search_files(
     db: Session = Depends(get_db),
 ):
     """Search for files in server directory"""
-    import re
-    import time
-
     from app.files.schemas import FileSearchResult
 
-    start_time = time.time()
-
-    # Get all files first
-    all_files = await file_service.get_server_files(
+    search_result = await file_service.search_files(
         server_id=server_id,
-        path="",
+        query=request.query,
         file_type=request.file_type,
+        include_content=request.include_content,
+        max_results=request.max_results,
         db=db,
     )
 
-    results = []
-    pattern = re.compile(request.query, re.IGNORECASE)
-
-    for file_info in all_files:
-        matches = []
-        match_count = 0
-
-        # Search in filename
-        if pattern.search(file_info["name"]):
-            match_count += 1
-            matches.append(f"Filename: {file_info['name']}")
-
-        # Search in file content if requested and file is readable
-        if (
-            request.include_content
-            and not file_info["is_directory"]
-            and file_info["permissions"]["readable"]
-        ):
-            try:
-                content = await file_service.read_file(
-                    server_id=server_id,
-                    file_path=file_info["path"],
-                    db=db,
-                )
-
-                content_matches = []
-                for i, line in enumerate(content.split("\n"), 1):
-                    if pattern.search(line):
-                        content_matches.append(f"Line {i}: {line.strip()}")
-                        match_count += 1
-
-                matches.extend(content_matches[:10])  # Limit content matches
-
-            except Exception:
-                pass  # Skip files that can't be read
-
-        if match_count > 0:
-            results.append(
-                FileSearchResult(
-                    file=FileInfoResponse(**file_info),
-                    matches=matches,
-                    match_count=match_count,
-                )
+    # Convert results to proper schema objects
+    formatted_results = []
+    for result in search_result["results"]:
+        formatted_results.append(
+            FileSearchResult(
+                file=FileInfoResponse(**result["file"]),
+                matches=result["matches"],
+                match_count=result["match_count"],
             )
-
-        if len(results) >= request.max_results:
-            break
-
-    search_time_ms = int((time.time() - start_time) * 1000)
+        )
 
     return FileSearchResponse(
-        results=results,
-        query=request.query,
-        total_results=len(results),
-        search_time_ms=search_time_ms,
+        results=formatted_results,
+        query=search_result["query"],
+        total_results=search_result["total_results"],
+        search_time_ms=search_result["search_time_ms"],
     )
