@@ -7,6 +7,12 @@ from app.auth.router import router as auth_router
 from app.core.database import Base, engine
 from app.users.router import router as users_router
 
+# Import all models to ensure they are registered with SQLAlchemy
+from app.users.models import User
+from app.servers.models import Server, Backup, ServerConfiguration, Template
+from app.groups.models import Group, ServerGroup
+from app.audit.models import AuditLog
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -25,5 +31,5 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(auth_router, prefix="/auth", tags=["auth"])
-app.include_router(users_router, prefix="/users", tags=["users"])
+app.include_router(auth_router, prefix="/api/v1/auth", tags=["auth"])
+app.include_router(users_router, prefix="/api/v1/users", tags=["users"])

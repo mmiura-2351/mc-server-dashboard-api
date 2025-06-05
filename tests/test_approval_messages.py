@@ -16,7 +16,7 @@ class TestApprovalMessages:
     ):
         """未承認ユーザーのログイン時に詳細なメッセージが返される"""
         response = client.post(
-            "/auth/token",
+            "/api/v1/auth/token",
             data={"username": "unapproved", "password": "unapprovedpassword"},
         )
 
@@ -29,7 +29,7 @@ class TestApprovalMessages:
     def test_approved_user_login_succeeds(self, client, db, test_user):
         """承認済みユーザーのログインは成功する"""
         response = client.post(
-            "/auth/token", data={"username": "testuser", "password": "testpassword"}
+            "/api/v1/auth/token", data={"username": "testuser", "password": "testpassword"}
         )
 
         assert response.status_code == status.HTTP_200_OK
@@ -40,7 +40,7 @@ class TestApprovalMessages:
     def test_first_user_registration_auto_approved(self, client):
         """最初のユーザー登録は自動承認される"""
         response = client.post(
-            "/users/register",
+            "/api/v1/users/register",
             json={
                 "username": "firstuser",
                 "email": "first@example.com",
@@ -56,7 +56,7 @@ class TestApprovalMessages:
     def test_second_user_registration_pending_approval(self, client, db, admin_user):
         """2番目のユーザー登録は承認待ちになる"""
         response = client.post(
-            "/users/register",
+            "/api/v1/users/register",
             json={
                 "username": "seconduser",
                 "email": "second@example.com",
@@ -72,7 +72,7 @@ class TestApprovalMessages:
     def test_admin_can_approve_user(self, client, db, admin_user, unapproved_user):
         """管理者はユーザーを承認できる"""
         headers = get_auth_headers("admin")
-        response = client.post(f"/users/approve/{unapproved_user.id}", headers=headers)
+        response = client.post(f"/api/v1/users/approve/{unapproved_user.id}", headers=headers)
 
         assert response.status_code == status.HTTP_200_OK
         data = response.json()
@@ -85,13 +85,13 @@ class TestApprovalMessages:
         # まず管理者がユーザーを承認
         headers = get_auth_headers("admin")
         approve_response = client.post(
-            f"/users/approve/{unapproved_user.id}", headers=headers
+            f"/api/v1/users/approve/{unapproved_user.id}", headers=headers
         )
         assert approve_response.status_code == status.HTTP_200_OK
 
         # 承認後にログインを試行
         login_response = client.post(
-            "/auth/token",
+            "/api/v1/auth/token",
             data={"username": "unapproved", "password": "unapprovedpassword"},
         )
 
@@ -106,7 +106,7 @@ class TestApprovalMessages:
         """ユーザー情報APIで承認状態が正しく反映される"""
         # 承認済みユーザーの情報取得
         headers = get_auth_headers("testuser")
-        response = client.get("/users/me", headers=headers)
+        response = client.get("/api/v1/users/me", headers=headers)
 
         assert response.status_code == status.HTTP_200_OK
         data = response.json()
@@ -116,7 +116,7 @@ class TestApprovalMessages:
     def test_error_message_consistency(self, client, db, unapproved_user):
         """エラーメッセージの一貫性をテスト"""
         response = client.post(
-            "/auth/token",
+            "/api/v1/auth/token",
             data={"username": "unapproved", "password": "unapprovedpassword"},
         )
 
@@ -136,7 +136,7 @@ class TestApprovalMessages:
     def test_non_existent_user_login_different_error(self, client):
         """存在しないユーザーのログインは異なるエラーメッセージ"""
         response = client.post(
-            "/auth/token", data={"username": "nonexistent", "password": "password"}
+            "/api/v1/auth/token", data={"username": "nonexistent", "password": "password"}
         )
 
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
@@ -147,7 +147,7 @@ class TestApprovalMessages:
     def test_wrong_password_different_error(self, client, db, test_user):
         """間違ったパスワードは異なるエラーメッセージ"""
         response = client.post(
-            "/auth/token", data={"username": "testuser", "password": "wrongpassword"}
+            "/api/v1/auth/token", data={"username": "testuser", "password": "wrongpassword"}
         )
 
         assert response.status_code == status.HTTP_401_UNAUTHORIZED

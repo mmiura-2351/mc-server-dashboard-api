@@ -16,7 +16,7 @@ class TestUserManagement:
         """ユーザー名の更新"""
         headers = get_auth_headers("testuser")
         response = client.put(
-            "/users/me", json={"username": "newusername"}, headers=headers
+            "/api/v1/users/me", json={"username": "newusername"}, headers=headers
         )
 
         assert response.status_code == status.HTTP_200_OK
@@ -31,7 +31,7 @@ class TestUserManagement:
         """メールアドレスの更新"""
         headers = get_auth_headers("testuser")
         response = client.put(
-            "/users/me", json={"email": "newemail@example.com"}, headers=headers
+            "/api/v1/users/me", json={"email": "newemail@example.com"}, headers=headers
         )
 
         assert response.status_code == status.HTTP_200_OK
@@ -46,7 +46,7 @@ class TestUserManagement:
         """ユーザー名とメールアドレスの両方を更新"""
         headers = get_auth_headers("testuser")
         response = client.put(
-            "/users/me",
+            "/api/v1/users/me",
             json={"username": "newusername", "email": "newemail@example.com"},
             headers=headers,
         )
@@ -64,7 +64,7 @@ class TestUserManagement:
     def test_update_user_info_duplicate_username(self, client, test_user, admin_user):
         """重複するユーザー名での更新失敗"""
         headers = get_auth_headers("testuser")
-        response = client.put("/users/me", json={"username": "admin"}, headers=headers)
+        response = client.put("/api/v1/users/me", json={"username": "admin"}, headers=headers)
 
         assert response.status_code == status.HTTP_400_BAD_REQUEST
         assert "Username already exists" in response.json()["detail"]
@@ -73,7 +73,7 @@ class TestUserManagement:
         """重複するメールアドレスでの更新失敗"""
         headers = get_auth_headers("testuser")
         response = client.put(
-            "/users/me", json={"email": "admin@example.com"}, headers=headers
+            "/api/v1/users/me", json={"email": "admin@example.com"}, headers=headers
         )
 
         assert response.status_code == status.HTTP_400_BAD_REQUEST
@@ -83,7 +83,7 @@ class TestUserManagement:
         """パスワード更新成功"""
         headers = get_auth_headers("testuser")
         response = client.put(
-            "/users/me/password",
+            "/api/v1/users/me/password",
             json={"current_password": "testpassword", "new_password": "newpassword123"},
             headers=headers,
         )
@@ -94,7 +94,7 @@ class TestUserManagement:
         """間違った現在のパスワードでの更新失敗"""
         headers = get_auth_headers("testuser")
         response = client.put(
-            "/users/me/password",
+            "/api/v1/users/me/password",
             json={
                 "current_password": "wrongpassword",
                 "new_password": "newpassword123",
@@ -109,7 +109,7 @@ class TestUserManagement:
         """アカウント削除成功"""
         headers = get_auth_headers("testuser")
         response = client.request(
-            "DELETE", "/users/me", json={"password": "testpassword"}, headers=headers
+            "DELETE", "/api/v1/users/me", json={"password": "testpassword"}, headers=headers
         )
 
         assert response.status_code == status.HTTP_200_OK
@@ -119,7 +119,7 @@ class TestUserManagement:
         """間違ったパスワードでのアカウント削除失敗"""
         headers = get_auth_headers("testuser")
         response = client.request(
-            "DELETE", "/users/me", json={"password": "wrongpassword"}, headers=headers
+            "DELETE", "/api/v1/users/me", json={"password": "wrongpassword"}, headers=headers
         )
 
         assert response.status_code == status.HTTP_400_BAD_REQUEST
@@ -129,7 +129,7 @@ class TestUserManagement:
         """最後の管理者の削除失敗"""
         headers = get_auth_headers("admin")
         response = client.request(
-            "DELETE", "/users/me", json={"password": "adminpassword"}, headers=headers
+            "DELETE", "/api/v1/users/me", json={"password": "adminpassword"}, headers=headers
         )
 
         assert response.status_code == status.HTTP_400_BAD_REQUEST
@@ -138,7 +138,7 @@ class TestUserManagement:
     def test_get_all_users_as_admin(self, client, admin_user, test_user):
         """管理者による全ユーザー一覧取得"""
         headers = get_auth_headers("admin")
-        response = client.get("/users/", headers=headers)
+        response = client.get("/api/v1/users/", headers=headers)
 
         assert response.status_code == status.HTTP_200_OK
         data = response.json()
@@ -150,7 +150,7 @@ class TestUserManagement:
     def test_get_all_users_as_non_admin(self, client, test_user):
         """一般ユーザーによる全ユーザー一覧取得失敗"""
         headers = get_auth_headers("testuser")
-        response = client.get("/users/", headers=headers)
+        response = client.get("/api/v1/users/", headers=headers)
 
         assert response.status_code == status.HTTP_403_FORBIDDEN
         assert "Only admin can perform this action" in response.json()["detail"]
@@ -158,7 +158,7 @@ class TestUserManagement:
     def test_delete_user_by_admin_success(self, client, admin_user, test_user):
         """管理者による他ユーザー削除成功"""
         headers = get_auth_headers("admin")
-        response = client.delete(f"/users/{test_user.id}", headers=headers)
+        response = client.delete(f"/api/v1/users/{test_user.id}", headers=headers)
 
         assert response.status_code == status.HTTP_200_OK
         assert "User deleted successfully" in response.json()["message"]
@@ -166,7 +166,7 @@ class TestUserManagement:
     def test_delete_user_by_admin_self_fails(self, client, admin_user):
         """管理者による自分自身の削除失敗"""
         headers = get_auth_headers("admin")
-        response = client.delete(f"/users/{admin_user.id}", headers=headers)
+        response = client.delete(f"/api/v1/users/{admin_user.id}", headers=headers)
 
         assert response.status_code == status.HTTP_400_BAD_REQUEST
         assert "Cannot delete your own account" in response.json()["detail"]
@@ -174,7 +174,7 @@ class TestUserManagement:
     def test_delete_user_by_admin_nonexistent(self, client, admin_user):
         """存在しないユーザーの削除失敗"""
         headers = get_auth_headers("admin")
-        response = client.delete("/users/999", headers=headers)
+        response = client.delete("/api/v1/users/999", headers=headers)
 
         assert response.status_code == status.HTTP_404_NOT_FOUND
         assert "User not found" in response.json()["detail"]
@@ -182,21 +182,21 @@ class TestUserManagement:
     def test_delete_user_by_non_admin(self, client, test_user, unapproved_user):
         """一般ユーザーによる他ユーザー削除失敗"""
         headers = get_auth_headers("testuser")
-        response = client.delete(f"/users/{unapproved_user.id}", headers=headers)
+        response = client.delete(f"/api/v1/users/{unapproved_user.id}", headers=headers)
 
         assert response.status_code == status.HTTP_403_FORBIDDEN
         assert "Only admin can perform this action" in response.json()["detail"]
 
     def test_update_user_info_unauthorized(self, client):
         """認証なしでのユーザー情報更新失敗"""
-        response = client.put("/users/me", json={"username": "newusername"})
+        response = client.put("/api/v1/users/me", json={"username": "newusername"})
 
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
 
     def test_update_password_unauthorized(self, client):
         """認証なしでのパスワード更新失敗"""
         response = client.put(
-            "/users/me/password",
+            "/api/v1/users/me/password",
             json={"current_password": "password", "new_password": "newpassword"},
         )
 
@@ -204,6 +204,6 @@ class TestUserManagement:
 
     def test_delete_account_unauthorized(self, client):
         """認証なしでのアカウント削除失敗"""
-        response = client.request("DELETE", "/users/me", json={"password": "password"})
+        response = client.request("DELETE", "/api/v1/users/me", json={"password": "password"})
 
         assert response.status_code == status.HTTP_401_UNAUTHORIZED

@@ -8,7 +8,7 @@ from app.auth.auth import verify_token
 from app.core.database import get_db
 from app.users import models
 
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/token")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/token")
 
 
 def get_current_user(

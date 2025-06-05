@@ -14,7 +14,7 @@ class TestUsersRouter:
     def test_register_first_user(self, client):
         """最初のユーザー登録（管理者として）"""
         response = client.post(
-            "/users/register",
+            "/api/v1/users/register",
             json={
                 "username": "firstuser",
                 "email": "first@example.com",
@@ -31,7 +31,7 @@ class TestUsersRouter:
     def test_register_second_user(self, client, admin_user):
         """2番目のユーザー登録（一般ユーザーとして）"""
         response = client.post(
-            "/users/register",
+            "/api/v1/users/register",
             json={
                 "username": "seconduser",
                 "email": "second@example.com",
@@ -48,7 +48,7 @@ class TestUsersRouter:
     def test_register_duplicate_username(self, client, test_user):
         """重複するユーザー名での登録失敗"""
         response = client.post(
-            "/users/register",
+            "/api/v1/users/register",
             json={
                 "username": "testuser",
                 "email": "different@example.com",
@@ -62,7 +62,7 @@ class TestUsersRouter:
     def test_get_current_user_info(self, client, test_user):
         """現在のユーザー情報取得"""
         headers = get_auth_headers("testuser")
-        response = client.get("/users/me", headers=headers)
+        response = client.get("/api/v1/users/me", headers=headers)
 
         assert response.status_code == status.HTTP_200_OK
         data = response.json()
@@ -71,14 +71,14 @@ class TestUsersRouter:
 
     def test_get_current_user_info_unauthorized(self, client):
         """認証なしでのユーザー情報取得失敗"""
-        response = client.get("/users/me")
+        response = client.get("/api/v1/users/me")
 
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
 
     def test_approve_user_as_admin(self, client, admin_user, unapproved_user):
         """管理者によるユーザー承認"""
         headers = get_auth_headers("admin")
-        response = client.post(f"/users/approve/{unapproved_user.id}", headers=headers)
+        response = client.post(f"/api/v1/users/approve/{unapproved_user.id}", headers=headers)
 
         assert response.status_code == status.HTTP_200_OK
         data = response.json()
@@ -87,7 +87,7 @@ class TestUsersRouter:
     def test_approve_user_as_non_admin(self, client, test_user, unapproved_user):
         """一般ユーザーによるユーザー承認失敗"""
         headers = get_auth_headers("testuser")
-        response = client.post(f"/users/approve/{unapproved_user.id}", headers=headers)
+        response = client.post(f"/api/v1/users/approve/{unapproved_user.id}", headers=headers)
 
         assert response.status_code == status.HTTP_403_FORBIDDEN
         assert "Only admin can perform this action" in response.json()["detail"]
@@ -95,7 +95,7 @@ class TestUsersRouter:
     def test_approve_nonexistent_user(self, client, admin_user):
         """存在しないユーザーの承認失敗"""
         headers = get_auth_headers("admin")
-        response = client.post("/users/approve/999", headers=headers)
+        response = client.post("/api/v1/users/approve/999", headers=headers)
 
         assert response.status_code == status.HTTP_404_NOT_FOUND
         assert "User not found" in response.json()["detail"]
@@ -104,7 +104,7 @@ class TestUsersRouter:
         """管理者によるロール変更"""
         headers = get_auth_headers("admin")
         response = client.put(
-            f"/users/role/{test_user.id}", json={"role": "admin"}, headers=headers
+            f"/api/v1/users/role/{test_user.id}", json={"role": "admin"}, headers=headers
         )
 
         assert response.status_code == status.HTTP_200_OK
@@ -113,7 +113,7 @@ class TestUsersRouter:
         """一般ユーザーによるロール変更失敗"""
         headers = get_auth_headers("testuser")
         response = client.put(
-            f"/users/role/{test_user.id}", json={"role": "admin"}, headers=headers
+            f"/api/v1/users/role/{test_user.id}", json={"role": "admin"}, headers=headers
         )
 
         assert response.status_code == status.HTTP_403_FORBIDDEN
@@ -122,7 +122,7 @@ class TestUsersRouter:
     def test_change_role_nonexistent_user(self, client, admin_user):
         """存在しないユーザーのロール変更失敗"""
         headers = get_auth_headers("admin")
-        response = client.put("/users/role/999", json={"role": "admin"}, headers=headers)
+        response = client.put("/api/v1/users/role/999", json={"role": "admin"}, headers=headers)
 
         assert response.status_code == status.HTTP_404_NOT_FOUND
         assert "User not found" in response.json()["detail"]
@@ -130,7 +130,7 @@ class TestUsersRouter:
     def test_register_invalid_email(self, client):
         """無効なメールアドレスでの登録失敗"""
         response = client.post(
-            "/users/register",
+            "/api/v1/users/register",
             json={
                 "username": "testuser",
                 "email": "invalid-email",
@@ -143,7 +143,7 @@ class TestUsersRouter:
     def test_register_missing_fields(self, client):
         """必須フィールドなしでの登録失敗"""
         response = client.post(
-            "/users/register",
+            "/api/v1/users/register",
             json={
                 "username": "testuser"
                 # email and password missing
