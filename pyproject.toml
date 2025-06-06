@@ -60,3 +60,8 @@ fix = true
 
 [tool.ruff.lint]
 extend-select = ["I"]
+
+[dependency-groups]
+dev = [
+    "coverage[toml]>=7.8.2",
+]

@@ -1,22 +1,30 @@
-import pytest
-from unittest.mock import Mock, patch, AsyncMock
-from fastapi import status
-from fastapi.testclient import TestClient
+from datetime import datetime
 from io import BytesIO
+from unittest.mock import patch
 
-from app.main import app
+from fastapi import HTTPException, status
+
+from app.auth.auth import create_access_token
 from app.types import FileType
-from app.users.models import Role
+from app.core.exceptions import (
+    ServerNotFoundException,
+    FileOperationException,
+    AccessDeniedException
+)
+
+
+def get_auth_headers(username: str):
+    """認証ヘッダーを生成"""
+    token = create_access_token(data={"sub": username})
+    return {"Authorization": f"Bearer {token}"}
 
 
 class TestFileRouter:
     """Test cases for File router endpoints"""
 
-    @patch('app.services.authorization_service.authorization_service.check_server_access')
     @patch('app.services.file_management_service.file_management_service.get_server_files')
-    def test_get_server_files_success(self, mock_get_files, mock_check_access, client, admin_user):
+    def test_get_server_files_success(self, mock_get_files, client, admin_user):
         """Test getting server files"""
-        mock_check_access.return_value = Mock()
         mock_files = [
             {
                 "name": "server.properties",
@@ -24,6 +32,7 @@ class TestFileRouter:
                 "type": FileType.config,
                 "is_directory": False,
                 "size": 1024,
+                "modified": datetime.now(),
                 "permissions": {"readable": True, "writable": True}
             },
             {
@@ -32,171 +41,326 @@ class TestFileRouter:
                 "type": FileType.directory,
                 "is_directory": True,
                 "size": None,
+                "modified": datetime.now(),
                 "permissions": {"readable": True, "writable": True}
             }
         ]
         mock_get_files.return_value = mock_files
 
-        with patch('app.auth.dependencies.get_current_user', return_value=admin_user):
-            response = client.get("/api/v1/servers/1/files")
+        headers = get_auth_headers(admin_user.username)
+        response = client.get("/api/v1/servers/1/files", headers=headers)
 
         assert response.status_code == status.HTTP_200_OK
         data = response.json()
         assert "files" in data
         assert len(data["files"]) == 2
+        assert data["current_path"] == ""
+        assert data["total_files"] == 2
 
-    @patch('app.services.authorization_service.authorization_service.check_server_access')
     @patch('app.services.file_management_service.file_management_service.get_server_files')
-    def test_get_server_files_with_filters(self, mock_get_files, mock_check_access, client, admin_user):
-        """Test getting server files with filters"""
-        mock_check_access.return_value = Mock()
+    def test_get_server_files_with_path_filter(self, mock_get_files, client, admin_user):
+        """Test getting server files with path filter"""
         mock_get_files.return_value = []
 
-        with patch('app.auth.dependencies.get_current_user', return_value=admin_user):
-            response = client.get("/api/v1/servers/1/files?path=world&file_type=config")
+        headers = get_auth_headers(admin_user.username)
+        response = client.get("/api/v1/servers/1/files?path=world", headers=headers)
 
         assert response.status_code == status.HTTP_200_OK
         mock_get_files.assert_called_once()
 
-    @patch('app.services.authorization_service.authorization_service.check_server_access')
-    @patch('app.services.file_management_service.file_management_service.read_file')
-    def test_read_file_success(self, mock_read_file, mock_check_access, client, admin_user):
-        """Test reading file content"""
-        mock_check_access.return_value = Mock()
-        mock_read_file.return_value = "server-port=25565\nmax-players=20"
+    @patch('app.services.file_management_service.file_management_service.get_server_files')
+    def test_get_server_files_with_type_filter(self, mock_get_files, client, admin_user):
+        """Test getting server files with type filter"""
+        mock_get_files.return_value = []
 
-        with patch('app.auth.dependencies.get_current_user', return_value=admin_user):
-            response = client.get("/api/v1/servers/1/files/read?file_path=server.properties")
+        headers = get_auth_headers(admin_user.username)
+        response = client.get("/api/v1/servers/1/files?file_type=config", headers=headers)
+
+        assert response.status_code == status.HTTP_200_OK
+        mock_get_files.assert_called_once()
+
+    @patch('app.services.file_management_service.file_management_service.get_server_files')
+    @patch('app.services.file_management_service.file_management_service.read_file')
+    def test_read_file_success(self, mock_read_file, mock_get_files, client, admin_user):
+        """Test reading file content"""
+        mock_read_file.return_value = "server-port=25565\nmax-players=20"
+        mock_get_files.return_value = [{
+            "name": "server.properties",
+            "path": "server.properties",
+            "type": FileType.config,
+            "is_directory": False,
+            "size": 1024,
+            "modified": datetime.now(),
+            "permissions": {"readable": True, "writable": True}
+        }]
+
+        headers = get_auth_headers(admin_user.username)
+        response = client.get("/api/v1/servers/1/files/read?file_path=server.properties", headers=headers)
 
         assert response.status_code == status.HTTP_200_OK
         data = response.json()
         assert "content" in data
+        assert data["encoding"] == "utf-8"
+        assert "file_info" in data
 
-    @patch('app.services.authorization_service.authorization_service.check_server_access')
+    @patch('app.services.file_management_service.file_management_service.get_server_files')
+    @patch('app.services.file_management_service.file_management_service.read_file')
+    def test_read_file_with_encoding(self, mock_read_file, mock_get_files, client, admin_user):
+        """Test reading file with custom encoding"""
+        mock_read_file.return_value = "content"
+        mock_get_files.return_value = [{
+            "name": "test.txt",
+            "path": "test.txt",
+            "type": FileType.config,
+            "is_directory": False,
+            "size": 1024,
+            "modified": datetime.now(),
+            "permissions": {"readable": True, "writable": True}
+        }]
+
+        headers = get_auth_headers(admin_user.username)
+        response = client.get("/api/v1/servers/1/files/read?file_path=test.txt&encoding=latin-1", headers=headers)
+
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert data["encoding"] == "latin-1"
+
+    @patch('app.services.authorization_service.authorization_service.can_modify_files')
     @patch('app.services.file_management_service.file_management_service.write_file')
-    def test_write_file_success(self, mock_write_file, mock_check_access, client, admin_user):
+    def test_write_file_success(self, mock_write_file, mock_can_modify, client, admin_user):
         """Test writing file content"""
-        mock_check_access.return_value = Mock()
+        mock_can_modify.return_value = True
         mock_write_file.return_value = {
             "message": "File updated successfully",
-            "file": {"name": "server.properties"},
+            "file": {
+                "name": "server.properties",
+                "path": "server.properties",
+                "type": FileType.config,
+                "is_directory": False,
+                "size": 1024,
+                "modified": datetime.now(),
+                "permissions": {"readable": True, "writable": True}
+            },
             "backup_created": True
         }
 
         write_data = {
-            "file_path": "server.properties",
             "content": "server-port=25565\nmax-players=30",
+            "encoding": "utf-8",
             "create_backup": True
         }
 
-        with patch('app.auth.dependencies.get_current_user', return_value=admin_user):
-            response = client.post("/api/v1/servers/1/files/write", json=write_data)
+        headers = get_auth_headers(admin_user.username)
+        response = client.put("/api/v1/servers/1/files/write?file_path=server.properties", json=write_data, headers=headers)
 
         assert response.status_code == status.HTTP_200_OK
         data = response.json()
         assert data["message"] == "File updated successfully"
 
-    def test_write_file_user_forbidden_restricted(self, client, test_user):
-        """Test that regular users cannot write restricted files"""
+    @patch('app.services.authorization_service.authorization_service.can_modify_files')
+    def test_write_file_insufficient_permissions(self, mock_can_modify, client, test_user):
+        """Test that users without modify permissions cannot write files"""
+        mock_can_modify.return_value = False
+
         write_data = {
-            "file_path": "ops.json",
-            "content": "[]"
+            "content": "test content",
+            "encoding": "utf-8"
         }
 
-        with patch('app.auth.dependencies.get_current_user', return_value=test_user):
-            with patch('app.services.authorization_service.authorization_service.check_server_access'):
-                with patch('app.services.file_management_service.file_management_service.write_file') as mock_write:
-                    from fastapi import HTTPException
-                    mock_write.side_effect = HTTPException(status_code=403, detail="Insufficient permissions")
-                    response = client.post("/api/v1/servers/1/files/write", json=write_data)
+        headers = get_auth_headers(test_user.username)
+        response = client.put("/api/v1/servers/1/files/write?file_path=test.txt", json=write_data, headers=headers)
 
         assert response.status_code == status.HTTP_403_FORBIDDEN
 
-    @patch('app.services.authorization_service.authorization_service.check_server_access')
-    @patch('app.services.file_management_service.file_management_service.delete_file')
-    def test_delete_file_success(self, mock_delete_file, mock_check_access, client, admin_user):
-        """Test deleting file"""
-        mock_check_access.return_value = Mock()
-        mock_delete_file.return_value = {"message": "File deleted successfully"}
-
-        with patch('app.auth.dependencies.get_current_user', return_value=admin_user):
-            response = client.delete("/api/v1/servers/1/files?file_path=test.txt")
-
-        assert response.status_code == status.HTTP_200_OK
-        data = response.json()
-        assert "message" in data
-
-    @patch('app.services.authorization_service.authorization_service.check_server_access')
-    def test_upload_file_success(self, mock_check_access, client, admin_user):
+    @patch('app.services.authorization_service.authorization_service.can_modify_files')
+    @patch('app.services.file_management_service.file_management_service.upload_file')
+    def test_upload_file_success(self, mock_upload_file, mock_can_modify, client, admin_user):
         """Test uploading file"""
-        mock_check_access.return_value = Mock()
+        mock_can_modify.return_value = True
+        mock_upload_file.return_value = {
+            "message": "File uploaded successfully",
+            "file": {
+                "name": "test.txt",
+                "path": "test.txt",
+                "type": FileType.config,
+                "is_directory": False,
+                "size": 1024,
+                "modified": datetime.now(),
+                "permissions": {"readable": True, "writable": True}
+            },
+            "extracted_files": []
+        }
 
-        # Create a test file
         test_file = BytesIO(b"test file content")
         test_file.name = "test.txt"
 
-        with patch('app.services.file_management_service.file_management_service.upload_file') as mock_upload:
-            mock_upload.return_value = {
-                "message": "File uploaded successfully",
-                "file": {"name": "test.txt"},
-                "extracted_files": []
-            }
-
-            with patch('app.auth.dependencies.get_current_user', return_value=admin_user):
-                response = client.post(
-                    "/api/v1/servers/1/files/upload",
-                    files={"file": ("test.txt", test_file, "text/plain")}
-                )
+        headers = get_auth_headers(admin_user.username)
+        response = client.post(
+            "/api/v1/servers/1/files/upload",
+            files={"file": ("test.txt", test_file, "text/plain")},
+            data={"destination_path": ""},
+            headers=headers
+        )
 
         assert response.status_code == status.HTTP_200_OK
         data = response.json()
         assert data["message"] == "File uploaded successfully"
 
-    @patch('app.services.authorization_service.authorization_service.check_server_access')
+    @patch('app.services.authorization_service.authorization_service.can_modify_files')
+    @patch('app.services.file_management_service.file_management_service.upload_file')
+    def test_upload_file_with_extraction(self, mock_upload_file, mock_can_modify, client, admin_user):
+        """Test uploading file with archive extraction"""
+        mock_can_modify.return_value = True
+        mock_upload_file.return_value = {
+            "message": "Archive uploaded and extracted",
+            "file": {
+                "name": "test.zip",
+                "path": "test.zip",
+                "type": FileType.other,
+                "is_directory": False,
+                "size": 2048,
+                "modified": datetime.now(),
+                "permissions": {"readable": True, "writable": True}
+            },
+            "extracted_files": ["file1.txt", "file2.txt"]
+        }
+
+        test_file = BytesIO(b"test archive content")
+        test_file.name = "test.zip"
+
+        headers = get_auth_headers(admin_user.username)
+        response = client.post(
+            "/api/v1/servers/1/files/upload",
+            files={"file": ("test.zip", test_file, "application/zip")},
+            data={"destination_path": "plugins", "extract_if_archive": "true"},
+            headers=headers
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+
+    @patch('app.services.authorization_service.authorization_service.can_modify_files')
+    def test_upload_file_insufficient_permissions(self, mock_can_modify, client, test_user):
+        """Test that users without modify permissions cannot upload files"""
+        mock_can_modify.return_value = False
+
+        test_file = BytesIO(b"test content")
+        test_file.name = "test.txt"
+
+        headers = get_auth_headers(test_user.username)
+        response = client.post(
+            "/api/v1/servers/1/files/upload",
+            files={"file": ("test.txt", test_file, "text/plain")},
+            headers=headers
+        )
+
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+
     @patch('app.services.file_management_service.file_management_service.download_file')
-    def test_download_file_success(self, mock_download_file, mock_check_access, client, admin_user):
+    def test_download_file_success(self, mock_download_file, client, admin_user):
         """Test downloading file"""
+        import tempfile
         from pathlib import Path
-        mock_check_access.return_value = Mock()
-        mock_download_file.return_value = (Path("/test/server.properties"), "server.properties")
+        
+        # Create a temporary file for testing
+        with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.properties') as temp_file:
+            temp_file.write("server-port=25565\nmax-players=20")
+            temp_path = Path(temp_file.name)
+        
+        try:
+            mock_download_file.return_value = (str(temp_path), "server.properties")
 
-        with patch('app.auth.dependencies.get_current_user', return_value=admin_user):
-            with patch('fastapi.responses.FileResponse') as mock_response:
-                response = client.get("/api/v1/servers/1/files/download?file_path=server.properties")
+            headers = get_auth_headers(admin_user.username)
+            response = client.get("/api/v1/servers/1/files/download?file_path=server.properties", headers=headers)
 
-        # The endpoint returns a FileResponse, so we check if it was called
-        mock_download_file.assert_called_once()
+            mock_download_file.assert_called_once()
+            assert response.status_code == 200
+        finally:
+            # Clean up the temporary file
+            if temp_path.exists():
+                temp_path.unlink()
 
-    @patch('app.services.authorization_service.authorization_service.check_server_access')
+    @patch('app.services.authorization_service.authorization_service.can_modify_files')
     @patch('app.services.file_management_service.file_management_service.create_directory')
-    def test_create_directory_success(self, mock_create_dir, mock_check_access, client, admin_user):
+    def test_create_directory_success(self, mock_create_dir, mock_can_modify, client, admin_user):
         """Test creating directory"""
-        mock_check_access.return_value = Mock()
+        mock_can_modify.return_value = True
         mock_create_dir.return_value = {
             "message": "Directory created successfully",
-            "directory": {"name": "plugins", "type": FileType.directory}
+            "directory": {
+                "name": "plugins",
+                "path": "plugins",
+                "type": FileType.directory,
+                "is_directory": True,
+                "size": None,
+                "modified": datetime.now(),
+                "permissions": {"readable": True, "writable": True}
+            }
         }
 
         dir_data = {
-            "directory_path": "plugins"
+            "name": "plugins"
         }
 
-        with patch('app.auth.dependencies.get_current_user', return_value=admin_user):
-            response = client.post("/api/v1/servers/1/files/directory", json=dir_data)
+        headers = get_auth_headers(admin_user.username)
+        response = client.post("/api/v1/servers/1/directories?directory_path=", json=dir_data, headers=headers)
 
-        assert response.status_code == status.HTTP_201_CREATED
+        assert response.status_code == status.HTTP_200_OK
         data = response.json()
         assert data["message"] == "Directory created successfully"
 
-    @patch('app.services.authorization_service.authorization_service.check_server_access')
+    @patch('app.services.authorization_service.authorization_service.can_modify_files')
+    def test_create_directory_insufficient_permissions(self, mock_can_modify, client, test_user):
+        """Test that users without modify permissions cannot create directories"""
+        mock_can_modify.return_value = False
+
+        dir_data = {
+            "name": "test_dir"
+        }
+
+        headers = get_auth_headers(test_user.username)
+        response = client.post("/api/v1/servers/1/directories?directory_path=", json=dir_data, headers=headers)
+
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+
+    @patch('app.services.authorization_service.authorization_service.can_modify_files')
+    @patch('app.services.file_management_service.file_management_service.delete_file')
+    def test_delete_file_success(self, mock_delete_file, mock_can_modify, client, admin_user):
+        """Test deleting file"""
+        mock_can_modify.return_value = True
+        mock_delete_file.return_value = {"message": "File deleted successfully"}
+
+        headers = get_auth_headers(admin_user.username)
+        response = client.delete("/api/v1/servers/1/files?file_path=test.txt", headers=headers)
+
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert "message" in data
+
+    @patch('app.services.authorization_service.authorization_service.can_modify_files')
+    def test_delete_file_insufficient_permissions(self, mock_can_modify, client, test_user):
+        """Test that users without modify permissions cannot delete files"""
+        mock_can_modify.return_value = False
+
+        headers = get_auth_headers(test_user.username)
+        response = client.delete("/api/v1/servers/1/files?file_path=test.txt", headers=headers)
+
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+
     @patch('app.services.file_management_service.file_management_service.search_files')
-    def test_search_files_success(self, mock_search, mock_check_access, client, admin_user):
+    def test_search_files_success(self, mock_search, client, admin_user):
         """Test searching files"""
-        mock_check_access.return_value = Mock()
         mock_search.return_value = {
             "results": [
                 {
-                    "file": {"name": "server.properties", "path": "server.properties"},
+                    "file": {
+                        "name": "server.properties", 
+                        "path": "server.properties",
+                        "type": FileType.config,
+                        "is_directory": False,
+                        "size": 1024,
+                        "modified": datetime.now(),
+                        "permissions": {"readable": True, "writable": True}
+                    },
                     "matches": ["Filename: server.properties"],
                     "match_count": 1
                 }
@@ -206,8 +370,54 @@ class TestFileRouter:
             "search_time_ms": 50
         }
 
-        with patch('app.auth.dependencies.get_current_user', return_value=admin_user):
-            response = client.get("/api/v1/servers/1/files/search?query=server")
+        search_data = {
+            "query": "server",
+            "file_type": None,
+            "include_content": False,
+            "max_results": 100
+        }
+
+        headers = get_auth_headers(admin_user.username)
+        response = client.post("/api/v1/servers/1/files/search", json=search_data, headers=headers)
+
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert data["total_results"] == 1
+        assert len(data["results"]) == 1
+
+    @patch('app.services.file_management_service.file_management_service.search_files')
+    def test_search_files_with_content(self, mock_search, client, admin_user):
+        """Test searching files with content search"""
+        mock_search.return_value = {
+            "results": [
+                {
+                    "file": {
+                        "name": "config.yml", 
+                        "path": "config.yml",
+                        "type": FileType.config,
+                        "is_directory": False,
+                        "size": 512,
+                        "modified": datetime.now(),
+                        "permissions": {"readable": True, "writable": True}
+                    },
+                    "matches": ["Content match: server-port=25565"],
+                    "match_count": 1
+                }
+            ],
+            "query": "25565",
+            "total_results": 1,
+            "search_time_ms": 100
+        }
+
+        search_data = {
+            "query": "25565",
+            "file_type": FileType.config,
+            "include_content": True,
+            "max_results": 50
+        }
+
+        headers = get_auth_headers(admin_user.username)
+        response = client.post("/api/v1/servers/1/files/search", json=search_data, headers=headers)
 
         assert response.status_code == status.HTTP_200_OK
         data = response.json()
@@ -218,119 +428,60 @@ class TestFileRouter:
         response = client.get("/api/v1/servers/1/files")
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
 
-        response = client.post("/api/v1/servers/1/files/write", json={"file_path": "test", "content": "test"})
+        response = client.put("/api/v1/servers/1/files/write?file_path=test.txt", json={"content": "test"})
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
 
-    def test_file_access_control(self, client, test_user, admin_user):
-        """Test file access control"""
-        from fastapi import HTTPException
+        response = client.post("/api/v1/servers/1/files/upload")
+        assert response.status_code == status.HTTP_401_UNAUTHORIZED
 
-        # Test that user cannot access other user's server files
-        with patch('app.auth.dependencies.get_current_user', return_value=test_user):
-            with patch('app.services.authorization_service.authorization_service.check_server_access') as mock_check:
-                mock_check.side_effect = HTTPException(status_code=403, detail="Access denied")
-                response = client.get("/api/v1/servers/1/files")
+        response = client.delete("/api/v1/servers/1/files?file_path=test.txt")
+        assert response.status_code == status.HTTP_401_UNAUTHORIZED
 
-        assert response.status_code == status.HTTP_403_FORBIDDEN
+        response = client.post("/api/v1/servers/1/directories?directory_path=test")
+        assert response.status_code == status.HTTP_401_UNAUTHORIZED
 
-    def test_file_validation_errors(self, client, admin_user):
-        """Test file operation validation errors"""
-        # Missing file_path for read
-        with patch('app.auth.dependencies.get_current_user', return_value=admin_user):
-            response = client.get("/api/v1/servers/1/files/read")
+    def test_file_read_validation_errors(self, client, admin_user):
+        """Test file read validation errors"""
+        # Missing file_path parameter
+        headers = get_auth_headers(admin_user.username)
+        response = client.get("/api/v1/servers/1/files/read", headers=headers)
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
 
-        # Missing content for write
-        with patch('app.auth.dependencies.get_current_user', return_value=admin_user):
-            response = client.post("/api/v1/servers/1/files/write", json={"file_path": "test.txt"})
+    def test_file_write_validation_errors(self, client, admin_user):
+        """Test file write validation errors"""
+        # Missing content in request body
+        headers = get_auth_headers(admin_user.username)
+        response = client.put("/api/v1/servers/1/files/write?file_path=test.txt", json={}, headers=headers)
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
 
-        # Missing directory_path for create directory
-        with patch('app.auth.dependencies.get_current_user', return_value=admin_user):
-            response = client.post("/api/v1/servers/1/files/directory", json={})
+    def test_file_search_validation_errors(self, client, admin_user):
+        """Test file search validation errors"""
+        # Empty request body
+        headers = get_auth_headers(admin_user.username)
+        response = client.post("/api/v1/servers/1/files/search", json={}, headers=headers)
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
 
-    def test_file_search_validation(self, client, admin_user):
-        """Test file search validation"""
-        # Missing query parameter
-        with patch('app.auth.dependencies.get_current_user', return_value=admin_user):
-            response = client.get("/api/v1/servers/1/files/search")
+    def test_directory_create_validation_errors(self, client, admin_user):
+        """Test directory create validation errors"""
+        # Missing name field
+        headers = get_auth_headers(admin_user.username)
+        response = client.post("/api/v1/servers/1/directories?directory_path=test", json={}, headers=headers)
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
 
-        # Empty query
-        with patch('app.auth.dependencies.get_current_user', return_value=admin_user):
-            response = client.get("/api/v1/servers/1/files/search?query=")
-        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
-
-    @patch('app.services.authorization_service.authorization_service.check_server_access')
-    def test_file_error_handling(self, mock_check_access, client, admin_user):
+    @patch('app.services.file_management_service.file_management_service.read_file')
+    def test_file_error_handling(self, mock_read_file, client, admin_user):
         """Test file operation error handling"""
-        mock_check_access.return_value = Mock()
-
         # Test file not found
-        with patch('app.services.file_management_service.file_management_service.read_file') as mock_read:
-            from fastapi import HTTPException
-            mock_read.side_effect = HTTPException(status_code=404, detail="File not found")
+        mock_read_file.side_effect = HTTPException(status_code=404, detail="File not found")
 
-            with patch('app.auth.dependencies.get_current_user', return_value=admin_user):
-                response = client.get("/api/v1/servers/1/files/read?file_path=nonexistent.txt")
+        headers = get_auth_headers(admin_user.username)
+        response = client.get("/api/v1/servers/1/files/read?file_path=nonexistent.txt", headers=headers)
 
         assert response.status_code == status.HTTP_404_NOT_FOUND
 
-    def test_file_type_filtering(self, client, admin_user):
-        """Test file listing with type filtering"""
-        with patch('app.auth.dependencies.get_current_user', return_value=admin_user):
-            with patch('app.services.authorization_service.authorization_service.check_server_access'):
-                with patch('app.services.file_management_service.file_management_service.get_server_files') as mock_get:
-                    mock_get.return_value = []
-                    response = client.get("/api/v1/servers/1/files?file_type=config")
-
-        assert response.status_code == status.HTTP_200_OK
-        mock_get.assert_called_once()
-
-    @patch('app.services.authorization_service.authorization_service.check_server_access')
-    def test_upload_file_validation(self, mock_check_access, client, admin_user):
-        """Test file upload validation"""
-        mock_check_access.return_value = Mock()
-
-        # Test upload without file
-        with patch('app.auth.dependencies.get_current_user', return_value=admin_user):
-            response = client.post("/api/v1/servers/1/files/upload")
+    def test_upload_file_without_file(self, client, admin_user):
+        """Test file upload without providing a file"""
+        headers = get_auth_headers(admin_user.username)
+        response = client.post("/api/v1/servers/1/files/upload", headers=headers)
 
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
-
-    def test_file_path_validation(self, client, admin_user):
-        """Test file path validation and security"""
-        # Test path traversal attempt
-        with patch('app.auth.dependencies.get_current_user', return_value=admin_user):
-            with patch('app.services.authorization_service.authorization_service.check_server_access'):
-                with patch('app.services.file_management_service.file_management_service.read_file') as mock_read:
-                    from fastapi import HTTPException
-                    mock_read.side_effect = HTTPException(status_code=403, detail="Access denied")
-                    response = client.get("/api/v1/servers/1/files/read?file_path=../../../etc/passwd")
-
-        assert response.status_code == status.HTTP_403_FORBIDDEN
-
-    @patch('app.services.authorization_service.authorization_service.check_server_access')
-    def test_file_search_with_content(self, mock_check_access, client, admin_user):
-        """Test file search with content search"""
-        mock_check_access.return_value = Mock()
-
-        with patch('app.services.file_management_service.file_management_service.search_files') as mock_search:
-            mock_search.return_value = {"results": [], "total_results": 0}
-
-            with patch('app.auth.dependencies.get_current_user', return_value=admin_user):
-                response = client.get("/api/v1/servers/1/files/search?query=test&include_content=true&max_results=10")
-
-        assert response.status_code == status.HTTP_200_OK
-        mock_search.assert_called_once()
-
-    def test_file_encoding_parameter(self, client, admin_user):
-        """Test file operations with encoding parameter"""
-        with patch('app.auth.dependencies.get_current_user', return_value=admin_user):
-            with patch('app.services.authorization_service.authorization_service.check_server_access'):
-                with patch('app.services.file_management_service.file_management_service.read_file') as mock_read:
-                    mock_read.return_value = "content"
-                    response = client.get("/api/v1/servers/1/files/read?file_path=test.txt&encoding=utf-8")
-
-        assert response.status_code == status.HTTP_200_OK

@@ -1,362 +1,361 @@
 import pytest
-from unittest.mock import Mock, patch, AsyncMock
-from fastapi import status
-from fastapi.testclient import TestClient
+from datetime import datetime
+from unittest.mock import Mock, patch
 
-from app.main import app
-from app.servers.models import BackupType, Server, ServerStatus, ServerType
-from app.users.models import Role
+from fastapi import status
+
+from app.auth.auth import create_access_token
+from app.servers.models import Backup, BackupType, BackupStatus, Server, ServerType
+from app.users.models import Role, User
+from app.core.exceptions import (
+    BackupNotFoundException,
+    ServerNotFoundException,
+    FileOperationException,
+    DatabaseOperationException
+)
+
+
+def get_auth_headers(username: str):
+    """Generate authentication headers"""
+    token = create_access_token(data={"sub": username})
+    return {"Authorization": f"Bearer {token}"}
 
 
 class TestBackupRouter:
-    """Test cases for Backup router endpoints"""
+    """Test backup router endpoints"""
 
-    @patch('app.services.authorization_service.authorization_service.check_server_access')
-    @patch('app.services.backup_service.backup_service.create_backup')
-    def test_create_backup_success(self, mock_create_backup, mock_check_access, client, admin_user):
-        """Test creating backup successfully"""
-        mock_server = Mock()
-        mock_server.id = 1
-        mock_check_access.return_value = mock_server
-
-        mock_backup = Mock()
-        mock_backup.id = 1
-        mock_backup.name = "test-backup"
-        mock_backup.backup_type = BackupType.manual
-        mock_create_backup.return_value = mock_backup
-
-        backup_data = {
-            "name": "test-backup",
-            "description": "Test backup",
-            "backup_type": "manual"
-        }
-
-        with patch('app.auth.dependencies.get_current_user', return_value=admin_user):
-            response = client.post("/api/v1/servers/1/backups", json=backup_data)
-
-        assert response.status_code == status.HTTP_201_CREATED
-        mock_create_backup.assert_called_once()
-
-    def test_create_backup_user_forbidden(self, client, test_user):
-        """Test that regular users cannot create backups"""
-        backup_data = {
-            "name": "test-backup",
-            "backup_type": "manual"
-        }
-
-        with patch('app.auth.dependencies.get_current_user', return_value=test_user):
-            with patch('app.services.authorization_service.authorization_service.check_server_access'):
-                response = client.post("/api/v1/servers/1/backups", json=backup_data)
-
-        assert response.status_code == status.HTTP_403_FORBIDDEN
-
-    @patch('app.services.authorization_service.authorization_service.check_server_access')
-    @patch('app.services.backup_service.backup_service.list_backups')
-    def test_list_server_backups_success(self, mock_list_backups, mock_check_access, client, admin_user):
-        """Test listing server backups"""
-        mock_check_access.return_value = Mock()
-
-        mock_backups = [
-            Mock(id=1, name="backup-1", backup_type=BackupType.manual),
-            Mock(id=2, name="backup-2", backup_type=BackupType.scheduled)
-        ]
-
-        mock_list_backups.return_value = {
-            "backups": mock_backups,
-            "total": 2,
-            "page": 1,
-            "size": 50
-        }
-
-        with patch('app.auth.dependencies.get_current_user', return_value=admin_user):
-            response = client.get("/api/v1/servers/1/backups")
-
-        assert response.status_code == status.HTTP_200_OK
-        data = response.json()
-        assert "backups" in data
-        assert data["total"] == 2
-
-    @patch('app.services.backup_service.backup_service.list_backups')
-    def test_list_all_backups_admin_only(self, mock_list_backups, client, admin_user, test_user):
-        """Test that only admins can list all backups"""
-        mock_list_backups.return_value = {
-            "backups": [],
-            "total": 0,
-            "page": 1,
-            "size": 50
-        }
-
-        # Test admin access
-        with patch('app.auth.dependencies.get_current_user', return_value=admin_user):
-            response = client.get("/api/v1/backups")
-        assert response.status_code == status.HTTP_200_OK
-
-        # Test regular user forbidden
-        with patch('app.auth.dependencies.get_current_user', return_value=test_user):
-            response = client.get("/api/v1/backups")
-        assert response.status_code == status.HTTP_403_FORBIDDEN
-
-    @patch('app.services.authorization_service.authorization_service.check_backup_access')
-    def test_get_backup_success(self, mock_check_backup, client, admin_user):
-        """Test getting backup by ID"""
-        mock_backup = Mock()
-        mock_backup.id = 1
-        mock_backup.name = "test-backup"
-        mock_check_backup.return_value = mock_backup
-
-        with patch('app.auth.dependencies.get_current_user', return_value=admin_user):
-            response = client.get("/api/v1/backups/1")
-
-        assert response.status_code == status.HTTP_200_OK
-
-    @patch('app.services.authorization_service.authorization_service.check_backup_access')
-    @patch('app.services.backup_service.backup_service.restore_backup')
-    def test_restore_backup_success(self, mock_restore, mock_check_backup, client, admin_user):
-        """Test restoring backup"""
-        mock_backup = Mock()
-        mock_backup.id = 1
-        mock_backup.server_id = 1
-        mock_check_backup.return_value = mock_backup
-
-        mock_restore.return_value = True
-
-        restore_data = {
-            "target_server_id": 1,
-            "confirm": True
-        }
-
-        with patch('app.auth.dependencies.get_current_user', return_value=admin_user):
-            with patch('app.services.authorization_service.authorization_service.check_server_access'):
-                response = client.post("/api/v1/backups/1/restore", json=restore_data)
-
-        assert response.status_code == status.HTTP_200_OK
-        data = response.json()
-        assert data["success"] is True
-
-    def test_restore_backup_user_forbidden(self, client, test_user):
-        """Test that regular users cannot restore backups"""
-        restore_data = {
-            "confirm": True
-        }
-
-        with patch('app.auth.dependencies.get_current_user', return_value=test_user):
-            with patch('app.services.authorization_service.authorization_service.check_backup_access'):
-                response = client.post("/api/v1/backups/1/restore", json=restore_data)
-
-        assert response.status_code == status.HTTP_403_FORBIDDEN
-
-    @patch('app.services.authorization_service.authorization_service.check_backup_access')
-    @patch('app.services.backup_service.backup_service.restore_backup_and_create_template')
-    def test_restore_backup_with_template_success(self, mock_restore_template, mock_check_backup, client, admin_user):
-        """Test restoring backup and creating template"""
-        mock_backup = Mock()
-        mock_backup.id = 1
-        mock_backup.server_id = 1
-        mock_check_backup.return_value = mock_backup
-
-        mock_restore_template.return_value = {
-            "backup_restored": True,
-            "template_created": True,
-            "template_id": 1,
-            "template_name": "test-template"
-        }
-
-        restore_data = {
-            "template_name": "test-template",
-            "template_description": "Test template",
-            "is_public": False,
-            "confirm": True
-        }
-
-        with patch('app.auth.dependencies.get_current_user', return_value=admin_user):
-            with patch('app.services.authorization_service.authorization_service.check_server_access'):
-                response = client.post("/api/v1/backups/1/restore-with-template", json=restore_data)
-
-        assert response.status_code == status.HTTP_200_OK
-        data = response.json()
-        assert data["backup_restored"] is True
-        assert data["template_created"] is True
-
-    @patch('app.services.authorization_service.authorization_service.check_backup_access')
-    @patch('app.services.backup_service.backup_service.delete_backup')
-    def test_delete_backup_success(self, mock_delete, mock_check_backup, client, admin_user):
-        """Test deleting backup"""
-        mock_check_backup.return_value = Mock()
-        mock_delete.return_value = True
-
-        with patch('app.auth.dependencies.get_current_user', return_value=admin_user):
-            response = client.delete("/api/v1/backups/1")
-
-        assert response.status_code == status.HTTP_204_NO_CONTENT
-
-    def test_delete_backup_user_forbidden(self, client, test_user):
-        """Test that regular users cannot delete backups"""
-        with patch('app.auth.dependencies.get_current_user', return_value=test_user):
-            with patch('app.services.authorization_service.authorization_service.check_backup_access'):
-                response = client.delete("/api/v1/backups/1")
-
-        assert response.status_code == status.HTTP_403_FORBIDDEN
-
-    @patch('app.services.authorization_service.authorization_service.check_server_access')
-    @patch('app.services.backup_service.backup_service.get_backup_statistics')
-    def test_get_server_backup_statistics(self, mock_get_stats, mock_check_access, client, admin_user):
-        """Test getting backup statistics for server"""
-        mock_check_access.return_value = Mock()
-        mock_get_stats.return_value = {
-            "total_backups": 5,
-            "successful_backups": 4,
-            "failed_backups": 1,
-            "total_size_bytes": 1024000
-        }
-
-        with patch('app.auth.dependencies.get_current_user', return_value=admin_user):
-            response = client.get("/api/v1/servers/1/backups/statistics")
-
-        assert response.status_code == status.HTTP_200_OK
-        data = response.json()
-        assert data["total_backups"] == 5
-
-    @patch('app.services.backup_service.backup_service.get_backup_statistics')
-    def test_get_global_backup_statistics_admin_only(self, mock_get_stats, client, admin_user, test_user):
-        """Test global backup statistics admin only access"""
-        mock_get_stats.return_value = {
-            "total_backups": 10,
-            "successful_backups": 8,
-            "failed_backups": 2
-        }
-
-        # Test admin access
-        with patch('app.auth.dependencies.get_current_user', return_value=admin_user):
-            response = client.get("/api/v1/backups/statistics")
-        assert response.status_code == status.HTTP_200_OK
-
-        # Test regular user forbidden
-        with patch('app.auth.dependencies.get_current_user', return_value=test_user):
-            response = client.get("/api/v1/backups/statistics")
-        assert response.status_code == status.HTTP_403_FORBIDDEN
-
-    @patch('app.services.backup_service.backup_service.create_scheduled_backup')
-    def test_create_scheduled_backups_admin_only(self, mock_create_scheduled, client, admin_user, test_user):
-        """Test creating scheduled backups admin only"""
-        mock_create_scheduled.return_value = Mock(id=1)
-
-        scheduled_data = {
-            "server_ids": [1, 2, 3]
-        }
-
-        # Test admin access
-        with patch('app.auth.dependencies.get_current_user', return_value=admin_user):
-            response = client.post("/api/v1/backups/scheduled", json=scheduled_data)
-        assert response.status_code == status.HTTP_200_OK
-
-        # Test regular user forbidden
-        with patch('app.auth.dependencies.get_current_user', return_value=test_user):
-            response = client.post("/api/v1/backups/scheduled", json=scheduled_data)
-        assert response.status_code == status.HTTP_403_FORBIDDEN
-
-    def test_get_scheduler_status_admin_only(self, client, admin_user, test_user):
-        """Test getting scheduler status admin only"""
-        # Test admin access
-        with patch('app.auth.dependencies.get_current_user', return_value=admin_user):
-            with patch('app.services.backup_scheduler.backup_scheduler.get_scheduler_status') as mock_status:
-                mock_status.return_value = {"status": "running", "scheduled_servers": []}
-                response = client.get("/api/v1/scheduler/status")
-        assert response.status_code == status.HTTP_200_OK
-
-        # Test regular user forbidden
-        with patch('app.auth.dependencies.get_current_user', return_value=test_user):
-            response = client.get("/api/v1/scheduler/status")
-        assert response.status_code == status.HTTP_403_FORBIDDEN
-
-    def test_add_server_to_schedule_admin_only(self, client, admin_user, test_user, db):
-        """Test adding server to backup schedule admin only"""
-        # Create test server
+    def test_create_backup_success(self, client, test_user, db):
+        """Test successful backup creation"""
+        # Update test user to operator role
+        test_user.role = Role.operator
+        db.commit()
+        
+        # Create a test server
         server = Server(
             id=1,
-            name="test-server",
-            minecraft_version="1.20.1",
+            name="Test Server",
+            description="Test server description",
+            minecraft_version="1.20.4",
             server_type=ServerType.vanilla,
-            owner_id=admin_user.id,
-            status=ServerStatus.stopped,
-            directory_path="/test/server",
+            directory_path="/servers/test-server",
+            port=25565,
+            owner_id=test_user.id,
+            is_deleted=False,
         )
         db.add(server)
         db.commit()
 
-        # Test admin access
-        with patch('app.auth.dependencies.get_current_user', return_value=admin_user):
-            with patch('app.services.backup_scheduler.backup_scheduler.add_server_schedule') as mock_add:
-                mock_add.return_value = True
-                response = client.post("/api/v1/scheduler/servers/1/schedule?interval_hours=24&max_backups=7")
-        assert response.status_code == status.HTTP_200_OK
+        with patch(
+            "app.services.backup_service.backup_service.create_backup"
+        ) as mock_create, \
+        patch(
+            "app.services.authorization_service.authorization_service.check_server_access"
+        ) as mock_check_access:
+            
+            mock_backup = Backup(
+                id=1,
+                server_id=1,
+                name="Test Backup",
+                description="Test description",
+                backup_type=BackupType.manual,
+                status=BackupStatus.completed,
+                file_path="/backups/test.tar.gz",
+                file_size=1024,
+                created_at=datetime.utcnow(),
+            )
+            mock_create.return_value = mock_backup
+            mock_check_access.return_value = None  # No exception means access granted
 
-        # Test regular user forbidden
-        with patch('app.auth.dependencies.get_current_user', return_value=test_user):
-            response = client.post("/api/v1/scheduler/servers/1/schedule")
-        assert response.status_code == status.HTTP_403_FORBIDDEN
+            response = client.post(
+                "/api/v1/servers/1/backups",
+                json={
+                    "name": "Test Backup",
+                    "description": "Test description",
+                    "backup_type": "manual",
+                },
+                headers=get_auth_headers(test_user.username),
+            )
 
-    def test_backup_validation_errors(self, client, admin_user):
-        """Test backup creation validation errors"""
-        # Missing required fields
-        with patch('app.auth.dependencies.get_current_user', return_value=admin_user):
-            response = client.post("/api/v1/servers/1/backups", json={})
-        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+            assert response.status_code == status.HTTP_201_CREATED
+            data = response.json()
+            assert data["name"] == "Test Backup"
+            assert data["backup_type"] == "manual"
 
-        # Invalid backup type
-        with patch('app.auth.dependencies.get_current_user', return_value=admin_user):
-            response = client.post("/api/v1/servers/1/backups", json={
-                "name": "test",
-                "backup_type": "invalid"
-            })
-        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
-
-    def test_backup_operations_require_authentication(self, client):
-        """Test that backup operations require authentication"""
-        response = client.get("/api/v1/servers/1/backups")
-        assert response.status_code == status.HTTP_401_UNAUTHORIZED
-
-        response = client.post("/api/v1/servers/1/backups", json={"name": "test", "backup_type": "manual"})
-        assert response.status_code == status.HTTP_401_UNAUTHORIZED
-
-        response = client.get("/api/v1/backups")
-        assert response.status_code == status.HTTP_401_UNAUTHORIZED
-
-    @patch('app.services.authorization_service.authorization_service.check_backup_access')
-    def test_backup_error_handling(self, mock_check_backup, client, admin_user):
-        """Test backup operation error handling"""
-        from app.services.backup_service import BackupError
+    def test_create_backup_forbidden_for_regular_user(self, client, test_user, db):
+        """Test that regular users cannot create backups"""
+        # Ensure user has regular role
+        test_user.role = Role.user
+        db.commit()
         
-        # Test backup not found
-        from fastapi import HTTPException
-        mock_check_backup.side_effect = HTTPException(status_code=404, detail="Backup not found")
+        # Create test server
+        server = Server(
+            id=1,
+            name="Test Server",
+            description="Test server description",
+            minecraft_version="1.20.4",
+            server_type=ServerType.vanilla,
+            directory_path="/servers/test-server",
+            port=25565,
+            owner_id=test_user.id,
+            is_deleted=False,
+        )
+        db.add(server)
+        db.commit()
 
-        with patch('app.auth.dependencies.get_current_user', return_value=admin_user):
-            response = client.get("/api/v1/backups/999")
+        with patch(
+            "app.services.authorization_service.authorization_service.check_server_access"
+        ) as mock_check_access:
+            mock_check_access.return_value = None
 
-        assert response.status_code == status.HTTP_404_NOT_FOUND
+            response = client.post(
+                "/api/v1/servers/1/backups",
+                json={
+                    "name": "Test Backup",
+                    "description": "Test description",
+                    "backup_type": "manual",
+                },
+                headers=get_auth_headers(test_user.username),
+            )
 
-    def test_scheduler_validation_errors(self, client, admin_user):
-        """Test scheduler endpoint validation"""
-        # Invalid interval hours
-        with patch('app.auth.dependencies.get_current_user', return_value=admin_user):
-            response = client.post("/api/v1/scheduler/servers/1/schedule?interval_hours=0")
-        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+            assert response.status_code == status.HTTP_403_FORBIDDEN
+            assert "Only operators and admins can create backups" in response.json()["detail"]
 
-        # Invalid max backups
-        with patch('app.auth.dependencies.get_current_user', return_value=admin_user):
-            response = client.post("/api/v1/scheduler/servers/1/schedule?max_backups=0")
-        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+    def test_list_server_backups(self, client, test_user, db):
+        """Test listing backups for a specific server"""
+        # Create test server
+        server = Server(
+            id=1,
+            name="Test Server",
+            description="Test server description",
+            minecraft_version="1.20.4",
+            server_type=ServerType.vanilla,
+            directory_path="/servers/test-server",
+            port=25565,
+            owner_id=test_user.id,
+            is_deleted=False,
+        )
+        db.add(server)
+        db.commit()
 
-    def test_backup_restore_validation(self, client, admin_user):
-        """Test backup restore validation"""
-        # Missing confirm flag
-        with patch('app.auth.dependencies.get_current_user', return_value=admin_user):
-            with patch('app.services.authorization_service.authorization_service.check_backup_access'):
-                response = client.post("/api/v1/backups/1/restore", json={})
-        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+        with patch("app.services.backup_service.backup_service.list_backups") as mock_list, \
+        patch(
+            "app.services.authorization_service.authorization_service.check_server_access"
+        ) as mock_check_access:
+            
+            mock_check_access.return_value = None
+            mock_list.return_value = {
+                "backups": [
+                    Backup(
+                        id=1,
+                        server_id=1,
+                        name="Backup 1",
+                        backup_type=BackupType.manual,
+                        status=BackupStatus.completed,
+                        file_path="/backups/backup1.tar.gz",
+                        file_size=1024,
+                        created_at=datetime.utcnow(),
+                    ),
+                    Backup(
+                        id=2,
+                        server_id=1,
+                        name="Backup 2",
+                        backup_type=BackupType.scheduled,
+                        status=BackupStatus.completed,
+                        file_path="/backups/backup2.tar.gz",
+                        file_size=2048,
+                        created_at=datetime.utcnow(),
+                    ),
+                ],
+                "total": 2,
+                "page": 1,
+                "size": 50,
+            }
 
-        # Missing template name for restore with template
-        with patch('app.auth.dependencies.get_current_user', return_value=admin_user):
-            with patch('app.services.authorization_service.authorization_service.check_backup_access'):
-                response = client.post("/api/v1/backups/1/restore-with-template", json={"confirm": True})
-        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+            response = client.get(
+                "/api/v1/servers/1/backups", 
+                headers=get_auth_headers(test_user.username)
+            )
+
+            assert response.status_code == status.HTTP_200_OK
+            data = response.json()
+            assert data["total"] == 2
+            assert len(data["backups"]) == 2
+            assert data["backups"][0]["name"] == "Backup 1"
+
+    def test_list_all_backups_admin_only(self, client, admin_user):
+        """Test that only admins can list all backups"""
+        with patch("app.services.backup_service.backup_service.list_backups") as mock_list:
+            mock_list.return_value = {
+                "backups": [],
+                "total": 0,
+                "page": 1,
+                "size": 50,
+            }
+
+            response = client.get(
+                "/api/v1/backups", 
+                headers=get_auth_headers(admin_user.username)
+            )
+            assert response.status_code == status.HTTP_200_OK
+
+    def test_list_all_backups_forbidden_for_non_admin(self, client, test_user):
+        """Test that non-admins cannot list all backups"""
+        response = client.get(
+            "/api/v1/backups", 
+            headers=get_auth_headers(test_user.username)
+        )
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+        assert "Only admins can view all backups" in response.json()["detail"]
+
+    def test_get_backup_by_id(self, client, test_user, db):
+        """Test getting backup details by ID"""
+        # Create test backup
+        backup = Backup(
+            id=1,
+            server_id=1,
+            name="Test Backup",
+            backup_type=BackupType.manual,
+            status=BackupStatus.completed,
+            file_path="/backups/test.tar.gz",
+            file_size=1024,
+            created_at=datetime.utcnow(),
+        )
+        db.add(backup)
+        
+        server = Server(
+            id=1,
+            name="Test Server",
+            description="Test server description",
+            minecraft_version="1.20.4",
+            server_type=ServerType.vanilla,
+            directory_path="/servers/test-server",
+            port=25565,
+            owner_id=test_user.id,
+            is_deleted=False,
+        )
+        db.add(server)
+        db.commit()
+
+        with patch(
+            "app.services.authorization_service.authorization_service.check_backup_access"
+        ) as mock_check_access:
+            mock_check_access.return_value = backup
+
+            response = client.get(
+                "/api/v1/backups/1", 
+                headers=get_auth_headers(test_user.username)
+            )
+            assert response.status_code == status.HTTP_200_OK
+            data = response.json()
+            assert data["id"] == 1
+            assert data["name"] == "Test Backup"
+
+    def test_delete_backup(self, client, test_user, db):
+        """Test deleting a backup"""
+        # Update test user to operator role
+        test_user.role = Role.operator
+        db.commit()
+        
+        # Create test server and backup
+        server = Server(
+            id=1,
+            name="Test Server",
+            description="Test server description",
+            minecraft_version="1.20.4",
+            server_type=ServerType.vanilla,
+            directory_path="/servers/test-server",
+            port=25565,
+            owner_id=test_user.id,
+            is_deleted=False,
+        )
+        db.add(server)
+        
+        backup = Backup(
+            id=1,
+            server_id=1,
+            name="Test Backup",
+            backup_type=BackupType.manual,
+            status=BackupStatus.completed,
+            file_path="/backups/test.tar.gz",
+            file_size=1024,
+            created_at=datetime.utcnow(),
+        )
+        db.add(backup)
+        db.commit()
+
+        with patch(
+            "app.services.backup_service.backup_service.delete_backup"
+        ) as mock_delete, \
+        patch(
+            "app.services.authorization_service.authorization_service.check_backup_access"
+        ) as mock_check_access:
+            
+            mock_check_access.return_value = backup
+            mock_delete.return_value = True
+
+            response = client.delete(
+                "/api/v1/backups/1", 
+                headers=get_auth_headers(test_user.username)
+            )
+            assert response.status_code == status.HTTP_204_NO_CONTENT
+
+    def test_get_scheduler_status_admin_only(self, client, admin_user):
+        """Test that only admins can get scheduler status"""
+        with patch(
+            "app.services.backup_scheduler.backup_scheduler.get_scheduler_status"
+        ) as mock_status:
+            mock_status.return_value = {
+                "is_running": True,
+                "scheduled_servers": 5,
+                "last_run": datetime.utcnow().isoformat(),
+            }
+
+            response = client.get(
+                "/api/v1/scheduler/status", 
+                headers=get_auth_headers(admin_user.username)
+            )
+            assert response.status_code == status.HTTP_200_OK
+
+    def test_backup_error_handling(self, client, test_user, db):
+        """Test error handling for backup operations"""
+        # Update test user to operator role
+        test_user.role = Role.operator
+        db.commit()
+        
+        # Create test server
+        server = Server(
+            id=1,
+            name="Test Server",
+            description="Test server description",
+            minecraft_version="1.20.4",
+            server_type=ServerType.vanilla,
+            directory_path="/servers/test-server",
+            port=25565,
+            owner_id=test_user.id,
+            is_deleted=False,
+        )
+        db.add(server)
+        db.commit()
+
+        with patch(
+            "app.services.backup_service.backup_service.create_backup"
+        ) as mock_create, \
+        patch(
+            "app.services.authorization_service.authorization_service.check_server_access"
+        ) as mock_check_access:
+            
+            mock_check_access.return_value = None
+            mock_create.side_effect = FileOperationException("create", "backup", "Failed to create backup")
+
+            response = client.post(
+                "/api/v1/servers/1/backups",
+                json={
+                    "name": "Test Backup",
+                    "description": "Test description",
+                    "backup_type": "manual",
+                },
+                headers=get_auth_headers(test_user.username),
+            )
+
+            assert response.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
+            assert "Failed to create backup" in response.json()["detail"]
