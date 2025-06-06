@@ -16,3 +16,6 @@ wheels/
 
 # Database files
 *.db
+
+# Coverage reports
+.coverage
