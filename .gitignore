@@ -19,3 +19,5 @@ wheels/
 
 # Coverage reports
 .coverage
+htmlcov/
+coverage.json
