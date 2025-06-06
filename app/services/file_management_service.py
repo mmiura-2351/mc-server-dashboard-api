@@ -82,6 +82,17 @@ class FileValidationService:
         if not self._is_writable_file(file_path):
             raise AccessDeniedException("file", "edit")
 
+    def validate_path_deletable(self, path: Path, user: User) -> None:
+        """Validate path (file or directory) can be deleted"""
+        if path.is_file():
+            # For files, use standard writable validation
+            if self._is_restricted_file(path) and user.role.value != "admin":
+                raise AccessDeniedException("file", "delete")
+            if not self._is_writable_file(path):
+                raise AccessDeniedException("file", "delete")
+        # For directories, allow deletion if user has appropriate permissions
+        # (additional directory-specific restrictions could be added here)
+
     def _is_safe_path(self, server_path: Path, target_path: Path) -> bool:
         """Check if target path is within server directory"""
         try:
@@ -545,7 +556,7 @@ class FileManagementService:
 
         self.validation_service.validate_path_safety(server_path, target_path)
         self.validation_service.validate_path_exists(target_path)
-        self.validation_service.validate_file_writable(target_path, user)
+        self.validation_service.validate_path_deletable(target_path, user)
 
         # Delete file or directory
         operation_type = self.operation_service.delete_file_or_directory(target_path)
@@ -645,7 +656,7 @@ class FileManagementService:
         self.validation_service.validate_path_safety(server_path, source)
         self.validation_service.validate_path_safety(server_path, destination)
         self.validation_service.validate_path_exists(source)
-        self.validation_service.validate_file_writable(source, user)
+        self.validation_service.validate_path_deletable(source, user)
 
         # Move file or directory
         self.operation_service.move_file_or_directory(source, destination)
