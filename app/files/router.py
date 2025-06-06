@@ -27,30 +27,8 @@ from app.users.models import User
 router = APIRouter()
 
 
-@router.get("/servers/{server_id}/files", response_model=FileListResponse)
-async def list_server_files(
-    server_id: int,
-    path: str = "",
-    file_type: Optional[FileType] = None,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
-    """List files and directories in server directory"""
-    files = await file_management_service.get_server_files(
-        server_id=server_id,
-        path=path,
-        file_type=file_type,
-        db=db,
-    )
-
-    return FileListResponse(
-        files=files,
-        current_path=path,
-        total_files=len(files),
-    )
-
-
-@router.get("/servers/{server_id}/files/read", response_model=FileReadResponse)
+# Specific endpoints first (before the general path parameter routes)
+@router.get("/servers/{server_id}/files/{file_path:path}/read", response_model=FileReadResponse)
 async def read_file(
     server_id: int,
     file_path: str,
@@ -79,29 +57,25 @@ async def read_file(
     )
 
 
-@router.put("/servers/{server_id}/files/write", response_model=FileWriteResponse)
-async def write_file(
+@router.get("/servers/{server_id}/files/{file_path:path}/download")
+async def download_file(
     server_id: int,
     file_path: str,
-    request: FileWriteRequest,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Write content to a file"""
-    if not authorization_service.can_modify_files(current_user):
-        raise HTTPException(status_code=403, detail="Insufficient permissions")
-
-    result = await file_management_service.write_file(
+    """Download a file or directory (as zip) from server"""
+    file_location, filename = await file_management_service.download_file(
         server_id=server_id,
         file_path=file_path,
-        content=request.content,
-        encoding=request.encoding,
-        create_backup=request.create_backup,
-        user=current_user,
         db=db,
     )
 
-    return FileWriteResponse(**result)
+    return FileResponse(
+        path=file_location,
+        filename=filename,
+        media_type="application/octet-stream",
+    )
 
 
 @router.post("/servers/{server_id}/files/upload", response_model=FileUploadResponse)
@@ -127,72 +101,6 @@ async def upload_file(
     )
 
     return FileUploadResponse(**result)
-
-
-@router.get("/servers/{server_id}/files/download")
-async def download_file(
-    server_id: int,
-    file_path: str,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
-    """Download a file or directory (as zip) from server"""
-    file_location, filename = await file_management_service.download_file(
-        server_id=server_id,
-        file_path=file_path,
-        db=db,
-    )
-
-    return FileResponse(
-        path=file_location,
-        filename=filename,
-        media_type="application/octet-stream",
-    )
-
-
-@router.post("/servers/{server_id}/directories", response_model=DirectoryCreateResponse)
-async def create_directory(
-    server_id: int,
-    directory_path: str,
-    request: DirectoryCreateRequest,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
-    """Create a new directory in server"""
-    if not authorization_service.can_modify_files(current_user):
-        raise HTTPException(status_code=403, detail="Insufficient permissions")
-
-    full_path = f"{directory_path}/{request.name}".strip("/")
-
-    result = await file_management_service.create_directory(
-        server_id=server_id,
-        directory_path=full_path,
-        user=current_user,
-        db=db,
-    )
-
-    return DirectoryCreateResponse(**result)
-
-
-@router.delete("/servers/{server_id}/files", response_model=FileDeleteResponse)
-async def delete_file(
-    server_id: int,
-    file_path: str,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
-    """Delete a file or directory from server"""
-    if not authorization_service.can_modify_files(current_user):
-        raise HTTPException(status_code=403, detail="Insufficient permissions")
-
-    result = await file_management_service.delete_file(
-        server_id=server_id,
-        file_path=file_path,
-        user=current_user,
-        db=db,
-    )
-
-    return FileDeleteResponse(**result)
 
 
 @router.post("/servers/{server_id}/files/search", response_model=FileSearchResponse)
@@ -231,3 +139,98 @@ async def search_files(
         total_results=search_result["total_results"],
         search_time_ms=search_result["search_time_ms"],
     )
+
+
+@router.post("/servers/{server_id}/files/{directory_path:path}/directories", response_model=DirectoryCreateResponse)
+async def create_directory(
+    server_id: int,
+    directory_path: str,
+    request: DirectoryCreateRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Create a new directory in server"""
+    if not authorization_service.can_modify_files(current_user):
+        raise HTTPException(status_code=403, detail="Insufficient permissions")
+
+    full_path = f"{directory_path}/{request.name}".strip("/")
+
+    result = await file_management_service.create_directory(
+        server_id=server_id,
+        directory_path=full_path,
+        user=current_user,
+        db=db,
+    )
+
+    return DirectoryCreateResponse(**result)
+
+
+# General endpoints (must come after specific ones)
+@router.get("/servers/{server_id}/files", response_model=FileListResponse)
+@router.get("/servers/{server_id}/files/{path:path}", response_model=FileListResponse)
+async def list_server_files(
+    server_id: int,
+    path: str = "",
+    file_type: Optional[FileType] = None,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """List files and directories in server directory"""
+    files = await file_management_service.get_server_files(
+        server_id=server_id,
+        path=path,
+        file_type=file_type,
+        db=db,
+    )
+
+    return FileListResponse(
+        files=files,
+        current_path=path,
+        total_files=len(files),
+    )
+
+
+@router.put("/servers/{server_id}/files/{file_path:path}", response_model=FileWriteResponse)
+async def write_file(
+    server_id: int,
+    file_path: str,
+    request: FileWriteRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Write content to a file"""
+    if not authorization_service.can_modify_files(current_user):
+        raise HTTPException(status_code=403, detail="Insufficient permissions")
+
+    result = await file_management_service.write_file(
+        server_id=server_id,
+        file_path=file_path,
+        content=request.content,
+        encoding=request.encoding,
+        create_backup=request.create_backup,
+        user=current_user,
+        db=db,
+    )
+
+    return FileWriteResponse(**result)
+
+
+@router.delete("/servers/{server_id}/files/{file_path:path}", response_model=FileDeleteResponse)
+async def delete_file(
+    server_id: int,
+    file_path: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Delete a file or directory from server"""
+    if not authorization_service.can_modify_files(current_user):
+        raise HTTPException(status_code=403, detail="Insufficient permissions")
+
+    result = await file_management_service.delete_file(
+        server_id=server_id,
+        file_path=file_path,
+        user=current_user,
+        db=db,
+    )
+
+    return FileDeleteResponse(**result)
