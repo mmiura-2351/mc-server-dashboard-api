@@ -45,7 +45,7 @@ def check_server_access(server_id: int, current_user: User, db: Session):
 
 
 @router.post(
-    "/servers/{server_id}/template",
+    "/from-server/{server_id}",
     response_model=TemplateResponse,
     status_code=status.HTTP_201_CREATED,
 )
@@ -100,7 +100,7 @@ async def create_template_from_server(
 
 
 @router.post(
-    "/templates", response_model=TemplateResponse, status_code=status.HTTP_201_CREATED
+    "/", response_model=TemplateResponse, status_code=status.HTTP_201_CREATED
 )
 async def create_custom_template(
     request: TemplateCreateCustomRequest,
@@ -151,7 +151,7 @@ async def create_custom_template(
         )
 
 
-@router.get("/templates", response_model=TemplateListResponse)
+@router.get("/", response_model=TemplateListResponse)
 async def list_templates(
     minecraft_version: Optional[str] = Query(
         None, description="Filter by Minecraft version"
@@ -200,7 +200,7 @@ async def list_templates(
         )
 
 
-@router.get("/templates/{template_id}", response_model=TemplateResponse)
+@router.get("/{template_id}", response_model=TemplateResponse)
 async def get_template(
     template_id: int,
     current_user: User = Depends(get_current_user),
@@ -232,7 +232,7 @@ async def get_template(
         )
 
 
-@router.put("/templates/{template_id}", response_model=TemplateResponse)
+@router.put("/{template_id}", response_model=TemplateResponse)
 async def update_template(
     template_id: int,
     request: TemplateUpdateRequest,
@@ -275,7 +275,7 @@ async def update_template(
         )
 
 
-@router.delete("/templates/{template_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/{template_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_template(
     template_id: int,
     current_user: User = Depends(get_current_user),
@@ -306,7 +306,7 @@ async def delete_template(
         )
 
 
-@router.get("/templates/statistics", response_model=TemplateStatisticsResponse)
+@router.get("/statistics", response_model=TemplateStatisticsResponse)
 async def get_template_statistics(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
@@ -329,7 +329,7 @@ async def get_template_statistics(
 
 
 @router.post(
-    "/templates/{template_id}/clone",
+    "/{template_id}/clone",
     response_model=TemplateResponse,
     status_code=status.HTTP_201_CREATED,
 )
