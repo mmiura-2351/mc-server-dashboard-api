@@ -67,7 +67,7 @@ class TestBackupRouter:
             mock_check_access.return_value = None  # No exception means access granted
 
             response = client.post(
-                "/api/v1/servers/1/backups",
+                "/api/v1/backups/servers/1/backups",
                 json={
                     "name": "Test Backup",
                     "description": "Test description",
@@ -108,7 +108,7 @@ class TestBackupRouter:
             mock_check_access.return_value = None
 
             response = client.post(
-                "/api/v1/servers/1/backups",
+                "/api/v1/backups/servers/1/backups",
                 json={
                     "name": "Test Backup",
                     "description": "Test description",
@@ -172,7 +172,7 @@ class TestBackupRouter:
             }
 
             response = client.get(
-                "/api/v1/servers/1/backups", 
+                "/api/v1/backups/servers/1/backups", 
                 headers=get_auth_headers(test_user.username)
             )
 
@@ -193,7 +193,7 @@ class TestBackupRouter:
             }
 
             response = client.get(
-                "/api/v1/backups", 
+                "/api/v1/backups/backups", 
                 headers=get_auth_headers(admin_user.username)
             )
             assert response.status_code == status.HTTP_200_OK
@@ -201,7 +201,7 @@ class TestBackupRouter:
     def test_list_all_backups_forbidden_for_non_admin(self, client, test_user):
         """Test that non-admins cannot list all backups"""
         response = client.get(
-            "/api/v1/backups", 
+            "/api/v1/backups/backups", 
             headers=get_auth_headers(test_user.username)
         )
         assert response.status_code == status.HTTP_403_FORBIDDEN
@@ -242,7 +242,7 @@ class TestBackupRouter:
             mock_check_access.return_value = backup
 
             response = client.get(
-                "/api/v1/backups/1", 
+                "/api/v1/backups/backups/1", 
                 headers=get_auth_headers(test_user.username)
             )
             assert response.status_code == status.HTTP_200_OK
@@ -294,7 +294,7 @@ class TestBackupRouter:
             mock_delete.return_value = True
 
             response = client.delete(
-                "/api/v1/backups/1", 
+                "/api/v1/backups/backups/1", 
                 headers=get_auth_headers(test_user.username)
             )
             assert response.status_code == status.HTTP_204_NO_CONTENT
@@ -311,7 +311,7 @@ class TestBackupRouter:
             }
 
             response = client.get(
-                "/api/v1/scheduler/status", 
+                "/api/v1/backups/scheduler/status", 
                 headers=get_auth_headers(admin_user.username)
             )
             assert response.status_code == status.HTTP_200_OK
@@ -348,7 +348,7 @@ class TestBackupRouter:
             mock_create.side_effect = FileOperationException("create", "backup", "Failed to create backup")
 
             response = client.post(
-                "/api/v1/servers/1/backups",
+                "/api/v1/backups/servers/1/backups",
                 json={
                     "name": "Test Backup",
                     "description": "Test description",
