@@ -15,6 +15,7 @@ This is a FastAPI-based backend API for managing Minecraft servers. The applicat
 | Format code       | `uv run black app/`           |
 | Run tests         | `uv run pytest`               |
 | Run single test   | `uv run pytest tests/test_filename.py::test_function_name` |
+| Check code coverage | `uv run coverage run -m pytest && uv run coverage report` |
 
 ## System Requirements Overview
 
@@ -44,7 +45,7 @@ This system is a Minecraft server management dashboard providing 46 use cases ac
 2. **Design Planning**: Identify required components (models, endpoints, business logic, etc.)
 3. **Design Documentation**: Document the implementation plan
 4. **Implementation**: Code based on the design
-5. **Quality Assurance**: Run tests and formatting
+5. **Quality Assurance**: Run tests and formatting, monitor test coverage
    ```bash
    uv run ruff check app/
    uv run black app/
@@ -91,6 +92,7 @@ This system is a Minecraft server management dashboard providing 46 use cases ac
 - **Fixtures**: Comprehensive fixtures in `conftest.py` including test users with different roles
 - **Database Overrides**: `app.dependency_overrides[get_db]` pattern for test isolation
 - **User Fixtures**: Pre-built fixtures for `test_user`, `admin_user`, and `unapproved_user`
+
 
 ### Configuration
 - **Environment Variables**: Uses .env file with required variables:
