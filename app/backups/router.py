@@ -16,15 +16,15 @@ from app.backups.schemas import (
     ScheduledBackupRequest,
 )
 from app.core.database import get_db
+from app.core.exceptions import (
+    BackupNotFoundException,
+    DatabaseOperationException,
+    FileOperationException,
+    ServerNotFoundException,
+)
 from app.servers.models import BackupType, Server
 from app.services.authorization_service import authorization_service
-from app.services.backup_service import (
-    BackupError,
-    BackupNotFoundError,
-    BackupRestorationError,
-    ServerNotFoundError,
-    backup_service,
-)
+from app.services.backup_service import backup_service
 from app.users.models import Role, User
 
 router = APIRouter(tags=["backups"])
@@ -75,10 +75,12 @@ async def create_backup(
 
         return BackupResponse.from_orm(backup)
 
-    except ServerNotFoundError as e:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
-    except BackupError as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    except HTTPException:
+        raise
+    except (ServerNotFoundException, BackupNotFoundException) as e:
+        raise e  # These already have proper HTTP status codes
+    except (FileOperationException, DatabaseOperationException) as e:
+        raise e  # These already have proper HTTP status codes
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -124,6 +126,8 @@ async def list_server_backups(
             size=result["size"],
         )
 
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -171,6 +175,8 @@ async def list_all_backups(
             size=result["size"],
         )
 
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -250,10 +256,10 @@ async def restore_backup(
 
     except HTTPException:
         raise
-    except BackupNotFoundError as e:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
-    except BackupRestorationError as e:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
+    except (BackupNotFoundException, ServerNotFoundException) as e:
+        raise e  # These already have proper HTTP status codes
+    except (FileOperationException, DatabaseOperationException) as e:
+        raise e  # These already have proper HTTP status codes
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -329,10 +335,10 @@ async def restore_backup_and_create_template(
 
     except HTTPException:
         raise
-    except BackupNotFoundError as e:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
-    except BackupRestorationError as e:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
+    except (BackupNotFoundException, ServerNotFoundException) as e:
+        raise e  # These already have proper HTTP status codes
+    except (FileOperationException, DatabaseOperationException) as e:
+        raise e  # These already have proper HTTP status codes
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -400,6 +406,8 @@ async def get_server_backup_statistics(
 
         return BackupStatisticsResponse(**stats)
 
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -430,6 +438,8 @@ async def get_global_backup_statistics(
 
         return BackupStatisticsResponse(**stats)
 
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -486,6 +496,8 @@ async def create_scheduled_backups(
             },
         )
 
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

@@ -20,12 +20,11 @@ from app.files.schemas import (
     FileWriteResponse,
 )
 from app.services.authorization_service import authorization_service
-from app.services.file_management_service import FileManagementService
+from app.services.file_management_service import file_management_service
 from app.types import FileType
 from app.users.models import User
 
 router = APIRouter()
-file_service = FileManagementService()
 
 
 @router.get("/servers/{server_id}/files", response_model=FileListResponse)
@@ -37,7 +36,7 @@ async def list_server_files(
     db: Session = Depends(get_db),
 ):
     """List files and directories in server directory"""
-    files = await file_service.get_server_files(
+    files = await file_management_service.get_server_files(
         server_id=server_id,
         path=path,
         file_type=file_type,
@@ -60,14 +59,14 @@ async def read_file(
     db: Session = Depends(get_db),
 ):
     """Read content of a text file"""
-    content = await file_service.read_file(
+    content = await file_management_service.read_file(
         server_id=server_id,
         file_path=file_path,
         encoding=encoding,
         db=db,
     )
 
-    files = await file_service.get_server_files(
+    files = await file_management_service.get_server_files(
         server_id=server_id,
         path=file_path,
         db=db,
@@ -92,7 +91,7 @@ async def write_file(
     if not authorization_service.can_modify_files(current_user):
         raise HTTPException(status_code=403, detail="Insufficient permissions")
 
-    result = await file_service.write_file(
+    result = await file_management_service.write_file(
         server_id=server_id,
         file_path=file_path,
         content=request.content,
@@ -118,7 +117,7 @@ async def upload_file(
     if not authorization_service.can_modify_files(current_user):
         raise HTTPException(status_code=403, detail="Insufficient permissions")
 
-    result = await file_service.upload_file(
+    result = await file_management_service.upload_file(
         server_id=server_id,
         file=file,
         destination_path=destination_path,
@@ -138,7 +137,7 @@ async def download_file(
     db: Session = Depends(get_db),
 ):
     """Download a file or directory (as zip) from server"""
-    file_location, filename = await file_service.download_file(
+    file_location, filename = await file_management_service.download_file(
         server_id=server_id,
         file_path=file_path,
         db=db,
@@ -165,7 +164,7 @@ async def create_directory(
 
     full_path = f"{directory_path}/{request.name}".strip("/")
 
-    result = await file_service.create_directory(
+    result = await file_management_service.create_directory(
         server_id=server_id,
         directory_path=full_path,
         user=current_user,
@@ -186,7 +185,7 @@ async def delete_file(
     if not authorization_service.can_modify_files(current_user):
         raise HTTPException(status_code=403, detail="Insufficient permissions")
 
-    result = await file_service.delete_file(
+    result = await file_management_service.delete_file(
         server_id=server_id,
         file_path=file_path,
         user=current_user,
@@ -206,7 +205,7 @@ async def search_files(
     """Search for files in server directory"""
     from app.files.schemas import FileSearchResult
 
-    search_result = await file_service.search_files(
+    search_result = await file_management_service.search_files(
         server_id=server_id,
         query=request.query,
         file_type=request.file_type,

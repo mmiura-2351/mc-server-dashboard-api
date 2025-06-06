@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 
 from app.auth.dependencies import get_current_user
 from app.core.database import get_db
+from app.core.exceptions import ConflictException
 from app.servers.models import ServerStatus
 from app.servers.schemas import (
     ServerCommandRequest,
@@ -14,7 +15,7 @@ from app.servers.schemas import (
     ServerUpdateRequest,
     SupportedVersionsResponse,
 )
-from app.servers.service import ServerCreationError, ServerExistsError, server_service
+from app.servers.service import server_service
 from app.services.minecraft_server import minecraft_server_manager
 from app.users.models import Role, User
 
@@ -74,10 +75,8 @@ async def create_server(
         server = await server_service.create_server(request, current_user, db)
         return server
 
-    except ServerExistsError as e:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
-    except ServerCreationError as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    except ConflictException as e:
+        raise e  # Already has proper HTTP status code
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -102,7 +101,7 @@ async def list_servers(
         # Admins see all servers, others see only their own
         owner_id = None if current_user.role == Role.admin else current_user.id
 
-        result = await server_service.list_servers(
+        result = server_service.list_servers(
             owner_id=owner_id, page=page, size=size, db=db
         )
 
