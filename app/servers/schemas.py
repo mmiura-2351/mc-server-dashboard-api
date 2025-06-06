@@ -184,7 +184,6 @@ class ServerResponse(BaseModel):
     max_players: int
     owner_id: int
     template_id: Optional[int]
-    is_deleted: bool
     created_at: datetime
     updated_at: datetime
 
