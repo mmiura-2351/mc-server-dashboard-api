@@ -17,6 +17,7 @@ from app.backups.schemas import (
 )
 from app.core.database import get_db
 from app.servers.models import BackupType, Server
+from app.services.authorization_service import authorization_service
 from app.services.backup_service import (
     BackupError,
     BackupNotFoundError,

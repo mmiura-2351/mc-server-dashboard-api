@@ -2,8 +2,9 @@ import logging
 from datetime import datetime
 from typing import Any, Dict
 
-from fastapi import HTTPException, status
-from sqlalchemy import and_
+from fastapi import HTTPException
+from fastapi import status as http_status
+from sqlalchemy import and_, func
 from sqlalchemy.orm import Session
 
 from app.servers.models import Server, ServerStatus, ServerType
@@ -28,7 +29,7 @@ class ServerService:
             offset = (page - 1) * size
 
             # Base query
-            query = db.query(Server).filter(not Server.is_deleted)
+            query = db.query(Server).filter(~Server.is_deleted)
 
             # Apply user-based filtering
             if user.role != Role.admin:
@@ -51,7 +52,7 @@ class ServerService:
         except Exception as e:
             logger.error(f"Failed to list servers for user {user.id}: {e}")
             raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"Failed to list servers: {str(e)}",
             )
 
@@ -63,7 +64,7 @@ class ServerService:
             server = db.query(Server).filter(Server.id == server_id).first()
             if not server:
                 raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND, detail="Server not found"
+                    status_code=http_status.HTTP_404_NOT_FOUND, detail="Server not found"
                 )
 
             current_status = minecraft_server_manager.get_server_status(server_id)
@@ -89,7 +90,7 @@ class ServerService:
             allowed_statuses = operation_rules.get(operation, [])
             if current_status not in allowed_statuses:
                 raise HTTPException(
-                    status_code=status.HTTP_409_CONFLICT,
+                    status_code=http_status.HTTP_409_CONFLICT,
                     detail=f"Cannot {operation} server in {current_status.value} state",
                 )
 
@@ -102,7 +103,7 @@ class ServerService:
                 f"Failed to validate operation {operation} for server {server_id}: {e}"
             )
             raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"Failed to validate operation: {str(e)}",
             )
 
@@ -113,19 +114,19 @@ class ServerService:
         try:
             server = (
                 db.query(Server)
-                .filter(and_(Server.id == server_id, not Server.is_deleted))
+                .filter(and_(Server.id == server_id, ~Server.is_deleted))
                 .first()
             )
 
             if not server:
                 raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND, detail="Server not found"
+                    status_code=http_status.HTTP_404_NOT_FOUND, detail="Server not found"
                 )
 
             # Check access permissions
             if user.role != Role.admin and server.owner_id != user.id:
                 raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
+                    status_code=http_status.HTTP_403_FORBIDDEN,
                     detail="Not authorized to access this server",
                 )
 
@@ -136,7 +137,7 @@ class ServerService:
                 raise
             logger.error(f"Failed to get server {server_id} for user {user.id}: {e}")
             raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"Failed to get server: {str(e)}",
             )
 
@@ -145,7 +146,7 @@ class ServerService:
         try:
             server = (
                 db.query(Server)
-                .filter(and_(Server.id == server_id, not Server.is_deleted))
+                .filter(and_(Server.id == server_id, ~Server.is_deleted))
                 .first()
             )
             return server is not None
@@ -158,7 +159,7 @@ class ServerService:
         """Get server statistics for user"""
         try:
             # Base query
-            query = db.query(Server).filter(not Server.is_deleted)
+            query = db.query(Server).filter(~Server.is_deleted)
 
             # Apply user-based filtering
             if user.role != Role.admin:
@@ -181,7 +182,7 @@ class ServerService:
 
             # Get version distribution
             version_query = query.with_entities(
-                Server.minecraft_version, db.func.count(Server.id).label("count")
+                Server.minecraft_version, func.count(Server.id).label("count")
             ).group_by(Server.minecraft_version)
 
             version_counts = {version: count for version, count in version_query.all()}
@@ -197,7 +198,7 @@ class ServerService:
         except Exception as e:
             logger.error(f"Failed to get server statistics for user {user.id}: {e}")
             raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"Failed to get statistics: {str(e)}",
             )
 
