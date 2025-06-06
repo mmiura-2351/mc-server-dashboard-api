@@ -1,20 +1,28 @@
 import shutil
-import tempfile
 import zipfile
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
 import aiofiles
-from fastapi import HTTPException, UploadFile
+from fastapi import UploadFile
 from sqlalchemy.orm import Session
 
+from app.core.exceptions import (
+    AccessDeniedException,
+    FileOperationException,
+    InvalidRequestException,
+    ServerNotFoundException,
+    handle_file_error,
+)
 from app.servers.models import Server
 from app.types import FileType
 from app.users.models import User
 
 
-class FileManagementService:
+class FileValidationService:
+    """Service for validating file operations and access"""
+
     def __init__(self):
         self.allowed_extensions = {
             "config": [".properties", ".yml", ".yaml", ".json", ".txt", ".conf"],
@@ -32,6 +40,403 @@ class FileManagementService:
             "banned-ips.json",
         ]
 
+    def validate_server_exists(self, server_id: int, db: Session) -> Server:
+        """Validate server exists and return it"""
+        server = db.query(Server).filter(Server.id == server_id).first()
+        if not server:
+            raise ServerNotFoundException(str(server_id))
+        return server
+
+    def validate_server_directory(self, server_path: Path) -> None:
+        """Validate server directory exists"""
+        if not server_path.exists():
+            raise FileOperationException(
+                "access", str(server_path), "Server directory not found"
+            )
+
+    def validate_path_safety(self, server_path: Path, target_path: Path) -> None:
+        """Validate path is safe and within server directory"""
+        if not self._is_safe_path(server_path, target_path):
+            raise AccessDeniedException("file", "access")
+
+    def validate_path_exists(self, target_path: Path) -> None:
+        """Validate target path exists"""
+        if not target_path.exists():
+            raise FileOperationException("access", str(target_path), "Path not found")
+
+    def validate_file_readable(self, file_path: Path) -> None:
+        """Validate file is readable"""
+        if file_path.is_dir():
+            raise FileOperationException(
+                "read", str(file_path), "Path is a directory, not a file"
+            )
+
+        if not self._is_readable_file(file_path):
+            raise AccessDeniedException("file", "read")
+
+    def validate_file_writable(self, file_path: Path, user: User) -> None:
+        """Validate file can be written"""
+        if self._is_restricted_file(file_path) and user.role.value != "admin":
+            raise AccessDeniedException("file", "write")
+
+        if not self._is_writable_file(file_path):
+            raise AccessDeniedException("file", "edit")
+
+    def _is_safe_path(self, server_path: Path, target_path: Path) -> bool:
+        """Check if target path is within server directory"""
+        try:
+            target_path.resolve().relative_to(server_path.resolve())
+            return True
+        except ValueError:
+            return False
+
+    def _is_readable_file(self, file_path: Path) -> bool:
+        """Check if file type is readable"""
+        suffix = file_path.suffix.lower()
+        for file_type, extensions in self.allowed_extensions.items():
+            if suffix in extensions:
+                return True
+        return suffix in [".txt", ".md", ".yml", ".yaml", ".json", ".properties"]
+
+    def _is_writable_file(self, file_path: Path) -> bool:
+        """Check if file type is writable"""
+        if file_path.is_dir():
+            return False
+
+        suffix = file_path.suffix.lower()
+        writable_extensions = [".properties", ".yml", ".yaml", ".json", ".txt", ".conf"]
+        return suffix in writable_extensions
+
+    def _is_restricted_file(self, file_path: Path) -> bool:
+        """Check if file is restricted from modification"""
+        return file_path.name in self.restricted_files
+
+
+class FileInfoService:
+    """Service for retrieving file information"""
+
+    def __init__(self, validation_service: FileValidationService):
+        self.validation_service = validation_service
+
+    async def get_file_info(self, file_path: Path, server_path: Path) -> Dict[str, Any]:
+        """Get comprehensive file information"""
+        try:
+            stats = file_path.stat()
+            relative_path = file_path.relative_to(server_path)
+
+            return {
+                "name": file_path.name,
+                "path": str(relative_path),
+                "size": stats.st_size if file_path.is_file() else 0,
+                "modified": datetime.fromtimestamp(stats.st_mtime).isoformat(),
+                "is_directory": file_path.is_dir(),
+                "is_file": file_path.is_file(),
+                "extension": file_path.suffix,
+                "type": self._determine_file_type(file_path),
+                "readable": self._is_file_readable(file_path),
+                "writable": self._is_file_writable(file_path),
+            }
+        except Exception as e:
+            handle_file_error("get info", str(file_path), e)
+
+    def _determine_file_type(self, file_path: Path) -> str:
+        """Determine file type based on extension and location"""
+        if file_path.is_dir():
+            return "directory"
+
+        suffix = file_path.suffix.lower()
+        file_name = file_path.name.lower()
+
+        if suffix == ".jar":
+            if "plugin" in str(file_path).lower():
+                return "plugin"
+            elif "mod" in str(file_path).lower():
+                return "mod"
+            return "jar"
+        elif suffix in [".properties", ".yml", ".yaml", ".json", ".conf"]:
+            return "config"
+        elif suffix in [".log", ".gz"]:
+            return "log"
+        elif suffix in [".dat", ".mca", ".mcr"]:
+            return "world"
+        elif "log" in file_name:
+            return "log"
+        else:
+            return "other"
+
+    def _is_file_readable(self, file_path: Path) -> bool:
+        """Check if file is readable"""
+        if file_path.is_dir():
+            return True
+
+        suffix = file_path.suffix.lower()
+        readable_extensions = [
+            ".txt",
+            ".md",
+            ".yml",
+            ".yaml",
+            ".json",
+            ".properties",
+            ".conf",
+            ".log",
+        ]
+        return suffix in readable_extensions
+
+    def _is_file_writable(self, file_path: Path) -> bool:
+        """Check if file is writable"""
+        return self.validation_service._is_writable_file(
+            file_path
+        ) and not self.validation_service._is_restricted_file(file_path)
+
+
+class FileBackupService:
+    """Service for creating file backups"""
+
+    async def create_file_backup(self, file_path: Path) -> str:
+        """Create backup of existing file"""
+        try:
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            backup_name = f"{file_path.name}.backup_{timestamp}"
+            backup_path = file_path.parent / backup_name
+
+            shutil.copy2(file_path, backup_path)
+            return str(backup_path)
+
+        except Exception as e:
+            handle_file_error("backup", str(file_path), e)
+
+
+class FileOperationService:
+    """Service for file system operations"""
+
+    def __init__(self, backup_service: FileBackupService):
+        self.backup_service = backup_service
+
+    async def read_file_content(self, file_path: Path, encoding: str = "utf-8") -> str:
+        """Read file content with specified encoding"""
+        try:
+            async with aiofiles.open(file_path, mode="r", encoding=encoding) as f:
+                return await f.read()
+        except UnicodeDecodeError:
+            raise InvalidRequestException(
+                f"Unable to decode file with {encoding} encoding"
+            )
+        except Exception as e:
+            handle_file_error("read", str(file_path), e)
+
+    async def write_file_content(
+        self,
+        file_path: Path,
+        content: str,
+        encoding: str = "utf-8",
+        create_backup: bool = True,
+    ) -> Optional[str]:
+        """Write content to file with specified encoding"""
+        try:
+            file_path.parent.mkdir(parents=True, exist_ok=True)
+
+            backup_path = None
+            if create_backup and file_path.exists():
+                backup_path = await self.backup_service.create_file_backup(file_path)
+
+            async with aiofiles.open(file_path, mode="w", encoding=encoding) as f:
+                await f.write(content)
+
+            return backup_path
+
+        except Exception as e:
+            handle_file_error("write", str(file_path), e)
+
+    async def upload_file(self, file: UploadFile, target_path: Path) -> int:
+        """Upload file to target path and return file size"""
+        try:
+            target_path.parent.mkdir(parents=True, exist_ok=True)
+
+            content = await file.read()
+
+            async with aiofiles.open(target_path, mode="wb") as f:
+                await f.write(content)
+
+            return len(content)
+
+        except Exception as e:
+            handle_file_error("upload", str(target_path), e)
+
+    def delete_file_or_directory(self, path: Path) -> str:
+        """Delete file or directory and return operation type"""
+        try:
+            if path.is_file():
+                path.unlink()
+                return "file"
+            elif path.is_dir():
+                shutil.rmtree(path)
+                return "directory"
+        except Exception as e:
+            handle_file_error("delete", str(path), e)
+
+    def create_directory(self, path: Path) -> None:
+        """Create directory"""
+        try:
+            path.mkdir(parents=True, exist_ok=True)
+        except Exception as e:
+            handle_file_error("create directory", str(path), e)
+
+    def move_file_or_directory(self, source: Path, destination: Path) -> None:
+        """Move file or directory"""
+        try:
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.move(str(source), str(destination))
+        except Exception as e:
+            handle_file_error("move", f"{source} to {destination}", e)
+
+    def extract_archive(self, archive_path: Path, extract_to: Path) -> List[str]:
+        """Extract archive and return list of extracted files"""
+        try:
+            extracted_files = []
+
+            if archive_path.suffix.lower() == ".zip":
+                with zipfile.ZipFile(archive_path, "r") as zip_ref:
+                    zip_ref.extractall(extract_to)
+                    extracted_files = zip_ref.namelist()
+            else:
+                raise InvalidRequestException(
+                    f"Unsupported archive format: {archive_path.suffix}"
+                )
+
+            return extracted_files
+
+        except Exception as e:
+            handle_file_error("extract", str(archive_path), e)
+
+
+class FileSearchService:
+    """Service for searching files"""
+
+    def __init__(
+        self, validation_service: FileValidationService, info_service: FileInfoService
+    ):
+        self.validation_service = validation_service
+        self.info_service = info_service
+
+    async def search_files(
+        self,
+        server_id: int,
+        search_term: str,
+        search_in_content: bool = False,
+        file_type: Optional[str] = None,
+        max_results: int = 100,
+        db: Session = None,
+    ) -> Dict[str, Any]:
+        """Search for files by name and optionally content"""
+        # Validate server
+        server = self.validation_service.validate_server_exists(server_id, db)
+        server_path = Path(f"servers/{server.name}")
+        self.validation_service.validate_server_directory(server_path)
+
+        start_time = datetime.now()
+        results = []
+
+        # Search by filename
+        filename_results = await self._search_by_filename(
+            server_path, search_term, file_type, max_results
+        )
+        results.extend(filename_results)
+
+        # Search in content if requested
+        if search_in_content and len(results) < max_results:
+            content_results = await self._search_file_content(
+                server_path, search_term, file_type, max_results - len(results)
+            )
+            results.extend(content_results)
+
+        search_time = (datetime.now() - start_time).total_seconds()
+
+        return {
+            "results": results[:max_results],
+            "total_found": len(results),
+            "search_time_seconds": round(search_time, 3),
+            "search_term": search_term,
+            "searched_content": search_in_content,
+        }
+
+    async def _search_by_filename(
+        self,
+        server_path: Path,
+        search_term: str,
+        file_type: Optional[str],
+        max_results: int,
+    ) -> List[Dict[str, Any]]:
+        """Search files by filename"""
+        results = []
+
+        for file_path in server_path.rglob("*"):
+            if len(results) >= max_results:
+                break
+
+            if search_term.lower() in file_path.name.lower():
+                try:
+                    file_info = await self.info_service.get_file_info(
+                        file_path, server_path
+                    )
+                    if not file_type or file_info["type"] == file_type:
+                        file_info["match_type"] = "filename"
+                        results.append(file_info)
+                except Exception:
+                    continue
+
+        return results
+
+    async def _search_file_content(
+        self,
+        server_path: Path,
+        search_term: str,
+        file_type: Optional[str],
+        max_results: int,
+    ) -> List[Dict[str, Any]]:
+        """Search in file content"""
+        results = []
+
+        for file_path in server_path.rglob("*"):
+            if len(results) >= max_results:
+                break
+
+            if file_path.is_file() and self.validation_service._is_readable_file(
+                file_path
+            ):
+                try:
+                    file_info = await self.info_service.get_file_info(
+                        file_path, server_path
+                    )
+                    if file_type and file_info["type"] != file_type:
+                        continue
+
+                    # Read file content and search
+                    async with aiofiles.open(
+                        file_path, mode="r", encoding="utf-8", errors="ignore"
+                    ) as f:
+                        content = await f.read()
+                        if search_term.lower() in content.lower():
+                            file_info["match_type"] = "content"
+                            results.append(file_info)
+
+                except Exception:
+                    continue
+
+        return results
+
+
+class FileManagementService:
+    """Main service for orchestrating file management operations"""
+
+    def __init__(self):
+        self.validation_service = FileValidationService()
+        self.info_service = FileInfoService(self.validation_service)
+        self.backup_service = FileBackupService()
+        self.operation_service = FileOperationService(self.backup_service)
+        self.search_service = FileSearchService(
+            self.validation_service, self.info_service
+        )
+
     async def get_server_files(
         self,
         server_id: int,
@@ -39,32 +444,37 @@ class FileManagementService:
         file_type: Optional[FileType] = None,
         db: Session = None,
     ) -> List[Dict[str, Any]]:
-        server = db.query(Server).filter(Server.id == server_id).first()
-        if not server:
-            raise HTTPException(status_code=404, detail="Server not found")
-
+        """Get files and directories in server path"""
+        # Validate server and paths
+        server = self.validation_service.validate_server_exists(server_id, db)
         server_path = Path(f"servers/{server.name}")
-        if not server_path.exists():
-            raise HTTPException(status_code=404, detail="Server directory not found")
+        self.validation_service.validate_server_directory(server_path)
 
         target_path = server_path / path
-        if not self._is_safe_path(server_path, target_path):
-            raise HTTPException(status_code=403, detail="Access denied")
+        self.validation_service.validate_path_safety(server_path, target_path)
+        self.validation_service.validate_path_exists(target_path)
 
-        if not target_path.exists():
-            raise HTTPException(status_code=404, detail="Path not found")
+        # Get file information
+        files = await self._collect_file_information(target_path, server_path, file_type)
 
+        return sorted(files, key=lambda x: (not x["is_directory"], x["name"]))
+
+    async def _collect_file_information(
+        self, target_path: Path, server_path: Path, file_type: Optional[FileType]
+    ) -> List[Dict[str, Any]]:
+        """Collect file information for directory or single file"""
         files = []
+
         if target_path.is_dir():
             for item in target_path.iterdir():
-                file_info = await self._get_file_info(item, server_path)
+                file_info = await self.info_service.get_file_info(item, server_path)
                 if file_type is None or file_info["type"] == file_type:
                     files.append(file_info)
         else:
-            file_info = await self._get_file_info(target_path, server_path)
+            file_info = await self.info_service.get_file_info(target_path, server_path)
             files.append(file_info)
 
-        return sorted(files, key=lambda x: (x["is_directory"], x["name"]))
+        return files
 
     async def read_file(
         self,
@@ -73,32 +483,18 @@ class FileManagementService:
         encoding: str = "utf-8",
         db: Session = None,
     ) -> str:
-        server = db.query(Server).filter(Server.id == server_id).first()
-        if not server:
-            raise HTTPException(status_code=404, detail="Server not found")
-
+        """Read file content"""
+        # Validate server and file
+        server = self.validation_service.validate_server_exists(server_id, db)
         server_path = Path(f"servers/{server.name}")
         target_file = server_path / file_path
 
-        if not self._is_safe_path(server_path, target_file):
-            raise HTTPException(status_code=403, detail="Access denied")
+        self.validation_service.validate_path_safety(server_path, target_file)
+        self.validation_service.validate_path_exists(target_file)
+        self.validation_service.validate_file_readable(target_file)
 
-        if not target_file.exists() or target_file.is_dir():
-            raise HTTPException(status_code=404, detail="File not found")
-
-        if not self._is_readable_file(target_file):
-            raise HTTPException(status_code=403, detail="File type not supported")
-
-        try:
-            async with aiofiles.open(target_file, mode="r", encoding=encoding) as f:
-                content = await f.read()
-            return content
-        except UnicodeDecodeError:
-            raise HTTPException(
-                status_code=400, detail="Unable to decode file with specified encoding"
-            )
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Error reading file: {str(e)}")
+        # Read file content
+        return await self.operation_service.read_file_content(target_file, encoding)
 
     async def write_file(
         self,
@@ -110,43 +506,29 @@ class FileManagementService:
         user: User = None,
         db: Session = None,
     ) -> Dict[str, Any]:
-        server = db.query(Server).filter(Server.id == server_id).first()
-        if not server:
-            raise HTTPException(status_code=404, detail="Server not found")
-
+        """Write content to file"""
+        # Validate server and file
+        server = self.validation_service.validate_server_exists(server_id, db)
         server_path = Path(f"servers/{server.name}")
         target_file = server_path / file_path
 
-        if not self._is_safe_path(server_path, target_file):
-            raise HTTPException(status_code=403, detail="Access denied")
+        self.validation_service.validate_path_safety(server_path, target_file)
+        self.validation_service.validate_file_writable(target_file, user)
 
-        if target_file.name in self.restricted_files and user.role.value != "admin":
-            raise HTTPException(
-                status_code=403, detail="Insufficient permissions to edit this file"
-            )
+        # Write file content
+        backup_path = await self.operation_service.write_file_content(
+            target_file, content, encoding, create_backup
+        )
 
-        if not self._is_writable_file(target_file):
-            raise HTTPException(
-                status_code=403, detail="File type not supported for editing"
-            )
+        # Get updated file info
+        file_info = await self.info_service.get_file_info(target_file, server_path)
 
-        target_file.parent.mkdir(parents=True, exist_ok=True)
-
-        if create_backup and target_file.exists():
-            await self._create_file_backup(target_file)
-
-        try:
-            async with aiofiles.open(target_file, mode="w", encoding=encoding) as f:
-                await f.write(content)
-
-            file_info = await self._get_file_info(target_file, server_path)
-            return {
-                "message": "File updated successfully",
-                "file": file_info,
-                "backup_created": create_backup and target_file.exists(),
-            }
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Error writing file: {str(e)}")
+        return {
+            "message": "File updated successfully",
+            "file": file_info,
+            "backup_created": backup_path is not None,
+            "backup_path": backup_path,
+        }
 
     async def delete_file(
         self,
@@ -155,33 +537,20 @@ class FileManagementService:
         user: User = None,
         db: Session = None,
     ) -> Dict[str, str]:
-        server = db.query(Server).filter(Server.id == server_id).first()
-        if not server:
-            raise HTTPException(status_code=404, detail="Server not found")
-
+        """Delete file or directory"""
+        # Validate server and file
+        server = self.validation_service.validate_server_exists(server_id, db)
         server_path = Path(f"servers/{server.name}")
         target_path = server_path / file_path
 
-        if not self._is_safe_path(server_path, target_path):
-            raise HTTPException(status_code=403, detail="Access denied")
+        self.validation_service.validate_path_safety(server_path, target_path)
+        self.validation_service.validate_path_exists(target_path)
+        self.validation_service.validate_file_writable(target_path, user)
 
-        if not target_path.exists():
-            raise HTTPException(status_code=404, detail="File or directory not found")
+        # Delete file or directory
+        operation_type = self.operation_service.delete_file_or_directory(target_path)
 
-        if target_path.name in self.restricted_files and user.role.value != "admin":
-            raise HTTPException(
-                status_code=403, detail="Insufficient permissions to delete this file"
-            )
-
-        try:
-            if target_path.is_dir():
-                shutil.rmtree(target_path)
-                return {"message": f"Directory '{file_path}' deleted successfully"}
-            else:
-                target_path.unlink()
-                return {"message": f"File '{file_path}' deleted successfully"}
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Error deleting file: {str(e)}")
+        return {"message": f"{operation_type.title()} '{file_path}' deleted successfully"}
 
     async def upload_file(
         self,
@@ -192,279 +561,116 @@ class FileManagementService:
         user: User = None,
         db: Session = None,
     ) -> Dict[str, Any]:
-        server = db.query(Server).filter(Server.id == server_id).first()
-        if not server:
-            raise HTTPException(status_code=404, detail="Server not found")
-
+        """Upload file to server directory"""
+        # Validate server
+        server = self.validation_service.validate_server_exists(server_id, db)
         server_path = Path(f"servers/{server.name}")
         target_dir = server_path / destination_path
 
-        if not self._is_safe_path(server_path, target_dir):
-            raise HTTPException(status_code=403, detail="Access denied")
+        self.validation_service.validate_path_safety(server_path, target_dir)
 
-        target_dir.mkdir(parents=True, exist_ok=True)
+        # Upload file
         target_file = target_dir / file.filename
+        file_size = await self.operation_service.upload_file(file, target_file)
 
-        if target_file.name in self.restricted_files and user.role.value != "admin":
-            raise HTTPException(
-                status_code=403, detail="Insufficient permissions to upload this file"
+        result = {
+            "message": f"File '{file.filename}' uploaded successfully",
+            "filename": file.filename,
+            "size": file_size,
+            "path": str(target_file.relative_to(server_path)),
+        }
+
+        # Extract if archive and requested
+        if extract_if_archive and target_file.suffix.lower() in [".zip"]:
+            extracted_files = self.operation_service.extract_archive(
+                target_file, target_dir
             )
+            result["extracted"] = True
+            result["extracted_files"] = extracted_files
 
-        try:
-            async with aiofiles.open(target_file, "wb") as f:
-                content = await file.read()
-                await f.write(content)
+            # Delete archive after extraction
+            target_file.unlink()
+            result["archive_deleted"] = True
 
-            result = {
-                "message": f"File '{file.filename}' uploaded successfully",
-                "file": await self._get_file_info(target_file, server_path),
-                "extracted_files": [],
-            }
+        return result
 
-            if extract_if_archive and file.filename.endswith((".zip", ".jar")):
-                extracted_files = await self._extract_archive(target_file, target_dir)
-                result["extracted_files"] = extracted_files
-                result["message"] += f" and extracted {len(extracted_files)} files"
+    async def search_files(
+        self,
+        server_id: int,
+        search_term: str,
+        search_in_content: bool = False,
+        file_type: Optional[str] = None,
+        max_results: int = 100,
+        db: Session = None,
+    ) -> Dict[str, Any]:
+        """Search for files by name and optionally content"""
+        return await self.search_service.search_files(
+            server_id, search_term, search_in_content, file_type, max_results, db
+        )
 
-            return result
-        except Exception as e:
-            if target_file.exists():
-                target_file.unlink()
-            raise HTTPException(status_code=500, detail=f"Error uploading file: {str(e)}")
+    async def create_directory(
+        self,
+        server_id: int,
+        directory_path: str,
+        db: Session = None,
+    ) -> Dict[str, str]:
+        """Create new directory"""
+        # Validate server
+        server = self.validation_service.validate_server_exists(server_id, db)
+        server_path = Path(f"servers/{server.name}")
+        target_dir = server_path / directory_path
+
+        self.validation_service.validate_path_safety(server_path, target_dir)
+
+        # Create directory
+        self.operation_service.create_directory(target_dir)
+
+        return {"message": f"Directory '{directory_path}' created successfully"}
+
+    async def move_file(
+        self,
+        server_id: int,
+        source_path: str,
+        destination_path: str,
+        user: User = None,
+        db: Session = None,
+    ) -> Dict[str, str]:
+        """Move file or directory"""
+        # Validate server
+        server = self.validation_service.validate_server_exists(server_id, db)
+        server_path = Path(f"servers/{server.name}")
+        source = server_path / source_path
+        destination = server_path / destination_path
+
+        self.validation_service.validate_path_safety(server_path, source)
+        self.validation_service.validate_path_safety(server_path, destination)
+        self.validation_service.validate_path_exists(source)
+        self.validation_service.validate_file_writable(source, user)
+
+        # Move file or directory
+        self.operation_service.move_file_or_directory(source, destination)
+
+        return {"message": f"Moved '{source_path}' to '{destination_path}' successfully"}
 
     async def download_file(
         self,
         server_id: int,
         file_path: str,
         db: Session = None,
-    ) -> Tuple[Path, str]:
-        server = db.query(Server).filter(Server.id == server_id).first()
-        if not server:
-            raise HTTPException(status_code=404, detail="Server not found")
-
+    ) -> tuple[str, str]:
+        """Download file from server directory"""
+        # Validate server and file
+        server = self.validation_service.validate_server_exists(server_id, db)
         server_path = Path(f"servers/{server.name}")
-        target_path = server_path / file_path
+        target_file = server_path / file_path
+        
+        self.validation_service.validate_path_safety(server_path, target_file)
+        self.validation_service.validate_path_exists(target_file)
+        self.validation_service.validate_file_readable(target_file)
+        
+        # Return file location and filename for FileResponse
+        return str(target_file), target_file.name
 
-        if not self._is_safe_path(server_path, target_path):
-            raise HTTPException(status_code=403, detail="Access denied")
 
-        if not target_path.exists():
-            raise HTTPException(status_code=404, detail="File not found")
-
-        if target_path.is_dir():
-            zip_path = await self._create_directory_archive(target_path)
-            return zip_path, f"{target_path.name}.zip"
-        else:
-            return target_path, target_path.name
-
-    async def create_directory(
-        self,
-        server_id: int,
-        directory_path: str,
-        user: User = None,
-        db: Session = None,
-    ) -> Dict[str, Any]:
-        server = db.query(Server).filter(Server.id == server_id).first()
-        if not server:
-            raise HTTPException(status_code=404, detail="Server not found")
-
-        server_path = Path(f"servers/{server.name}")
-        target_dir = server_path / directory_path
-
-        if not self._is_safe_path(server_path, target_dir):
-            raise HTTPException(status_code=403, detail="Access denied")
-
-        if target_dir.exists():
-            raise HTTPException(status_code=409, detail="Directory already exists")
-
-        try:
-            target_dir.mkdir(parents=True)
-            file_info = await self._get_file_info(target_dir, server_path)
-            return {
-                "message": f"Directory '{directory_path}' created successfully",
-                "directory": file_info,
-            }
-        except Exception as e:
-            raise HTTPException(
-                status_code=500, detail=f"Error creating directory: {str(e)}"
-            )
-
-    def _is_safe_path(self, base_path: Path, target_path: Path) -> bool:
-        try:
-            target_path.resolve().relative_to(base_path.resolve())
-            return True
-        except ValueError:
-            return False
-
-    def _is_readable_file(self, file_path: Path) -> bool:
-        if file_path.suffix.lower() in [
-            ext for exts in self.allowed_extensions.values() for ext in exts
-        ]:
-            return True
-        return file_path.stat().st_size < 10 * 1024 * 1024  # 10MB limit for unknown files
-
-    def _is_writable_file(self, file_path: Path) -> bool:
-        return file_path.suffix.lower() in [
-            ".properties",
-            ".yml",
-            ".yaml",
-            ".json",
-            ".txt",
-            ".conf",
-        ]
-
-    async def _get_file_info(self, path: Path, server_path: Path) -> Dict[str, Any]:
-        stat = path.stat()
-        relative_path = path.relative_to(server_path)
-
-        file_type = self._determine_file_type(path)
-
-        return {
-            "name": path.name,
-            "path": str(relative_path),
-            "type": file_type,
-            "is_directory": path.is_dir(),
-            "size": stat.st_size if not path.is_dir() else None,
-            "modified": datetime.fromtimestamp(stat.st_mtime).isoformat(),
-            "permissions": {
-                "readable": self._is_readable_file(path) if not path.is_dir() else True,
-                "writable": self._is_writable_file(path) if not path.is_dir() else True,
-                "restricted": path.name in self.restricted_files,
-            },
-        }
-
-    def _determine_file_type(self, path: Path) -> FileType:
-        if path.is_dir():
-            return FileType.directory
-
-        suffix = path.suffix.lower()
-        name = path.name.lower()
-
-        if suffix in self.allowed_extensions["config"] or name in [
-            "server.properties",
-            "eula.txt",
-        ]:
-            return FileType.config
-        elif suffix in self.allowed_extensions["plugin"]:
-            return FileType.plugin
-        elif suffix in self.allowed_extensions["mod"]:
-            return FileType.mod
-        elif suffix in self.allowed_extensions["log"]:
-            return FileType.log
-        elif suffix in self.allowed_extensions["world"] or "world" in str(path.parent):
-            return FileType.world
-        else:
-            return FileType.other
-
-    async def _create_file_backup(self, file_path: Path) -> None:
-        backup_dir = file_path.parent / ".backups"
-        backup_dir.mkdir(exist_ok=True)
-
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        backup_name = f"{file_path.name}.{timestamp}.bak"
-        backup_path = backup_dir / backup_name
-
-        shutil.copy2(file_path, backup_path)
-
-    async def _extract_archive(self, archive_path: Path, extract_to: Path) -> List[str]:
-        extracted_files = []
-        with zipfile.ZipFile(archive_path, "r") as zip_ref:
-            for member in zip_ref.namelist():
-                if self._is_safe_path(extract_to, extract_to / member):
-                    zip_ref.extract(member, extract_to)
-                    extracted_files.append(member)
-        return extracted_files
-
-    async def _create_directory_archive(self, directory: Path) -> Path:
-        temp_dir = Path(tempfile.gettempdir())
-        zip_path = (
-            temp_dir / f"{directory.name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.zip"
-        )
-
-        with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zip_file:
-            for file_path in directory.rglob("*"):
-                if file_path.is_file():
-                    arcname = file_path.relative_to(directory)
-                    zip_file.write(file_path, arcname)
-
-        return zip_path
-
-    async def search_files(
-        self,
-        server_id: int,
-        query: str,
-        file_type: Optional[FileType] = None,
-        include_content: bool = False,
-        max_results: int = 50,
-        db: Session = None,
-    ) -> Dict[str, Any]:
-        """Search for files in server directory"""
-        import re
-        import time
-
-        start_time = time.time()
-
-        # Get all files first
-        all_files = await self.get_server_files(
-            server_id=server_id,
-            path="",
-            file_type=file_type,
-            db=db,
-        )
-
-        results = []
-        pattern = re.compile(query, re.IGNORECASE)
-
-        for file_info in all_files:
-            matches = []
-            match_count = 0
-
-            # Search in filename
-            if pattern.search(file_info["name"]):
-                match_count += 1
-                matches.append(f"Filename: {file_info['name']}")
-
-            # Search in file content if requested and file is readable
-            if (
-                include_content
-                and not file_info["is_directory"]
-                and file_info["permissions"]["readable"]
-            ):
-                try:
-                    content = await self.read_file(
-                        server_id=server_id,
-                        file_path=file_info["path"],
-                        db=db,
-                    )
-
-                    content_matches = []
-                    for i, line in enumerate(content.split("\n"), 1):
-                        if pattern.search(line):
-                            content_matches.append(f"Line {i}: {line.strip()}")
-                            match_count += 1
-
-                    matches.extend(content_matches[:10])  # Limit content matches
-
-                except Exception:
-                    pass  # Skip files that can't be read
-
-            if match_count > 0:
-                results.append(
-                    {
-                        "file": file_info,
-                        "matches": matches,
-                        "match_count": match_count,
-                    }
-                )
-
-            if len(results) >= max_results:
-                break
-
-        search_time_ms = int((time.time() - start_time) * 1000)
-
-        return {
-            "results": results,
-            "query": query,
-            "total_results": len(results),
-            "search_time_ms": search_time_ms,
-        }
+# Global file management service instance
+file_management_service = FileManagementService()
