@@ -497,6 +497,8 @@ async def get_supported_versions():
     All versions 1.8+ are supported with dynamic API integration.
     """
     try:
+        from app.servers.schemas import MinecraftVersionInfo
+
         all_versions = []
 
         # Get versions for each server type
@@ -505,7 +507,18 @@ async def get_supported_versions():
                 versions = await minecraft_version_manager.get_supported_versions(
                     server_type
                 )
-                all_versions.extend(versions)
+                # Convert VersionInfo objects to MinecraftVersionInfo objects
+                for version_info in versions:
+                    minecraft_version_info = MinecraftVersionInfo(
+                        version=version_info.version,
+                        server_type=version_info.server_type,
+                        download_url=version_info.download_url,
+                        is_supported=True,  # All returned versions are supported
+                        release_date=version_info.release_date,
+                        is_stable=version_info.is_stable,
+                        build_number=version_info.build_number,
+                    )
+                    all_versions.append(minecraft_version_info)
             except Exception as e:
                 logger.warning(f"Failed to get versions for {server_type.value}: {e}")
                 continue
