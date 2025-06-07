@@ -64,6 +64,13 @@ cd testing/scripts
 ./test_server.sh start-web    # Start only web server (port 8002)
 ./test_server.sh stop-api     # Stop only API server
 ./test_server.sh stop-web     # Stop only web server
+
+# Alternative commands (same functionality)
+./test_server.sh start-both   # Start both servers (alias for start)
+./test_server.sh stop-both    # Stop both servers (alias for stop)
+./test_server.sh restart-both # Restart both servers (alias for restart)
+./test_server.sh restart-api  # Restart only API server
+./test_server.sh restart-web  # Restart only web server
 ```
 
 **Features:**

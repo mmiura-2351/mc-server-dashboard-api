@@ -24,7 +24,7 @@ A comprehensive FastAPI-based backend for managing multiple Minecraft servers wi
 
 ### Prerequisites
 
-- Python 3.11+
+- Python 3.13+
 - uv package manager
 
 ### Quick Start
@@ -50,6 +50,8 @@ A comprehensive FastAPI-based backend for managing multiple Minecraft servers wi
 | Run tests         | `uv run pytest`               |
 | Run single test   | `uv run pytest tests/test_filename.py::test_function_name` |
 | Check code coverage | `uv run coverage run -m pytest && uv run coverage report` |
+| Start browser test environment | `./testing/scripts/test_server.sh start` |
+| Stop browser test environment | `./testing/scripts/test_server.sh stop` |
 
 ## 🏗️ Architecture
 
@@ -74,7 +76,8 @@ app/
 ├── templates/        # Template system
 ├── files/            # File management
 ├── websockets/       # WebSocket communication
-└── services/         # Business logic layer
+├── services/         # Business logic layer
+└── audit/            # Audit logging
 ```
 
 ## 🔐 Security Features
@@ -101,7 +104,8 @@ All API endpoints use the `/api/v1/` prefix and follow RESTful conventions:
 
 ## 🧪 Testing
 
-The project includes comprehensive test coverage for all major features:
+### Unit Tests (`uv run pytest`)
+The project includes comprehensive test coverage with isolated database testing:
 
 ```bash
 # Run all tests
@@ -111,8 +115,24 @@ uv run pytest
 uv run coverage run -m pytest && uv run coverage report
 
 # Run specific test file
-uv run pytest tests/test_server_router.py -v
+uv run pytest tests/test_server_service.py -v
 ```
+
+### Browser-based API Testing
+Complete visual verification system using Playwright:
+
+```bash
+# Start isolated test environment
+./testing/scripts/test_server.sh start
+
+# Test environment features:
+# - API server on port 8001 with test database (test_app.db)
+# - Web interface on port 8002 for manual testing
+# - First user auto-becomes admin
+# - Automatic cleanup on stop
+```
+
+**Screenshot Evidence Collection**: All 30+ API endpoints across 7 feature areas with automated screenshot capture for visual evidence.
 
 ## 🎯 Use Cases Coverage
 
