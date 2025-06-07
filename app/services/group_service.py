@@ -13,19 +13,22 @@ from app.users.models import Role, User
 
 class GroupAccessService:
     """Service for handling group and server access validation.
-    
+
     This service centralizes access control logic for groups and servers,
     ensuring proper permission checks throughout the system.
     """
-    
+
     @staticmethod
-    def check_group_access(user: Annotated[User, "User requesting access"], group: Annotated[Group, "Group to access"]) -> None:
+    def check_group_access(
+        user: Annotated[User, "User requesting access"],
+        group: Annotated[Group, "Group to access"],
+    ) -> None:
         """Check if user has access to the specified group.
-        
+
         Args:
             user: The user requesting access
             group: The group to access
-            
+
         Raises:
             HTTPException: If user doesn't have permission to access the group
         """
@@ -36,13 +39,16 @@ class GroupAccessService:
             )
 
     @staticmethod
-    def check_server_access(user: Annotated[User, "User requesting access"], server: Annotated[Server, "Server to access"]) -> None:
+    def check_server_access(
+        user: Annotated[User, "User requesting access"],
+        server: Annotated[Server, "Server to access"],
+    ) -> None:
         """Check if user has access to the specified server.
-        
+
         Args:
             user: The user requesting access
             server: The server to access
-            
+
         Raises:
             HTTPException: If user doesn't have permission to access the server
         """
@@ -55,20 +61,22 @@ class GroupAccessService:
 
 class GroupFileService:
     """Service for handling group-related file operations.
-    
+
     This service manages the synchronization of group data with server files,
     specifically handling ops.json and whitelist.json updates.
     """
-    
+
     def __init__(self, db: Annotated[Session, "Database session"]):
         self.db = db
 
-    async def update_server_files(self, server_id: Annotated[int, "ID of server to update"]) -> None:
+    async def update_server_files(
+        self, server_id: Annotated[int, "ID of server to update"]
+    ) -> None:
         """Update ops.json and whitelist.json files for a server.
-        
+
         This method retrieves all groups attached to a server and regenerates
         the ops.json and whitelist.json files based on group memberships.
-        
+
         Args:
             server_id: The ID of the server to update
         """
@@ -134,9 +142,11 @@ class GroupFileService:
             # Log error but don't fail the main operation
             print(f"Error updating server files for server {server_id}: {e}")
 
-    async def update_all_affected_servers(self, group_id: Annotated[int, "ID of group that was modified"]) -> None:
+    async def update_all_affected_servers(
+        self, group_id: Annotated[int, "ID of group that was modified"]
+    ) -> None:
         """Update all servers that have the specified group attached.
-        
+
         Args:
             group_id: The ID of the group that was modified
         """
@@ -152,11 +162,11 @@ class GroupFileService:
 
 class GroupService:
     """Main service for orchestrating group management operations.
-    
+
     This service handles CRUD operations for groups, player management,
     and server attachments with proper access control and audit logging.
     """
-    
+
     def __init__(self, db: Annotated[Session, "Database session"]):
         self.db = db
         self.access_service = GroupAccessService()
@@ -170,16 +180,16 @@ class GroupService:
         description: Annotated[Optional[str], "Optional description"] = None,
     ) -> Annotated[Group, "Created group instance"]:
         """Create a new group with the specified parameters.
-        
+
         Args:
             user: The user creating the group
             name: Name of the group
             group_type: Type of group (ops or whitelist)
             description: Optional description of the group's purpose
-            
+
         Returns:
             The created group instance
-            
+
         Raises:
             HTTPException: If group name already exists for this user
         """
@@ -526,7 +536,6 @@ class GroupService:
             )
 
         return groups
-
 
     def get_group_servers(self, user: User, group_id: int) -> List[Dict[str, Any]]:
         """Get all servers that have this group attached"""

@@ -22,7 +22,7 @@ from app.users.models import User
 
 class FileValidationService:
     """Service for validating file operations and access.
-    
+
     This service handles all validation logic for file operations including
     server existence, path safety, file permissions, and access control.
     """
@@ -45,19 +45,19 @@ class FileValidationService:
         ]
 
     def validate_server_exists(
-        self, 
-        server_id: Annotated[int, "ID of the server to validate"], 
-        db: Annotated[Session, "Database session for queries"]
+        self,
+        server_id: Annotated[int, "ID of the server to validate"],
+        db: Annotated[Session, "Database session for queries"],
     ) -> Annotated[Server, "Validated server instance"]:
         """Validate that a server exists in the database.
-        
+
         Args:
             server_id: The ID of the server to validate
             db: Database session for querying
-            
+
         Returns:
             Server instance if validation passes
-            
+
         Raises:
             ServerNotFoundException: If server doesn't exist
         """
