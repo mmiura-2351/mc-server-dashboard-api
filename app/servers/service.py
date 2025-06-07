@@ -3,7 +3,6 @@ import logging
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-import aiohttp
 from sqlalchemy import and_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -23,7 +22,10 @@ from app.servers.models import (
 )
 from app.servers.schemas import ServerCreateRequest, ServerResponse, ServerUpdateRequest
 from app.services.group_service import GroupService
+from app.services.jar_cache_manager import jar_cache_manager
 from app.services.minecraft_server import minecraft_server_manager
+from app.services.server_properties_generator import server_properties_generator
+from app.services.version_manager import minecraft_version_manager
 from app.users.models import User
 
 logger = logging.getLogger(__name__)
@@ -42,7 +44,7 @@ class ServerValidationService:
         # Check for existing server with same name
         existing_name = (
             db.query(Server)
-            .filter(and_(Server.name == request.name, not Server.is_deleted))
+            .filter(and_(Server.name == request.name, Server.is_deleted.is_(False)))
             .first()
         )
         if existing_name:
@@ -51,7 +53,7 @@ class ServerValidationService:
         # Check for existing server with same port
         existing_port = (
             db.query(Server)
-            .filter(and_(Server.port == request.port, not Server.is_deleted))
+            .filter(and_(Server.port == request.port, Server.is_deleted.is_(False)))
             .first()
         )
         if existing_port:
@@ -61,7 +63,7 @@ class ServerValidationService:
         """Validate server exists and return it"""
         server = (
             db.query(Server)
-            .filter(and_(Server.id == server_id, not Server.is_deleted))
+            .filter(and_(Server.id == server_id, Server.is_deleted.is_(False)))
             .first()
         )
         if not server:
@@ -77,70 +79,48 @@ class ServerValidationService:
 
 
 class ServerJarService:
-    """Service for handling server JAR downloads and management"""
+    """Service for handling server JAR downloads and management with caching"""
 
     def __init__(self):
-        self.server_versions = {
-            ServerType.vanilla: {
-                "1.20.1": "https://piston-data.mojang.com/v1/objects/84194a2f286ef7c14ed7ce0090dba59902951553/server.jar",
-                "1.19.4": "https://piston-data.mojang.com/v1/objects/8f3112a1049751cc472ec13e397eade5336ca7ae/server.jar",
-                "1.18.2": "https://piston-data.mojang.com/v1/objects/c8f83c5655308435b3dcf03c06d9fe8740a77469/server.jar",
-                "1.17.1": "https://piston-data.mojang.com/v1/objects/a16d67e5807f57fc4e550299cf20226194497dc2/server.jar",
-            },
-            ServerType.paper: {
-                "1.20.1": "https://api.papermc.io/v2/projects/paper/versions/1.20.1/builds/196/downloads/paper-1.20.1-196.jar",
-                "1.19.4": "https://api.papermc.io/v2/projects/paper/versions/1.19.4/builds/550/downloads/paper-1.19.4-550.jar",
-                "1.18.2": "https://api.papermc.io/v2/projects/paper/versions/1.18.2/builds/388/downloads/paper-1.18.2-388.jar",
-                "1.17.1": "https://api.papermc.io/v2/projects/paper/versions/1.17.1/builds/411/downloads/paper-1.17.1-411.jar",
-            },
-            ServerType.forge: {
-                "1.20.1": "https://maven.minecraftforge.net/net/minecraftforge/forge/1.20.1-47.2.0/forge-1.20.1-47.2.0-installer.jar",
-                "1.19.4": "https://maven.minecraftforge.net/net/minecraftforge/forge/1.19.4-45.2.0/forge-1.19.4-45.2.0-installer.jar",
-                "1.18.2": "https://maven.minecraftforge.net/net/minecraftforge/forge/1.18.2-40.2.0/forge-1.18.2-40.2.0-installer.jar",
-                "1.17.1": "https://maven.minecraftforge.net/net/minecraftforge/forge/1.17.1-37.1.1/forge-1.17.1-37.1.1-installer.jar",
-            },
-        }
+        self.version_manager = minecraft_version_manager
+        self.cache_manager = jar_cache_manager
 
-    async def download_server_jar(
+    async def get_server_jar(
         self, server_type: ServerType, minecraft_version: str, server_dir: Path
     ) -> Path:
-        """Download server JAR file"""
+        """Get server JAR file (from cache or download)"""
         try:
-            download_url = self._get_download_url(server_type, minecraft_version)
-            jar_path = server_dir / "server.jar"
+            # Validate version support
+            if not self.version_manager.is_version_supported(
+                server_type, minecraft_version
+            ):
+                raise InvalidRequestException(
+                    f"Version {minecraft_version} is not supported for {server_type.value} "
+                    f"(minimum supported version: 1.8)"
+                )
 
-            await self._download_file(download_url, jar_path)
+            # Get download URL
+            download_url = await self.version_manager.get_download_url(
+                server_type, minecraft_version
+            )
+
+            # Get JAR from cache or download
+            cached_jar_path = await self.cache_manager.get_or_download_jar(
+                server_type, minecraft_version, download_url
+            )
+
+            # Copy to server directory
+            server_jar_path = await self.cache_manager.copy_jar_to_server(
+                cached_jar_path, server_dir
+            )
 
             logger.info(
-                f"Downloaded {server_type.value} {minecraft_version} to {jar_path}"
+                f"Prepared {server_type.value} {minecraft_version} JAR for server at {server_jar_path}"
             )
-            return jar_path
+            return server_jar_path
 
         except Exception as e:
-            handle_file_error("download server jar", str(server_dir), e)
-
-    def _get_download_url(self, server_type: ServerType, minecraft_version: str) -> str:
-        """Get download URL for server type and version"""
-        if server_type not in self.server_versions:
-            raise InvalidRequestException(f"Unsupported server type: {server_type.value}")
-
-        version_urls = self.server_versions[server_type]
-        if minecraft_version not in version_urls:
-            raise InvalidRequestException(
-                f"Unsupported version {minecraft_version} for {server_type.value}"
-            )
-
-        return version_urls[minecraft_version]
-
-    async def _download_file(self, url: str, file_path: Path) -> None:
-        """Download file from URL to local path"""
-        async with aiohttp.ClientSession() as session:
-            async with session.get(url) as response:
-                response.raise_for_status()
-
-                with open(file_path, "wb") as f:
-                    async for chunk in response.content.iter_chunked(8192):
-                        f.write(chunk)
+            handle_file_error("get server jar", str(server_dir), e)
 
 
 class ServerFileSystemService:
@@ -149,6 +129,7 @@ class ServerFileSystemService:
     def __init__(self):
         self.base_directory = Path("servers")
         self.base_directory.mkdir(exist_ok=True)
+        self.properties_generator = server_properties_generator
 
     async def create_server_directory(self, server_name: str) -> Path:
         """Create server directory"""
@@ -171,7 +152,7 @@ class ServerFileSystemService:
     ) -> None:
         """Generate all server configuration files"""
         try:
-            # Generate server.properties
+            # Generate server.properties using dynamic generator
             await self._generate_server_properties(server, request, server_dir)
 
             # Generate eula.txt
@@ -188,36 +169,11 @@ class ServerFileSystemService:
     async def _generate_server_properties(
         self, server: Server, request: ServerCreateRequest, server_dir: Path
     ) -> None:
-        """Generate server.properties file"""
-        properties = {
-            "server-port": str(server.port),
-            "server-name": server.name,
-            "motd": request.description or f"A Minecraft Server - {server.name}",
-            "max-players": str(request.max_players or 20),
-            "difficulty": request.difficulty or "normal",
-            "gamemode": request.gamemode or "survival",
-            "level-name": "world",
-            "spawn-protection": "16",
-            "view-distance": "10",
-            "online-mode": "true",
-            "enable-command-block": "false",
-            "allow-nether": "true",
-            "allow-flight": "false",
-            "resource-pack": "",
-            "pvp": "true",
-            "hardcore": "false",
-            "white-list": "false",
-            "enforce-whitelist": "false",
-        }
-
-        # Add type-specific properties
-        if server.server_type == ServerType.paper:
-            properties.update(
-                {
-                    "paper-settings.async-chunks": "true",
-                    "paper-settings.optimize-explosions": "true",
-                }
-            )
+        """Generate server.properties file using dynamic generator"""
+        # Use the new dynamic properties generator
+        properties = self.properties_generator.generate_properties(
+            server, server.minecraft_version, request
+        )
 
         properties_content = "\n".join(
             [f"{key}={value}" for key, value in properties.items()]
@@ -226,6 +182,10 @@ class ServerFileSystemService:
         properties_file = server_dir / "server.properties"
         with open(properties_file, "w") as f:
             f.write(properties_content)
+
+        logger.info(
+            f"Generated {len(properties)} server properties for {server.minecraft_version}"
+        )
 
     async def _generate_eula_file(self, server_dir: Path) -> None:
         """Generate eula.txt file"""
@@ -241,7 +201,7 @@ eula=true"""
         """Generate startup script"""
         script_content = f"""#!/bin/bash
 cd "{server_dir}"
-java -Xmx{server.ram_mb}M -Xms{server.ram_mb}M -jar server.jar nogui"""
+java -Xmx{server.max_memory}M -Xms{server.max_memory}M -jar server.jar nogui"""
 
         script_file = server_dir / "start.sh"
         with open(script_file, "w") as f:
@@ -276,10 +236,8 @@ class ServerDatabaseService:
                 server_type=request.server_type,
                 minecraft_version=request.minecraft_version,
                 port=request.port,
-                ram_mb=request.ram_mb,
+                max_memory=request.max_memory,
                 max_players=request.max_players,
-                difficulty=request.difficulty,
-                gamemode=request.gamemode,
                 directory_path=directory_path,
                 owner_id=owner.id,
                 status=ServerStatus.stopped,
@@ -304,7 +262,7 @@ class ServerDatabaseService:
     ) -> Server:
         """Update server database record"""
         try:
-            for field, value in request.dict(exclude_unset=True).items():
+            for field, value in request.model_dump(exclude_unset=True).items():
                 setattr(server, field, value)
 
             db.commit()
@@ -321,7 +279,7 @@ class ServerDatabaseService:
         """Soft delete server record"""
         try:
             server.is_deleted = True
-            server.status = ServerStatus.deleted
+            server.status = ServerStatus.stopped  # Don't use 'deleted' status
 
             db.commit()
 
@@ -379,16 +337,25 @@ class ServerService:
     async def create_server(
         self, request: ServerCreateRequest, owner: User, db: Session
     ) -> ServerResponse:
-        """Create a new Minecraft server with type-specific configuration"""
+        """Create a new Minecraft server with dynamic version and caching support"""
         # Validate server uniqueness
         await self.validation_service.validate_server_uniqueness(request, db)
+
+        # Validate version support using dynamic version manager
+        if not minecraft_version_manager.is_version_supported(
+            request.server_type, request.minecraft_version
+        ):
+            raise InvalidRequestException(
+                f"Version {request.minecraft_version} is not supported for {request.server_type.value}. "
+                f"Minimum supported version: 1.8"
+            )
 
         # Create server directory
         server_dir = await self.filesystem_service.create_server_directory(request.name)
 
         try:
-            # Download server JAR
-            await self.jar_service.download_server_jar(
+            # Get server JAR (with caching)
+            await self.jar_service.get_server_jar(
                 request.server_type, request.minecraft_version, server_dir
             )
 
@@ -397,7 +364,7 @@ class ServerService:
                 request, owner, str(server_dir), db
             )
 
-            # Generate server configuration files
+            # Generate server configuration files (with dynamic properties)
             await self.filesystem_service.generate_server_files(
                 server, request, server_dir
             )
@@ -409,18 +376,19 @@ class ServerService:
                 )
 
             # Attach groups if provided
-            if hasattr(request, "group_ids") and request.group_ids:
-                group_service = GroupService(db)
-                for group_id in request.group_ids:
-                    await group_service.attach_server_to_group(
-                        group_id=group_id, server_id=server.id, db=db
-                    )
+            if request.attach_groups:
+                group_service = GroupService()
+                for group_type, group_ids in request.attach_groups.items():
+                    for group_id in group_ids:
+                        await group_service.attach_server_to_group(
+                            group_id=group_id, server_id=server.id, db=db
+                        )
 
             logger.info(
                 f"Successfully created {request.server_type.value} server '{request.name}' "
-                f"(ID: {server.id}) for user {owner.username}"
+                f"(v{request.minecraft_version}, ID: {server.id}) for user {owner.username}"
             )
-            return ServerResponse.from_orm(server)
+            return ServerResponse.model_validate(server)
 
         except Exception as e:
             # Cleanup on failure
@@ -431,7 +399,7 @@ class ServerService:
     async def get_server(self, server_id: int, db: Session) -> ServerResponse:
         """Get server by ID"""
         server = self.validation_service.validate_server_exists(server_id, db)
-        return ServerResponse.from_orm(server)
+        return ServerResponse.model_validate(server)
 
     async def update_server(
         self, server_id: int, request: ServerUpdateRequest, db: Session
@@ -439,14 +407,13 @@ class ServerService:
         """Update server configuration"""
         server = self.validation_service.validate_server_exists(server_id, db)
         updated_server = self.database_service.update_server_record(server, request, db)
-        return ServerResponse.from_orm(updated_server)
+        return ServerResponse.model_validate(updated_server)
 
-    async def delete_server(self, server_id: int, db: Session) -> Dict[str, str]:
+    async def delete_server(self, server_id: int, db: Session) -> bool:
         """Soft delete server"""
         server = self.validation_service.validate_server_exists(server_id, db)
         self.database_service.soft_delete_server(server, db)
-
-        return {"message": f"Server '{server.name}' deleted successfully"}
+        return True
 
     async def start_server(self, server_id: int, db: Session) -> Dict[str, str]:
         """Start server"""
@@ -506,9 +473,9 @@ class ServerService:
     ) -> Dict[str, Any]:
         """List servers with filtering and pagination"""
         try:
-            query = db.query(Server).filter(not Server.is_deleted)
+            query = db.query(Server).filter(Server.is_deleted.is_(False))
 
-            if owner_id:
+            if owner_id is not None:
                 query = query.filter(Server.owner_id == owner_id)
 
             if status:
@@ -524,7 +491,7 @@ class ServerService:
             servers = query.offset((page - 1) * size).limit(size).all()
 
             return {
-                "servers": [ServerResponse.from_orm(server) for server in servers],
+                "servers": [ServerResponse.model_validate(server) for server in servers],
                 "total": total,
                 "page": page,
                 "size": size,
@@ -532,6 +499,18 @@ class ServerService:
 
         except Exception as e:
             handle_database_error("list", "servers", e)
+
+    def get_supported_versions(self) -> Dict[str, Any]:
+        """Get supported versions for all server types"""
+        try:
+            # This will be called from router and converted to async
+            # For now, return a basic structure that can be populated by the router
+            return {
+                "versions": []  # Will be populated by router using async version manager
+            }
+        except Exception as e:
+            logger.error(f"Failed to get supported versions: {e}")
+            raise
 
 
 # Global server service instance

@@ -53,8 +53,20 @@ class ServerCreateRequest(BaseModel):
         # Basic version format validation (e.g., 1.20.1, 1.19.4)
         import re
 
+        from packaging import version
+
         if not re.match(r"^\d+\.\d+(\.\d+)?$", v):
             raise ValueError("Invalid Minecraft version format. Use format like 1.20.1")
+
+        # Check minimum version requirement (1.8+)
+        try:
+            parsed_version = version.Version(v)
+            min_version = version.Version("1.8.0")
+            if parsed_version < min_version:
+                raise ValueError("Minimum supported Minecraft version is 1.8")
+        except Exception as e:
+            raise ValueError(f"Invalid version format: {e}")
+
         return v
 
     @field_validator("server_properties")
@@ -124,24 +136,21 @@ class ServerCreateRequest(BaseModel):
         if not server_type or not minecraft_version:
             return self
 
-        # Define version compatibility for each server type
-        version_parts = minecraft_version.split(".")
-        if len(version_parts) < 2:
-            return self
+        # All server types now support 1.8+ with dynamic version management
+        # Specific compatibility will be checked by the version manager
+        try:
+            from packaging import version
 
-        major = int(version_parts[0])
-        minor = int(version_parts[1])
+            parsed_version = version.Version(minecraft_version)
+            min_version = version.Version("1.8.0")
 
-        # Basic compatibility checks
-        if server_type == ServerType.forge:
-            # Forge has specific version requirements
-            if major == 1 and minor < 12:
-                raise ValueError("Forge servers require Minecraft 1.12 or higher")
+            if parsed_version < min_version:
+                raise ValueError(
+                    f"All server types require Minecraft 1.8 or higher. Got: {minecraft_version}"
+                )
 
-        elif server_type == ServerType.paper:
-            # Paper also has minimum version requirements
-            if major == 1 and minor < 8:
-                raise ValueError("Paper servers require Minecraft 1.8 or higher")
+        except Exception as e:
+            raise ValueError(f"Version validation failed: {e}")
 
         return self
 
@@ -167,8 +176,7 @@ class ServerConfigurationResponse(BaseModel):
     configuration_value: str
     updated_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = {"from_attributes": True}
 
 
 class ServerResponse(BaseModel):
@@ -191,8 +199,7 @@ class ServerResponse(BaseModel):
     process_info: Optional[Dict[str, Any]] = None
     configurations: List[ServerConfigurationResponse] = []
 
-    class Config:
-        from_attributes = True
+    model_config = {"from_attributes": True}
 
 
 class ServerListResponse(BaseModel):
@@ -235,6 +242,8 @@ class MinecraftVersionInfo(BaseModel):
     download_url: str
     is_supported: bool = True
     release_date: Optional[datetime] = None
+    is_stable: bool = True
+    build_number: Optional[int] = None
 
 
 class SupportedVersionsResponse(BaseModel):

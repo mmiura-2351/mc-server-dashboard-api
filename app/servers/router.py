@@ -1,10 +1,12 @@
+import logging
+
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from app.auth.dependencies import get_current_user
 from app.core.database import get_db
 from app.core.exceptions import ConflictException
-from app.servers.models import ServerStatus
+from app.servers.models import ServerStatus, ServerType
 from app.servers.schemas import (
     ServerCommandRequest,
     ServerCreateRequest,
@@ -16,8 +18,12 @@ from app.servers.schemas import (
     SupportedVersionsResponse,
 )
 from app.servers.service import server_service
+from app.services.jar_cache_manager import jar_cache_manager
 from app.services.minecraft_server import minecraft_server_manager
+from app.services.version_manager import minecraft_version_manager
 from app.users.models import Role, User
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["servers"])
 
@@ -488,10 +494,23 @@ async def get_supported_versions():
     Get list of supported Minecraft versions
 
     Returns all supported Minecraft versions by server type with download URLs.
+    All versions 1.8+ are supported with dynamic API integration.
     """
     try:
-        versions = server_service.get_supported_versions()
-        return SupportedVersionsResponse(**versions)
+        all_versions = []
+
+        # Get versions for each server type
+        for server_type in ServerType:
+            try:
+                versions = await minecraft_version_manager.get_supported_versions(
+                    server_type
+                )
+                all_versions.extend(versions)
+            except Exception as e:
+                logger.warning(f"Failed to get versions for {server_type.value}: {e}")
+                continue
+
+        return SupportedVersionsResponse(versions=all_versions)
 
     except Exception as e:
         raise HTTPException(
@@ -535,4 +554,60 @@ async def sync_server_states(current_user: User = Depends(get_current_user)):
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to sync server states: {str(e)}",
+        )
+
+
+@router.get("/cache/stats")
+async def get_cache_stats(current_user: User = Depends(get_current_user)):
+    """
+    Get JAR cache statistics
+
+    Returns information about cached JAR files, total size, and cache efficiency.
+    """
+    try:
+        # Only admins can view cache stats
+        if current_user.role != Role.admin:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Only admins can view cache statistics",
+            )
+
+        stats = await jar_cache_manager.get_cache_stats()
+        return stats
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get cache stats: {str(e)}",
+        )
+
+
+@router.post("/cache/cleanup")
+async def cleanup_cache(current_user: User = Depends(get_current_user)):
+    """
+    Manually trigger cache cleanup
+
+    Removes old and oversized cache files. Admin-only operation.
+    """
+    try:
+        # Only admins can trigger cache cleanup
+        if current_user.role != Role.admin:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Only admins can trigger cache cleanup",
+            )
+
+        await jar_cache_manager.cleanup_old_cache()
+        stats = await jar_cache_manager.get_cache_stats()
+
+        return {"message": "Cache cleanup completed", "cache_stats": stats}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to cleanup cache: {str(e)}",
         )
