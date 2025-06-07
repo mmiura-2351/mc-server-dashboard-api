@@ -16,6 +16,8 @@ This is a FastAPI-based backend API for managing Minecraft servers. The applicat
 | Run tests         | `uv run pytest`               |
 | Run single test   | `uv run pytest tests/test_filename.py::test_function_name` |
 | Check code coverage | `uv run coverage run -m pytest && uv run coverage report` |
+| Start browser test environment | `./testing/scripts/test_server.sh start` |
+| Stop browser test environment | `./testing/scripts/test_server.sh stop` |
 
 ## System Requirements Overview
 
@@ -92,6 +94,57 @@ This system is a Minecraft server management dashboard providing 46 use cases ac
 - **Fixtures**: Comprehensive fixtures in `conftest.py` including test users with different roles
 - **Database Overrides**: `app.dependency_overrides[get_db]` pattern for test isolation
 - **User Fixtures**: Pre-built fixtures for `test_user`, `admin_user`, and `unapproved_user`
+
+#### Browser-based API Testing with Playwright
+
+The project includes a comprehensive browser-based testing system that provides visual verification of all API endpoints. This system uses Playwright for browser automation and a dedicated test server environment.
+
+**Test Environment Setup:**
+```bash
+# Start test environment (API server on port 8001, web interface on port 8002)
+./testing/scripts/test_server.sh start
+
+# Stop test environment and clean up
+./testing/scripts/test_server.sh stop
+
+# Check status of both servers
+./testing/scripts/test_server.sh status
+```
+
+**Test Server Script (`./testing/scripts/test_server.sh`):**
+- **Isolated Environment**: Uses separate test database (`test_app.db`) that is cleaned on start/stop
+- **Dual Server Setup**: Runs API server on port 8001 and web interface on port 8002
+- **First User Auto-Admin**: The first registered user automatically gets admin privileges and approval
+- **Automatic Cleanup**: Database, logs, and PID files are cleaned up when stopped
+
+**Web Testing Interface (`./testing/web/index.html`):**
+- **Comprehensive API Coverage**: Tests all 30+ API endpoints across all feature areas
+- **Visual Response Display**: Shows request/response data in real-time with syntax highlighting
+- **Pre-configured Test Data**: Includes sample data for servers, groups, backups, and templates
+- **Authentication Flow**: Full user registration, login, and token management
+- **Complex Scenarios**: Multi-step workflows like server creation → group creation → attachment
+
+**Playwright Integration:**
+```bash
+# Example: Automated browser testing with screenshot capture
+# Screenshots are saved to ~/Screenshots/{timestamp}/ with numbered filenames
+```
+
+**Test Coverage Areas:**
+1. **Authentication**: User registration, login, token validation
+2. **Server Management**: Create, list, details, status, supported versions
+3. **Group Management**: Create, list, details, player management, server attachment
+4. **Backup Management**: Create, list, details, restore, statistics, scheduler status
+5. **Template Management**: Create from server, custom creation, details, cloning
+6. **File Management**: List files, read/write operations, file search
+7. **Complex Scenarios**: Multi-API workflows and integration testing
+
+**Key Testing Features:**
+- **Visual Evidence**: Full-page screenshots for each API test execution
+- **Error Validation**: Tests both success and failure scenarios
+- **Data Persistence**: Verifies data consistency across related API calls
+- **Role-based Testing**: Tests different user permission levels
+- **Real-time Feedback**: Immediate visual confirmation of API responses
 
 
 ### Configuration
