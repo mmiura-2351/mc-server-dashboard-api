@@ -28,7 +28,7 @@ router = APIRouter(tags=["templates"])
 def check_server_access(server_id: int, current_user: User, db: Session):
     """Check if user has access to the server"""
     server = (
-        db.query(Server).filter(Server.id == server_id, not Server.is_deleted).first()
+        db.query(Server).filter(Server.id == server_id, Server.is_deleted == False).first()
     )
     if not server:
         raise HTTPException(

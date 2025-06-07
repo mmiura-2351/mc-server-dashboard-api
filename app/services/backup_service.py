@@ -49,7 +49,7 @@ class BackupValidationService:
         """
         server = (
             db.query(Server)
-            .filter(and_(Server.id == server_id, not Server.is_deleted))
+            .filter(and_(Server.id == server_id, Server.is_deleted == False))
             .first()
         )
 
@@ -418,7 +418,7 @@ class BackupService:
                 # Check if server exists
                 server = (
                     db.query(Server)
-                    .filter(and_(Server.id == server_id, not Server.is_deleted))
+                    .filter(and_(Server.id == server_id, Server.is_deleted == False))
                     .first()
                 )
 
@@ -529,7 +529,7 @@ class BackupService:
         try:
             server = (
                 db.query(Server)
-                .filter(and_(Server.id == server_id, not Server.is_deleted))
+                .filter(and_(Server.id == server_id, Server.is_deleted == False))
                 .first()
             )
 

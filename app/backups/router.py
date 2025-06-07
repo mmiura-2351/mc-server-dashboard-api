@@ -564,7 +564,7 @@ async def add_server_to_schedule(
 
         # Check if server exists
         server = (
-            db.query(Server).filter(Server.id == server_id, not Server.is_deleted).first()
+            db.query(Server).filter(Server.id == server_id, Server.is_deleted == False).first()
         )
         if not server:
             raise HTTPException(
