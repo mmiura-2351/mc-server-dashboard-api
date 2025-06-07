@@ -144,18 +144,25 @@
             padding: 15px;
             border-radius: 4px;
             margin-top: 15px;
-            height: calc(100vh - 200px);
+            height: calc(100vh - 250px);
             overflow-y: auto;
             font-family: 'Monaco', 'Consolas', monospace;
             font-size: 12px;
             white-space: pre-wrap;
+            word-wrap: break-word;
         }
         
         .response-container {
-            position: sticky;
-            top: 0;
-            background: #fff;
-            padding-bottom: 10px;
+            display: block;
+        }
+        
+        .response.success {
+            border-left: 4px solid #27ae60;
+        }
+        
+        .response.error {
+            background: #e74c3c;
+            border-left: 4px solid #c0392b;
         }
         
         .token-display {
@@ -627,23 +634,13 @@
                 </div>
             </div>
             
-            <!-- Right Panel - Responses -->
+            <!-- Right Panel - Response -->
             <div class="right-panel">
-                <div class="panel-title">📋 API Response Display</div>
+                <div class="panel-title">📋 Latest API Response</div>
                 
                 <div class="response-container">
-                    <h3>🔐 Authentication Response</h3>
-                    <div id="authResponse" class="response" style="display: none;"></div>
-                </div>
-                
-                <div class="response-container">
-                    <h3>🧪 Endpoint Test Response</h3>
-                    <div id="endpointResponse" class="response" style="display: none;"></div>
-                </div>
-                
-                <div class="response-container">
-                    <h3>🛠️ Custom Request Response</h3>
-                    <div id="customResponse" class="response" style="display: none;"></div>
+                    <div id="lastRequestInfo" style="margin-bottom: 10px; font-weight: bold; color: #2c3e50;"></div>
+                    <div id="apiResponse" class="response">No API requests executed yet. Select an API test from the left panel to see the response here.</div>
                 </div>
             </div>
         </div>
@@ -653,14 +650,19 @@
         let authToken = '';
         const apiBaseUrl = () => document.getElementById('apiUrl').value;
         
-        function showResponse(elementId, response, isError = false) {
-            const element = document.getElementById(elementId);
-            element.style.display = 'block';
-            element.textContent = JSON.stringify(response, null, 2);
-            element.className = isError ? 'response error' : 'response';
+        function showResponse(requestInfo, response, isError = false) {
+            const responseElement = document.getElementById('apiResponse');
+            const infoElement = document.getElementById('lastRequestInfo');
+            
+            // Update request info
+            infoElement.textContent = requestInfo;
+            
+            // Update response content
+            responseElement.textContent = JSON.stringify(response, null, 2);
+            responseElement.className = isError ? 'response error' : 'response success';
             
             // Auto-scroll to top of response area
-            element.scrollTop = 0;
+            responseElement.scrollTop = 0;
         }
         
         function updateTokenDisplay(token) {
@@ -691,9 +693,9 @@
                 });
                 
                 const data = await response.json();
-                showResponse('authResponse', data, !response.ok);
+                showResponse('POST /users/register', data, !response.ok);
             } catch (error) {
-                showResponse('authResponse', { error: error.message }, true);
+                showResponse('POST /users/register', { error: error.message }, true);
             }
         }
         
@@ -709,19 +711,19 @@
                 });
                 
                 const data = await response.json();
-                showResponse('authResponse', data, !response.ok);
+                showResponse('POST /auth/token', data, !response.ok);
                 
                 if (response.ok && data.access_token) {
                     updateTokenDisplay(data.access_token);
                 }
             } catch (error) {
-                showResponse('authResponse', { error: error.message }, true);
+                showResponse('POST /auth/token', { error: error.message }, true);
             }
         }
         
         async function testEndpoint(method, endpoint) {
             if (!authToken) {
-                showResponse('endpointResponse', { error: 'Please login first to get authentication token' }, true);
+                showResponse(`${method} ${endpoint}`, { error: 'Please login first to get authentication token' }, true);
                 return;
             }
             
@@ -735,22 +737,15 @@
                 });
                 
                 const data = await response.json();
-                showResponse('endpointResponse', { 
-                    endpoint: `${method} ${endpoint}`,
-                    status: response.status,
-                    data: data 
-                }, !response.ok);
+                showResponse(`${method} ${endpoint} - Status: ${response.status}`, data, !response.ok);
             } catch (error) {
-                showResponse('endpointResponse', { 
-                    endpoint: `${method} ${endpoint}`,
-                    error: error.message 
-                }, true);
+                showResponse(`${method} ${endpoint}`, { error: error.message }, true);
             }
         }
         
         async function testEndpointWithData(method, endpoint, dataElementId) {
             if (!authToken) {
-                showResponse('endpointResponse', { error: 'Please login first to get authentication token' }, true);
+                showResponse(`${method} ${endpoint}`, { error: 'Please login first to get authentication token' }, true);
                 return;
             }
             
@@ -761,7 +756,7 @@
                 try {
                     requestData = JSON.parse(dataElement.value);
                 } catch (error) {
-                    showResponse('endpointResponse', { error: 'Invalid JSON data' }, true);
+                    showResponse(`${method} ${endpoint}`, { error: 'Invalid JSON data' }, true);
                     return;
                 }
             }
@@ -777,17 +772,12 @@
                 });
                 
                 const data = await response.json();
-                showResponse('endpointResponse', { 
-                    endpoint: `${method} ${endpoint}`,
+                showResponse(`${method} ${endpoint} - Status: ${response.status}`, {
                     requestData: requestData,
-                    status: response.status,
-                    data: data 
+                    response: data 
                 }, !response.ok);
             } catch (error) {
-                showResponse('endpointResponse', { 
-                    endpoint: `${method} ${endpoint}`,
-                    error: error.message 
-                }, true);
+                showResponse(`${method} ${endpoint}`, { error: error.message }, true);
             }
         }
         
@@ -808,7 +798,7 @@
                         requestData = JSON.parse(customData);
                         requestBody = JSON.stringify(requestData);
                     } catch (error) {
-                        showResponse('customResponse', { error: 'Invalid JSON data' }, true);
+                        showResponse(`${method} ${endpoint}`, { error: 'Invalid JSON data' }, true);
                         return;
                     }
                 } else if (contentType === 'application/x-www-form-urlencoded') {
@@ -859,32 +849,25 @@
                     responseData = await response.text();
                 }
                 
-                showResponse('customResponse', { 
-                    endpoint: `${method} ${endpoint}`,
-                    contentType: contentType,
+                showResponse(`${method} ${endpoint} - Status: ${response.status}`, {
                     requestData: requestData,
-                    status: response.status,
-                    data: responseData 
+                    response: responseData 
                 }, !response.ok);
             } catch (error) {
-                showResponse('customResponse', { 
-                    endpoint: `${method} ${endpoint}`,
-                    contentType: contentType,
-                    error: error.message 
-                }, true);
+                showResponse(`${method} ${endpoint}`, { error: error.message }, true);
             }
         }
         
         // User management functions
         async function approveUser() {
             if (!authToken) {
-                showResponse('endpointResponse', { error: 'Please login first to get authentication token' }, true);
+                showResponse('API Request', { error: 'Please login first to get authentication token' }, true);
                 return;
             }
             
             const userId = document.getElementById('approveUserId').value;
             if (!userId) {
-                showResponse('endpointResponse', { error: 'Please enter a user ID to approve' }, true);
+                showResponse('API Request', { error: 'Please enter a user ID to approve' }, true);
                 return;
             }
             
@@ -898,22 +881,15 @@
                 });
                 
                 const data = await response.json();
-                showResponse('endpointResponse', { 
-                    endpoint: `POST /users/approve/${userId}`,
-                    status: response.status,
-                    data: data 
-                }, !response.ok);
+                showResponse(`POST /users/approve/${userId} - Status: ${response.status}`, data, !response.ok);
             } catch (error) {
-                showResponse('endpointResponse', { 
-                    endpoint: `POST /users/approve/${userId}`,
-                    error: error.message 
-                }, true);
+                showResponse(`POST /users/approve/${userId}`, { error: error.message }, true);
             }
         }
         
         async function changeUserRole() {
             if (!authToken) {
-                showResponse('endpointResponse', { error: 'Please login first to get authentication token' }, true);
+                showResponse('API Request', { error: 'Please login first to get authentication token' }, true);
                 return;
             }
             
@@ -921,7 +897,7 @@
             const newRole = document.getElementById('newRole').value;
             
             if (!userId) {
-                showResponse('endpointResponse', { error: 'Please enter a user ID' }, true);
+                showResponse('API Request', { error: 'Please enter a user ID' }, true);
                 return;
             }
             
@@ -936,14 +912,14 @@
                 });
                 
                 const data = await response.json();
-                showResponse('endpointResponse', { 
+                showResponse('API Request', { 
                     endpoint: `PUT /users/role/${userId}`,
                     requestData: { role: newRole },
                     status: response.status,
                     data: data 
                 }, !response.ok);
             } catch (error) {
-                showResponse('endpointResponse', { 
+                showResponse('API Request', { 
                     endpoint: `PUT /users/role/${userId}`,
                     error: error.message 
                 }, true);
@@ -952,7 +928,7 @@
         
         async function updateProfile() {
             if (!authToken) {
-                showResponse('endpointResponse', { error: 'Please login first to get authentication token' }, true);
+                showResponse('API Request', { error: 'Please login first to get authentication token' }, true);
                 return;
             }
             
@@ -960,7 +936,7 @@
             const email = document.getElementById('updateEmail').value;
             
             if (!username && !email) {
-                showResponse('endpointResponse', { error: 'Please enter username or email to update' }, true);
+                showResponse('API Request', { error: 'Please enter username or email to update' }, true);
                 return;
             }
             
@@ -979,7 +955,7 @@
                 });
                 
                 const data = await response.json();
-                showResponse('endpointResponse', { 
+                showResponse('API Request', { 
                     endpoint: 'PUT /users/me',
                     requestData: updateData,
                     status: response.status,
@@ -991,7 +967,7 @@
                     updateTokenDisplay(data.access_token);
                 }
             } catch (error) {
-                showResponse('endpointResponse', { 
+                showResponse('API Request', { 
                     endpoint: 'PUT /users/me',
                     error: error.message 
                 }, true);
@@ -1000,7 +976,7 @@
         
         async function changePassword() {
             if (!authToken) {
-                showResponse('endpointResponse', { error: 'Please login first to get authentication token' }, true);
+                showResponse('API Request', { error: 'Please login first to get authentication token' }, true);
                 return;
             }
             
@@ -1008,7 +984,7 @@
             const newPassword = document.getElementById('newPassword').value;
             
             if (!currentPassword || !newPassword) {
-                showResponse('endpointResponse', { error: 'Please enter both current and new passwords' }, true);
+                showResponse('API Request', { error: 'Please enter both current and new passwords' }, true);
                 return;
             }
             
@@ -1026,7 +1002,7 @@
                 });
                 
                 const data = await response.json();
-                showResponse('endpointResponse', { 
+                showResponse('API Request', { 
                     endpoint: 'PUT /users/me/password',
                     status: response.status,
                     data: data 
@@ -1040,7 +1016,7 @@
                     document.getElementById('newPassword').value = '';
                 }
             } catch (error) {
-                showResponse('endpointResponse', { 
+                showResponse('API Request', { 
                     endpoint: 'PUT /users/me/password',
                     error: error.message 
                 }, true);
@@ -1049,13 +1025,13 @@
         
         async function deleteUser() {
             if (!authToken) {
-                showResponse('endpointResponse', { error: 'Please login first to get authentication token' }, true);
+                showResponse('API Request', { error: 'Please login first to get authentication token' }, true);
                 return;
             }
             
             const userId = document.getElementById('deleteUserId').value;
             if (!userId) {
-                showResponse('endpointResponse', { error: 'Please enter a user ID to delete' }, true);
+                showResponse('API Request', { error: 'Please enter a user ID to delete' }, true);
                 return;
             }
             
@@ -1073,13 +1049,13 @@
                 });
                 
                 const data = await response.json();
-                showResponse('endpointResponse', { 
+                showResponse('API Request', { 
                     endpoint: `DELETE /users/${userId}`,
                     status: response.status,
                     data: data 
                 }, !response.ok);
             } catch (error) {
-                showResponse('endpointResponse', { 
+                showResponse('API Request', { 
                     endpoint: `DELETE /users/${userId}`,
                     error: error.message 
                 }, true);
@@ -1089,7 +1065,7 @@
         // Server Management Functions
         async function testServerEndpoint(method, action) {
             if (!authToken) {
-                showResponse('endpointResponse', { error: 'Please login first to get authentication token' }, true);
+                showResponse('API Request', { error: 'Please login first to get authentication token' }, true);
                 return;
             }
             
@@ -1097,7 +1073,7 @@
             const serverId = document.getElementById(idField).value;
             
             if (!serverId) {
-                showResponse('endpointResponse', { error: 'Please enter a server ID' }, true);
+                showResponse('API Request', { error: 'Please enter a server ID' }, true);
                 return;
             }
             
@@ -1122,13 +1098,13 @@
                 });
                 
                 const data = await response.json();
-                showResponse('endpointResponse', { 
+                showResponse('API Request', { 
                     endpoint: `${method} ${endpoint}`,
                     status: response.status,
                     data: data 
                 }, !response.ok);
             } catch (error) {
-                showResponse('endpointResponse', { 
+                showResponse('API Request', { 
                     endpoint: `${method} ${endpoint}`,
                     error: error.message 
                 }, true);
@@ -1137,7 +1113,7 @@
         
         async function testServerEndpointWithData(method, action) {
             if (!authToken) {
-                showResponse('endpointResponse', { error: 'Please login first to get authentication token' }, true);
+                showResponse('API Request', { error: 'Please login first to get authentication token' }, true);
                 return;
             }
             
@@ -1147,7 +1123,7 @@
             const dataElement = document.getElementById(dataField);
             
             if (!serverId) {
-                showResponse('endpointResponse', { error: 'Please enter a server ID' }, true);
+                showResponse('API Request', { error: 'Please enter a server ID' }, true);
                 return;
             }
             
@@ -1156,7 +1132,7 @@
                 try {
                     requestData = JSON.parse(dataElement.value);
                 } catch (error) {
-                    showResponse('endpointResponse', { error: 'Invalid JSON data' }, true);
+                    showResponse('API Request', { error: 'Invalid JSON data' }, true);
                     return;
                 }
             }
@@ -1174,14 +1150,14 @@
                 });
                 
                 const data = await response.json();
-                showResponse('endpointResponse', { 
+                showResponse('API Request', { 
                     endpoint: `${method} ${endpoint}`,
                     requestData: requestData,
                     status: response.status,
                     data: data 
                 }, !response.ok);
             } catch (error) {
-                showResponse('endpointResponse', { 
+                showResponse('API Request', { 
                     endpoint: `${method} ${endpoint}`,
                     error: error.message 
                 }, true);
@@ -1190,7 +1166,7 @@
         
         async function testServerCommand() {
             if (!authToken) {
-                showResponse('endpointResponse', { error: 'Please login first to get authentication token' }, true);
+                showResponse('API Request', { error: 'Please login first to get authentication token' }, true);
                 return;
             }
             
@@ -1198,7 +1174,7 @@
             const command = document.getElementById('serverCommand').value;
             
             if (!serverId || !command) {
-                showResponse('endpointResponse', { error: 'Please enter both server ID and command' }, true);
+                showResponse('API Request', { error: 'Please enter both server ID and command' }, true);
                 return;
             }
             
@@ -1213,14 +1189,14 @@
                 });
                 
                 const data = await response.json();
-                showResponse('endpointResponse', { 
+                showResponse('API Request', { 
                     endpoint: `POST /servers/${serverId}/command`,
                     requestData: { command: command },
                     status: response.status,
                     data: data 
                 }, !response.ok);
             } catch (error) {
-                showResponse('endpointResponse', { 
+                showResponse('API Request', { 
                     endpoint: `POST /servers/${serverId}/command`,
                     error: error.message 
                 }, true);
@@ -1229,7 +1205,7 @@
         
         async function testServerLogs() {
             if (!authToken) {
-                showResponse('endpointResponse', { error: 'Please login first to get authentication token' }, true);
+                showResponse('API Request', { error: 'Please login first to get authentication token' }, true);
                 return;
             }
             
@@ -1237,7 +1213,7 @@
             const lines = document.getElementById('serverLogsLines').value;
             
             if (!serverId) {
-                showResponse('endpointResponse', { error: 'Please enter a server ID' }, true);
+                showResponse('API Request', { error: 'Please enter a server ID' }, true);
                 return;
             }
             
@@ -1256,13 +1232,13 @@
                 });
                 
                 const data = await response.json();
-                showResponse('endpointResponse', { 
+                showResponse('API Request', { 
                     endpoint: `GET ${endpoint}`,
                     status: response.status,
                     data: data 
                 }, !response.ok);
             } catch (error) {
-                showResponse('endpointResponse', { 
+                showResponse('API Request', { 
                     endpoint: `GET ${endpoint}`,
                     error: error.message 
                 }, true);
@@ -1272,7 +1248,7 @@
         // Group Management Functions
         async function testGroupEndpoint(method, action) {
             if (!authToken) {
-                showResponse('endpointResponse', { error: 'Please login first to get authentication token' }, true);
+                showResponse('API Request', { error: 'Please login first to get authentication token' }, true);
                 return;
             }
             
@@ -1280,7 +1256,7 @@
             const groupId = document.getElementById(idField).value;
             
             if (!groupId) {
-                showResponse('endpointResponse', { error: 'Please enter a group ID' }, true);
+                showResponse('API Request', { error: 'Please enter a group ID' }, true);
                 return;
             }
             
@@ -1296,13 +1272,13 @@
                 });
                 
                 const data = await response.json();
-                showResponse('endpointResponse', { 
+                showResponse('API Request', { 
                     endpoint: `${method} ${endpoint}`,
                     status: response.status,
                     data: data 
                 }, !response.ok);
             } catch (error) {
-                showResponse('endpointResponse', { 
+                showResponse('API Request', { 
                     endpoint: `${method} ${endpoint}`,
                     error: error.message 
                 }, true);
@@ -1311,7 +1287,7 @@
         
         async function testGroupEndpointWithData(method, action) {
             if (!authToken) {
-                showResponse('endpointResponse', { error: 'Please login first to get authentication token' }, true);
+                showResponse('API Request', { error: 'Please login first to get authentication token' }, true);
                 return;
             }
             
@@ -1321,7 +1297,7 @@
             const dataElement = document.getElementById(dataField);
             
             if (!groupId) {
-                showResponse('endpointResponse', { error: 'Please enter a group ID' }, true);
+                showResponse('API Request', { error: 'Please enter a group ID' }, true);
                 return;
             }
             
@@ -1330,7 +1306,7 @@
                 try {
                     requestData = JSON.parse(dataElement.value);
                 } catch (error) {
-                    showResponse('endpointResponse', { error: 'Invalid JSON data' }, true);
+                    showResponse('API Request', { error: 'Invalid JSON data' }, true);
                     return;
                 }
             }
@@ -1348,14 +1324,14 @@
                 });
                 
                 const data = await response.json();
-                showResponse('endpointResponse', { 
+                showResponse('API Request', { 
                     endpoint: `${method} ${endpoint}`,
                     requestData: requestData,
                     status: response.status,
                     data: data 
                 }, !response.ok);
             } catch (error) {
-                showResponse('endpointResponse', { 
+                showResponse('API Request', { 
                     endpoint: `${method} ${endpoint}`,
                     error: error.message 
                 }, true);
@@ -1364,7 +1340,7 @@
         
         async function testAddPlayer() {
             if (!authToken) {
-                showResponse('endpointResponse', { error: 'Please login first to get authentication token' }, true);
+                showResponse('API Request', { error: 'Please login first to get authentication token' }, true);
                 return;
             }
             
@@ -1372,7 +1348,7 @@
             const playerName = document.getElementById('playerName').value;
             
             if (!groupId || !playerName) {
-                showResponse('endpointResponse', { error: 'Please enter both group ID and player name' }, true);
+                showResponse('API Request', { error: 'Please enter both group ID and player name' }, true);
                 return;
             }
             
@@ -1387,14 +1363,14 @@
                 });
                 
                 const data = await response.json();
-                showResponse('endpointResponse', { 
+                showResponse('API Request', { 
                     endpoint: `POST /groups/${groupId}/players`,
                     requestData: { player_name: playerName },
                     status: response.status,
                     data: data 
                 }, !response.ok);
             } catch (error) {
-                showResponse('endpointResponse', { 
+                showResponse('API Request', { 
                     endpoint: `POST /groups/${groupId}/players`,
                     error: error.message 
                 }, true);
@@ -1403,7 +1379,7 @@
         
         async function testRemovePlayer() {
             if (!authToken) {
-                showResponse('endpointResponse', { error: 'Please login first to get authentication token' }, true);
+                showResponse('API Request', { error: 'Please login first to get authentication token' }, true);
                 return;
             }
             
@@ -1411,7 +1387,7 @@
             const playerUuid = document.getElementById('removePlayerUuid').value;
             
             if (!groupId || !playerUuid) {
-                showResponse('endpointResponse', { error: 'Please enter both group ID and player UUID' }, true);
+                showResponse('API Request', { error: 'Please enter both group ID and player UUID' }, true);
                 return;
             }
             
@@ -1425,13 +1401,13 @@
                 });
                 
                 const data = await response.json();
-                showResponse('endpointResponse', { 
+                showResponse('API Request', { 
                     endpoint: `DELETE /groups/${groupId}/players/${playerUuid}`,
                     status: response.status,
                     data: data 
                 }, !response.ok);
             } catch (error) {
-                showResponse('endpointResponse', { 
+                showResponse('API Request', { 
                     endpoint: `DELETE /groups/${groupId}/players/${playerUuid}`,
                     error: error.message 
                 }, true);
@@ -1440,7 +1416,7 @@
         
         async function testGroupServerAttach() {
             if (!authToken) {
-                showResponse('endpointResponse', { error: 'Please login first to get authentication token' }, true);
+                showResponse('API Request', { error: 'Please login first to get authentication token' }, true);
                 return;
             }
             
@@ -1448,7 +1424,7 @@
             const serverId = document.getElementById('attachServerId').value;
             
             if (!groupId || !serverId) {
-                showResponse('endpointResponse', { error: 'Please enter both group ID and server ID' }, true);
+                showResponse('API Request', { error: 'Please enter both group ID and server ID' }, true);
                 return;
             }
             
@@ -1463,14 +1439,14 @@
                 });
                 
                 const data = await response.json();
-                showResponse('endpointResponse', { 
+                showResponse('API Request', { 
                     endpoint: `POST /groups/${groupId}/servers`,
                     requestData: { server_id: parseInt(serverId) },
                     status: response.status,
                     data: data 
                 }, !response.ok);
             } catch (error) {
-                showResponse('endpointResponse', { 
+                showResponse('API Request', { 
                     endpoint: `POST /groups/${groupId}/servers`,
                     error: error.message 
                 }, true);
@@ -1479,7 +1455,7 @@
         
         async function testGroupServerDetach() {
             if (!authToken) {
-                showResponse('endpointResponse', { error: 'Please login first to get authentication token' }, true);
+                showResponse('API Request', { error: 'Please login first to get authentication token' }, true);
                 return;
             }
             
@@ -1487,7 +1463,7 @@
             const serverId = document.getElementById('detachServerId').value;
             
             if (!groupId || !serverId) {
-                showResponse('endpointResponse', { error: 'Please enter both group ID and server ID' }, true);
+                showResponse('API Request', { error: 'Please enter both group ID and server ID' }, true);
                 return;
             }
             
@@ -1501,13 +1477,13 @@
                 });
                 
                 const data = await response.json();
-                showResponse('endpointResponse', { 
+                showResponse('API Request', { 
                     endpoint: `DELETE /groups/${groupId}/servers/${serverId}`,
                     status: response.status,
                     data: data 
                 }, !response.ok);
             } catch (error) {
-                showResponse('endpointResponse', { 
+                showResponse('API Request', { 
                     endpoint: `DELETE /groups/${groupId}/servers/${serverId}`,
                     error: error.message 
                 }, true);
@@ -1517,7 +1493,7 @@
         // Backup Management Functions
         async function testCreateBackup() {
             if (!authToken) {
-                showResponse('endpointResponse', { error: 'Please login first to get authentication token' }, true);
+                showResponse('API Request', { error: 'Please login first to get authentication token' }, true);
                 return;
             }
             
@@ -1525,7 +1501,7 @@
             const dataElement = document.getElementById('backupData');
             
             if (!serverId) {
-                showResponse('endpointResponse', { error: 'Please enter a server ID' }, true);
+                showResponse('API Request', { error: 'Please enter a server ID' }, true);
                 return;
             }
             
@@ -1534,7 +1510,7 @@
                 try {
                     requestData = JSON.parse(dataElement.value);
                 } catch (error) {
-                    showResponse('endpointResponse', { error: 'Invalid JSON data' }, true);
+                    showResponse('API Request', { error: 'Invalid JSON data' }, true);
                     return;
                 }
             }
@@ -1550,14 +1526,14 @@
                 });
                 
                 const data = await response.json();
-                showResponse('endpointResponse', { 
+                showResponse('API Request', { 
                     endpoint: `POST /backups/servers/${serverId}/backups`,
                     requestData: requestData,
                     status: response.status,
                     data: data 
                 }, !response.ok);
             } catch (error) {
-                showResponse('endpointResponse', { 
+                showResponse('API Request', { 
                     endpoint: `POST /backups/servers/${serverId}/backups`,
                     error: error.message 
                 }, true);
@@ -1566,14 +1542,14 @@
         
         async function testServerBackups() {
             if (!authToken) {
-                showResponse('endpointResponse', { error: 'Please login first to get authentication token' }, true);
+                showResponse('API Request', { error: 'Please login first to get authentication token' }, true);
                 return;
             }
             
             const serverId = document.getElementById('listBackupServerId').value;
             
             if (!serverId) {
-                showResponse('endpointResponse', { error: 'Please enter a server ID' }, true);
+                showResponse('API Request', { error: 'Please enter a server ID' }, true);
                 return;
             }
             
@@ -1587,13 +1563,13 @@
                 });
                 
                 const data = await response.json();
-                showResponse('endpointResponse', { 
+                showResponse('API Request', { 
                     endpoint: `GET /backups/servers/${serverId}/backups`,
                     status: response.status,
                     data: data 
                 }, !response.ok);
             } catch (error) {
-                showResponse('endpointResponse', { 
+                showResponse('API Request', { 
                     endpoint: `GET /backups/servers/${serverId}/backups`,
                     error: error.message 
                 }, true);
@@ -1602,7 +1578,7 @@
         
         async function testBackupEndpoint(method, action) {
             if (!authToken) {
-                showResponse('endpointResponse', { error: 'Please login first to get authentication token' }, true);
+                showResponse('API Request', { error: 'Please login first to get authentication token' }, true);
                 return;
             }
             
@@ -1610,7 +1586,7 @@
             const backupId = document.getElementById(idField).value;
             
             if (!backupId) {
-                showResponse('endpointResponse', { error: 'Please enter a backup ID' }, true);
+                showResponse('API Request', { error: 'Please enter a backup ID' }, true);
                 return;
             }
             
@@ -1626,13 +1602,13 @@
                 });
                 
                 const data = await response.json();
-                showResponse('endpointResponse', { 
+                showResponse('API Request', { 
                     endpoint: `${method} ${endpoint}`,
                     status: response.status,
                     data: data 
                 }, !response.ok);
             } catch (error) {
-                showResponse('endpointResponse', { 
+                showResponse('API Request', { 
                     endpoint: `${method} ${endpoint}`,
                     error: error.message 
                 }, true);
@@ -1641,7 +1617,7 @@
         
         async function testRestoreBackup() {
             if (!authToken) {
-                showResponse('endpointResponse', { error: 'Please login first to get authentication token' }, true);
+                showResponse('API Request', { error: 'Please login first to get authentication token' }, true);
                 return;
             }
             
@@ -1649,7 +1625,7 @@
             const dataElement = document.getElementById('restoreData');
             
             if (!backupId) {
-                showResponse('endpointResponse', { error: 'Please enter a backup ID' }, true);
+                showResponse('API Request', { error: 'Please enter a backup ID' }, true);
                 return;
             }
             
@@ -1658,7 +1634,7 @@
                 try {
                     requestData = JSON.parse(dataElement.value);
                 } catch (error) {
-                    showResponse('endpointResponse', { error: 'Invalid JSON data' }, true);
+                    showResponse('API Request', { error: 'Invalid JSON data' }, true);
                     return;
                 }
             }
@@ -1674,14 +1650,14 @@
                 });
                 
                 const data = await response.json();
-                showResponse('endpointResponse', { 
+                showResponse('API Request', { 
                     endpoint: `POST /backups/backups/${backupId}/restore`,
                     requestData: requestData,
                     status: response.status,
                     data: data 
                 }, !response.ok);
             } catch (error) {
-                showResponse('endpointResponse', { 
+                showResponse('API Request', { 
                     endpoint: `POST /backups/backups/${backupId}/restore`,
                     error: error.message 
                 }, true);
@@ -1690,7 +1666,7 @@
         
         async function testBackupStats() {
             if (!authToken) {
-                showResponse('endpointResponse', { error: 'Please login first to get authentication token' }, true);
+                showResponse('API Request', { error: 'Please login first to get authentication token' }, true);
                 return;
             }
             
@@ -1713,13 +1689,13 @@
                 });
                 
                 const data = await response.json();
-                showResponse('endpointResponse', { 
+                showResponse('API Request', { 
                     endpoint: `GET ${endpoint}`,
                     status: response.status,
                     data: data 
                 }, !response.ok);
             } catch (error) {
-                showResponse('endpointResponse', { 
+                showResponse('API Request', { 
                     endpoint: `GET ${endpoint}`,
                     error: error.message 
                 }, true);
@@ -1729,7 +1705,7 @@
         // Template Management Functions
         async function testCreateTemplateFromServer() {
             if (!authToken) {
-                showResponse('endpointResponse', { error: 'Please login first to get authentication token' }, true);
+                showResponse('API Request', { error: 'Please login first to get authentication token' }, true);
                 return;
             }
             
@@ -1737,7 +1713,7 @@
             const dataElement = document.getElementById('templateFromServerData');
             
             if (!serverId) {
-                showResponse('endpointResponse', { error: 'Please enter a server ID' }, true);
+                showResponse('API Request', { error: 'Please enter a server ID' }, true);
                 return;
             }
             
@@ -1746,7 +1722,7 @@
                 try {
                     requestData = JSON.parse(dataElement.value);
                 } catch (error) {
-                    showResponse('endpointResponse', { error: 'Invalid JSON data' }, true);
+                    showResponse('API Request', { error: 'Invalid JSON data' }, true);
                     return;
                 }
             }
@@ -1762,14 +1738,14 @@
                 });
                 
                 const data = await response.json();
-                showResponse('endpointResponse', { 
+                showResponse('API Request', { 
                     endpoint: `POST /templates/from-server/${serverId}`,
                     requestData: requestData,
                     status: response.status,
                     data: data 
                 }, !response.ok);
             } catch (error) {
-                showResponse('endpointResponse', { 
+                showResponse('API Request', { 
                     endpoint: `POST /templates/from-server/${serverId}`,
                     error: error.message 
                 }, true);
@@ -1778,7 +1754,7 @@
         
         async function testTemplateEndpoint(method, action) {
             if (!authToken) {
-                showResponse('endpointResponse', { error: 'Please login first to get authentication token' }, true);
+                showResponse('API Request', { error: 'Please login first to get authentication token' }, true);
                 return;
             }
             
@@ -1786,7 +1762,7 @@
             const templateId = document.getElementById(idField).value;
             
             if (!templateId) {
-                showResponse('endpointResponse', { error: 'Please enter a template ID' }, true);
+                showResponse('API Request', { error: 'Please enter a template ID' }, true);
                 return;
             }
             
@@ -1802,13 +1778,13 @@
                 });
                 
                 const data = await response.json();
-                showResponse('endpointResponse', { 
+                showResponse('API Request', { 
                     endpoint: `${method} ${endpoint}`,
                     status: response.status,
                     data: data 
                 }, !response.ok);
             } catch (error) {
-                showResponse('endpointResponse', { 
+                showResponse('API Request', { 
                     endpoint: `${method} ${endpoint}`,
                     error: error.message 
                 }, true);
@@ -1817,7 +1793,7 @@
         
         async function testTemplateEndpointWithData(method, action) {
             if (!authToken) {
-                showResponse('endpointResponse', { error: 'Please login first to get authentication token' }, true);
+                showResponse('API Request', { error: 'Please login first to get authentication token' }, true);
                 return;
             }
             
@@ -1827,7 +1803,7 @@
             const dataElement = document.getElementById(dataField);
             
             if (!templateId) {
-                showResponse('endpointResponse', { error: 'Please enter a template ID' }, true);
+                showResponse('API Request', { error: 'Please enter a template ID' }, true);
                 return;
             }
             
@@ -1836,7 +1812,7 @@
                 try {
                     requestData = JSON.parse(dataElement.value);
                 } catch (error) {
-                    showResponse('endpointResponse', { error: 'Invalid JSON data' }, true);
+                    showResponse('API Request', { error: 'Invalid JSON data' }, true);
                     return;
                 }
             }
@@ -1854,14 +1830,14 @@
                 });
                 
                 const data = await response.json();
-                showResponse('endpointResponse', { 
+                showResponse('API Request', { 
                     endpoint: `${method} ${endpoint}`,
                     requestData: requestData,
                     status: response.status,
                     data: data 
                 }, !response.ok);
             } catch (error) {
-                showResponse('endpointResponse', { 
+                showResponse('API Request', { 
                     endpoint: `${method} ${endpoint}`,
                     error: error.message 
                 }, true);
@@ -1870,7 +1846,7 @@
         
         async function testCloneTemplate() {
             if (!authToken) {
-                showResponse('endpointResponse', { error: 'Please login first to get authentication token' }, true);
+                showResponse('API Request', { error: 'Please login first to get authentication token' }, true);
                 return;
             }
             
@@ -1878,7 +1854,7 @@
             const dataElement = document.getElementById('cloneTemplateData');
             
             if (!templateId) {
-                showResponse('endpointResponse', { error: 'Please enter a template ID' }, true);
+                showResponse('API Request', { error: 'Please enter a template ID' }, true);
                 return;
             }
             
@@ -1887,7 +1863,7 @@
                 try {
                     requestData = JSON.parse(dataElement.value);
                 } catch (error) {
-                    showResponse('endpointResponse', { error: 'Invalid JSON data' }, true);
+                    showResponse('API Request', { error: 'Invalid JSON data' }, true);
                     return;
                 }
             }
@@ -1903,14 +1879,14 @@
                 });
                 
                 const data = await response.json();
-                showResponse('endpointResponse', { 
+                showResponse('API Request', { 
                     endpoint: `POST /templates/${templateId}/clone`,
                     requestData: requestData,
                     status: response.status,
                     data: data 
                 }, !response.ok);
             } catch (error) {
-                showResponse('endpointResponse', { 
+                showResponse('API Request', { 
                     endpoint: `POST /templates/${templateId}/clone`,
                     error: error.message 
                 }, true);
@@ -1920,7 +1896,7 @@
         // File Management Functions
         async function testServerFiles() {
             if (!authToken) {
-                showResponse('endpointResponse', { error: 'Please login first to get authentication token' }, true);
+                showResponse('API Request', { error: 'Please login first to get authentication token' }, true);
                 return;
             }
             
@@ -1928,7 +1904,7 @@
             const filePath = document.getElementById('filePath').value;
             
             if (!serverId) {
-                showResponse('endpointResponse', { error: 'Please enter a server ID' }, true);
+                showResponse('API Request', { error: 'Please enter a server ID' }, true);
                 return;
             }
             
@@ -1947,13 +1923,13 @@
                 });
                 
                 const data = await response.json();
-                showResponse('endpointResponse', { 
+                showResponse('API Request', { 
                     endpoint: `GET ${endpoint}`,
                     status: response.status,
                     data: data 
                 }, !response.ok);
             } catch (error) {
-                showResponse('endpointResponse', { 
+                showResponse('API Request', { 
                     endpoint: `GET ${endpoint}`,
                     error: error.message 
                 }, true);
@@ -1962,7 +1938,7 @@
         
         async function testReadFile() {
             if (!authToken) {
-                showResponse('endpointResponse', { error: 'Please login first to get authentication token' }, true);
+                showResponse('API Request', { error: 'Please login first to get authentication token' }, true);
                 return;
             }
             
@@ -1970,7 +1946,7 @@
             const filePath = document.getElementById('readFilePath').value;
             
             if (!serverId || !filePath) {
-                showResponse('endpointResponse', { error: 'Please enter both server ID and file path' }, true);
+                showResponse('API Request', { error: 'Please enter both server ID and file path' }, true);
                 return;
             }
             
@@ -1984,13 +1960,13 @@
                 });
                 
                 const data = await response.json();
-                showResponse('endpointResponse', { 
+                showResponse('API Request', { 
                     endpoint: `GET /files/servers/${serverId}/files/${filePath}/read`,
                     status: response.status,
                     data: data 
                 }, !response.ok);
             } catch (error) {
-                showResponse('endpointResponse', { 
+                showResponse('API Request', { 
                     endpoint: `GET /files/servers/${serverId}/files/${filePath}/read`,
                     error: error.message 
                 }, true);
@@ -1999,7 +1975,7 @@
         
         async function testWriteFile() {
             if (!authToken) {
-                showResponse('endpointResponse', { error: 'Please login first to get authentication token' }, true);
+                showResponse('API Request', { error: 'Please login first to get authentication token' }, true);
                 return;
             }
             
@@ -2008,7 +1984,7 @@
             const content = document.getElementById('fileContent').value;
             
             if (!serverId || !filePath) {
-                showResponse('endpointResponse', { error: 'Please enter both server ID and file path' }, true);
+                showResponse('API Request', { error: 'Please enter both server ID and file path' }, true);
                 return;
             }
             
@@ -2023,14 +1999,14 @@
                 });
                 
                 const data = await response.json();
-                showResponse('endpointResponse', { 
+                showResponse('API Request', { 
                     endpoint: `PUT /files/servers/${serverId}/files/${filePath}`,
                     requestData: { content: content || '' },
                     status: response.status,
                     data: data 
                 }, !response.ok);
             } catch (error) {
-                showResponse('endpointResponse', { 
+                showResponse('API Request', { 
                     endpoint: `PUT /files/servers/${serverId}/files/${filePath}`,
                     error: error.message 
                 }, true);
@@ -2039,7 +2015,7 @@
         
         async function testDeleteFile() {
             if (!authToken) {
-                showResponse('endpointResponse', { error: 'Please login first to get authentication token' }, true);
+                showResponse('API Request', { error: 'Please login first to get authentication token' }, true);
                 return;
             }
             
@@ -2047,7 +2023,7 @@
             const filePath = document.getElementById('deleteFilePath').value;
             
             if (!serverId || !filePath) {
-                showResponse('endpointResponse', { error: 'Please enter both server ID and file path' }, true);
+                showResponse('API Request', { error: 'Please enter both server ID and file path' }, true);
                 return;
             }
             
@@ -2061,13 +2037,13 @@
                 });
                 
                 const data = await response.json();
-                showResponse('endpointResponse', { 
+                showResponse('API Request', { 
                     endpoint: `DELETE /files/servers/${serverId}/files/${filePath}`,
                     status: response.status,
                     data: data 
                 }, !response.ok);
             } catch (error) {
-                showResponse('endpointResponse', { 
+                showResponse('API Request', { 
                     endpoint: `DELETE /files/servers/${serverId}/files/${filePath}`,
                     error: error.message 
                 }, true);
@@ -2076,7 +2052,7 @@
         
         async function testSearchFiles() {
             if (!authToken) {
-                showResponse('endpointResponse', { error: 'Please login first to get authentication token' }, true);
+                showResponse('API Request', { error: 'Please login first to get authentication token' }, true);
                 return;
             }
             
@@ -2084,7 +2060,7 @@
             const dataElement = document.getElementById('searchData');
             
             if (!serverId) {
-                showResponse('endpointResponse', { error: 'Please enter a server ID' }, true);
+                showResponse('API Request', { error: 'Please enter a server ID' }, true);
                 return;
             }
             
@@ -2093,7 +2069,7 @@
                 try {
                     requestData = JSON.parse(dataElement.value);
                 } catch (error) {
-                    showResponse('endpointResponse', { error: 'Invalid JSON data' }, true);
+                    showResponse('API Request', { error: 'Invalid JSON data' }, true);
                     return;
                 }
             }
@@ -2109,14 +2085,14 @@
                 });
                 
                 const data = await response.json();
-                showResponse('endpointResponse', { 
+                showResponse('API Request', { 
                     endpoint: `POST /files/servers/${serverId}/files/search`,
                     requestData: requestData,
                     status: response.status,
                     data: data 
                 }, !response.ok);
             } catch (error) {
-                showResponse('endpointResponse', { 
+                showResponse('API Request', { 
                     endpoint: `POST /files/servers/${serverId}/files/search`,
                     error: error.message 
                 }, true);
@@ -2125,7 +2101,7 @@
         
         async function testCreateDirectory() {
             if (!authToken) {
-                showResponse('endpointResponse', { error: 'Please login first to get authentication token' }, true);
+                showResponse('API Request', { error: 'Please login first to get authentication token' }, true);
                 return;
             }
             
@@ -2134,7 +2110,7 @@
             const dataElement = document.getElementById('createDirData');
             
             if (!serverId || !dirPath) {
-                showResponse('endpointResponse', { error: 'Please enter both server ID and directory path' }, true);
+                showResponse('API Request', { error: 'Please enter both server ID and directory path' }, true);
                 return;
             }
             
@@ -2143,7 +2119,7 @@
                 try {
                     requestData = JSON.parse(dataElement.value);
                 } catch (error) {
-                    showResponse('endpointResponse', { error: 'Invalid JSON data' }, true);
+                    showResponse('API Request', { error: 'Invalid JSON data' }, true);
                     return;
                 }
             }
@@ -2159,14 +2135,14 @@
                 });
                 
                 const data = await response.json();
-                showResponse('endpointResponse', { 
+                showResponse('API Request', { 
                     endpoint: `POST /files/servers/${serverId}/files/${dirPath}/directories`,
                     requestData: requestData,
                     status: response.status,
                     data: data 
                 }, !response.ok);
             } catch (error) {
-                showResponse('endpointResponse', { 
+                showResponse('API Request', { 
                     endpoint: `POST /files/servers/${serverId}/files/${dirPath}/directories`,
                     error: error.message 
                 }, true);
