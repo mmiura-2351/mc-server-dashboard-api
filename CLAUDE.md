@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This is a FastAPI-based backend API for managing Minecraft servers. The application provides user authentication, role-based access control, and user management functionality.
+This is a comprehensive FastAPI-based backend API for managing multiple Minecraft servers. The system provides user authentication, role-based access control, real-time monitoring, backup management, and complete server lifecycle management covering 46 specific use cases.
 
 ## Development Commands
 
@@ -19,143 +19,149 @@ This is a FastAPI-based backend API for managing Minecraft servers. The applicat
 | Start browser test environment | `./testing/scripts/test_server.sh start` |
 | Stop browser test environment | `./testing/scripts/test_server.sh stop` |
 
-## System Requirements Overview
+## System Architecture
 
-This system is a Minecraft server management dashboard providing 46 use cases across these key areas:
+### Core Service Integration
+The application follows a layered architecture with tight integration between components:
 
-### Core Feature Areas
-1. **Server Management** (UC1-7): Multi-server creation, configuration, templates, version/type selection
-2. **Server Operations** (UC8-11): Start/stop/delete servers, configuration updates
-3. **Player Management** (UC12-19): OP/whitelist group management with dynamic server attachment
-4. **Monitoring** (UC20): Real-time server status monitoring
-5. **Backup Management** (UC21-28): Automated backups, restoration, server creation from backups
-6. **File Management** (UC29-37): File operations, import/export, template management
-7. **Account Management** (UC38-42): User authentication and account operations
-8. **Admin Functions** (UC43-46): User approval, role management
+- **Startup Lifecycle**: `app/main.py` coordinates initialization of database, backup scheduler, WebSocket monitoring, and server synchronization
+- **Service Layer**: `app/services/` contains business logic that orchestrates between different domains
+- **Database Integration**: Automatic server state synchronization between filesystem and database on startup
+- **Real-time Features**: WebSocket service provides live server monitoring and log streaming
+- **Background Processing**: Backup scheduler runs automated backup operations
 
-### Key Design Considerations
-- **Multi-server Architecture**: Unique server IDs with database management
-- **Group Management**: Dynamic OP/whitelist groups with multi-server attachment
-- **Real-time Updates**: WebSocket-based status monitoring and instant file reflection
-- **Security**: File operation restrictions, role-based access control
-- **Backup System**: Automated scheduling with metadata management
+### Key Architectural Patterns
+
+**Multi-Domain Resource Management**: The system manages interconnected resources (servers, groups, backups, templates) with complex relationships. Always consider cross-domain impacts when making changes.
+
+**Service Orchestration**: 
+- `minecraft_server_manager`: Physical server process management
+- `database_integration_service`: Sync between filesystem and database state
+- `backup_scheduler`: Automated backup operations
+- `websocket_service`: Real-time communication and monitoring
+
+**Role-Based Security Model**:
+- Users have `is_active` (can authenticate) and `is_approved` (admin-approved) flags
+- Three roles: admin, operator, user with hierarchical permissions
+- First registered user automatically becomes admin with approval
+
+### Domain Structure
+
+**Server Management** (`app/servers/`):
+- Manages physical Minecraft server processes and configurations
+- Handles JAR downloads, version management, and server lifecycle
+- Integrates with file system for server directories in `./servers/`
+
+**Group Management** (`app/groups/`):
+- Dynamic OP/whitelist groups that can attach to multiple servers
+- Player management with UUID tracking and Minecraft API integration
+- Server attachments with priority levels
+
+**Backup System** (`app/backups/`):
+- Automated and manual backup creation with metadata tracking
+- Server restoration with new server creation from backups
+- Scheduler integration for background operations
+
+**Template System** (`app/templates/`):
+- Reusable server configurations created from existing servers
+- Template cloning and customization capabilities
+- Integration with server creation workflow
+
+**File Management** (`app/files/`):
+- Secure file operations within server directories
+- Path validation to prevent directory traversal attacks
+- Real-time file reflection for configuration changes
+
+## Environment Setup
+
+Required `.env` variables:
+```
+SECRET_KEY=your-secret-key
+DATABASE_URL=sqlite:///./app.db
+```
+
+Optional configuration:
+```
+ALGORITHM=HS256
+ACCESS_TOKEN_EXPIRE_MINUTES=30
+```
+
+## Database Dependency Injection
+
+Use `Depends(get_db)` pattern for database sessions:
+```python
+from app.core.database import get_db
+from sqlalchemy.orm import Session
+
+async def endpoint(db: Session = Depends(get_db)):
+    # Database operations here
+```
+
+## Testing Strategy
+
+### Unit Tests (`uv run pytest`)
+- Comprehensive fixtures in `conftest.py` with different user roles
+- Database overrides pattern: `app.dependency_overrides[get_db]`
+- Isolated test database for each test session
+
+### Browser-based API Testing
+Complete visual verification system using Playwright:
+
+```bash
+# Start isolated test environment
+./testing/scripts/test_server.sh start
+
+# Test environment features:
+# - API server on port 8001 with test database (test_app.db)
+# - Web interface on port 8002 for manual testing
+# - First user auto-becomes admin
+# - Automatic cleanup on stop
+```
+
+**Test Coverage**: All 30+ API endpoints across 7 feature areas with automated screenshot capture for visual evidence.
+
+**Screenshot Evidence Collection**:
+- Screenshots saved to `./screenshots/{timestamp}/` with numbered filenames
+- File naming format: `{number}_{api_name}_{action}.png` (e.g., `01_user_registration.png`, `05_group_create_api.png`)
+- Full-page screenshots capture both request forms and response panels
+- Test areas include: Authentication, Server Management, Group Management, Backup Management, Template Management, File Management, and Complex Scenarios
 
 ## Development Flow
 
-### Basic Development Process
-1. **Requirements Understanding**: Accurately understand user needs and map to relevant use cases (UC1-46)
-2. **Design Planning**: Identify required components (models, endpoints, business logic, etc.)
-3. **Design Documentation**: Document the implementation plan
-4. **Implementation**: Code based on the design
-5. **Quality Assurance**: Run tests and formatting, monitor test coverage
-   ```bash
-   uv run ruff check app/
-   uv run black app/
-   uv run pytest
-   ```
+### Feature Implementation Process
+1. **Domain Analysis**: Map requirements to use cases (UC1-46) and identify affected services
+2. **Service Integration**: Consider impact on minecraft_server_manager, backup_scheduler, and websocket_service
+3. **Security Review**: Validate role-based access and resource ownership
+4. **Cross-Domain Testing**: Test interactions between servers, groups, backups, and templates
+5. **Real-time Verification**: Ensure WebSocket events are properly emitted for UI updates
 
-### Environment Setup
-- Create `.env` file with required variables:
-  ```
-  SECRET_KEY=your-secret-key
-  DATABASE_URL=sqlite:///./app.db
-  ```
+### Database Schema Evolution
+- Models auto-create tables via SQLAlchemy on startup
+- Database relationships span multiple domains (users → servers → groups → backups)
+- Consider migration strategy for schema changes affecting existing data
 
-## Architecture
+### Code Quality Standards
+- Black formatting with 90-character line length
+- Ruff linting with import sorting enabled
+- Type hints required for all new code
+- Comprehensive test coverage for business logic
 
-### Core Structure
-- **app/main.py**: FastAPI application entry point with CORS middleware and router registration
-- **app/core/**: Core configuration and database setup
-  - `config.py`: Pydantic settings management with .env file support
-  - `database.py`: SQLAlchemy engine, session management, and dependency injection
-- **app/auth/**: Authentication system with JWT tokens
-  - `dependencies.py`: OAuth2 security scheme and user authentication dependency
-  - `auth.py`: Token creation and verification logic
-- **app/users/**: User management with role-based access control
-  - `models.py`: User SQLAlchemy model with Role enum (admin, operator, user)
-- **app/services/**: Business logic layer
+## Security Considerations
 
-### Key Architecture Patterns
+- **Authentication**: JWT tokens with configurable expiration
+- **Authorization**: Three-tier role system with resource ownership validation
+- **File Security**: Path traversal protection in file operations
+- **Input Validation**: Pydantic models validate all request/response data
+- **Process Isolation**: Server processes run in controlled environment
 
-**Database Dependency Injection**: Use `Depends(get_db)` to inject database sessions into route handlers. The `get_db()` function provides proper session lifecycle management.
+## Key Integration Points
 
-**Authentication Flow**:
-1. Users authenticate via `/auth/token` endpoint
-2. JWT tokens are validated using `get_current_user` dependency
-3. Role-based access control through User.role enum
-4. User approval system (is_approved field)
+When modifying the system, pay attention to these critical integration points:
 
-**User States**: Users have two boolean flags:
-- `is_active`: Controls if user can authenticate
-- `is_approved`: Controls if user has been approved by admin
+1. **Server Lifecycle**: Changes to server management must sync with database_integration_service
+2. **Group Attachments**: Server and group modifications trigger config file updates
+3. **Backup Operations**: Server state changes affect backup validity and restoration
+4. **WebSocket Events**: Real-time updates require proper event emission
+5. **Template Dependencies**: Server and template modifications must maintain consistency
 
-### Testing Strategy
-- **Test Database**: Uses separate SQLite database (`test.db`) for testing
-- **Fixtures**: Comprehensive fixtures in `conftest.py` including test users with different roles
-- **Database Overrides**: `app.dependency_overrides[get_db]` pattern for test isolation
-- **User Fixtures**: Pre-built fixtures for `test_user`, `admin_user`, and `unapproved_user`
-
-#### Browser-based API Testing with Playwright
-
-The project includes a comprehensive browser-based testing system that provides visual verification of all API endpoints. This system uses Playwright for browser automation and a dedicated test server environment.
-
-**Test Environment Setup:**
-```bash
-# Start test environment (API server on port 8001, web interface on port 8002)
-./testing/scripts/test_server.sh start
-
-# Stop test environment and clean up
-./testing/scripts/test_server.sh stop
-
-# Check status of both servers
-./testing/scripts/test_server.sh status
-```
-
-**Test Server Script (`./testing/scripts/test_server.sh`):**
-- **Isolated Environment**: Uses separate test database (`test_app.db`) that is cleaned on start/stop
-- **Dual Server Setup**: Runs API server on port 8001 and web interface on port 8002
-- **First User Auto-Admin**: The first registered user automatically gets admin privileges and approval
-- **Automatic Cleanup**: Database, logs, and PID files are cleaned up when stopped
-
-**Web Testing Interface (`./testing/web/index.html`):**
-- **Comprehensive API Coverage**: Tests all 30+ API endpoints across all feature areas
-- **Visual Response Display**: Shows request/response data in real-time with syntax highlighting
-- **Pre-configured Test Data**: Includes sample data for servers, groups, backups, and templates
-- **Authentication Flow**: Full user registration, login, and token management
-- **Complex Scenarios**: Multi-step workflows like server creation → group creation → attachment
-
-**Playwright Integration:**
-```bash
-# Example: Automated browser testing with screenshot capture
-# Screenshots are saved to ~/Screenshots/{timestamp}/ with numbered filenames
-```
-
-**Test Coverage Areas:**
-1. **Authentication**: User registration, login, token validation
-2. **Server Management**: Create, list, details, status, supported versions
-3. **Group Management**: Create, list, details, player management, server attachment
-4. **Backup Management**: Create, list, details, restore, statistics, scheduler status
-5. **Template Management**: Create from server, custom creation, details, cloning
-6. **File Management**: List files, read/write operations, file search
-7. **Complex Scenarios**: Multi-API workflows and integration testing
-
-**Key Testing Features:**
-- **Visual Evidence**: Full-page screenshots for each API test execution
-- **Error Validation**: Tests both success and failure scenarios
-- **Data Persistence**: Verifies data consistency across related API calls
-- **Role-based Testing**: Tests different user permission levels
-- **Real-time Feedback**: Immediate visual confirmation of API responses
-
-
-### Configuration
-- **Environment Variables**: Uses .env file with required variables:
-  - `SECRET_KEY`: JWT signing key
-  - `DATABASE_URL`: SQLite database path
-  - Optional: `ALGORITHM`, `ACCESS_TOKEN_EXPIRE_MINUTES`
-- **Code Style**: Black formatting with 90-character line length, Ruff linting with import sorting
-
-### Development Notes
-- SQLAlchemy models use declarative_base from `app.core.database.Base`
-- Database tables are auto-created on application startup via lifespan events
-- CORS is configured to allow localhost:3000 for frontend development
-- Uses bcrypt for password hashing via passlib
+This architecture enables complex multi-server management while maintaining data consistency and real-time responsiveness across all system components.

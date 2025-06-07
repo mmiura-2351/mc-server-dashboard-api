@@ -26,3 +26,6 @@ coverage.json
 /cache/
 /servers/
 /backups/
+
+# Test screenshots
+/screenshots/
