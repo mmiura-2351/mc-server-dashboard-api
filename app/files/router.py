@@ -39,6 +39,9 @@ async def read_file(
     db: Session = Depends(get_db),
 ):
     """Read content of a text file"""
+    # Check server access
+    authorization_service.check_server_access(server_id, current_user, db)
+    
     content = await file_management_service.read_file(
         server_id=server_id,
         file_path=file_path,
@@ -71,6 +74,9 @@ async def download_file(
     db: Session = Depends(get_db),
 ):
     """Download a file or directory (as zip) from server"""
+    # Check server access
+    authorization_service.check_server_access(server_id, current_user, db)
+    
     file_location, filename = await file_management_service.download_file(
         server_id=server_id,
         file_path=file_path,
@@ -118,6 +124,9 @@ async def search_files(
 ):
     """Search for files in server directory"""
     from app.files.schemas import FileSearchResult
+    
+    # Check server access
+    authorization_service.check_server_access(server_id, current_user, db)
 
     search_result = await file_management_service.search_files(
         server_id=server_id,
@@ -209,6 +218,9 @@ async def list_server_files(
     db: Session = Depends(get_db),
 ):
     """List files and directories in server directory"""
+    # Check server access
+    authorization_service.check_server_access(server_id, current_user, db)
+    
     files = await file_management_service.get_server_files(
         server_id=server_id,
         path=path,
