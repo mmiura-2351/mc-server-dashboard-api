@@ -61,6 +61,7 @@ cd testing/scripts
 - **Multiple Interfaces**: Command-line and web-based testing
 - **Automatic Cleanup**: No impact on production data
 - **Easy Setup**: One-command starts both API and web servers
+- **Screenshot Evidence**: Browser tests can capture visual evidence saved to `../screenshots/{timestamp}/`
 
 ## Documentation
 

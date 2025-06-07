@@ -121,10 +121,13 @@ Complete visual verification system using Playwright:
 **Test Coverage**: All 30+ API endpoints across 7 feature areas with automated screenshot capture for visual evidence.
 
 **Screenshot Evidence Collection**:
-- Screenshots saved to `./screenshots/{timestamp}/` with numbered filenames
-- File naming format: `{number}_{api_name}_{action}.png` (e.g., `01_user_registration.png`, `05_group_create_api.png`)
+- Screenshots saved to `./screenshots/{timestamp}/` with numbered filenames  
+- File naming format: `{number}_{api_name}_{action}.png` (e.g., `01_user_registration.png`, `05_server_create.png`)
 - Full-page screenshots capture both request forms and response panels
-- Test areas include: Authentication, Server Management, Group Management, Backup Management, Template Management, File Management, and Complex Scenarios
+- Test areas include: Authentication, Server Management, Group Management, Backup Management, Template Management, File Management, and System Administration
+- Each test session creates a timestamped directory with README.md documenting the test sequence
+- Use `savePng: true` and specify custom `downloadsDir: "./screenshots/{timestamp}/"` for Playwright screenshot calls
+- Screenshot directory is gitignored for development testing purposes
 
 ## Development Flow
 
