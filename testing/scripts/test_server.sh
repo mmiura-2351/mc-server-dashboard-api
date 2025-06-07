@@ -9,6 +9,7 @@ TEST_DB="test_app.db"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 SERVER_PID_FILE="$SCRIPT_DIR/test_server.pid"
 WEB_PID_FILE="$SCRIPT_DIR/web_server.pid"
+SERVERS_BACKUP_DIR="$SCRIPT_DIR/servers_backup"
 
 # Colors for output
 RED='\033[0;31m'
@@ -33,6 +34,43 @@ print_warning() {
     echo -e "${YELLOW}⚠️  $1${NC}"
 }
 
+backup_servers_directory() {
+    # Get project root directory (two levels up from scripts/)
+    PROJECT_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+    
+    # Check if servers directory exists
+    if [ -d "$PROJECT_ROOT/servers" ]; then
+        print_info "Backing up existing servers directory..."
+        # Remove old backup if it exists
+        if [ -d "$SERVERS_BACKUP_DIR" ]; then
+            rm -rf "$SERVERS_BACKUP_DIR"
+        fi
+        # Create backup
+        mv "$PROJECT_ROOT/servers" "$SERVERS_BACKUP_DIR"
+        print_info "Servers directory backed up to scripts/servers_backup"
+    fi
+    
+    # Create empty servers directory for testing
+    mkdir -p "$PROJECT_ROOT/servers"
+}
+
+restore_servers_directory() {
+    # Get project root directory (two levels up from scripts/)
+    PROJECT_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+    
+    # Remove test servers directory
+    if [ -d "$PROJECT_ROOT/servers" ]; then
+        rm -rf "$PROJECT_ROOT/servers"
+        print_info "Test servers directory cleaned up"
+    fi
+    
+    # Restore original servers directory if backup exists
+    if [ -d "$SERVERS_BACKUP_DIR" ]; then
+        mv "$SERVERS_BACKUP_DIR" "$PROJECT_ROOT/servers"
+        print_info "Original servers directory restored"
+    fi
+}
+
 start_test_server() {
     # Check if test server is already running
     if [ -f "$SERVER_PID_FILE" ]; then
@@ -50,6 +88,9 @@ start_test_server() {
     # Get project root directory (two levels up from scripts/)
     PROJECT_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
     cd "$PROJECT_ROOT"
+    
+    # Backup existing servers directory and create clean test environment
+    backup_servers_directory
     
     # Set test database URL
     export DATABASE_URL="sqlite:///./$TEST_DB"
@@ -111,6 +152,9 @@ stop_test_server() {
         rm -f "$PROJECT_ROOT/$TEST_DB"
         print_info "Test database cleaned up"
     fi
+    
+    # Restore original servers directory
+    restore_servers_directory
     
     # Clean up log file
     if [ -f "$SCRIPT_DIR/test_server.log" ]; then
@@ -336,6 +380,7 @@ case "$1" in
         echo ""
         echo "API Server Info:"
         echo "  - Uses separate database: $TEST_DB"
+        echo "  - Uses isolated servers directory (backed up to scripts/servers_backup)"
         echo "  - API Documentation: http://localhost:$TEST_PORT/docs"
         echo "  - ReDoc: http://localhost:$TEST_PORT/redoc"
         echo ""
