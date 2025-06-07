@@ -28,7 +28,9 @@ router = APIRouter()
 
 
 # Specific endpoints first (before the general path parameter routes)
-@router.get("/servers/{server_id}/files/{file_path:path}/read", response_model=FileReadResponse)
+@router.get(
+    "/servers/{server_id}/files/{file_path:path}/read", response_model=FileReadResponse
+)
 async def read_file(
     server_id: int,
     file_path: str,
@@ -141,7 +143,10 @@ async def search_files(
     )
 
 
-@router.post("/servers/{server_id}/files/{directory_path:path}/directories", response_model=DirectoryCreateResponse)
+@router.post(
+    "/servers/{server_id}/files/{directory_path:path}/directories",
+    response_model=DirectoryCreateResponse,
+)
 async def create_directory(
     server_id: int,
     directory_path: str,
@@ -190,7 +195,9 @@ async def list_server_files(
     )
 
 
-@router.put("/servers/{server_id}/files/{file_path:path}", response_model=FileWriteResponse)
+@router.put(
+    "/servers/{server_id}/files/{file_path:path}", response_model=FileWriteResponse
+)
 async def write_file(
     server_id: int,
     file_path: str,
@@ -215,7 +222,9 @@ async def write_file(
     return FileWriteResponse(**result)
 
 
-@router.delete("/servers/{server_id}/files/{file_path:path}", response_model=FileDeleteResponse)
+@router.delete(
+    "/servers/{server_id}/files/{file_path:path}", response_model=FileDeleteResponse
+)
 async def delete_file(
     server_id: int,
     file_path: str,

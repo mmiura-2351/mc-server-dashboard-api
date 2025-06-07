@@ -99,9 +99,7 @@ async def create_template_from_server(
         )
 
 
-@router.post(
-    "/", response_model=TemplateResponse, status_code=status.HTTP_201_CREATED
-)
+@router.post("/", response_model=TemplateResponse, status_code=status.HTTP_201_CREATED)
 async def create_custom_template(
     request: TemplateCreateCustomRequest,
     current_user: User = Depends(get_current_user),

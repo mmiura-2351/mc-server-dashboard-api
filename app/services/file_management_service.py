@@ -674,11 +674,11 @@ class FileManagementService:
         server = self.validation_service.validate_server_exists(server_id, db)
         server_path = Path(f"servers/{server.name}")
         target_file = server_path / file_path
-        
+
         self.validation_service.validate_path_safety(server_path, target_file)
         self.validation_service.validate_path_exists(target_file)
         self.validation_service.validate_file_readable(target_file)
-        
+
         # Return file location and filename for FileResponse
         return str(target_file), target_file.name
 
