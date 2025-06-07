@@ -98,11 +98,11 @@ class GroupFileService:
                     player_entry = {
                         "uuid": player["uuid"],
                         "name": player["username"],
-                        "level": 4 if group.type == GroupType.ops else 0,
-                        "bypassesPlayerLimit": group.type == GroupType.ops,
+                        "level": 4 if group.type == GroupType.op else 0,
+                        "bypassesPlayerLimit": group.type == GroupType.op,
                     }
 
-                    if group.type == GroupType.ops:
+                    if group.type == GroupType.op:
                         # Add to ops if not already present
                         if not any(op["uuid"] == player["uuid"] for op in ops_data):
                             ops_data.append(player_entry)
@@ -241,7 +241,7 @@ class GroupService:
                 status_code=status.HTTP_404_NOT_FOUND, detail="Group not found"
             )
 
-        self._check_group_access(user, group)
+        self.access_service.check_group_access(user, group)
         return group
 
     def update_group(
@@ -337,7 +337,7 @@ class GroupService:
         self.db.refresh(group)
 
         # Update server files for all servers using this group
-        await self._update_all_affected_servers(group_id)
+        await self.file_service.update_all_affected_servers(group_id)
 
         # Create audit log
         audit_log = AuditLog.create_log(
@@ -370,7 +370,7 @@ class GroupService:
         self.db.refresh(group)
 
         # Update server files for all servers using this group
-        await self._update_all_affected_servers(group_id)
+        await self.file_service.update_all_affected_servers(group_id)
 
         # Create audit log
         audit_log = AuditLog.create_log(
@@ -396,7 +396,7 @@ class GroupService:
                 status_code=status.HTTP_404_NOT_FOUND, detail="Server not found"
             )
 
-        self._check_server_access(user, server)
+        self.access_service.check_server_access(user, server)
 
         # Check group access
         group = self.get_group_by_id(user, group_id)
@@ -423,7 +423,7 @@ class GroupService:
         self.db.commit()
 
         # Update server files immediately after attachment
-        await self._update_server_files(server_id)
+        await self.file_service.update_server_files(server_id)
 
         # Create audit log
         audit_log = AuditLog.create_log(
@@ -452,7 +452,7 @@ class GroupService:
                 status_code=status.HTTP_404_NOT_FOUND, detail="Server not found"
             )
 
-        self._check_server_access(user, server)
+        self.access_service.check_server_access(user, server)
 
         # Check group access
         group = self.get_group_by_id(user, group_id)
@@ -489,7 +489,7 @@ class GroupService:
         self.db.commit()
 
         # Update server files after detachment
-        await self._update_server_files(server_id)
+        await self.file_service.update_server_files(server_id)
 
     def get_server_groups(self, user: User, server_id: int) -> List[Dict[str, Any]]:
         """Get all groups attached to a server"""
@@ -500,7 +500,7 @@ class GroupService:
                 status_code=status.HTTP_404_NOT_FOUND, detail="Server not found"
             )
 
-        self._check_server_access(user, server)
+        self.access_service.check_server_access(user, server)
 
         # Get attached groups with details
         result = (
@@ -527,80 +527,6 @@ class GroupService:
 
         return groups
 
-    async def _update_server_files(self, server_id: int) -> None:
-        """Update ops.json and whitelist.json files for a server"""
-        try:
-            # Get server info
-            server = self.db.query(Server).filter(Server.id == server_id).first()
-            if not server:
-                return
-
-            # Get all groups attached to this server
-            server_groups = (
-                self.db.query(Group)
-                .join(ServerGroup, Group.id == ServerGroup.group_id)
-                .filter(ServerGroup.server_id == server_id)
-                .order_by(ServerGroup.priority.desc())
-                .all()
-            )
-
-            # Build ops and whitelist data
-            ops_data = []
-            whitelist_data = []
-
-            for group in server_groups:
-                players = group.get_players()
-
-                for player in players:
-                    player_entry = {
-                        "uuid": player["uuid"],
-                        "name": player["username"],
-                        "level": 4 if group.type == GroupType.ops else 0,
-                        "bypassesPlayerLimit": group.type == GroupType.ops,
-                    }
-
-                    if group.type == GroupType.ops:
-                        # Add to ops if not already present
-                        if not any(op["uuid"] == player["uuid"] for op in ops_data):
-                            ops_data.append(player_entry)
-
-                    if group.type == GroupType.whitelist:
-                        # Add to whitelist if not already present
-                        whitelist_entry = {
-                            "uuid": player["uuid"],
-                            "name": player["username"],
-                        }
-                        if not any(wl["uuid"] == player["uuid"] for wl in whitelist_data):
-                            whitelist_data.append(whitelist_entry)
-
-            # Write to server files
-            server_path = Path(f"servers/{server.name}")
-
-            if server_path.exists():
-                # Update ops.json
-                ops_file = server_path / "ops.json"
-                with open(ops_file, "w", encoding="utf-8") as f:
-                    json.dump(ops_data, f, indent=2)
-
-                # Update whitelist.json
-                whitelist_file = server_path / "whitelist.json"
-                with open(whitelist_file, "w", encoding="utf-8") as f:
-                    json.dump(whitelist_data, f, indent=2)
-
-        except Exception as e:
-            # Log error but don't fail the main operation
-            print(f"Error updating server files for server {server_id}: {e}")
-
-    async def _update_all_affected_servers(self, group_id: int) -> None:
-        """Update all servers that have this group attached"""
-        affected_servers = (
-            self.db.query(ServerGroup.server_id)
-            .filter(ServerGroup.group_id == group_id)
-            .all()
-        )
-
-        for (server_id,) in affected_servers:
-            await self._update_server_files(server_id)
 
     def get_group_servers(self, user: User, group_id: int) -> List[Dict[str, Any]]:
         """Get all servers that have this group attached"""
