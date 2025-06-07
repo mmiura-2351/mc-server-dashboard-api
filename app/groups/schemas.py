@@ -92,13 +92,38 @@ class GroupListResponse(BaseModel):
 
 
 class PlayerAddRequest(BaseModel):
-    uuid: str = Field(..., min_length=32, max_length=36, description="Player UUID")
-    username: str = Field(..., min_length=1, max_length=16, description="Player username")
+    uuid: Optional[str] = Field(
+        None,
+        min_length=32,
+        max_length=36,
+        description="Player UUID (optional if username provided)",
+    )
+    username: Optional[str] = Field(
+        None,
+        min_length=1,
+        max_length=16,
+        description="Player username (optional if UUID provided)",
+    )
+    player_name: Optional[str] = Field(
+        None, min_length=1, max_length=16, description="Alias for username"
+    )
+
+    def model_post_init(self, __context):
+        """Post-initialization validation to handle player_name alias and ensure at least one field is provided"""
+        # Handle player_name alias
+        if self.player_name and not self.username:
+            self.username = self.player_name
+
+        # Ensure at least one field is provided
+        if not self.uuid and not self.username:
+            raise ValueError("Either uuid or username (or player_name) must be provided")
 
     @field_validator("uuid")
     @classmethod
     def validate_uuid(cls, v):
         # Basic UUID format validation
+        if v is None:
+            return v
         import re
 
         if not re.match(
@@ -112,6 +137,20 @@ class PlayerAddRequest(BaseModel):
     @classmethod
     def validate_username(cls, v):
         # Minecraft username validation
+        if v is None:
+            return v
+        import re
+
+        if not re.match(r"^[a-zA-Z0-9_]{1,16}$", v):
+            raise ValueError("Invalid Minecraft username format")
+        return v
+
+    @field_validator("player_name")
+    @classmethod
+    def validate_player_name(cls, v):
+        # Minecraft username validation (same as username)
+        if v is None:
+            return v
         import re
 
         if not re.match(r"^[a-zA-Z0-9_]{1,16}$", v):

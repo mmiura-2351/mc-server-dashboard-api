@@ -335,10 +335,37 @@ class GroupService:
         self.db.commit()
 
     async def add_player_to_group(
-        self, user: User, group_id: int, uuid: str, username: str
+        self,
+        user: User,
+        group_id: int,
+        uuid: Optional[str] = None,
+        username: Optional[str] = None,
     ) -> Group:
         """Add a player to a group"""
         group = self.get_group_by_id(user, group_id)
+
+        # Resolve UUID and username if one is missing
+        if uuid and not username:
+            # Try to get username from UUID
+            from app.services.minecraft_api_service import MinecraftAPIService
+
+            username = await MinecraftAPIService.get_username_from_uuid(uuid)
+            if not username:
+                # Fallback: use UUID as username if API fails
+                username = uuid[:8]  # Use first 8 characters of UUID
+        elif username and not uuid:
+            # Try to get UUID from username
+            from app.services.minecraft_api_service import MinecraftAPIService
+
+            uuid = await MinecraftAPIService.get_uuid_from_username(username)
+            if not uuid:
+                # Fallback: generate offline UUID
+                uuid = MinecraftAPIService.generate_offline_uuid(username)
+        elif not uuid and not username:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Either uuid or username must be provided",
+            )
 
         # Add player using model method
         group.add_player(uuid, username)
