@@ -23,6 +23,6 @@ htmlcov/
 coverage.json
 
 # Application runtime directories
-cache/
-servers/
-backups/
+/cache/
+/servers/
+/backups/
