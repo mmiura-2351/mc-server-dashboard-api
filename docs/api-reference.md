@@ -16,8 +16,8 @@ Authorization: Bearer <token>
 ## 🔐 認証システム
 
 ### ユーザー認証
-- **POST** `/api/v1/auth/register` - ユーザー登録
-  - Body: `{username, email, password}`
+- **POST** `/api/v1/users/register` - ユーザー登録
+  - Body: `{username, email, password, full_name}`
   - Response: `UserResponse`
   - 権限: 公開
 
@@ -26,31 +26,38 @@ Authorization: Bearer <token>
   - Response: `{access_token, token_type}`
   - 権限: 公開
 
-- **GET** `/api/v1/auth/me` - 現在のユーザー情報取得
+- **GET** `/api/v1/users/me` - 現在のユーザー情報取得
   - Response: `UserResponse`
   - 権限: 認証済み
 
 ## 👥 ユーザー管理
 
-### ユーザー操作（管理者専用）
-- **GET** `/api/v1/users` - ユーザー一覧
-  - Query: `page`, `size`, `is_approved`
+### ユーザー操作
+- **GET** `/api/v1/users/` - ユーザー一覧
   - Response: `UserListResponse`
   - 権限: admin
 
-- **GET** `/api/v1/users/{user_id}` - ユーザー詳細
+- **POST** `/api/v1/users/approve/{user_id}` - ユーザー承認
   - Response: `UserResponse`
   - 権限: admin
 
-- **PUT** `/api/v1/users/{user_id}` - ユーザー更新
-  - Body: `UserUpdateRequest`
+- **PUT** `/api/v1/users/role/{user_id}` - ユーザーロール変更
+  - Body: `{role: "user"|"operator"|"admin"}`
   - Response: `UserResponse`
   - 権限: admin
 
-- **POST** `/api/v1/users/{user_id}/approve` - ユーザー承認
-  - 権限: admin
+- **PUT** `/api/v1/users/me` - プロファイル更新
+  - Body: `{username?, email?}`
+  - Response: `UserResponse + access_token`
+  - 権限: 認証済み
 
-- **DELETE** `/api/v1/users/{user_id}` - ユーザー非アクティブ化
+- **PUT** `/api/v1/users/me/password` - パスワード変更
+  - Body: `{current_password, new_password}`
+  - Response: `UserResponse + access_token`
+  - 権限: 認証済み
+
+- **DELETE** `/api/v1/users/{user_id}` - ユーザー削除
+  - Response: `{message}`
   - 権限: admin
 
 ## 🖥️ サーバー管理
@@ -106,7 +113,7 @@ Authorization: Bearer <token>
 ### ユーティリティ
 - **GET** `/api/v1/servers/versions/supported` - サポート対象Minecraftバージョン一覧
   - Response: `SupportedVersionsResponse`
-  - 権限: 公開
+  - 権限: 認証済み
 
 - **POST** `/api/v1/servers/sync` - サーバー状態同期（管理者専用）
   - 権限: admin

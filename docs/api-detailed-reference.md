@@ -359,12 +359,12 @@ OAuth2 PasswordRequestForm形式でのログイン認証を行います。
 **リクエスト**
 ```json
 {
-  "name": "My Server",
-  "description": "A test server",
+  "name": "test-server",
+  "description": "Test server created from API tester",
   "minecraft_version": "1.20.1",
   "server_type": "vanilla",
   "port": 25565,
-  "max_memory": 2048,
+  "max_memory": 1024,
   "max_players": 20,
   "template_id": null,
   "server_properties": {
@@ -411,18 +411,25 @@ OAuth2 PasswordRequestForm形式でのログイン認証を行います。
 7. 指定されたグループを自動的にアタッチ
 8. データベースに保存
 
-**検証ルール**
-- `name`: 1-100文字、英数字・スペース・ハイフン・アンダースコアのみ
-- `minecraft_version`: X.Y.Z形式（例: 1.20.1）
-- `port`: 1024-65535
-- `max_memory`: 512-16384 MB
-- `max_players`: 1-100
-- `server_properties`: 有効なプロパティキーのみ許可
+**必須フィールド**
+- `name`: サーバー名（1-100文字、英数字・スペース・ハイフン・アンダースコアのみ）
+- `minecraft_version`: Minecraftバージョン（X.Y.Z形式、例: 1.20.1、最小1.8.0）
+- `server_type`: サーバータイプ（vanilla, forge, paper）
+
+**オプションフィールド**
+- `description`: サーバー説明文（最大500文字）
+- `port`: ポート番号（1024-65535、デフォルト: 25565）
+- `max_memory`: 最大メモリ（512-16384 MB、デフォルト: 1024）
+- `max_players`: 最大プレイヤー数（1-100、デフォルト: 20）
+- `template_id`: テンプレートID（存在するテンプレートのみ）
+- `server_properties`: サーバープロパティ（有効なプロパティキーのみ許可）
+- `attach_groups`: アタッチするグループ（op_groups, whitelist_groups）
 
 **エラー**
 - 403: ユーザーロールがuserの場合
 - 409: サーバー名またはポートが既に使用されている
 - 404: 指定されたテンプレートが存在しない
+- 422: バリデーションエラー（必須フィールド不足、形式エラー、範囲外の値など）
 
 ### GET /servers
 **サーバー一覧取得**
@@ -704,9 +711,9 @@ OAuth2 PasswordRequestForm形式でのログイン認証を行います。
 ### GET /servers/versions/supported
 **サポートバージョン一覧**
 
-サポートされているMinecraftバージョンの一覧を取得します。
+サポートされているMinecraftバージョンとサーバータイプの一覧を取得します。
 
-**権限**: 公開（認証不要）
+**権限**: 認証が必要
 
 **レスポンス**
 ```json
@@ -717,18 +724,37 @@ OAuth2 PasswordRequestForm形式でのログイン認証を行います。
       "server_type": "vanilla",
       "download_url": "https://...",
       "is_supported": true,
-      "release_date": "2023-06-12T00:00:00Z"
+      "release_date": "2023-06-12T00:00:00Z",
+      "is_stable": true,
+      "build_number": null
     },
     {
       "version": "1.20.1",
       "server_type": "paper",
       "download_url": "https://...",
       "is_supported": true,
-      "release_date": "2023-06-12T00:00:00Z"
+      "release_date": "2023-06-12T00:00:00Z",
+      "is_stable": true,
+      "build_number": 196
+    },
+    {
+      "version": "1.19.4",
+      "server_type": "forge",
+      "download_url": "https://...",
+      "is_supported": true,
+      "release_date": "2023-03-14T00:00:00Z",
+      "is_stable": true,
+      "build_number": null
     }
   ]
 }
 ```
+
+**処理詳細**
+1. 動的バージョン管理システムから最新のサポート情報を取得
+2. 各サーバータイプ（vanilla, paper, forge）の利用可能バージョンを確認
+3. 最小サポートバージョン（1.8.0）以上のみを返却
+4. ダウンロードURLとビルド番号（該当する場合）を含む
 
 ### POST /servers/sync
 **サーバー状態同期**
