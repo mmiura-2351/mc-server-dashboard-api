@@ -13,6 +13,7 @@ from app.services.template_service import (
     template_service,
 )
 from app.templates.schemas import (
+    TemplateCloneRequest,
     TemplateCreateCustomRequest,
     TemplateCreateFromServerRequest,
     TemplateListResponse,
@@ -335,13 +336,7 @@ async def get_template_statistics(
 )
 async def clone_template(
     template_id: int,
-    name: str = Query(..., description="Name for the cloned template"),
-    description: Optional[str] = Query(
-        None, description="Description for the cloned template"
-    ),
-    is_public: bool = Query(
-        False, description="Whether cloned template should be public"
-    ),
+    request: TemplateCloneRequest,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -368,13 +363,13 @@ async def clone_template(
 
         # Create new template with copied configuration
         cloned_template = await template_service.create_custom_template(
-            name=name,
+            name=request.name,
             minecraft_version=original_template.minecraft_version,
             server_type=original_template.server_type,
             configuration=original_template.get_configuration(),
-            description=description or f"Cloned from {original_template.name}",
+            description=request.description or f"Cloned from {original_template.name}",
             default_groups=original_template.get_default_groups(),
-            is_public=is_public,
+            is_public=request.is_public,
             creator=current_user,
             db=db,
         )
