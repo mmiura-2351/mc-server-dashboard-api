@@ -462,7 +462,7 @@
                     <div class="endpoint-card">
                         <h3><span class="method post">POST</span>Create Backup</h3>
                         <input type="number" id="backupServerId" placeholder="Server ID" style="width: 100%; margin-bottom: 5px;">
-                        <textarea id="backupData" rows="2" placeholder='{"description": "Manual backup"}'></textarea>
+                        <textarea id="backupData" rows="2" placeholder='{"name": "manual-backup", "description": "Manual backup from API tester"}'></textarea>
                         <button onclick="testCreateBackup()">Test</button>
                     </div>
                     
@@ -2164,6 +2164,7 @@
         }, null, 2);
         
         document.getElementById('backupData').value = JSON.stringify({
+            "name": "manual-backup",
             "description": "Manual backup from API tester"
         }, null, 2);
         
