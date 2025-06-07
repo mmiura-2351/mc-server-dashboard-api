@@ -1,0 +1,754 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Minecraft Server Dashboard API Tester</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #2c3e50 0%, #34495e 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+        
+        .header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+        }
+        
+        .header p {
+            font-size: 1.1em;
+            opacity: 0.9;
+        }
+        
+        .content {
+            padding: 30px;
+        }
+        
+        .section {
+            margin-bottom: 30px;
+            padding: 20px;
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+            background: #f9f9f9;
+        }
+        
+        .section h2 {
+            color: #2c3e50;
+            margin-bottom: 15px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #3498db;
+        }
+        
+        .form-group {
+            margin-bottom: 15px;
+        }
+        
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+            color: #555;
+        }
+        
+        input, textarea, select {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        
+        button {
+            background: linear-gradient(135deg, #3498db 0%, #2980b9 100%);
+            color: white;
+            padding: 12px 24px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 16px;
+            margin-right: 10px;
+            margin-bottom: 10px;
+            transition: all 0.3s ease;
+        }
+        
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(52, 152, 219, 0.3);
+        }
+        
+        .response {
+            background: #2c3e50;
+            color: #ecf0f1;
+            padding: 15px;
+            border-radius: 4px;
+            margin-top: 15px;
+            max-height: 300px;
+            overflow-y: auto;
+            font-family: 'Monaco', 'Consolas', monospace;
+            font-size: 12px;
+            white-space: pre-wrap;
+        }
+        
+        .token-display {
+            background: #27ae60;
+            color: white;
+            padding: 10px;
+            border-radius: 4px;
+            margin: 10px 0;
+            word-break: break-all;
+        }
+        
+        .error {
+            background: #e74c3c;
+            color: white;
+            padding: 10px;
+            border-radius: 4px;
+            margin: 10px 0;
+        }
+        
+        .endpoint-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin-top: 20px;
+        }
+        
+        .endpoint-card {
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            padding: 15px;
+            background: white;
+        }
+        
+        .endpoint-card h3 {
+            color: #2c3e50;
+            margin-bottom: 10px;
+        }
+        
+        .method {
+            padding: 4px 8px;
+            border-radius: 4px;
+            color: white;
+            font-size: 12px;
+            font-weight: bold;
+            margin-right: 10px;
+        }
+        
+        .method.get { background: #3498db; }
+        .method.post { background: #2ecc71; }
+        .method.put { background: #f39c12; }
+        .method.delete { background: #e74c3c; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🎮 Minecraft Server Dashboard API Tester</h1>
+            <p>Real-time API testing interface for the Minecraft Server Management System</p>
+        </div>
+        
+        <div class="content">
+            <!-- Authentication Section -->
+            <div class="section">
+                <h2>🔐 Authentication</h2>
+                
+                <div class="form-group">
+                    <label for="apiUrl">API Base URL:</label>
+                    <input type="text" id="apiUrl" value="http://localhost:8001/api/v1">
+                </div>
+                
+                <h3>User Registration</h3>
+                <div class="form-group">
+                    <label for="regUsername">Username:</label>
+                    <input type="text" id="regUsername" value="admin">
+                </div>
+                <div class="form-group">
+                    <label for="regEmail">Email:</label>
+                    <input type="email" id="regEmail" value="admin@example.com">
+                </div>
+                <div class="form-group">
+                    <label for="regPassword">Password:</label>
+                    <input type="password" id="regPassword" value="admin123">
+                </div>
+                <div class="form-group">
+                    <label for="regFullName">Full Name:</label>
+                    <input type="text" id="regFullName" value="Admin User">
+                </div>
+                <button onclick="registerUser()">Register User</button>
+                
+                <h3>User Login</h3>
+                <div class="form-group">
+                    <label for="loginUsername">Username:</label>
+                    <input type="text" id="loginUsername" value="admin">
+                </div>
+                <div class="form-group">
+                    <label for="loginPassword">Password:</label>
+                    <input type="password" id="loginPassword" value="admin123">
+                </div>
+                <button onclick="loginUser()">Login</button>
+                
+                <div id="tokenDisplay"></div>
+                <div id="authResponse" class="response" style="display: none;"></div>
+            </div>
+            
+            <!-- API Endpoints Testing -->
+            <div class="section">
+                <h2>🧪 API Endpoints Testing</h2>
+                
+                <div class="endpoint-grid">
+                    <!-- Authentication Tests -->
+                    <div class="endpoint-card">
+                        <h3><span class="method get">GET</span>Current User Info</h3>
+                        <button onclick="testEndpoint('GET', '/users/me')">Test</button>
+                    </div>
+                    
+                    <div class="endpoint-card">
+                        <h3><span class="method get">GET</span>All Users (Admin)</h3>
+                        <button onclick="testEndpoint('GET', '/users/')">Test</button>
+                    </div>
+                    
+                    <!-- User Management Tests -->
+                    <div class="endpoint-card">
+                        <h3><span class="method post">POST</span>Approve User</h3>
+                        <input type="number" id="approveUserId" placeholder="User ID to approve" style="width: 100%; margin-bottom: 10px;">
+                        <button onclick="approveUser()">Approve User</button>
+                    </div>
+                    
+                    <div class="endpoint-card">
+                        <h3><span class="method put">PUT</span>Change User Role</h3>
+                        <input type="number" id="roleUserId" placeholder="User ID" style="width: 100%; margin-bottom: 5px;">
+                        <select id="newRole" style="width: 100%; margin-bottom: 10px;">
+                            <option value="user">User</option>
+                            <option value="operator">Operator</option>
+                            <option value="admin">Admin</option>
+                        </select>
+                        <button onclick="changeUserRole()">Change Role</button>
+                    </div>
+                    
+                    <div class="endpoint-card">
+                        <h3><span class="method put">PUT</span>Update Profile</h3>
+                        <input type="text" id="updateUsername" placeholder="New username" style="width: 100%; margin-bottom: 5px;">
+                        <input type="email" id="updateEmail" placeholder="New email" style="width: 100%; margin-bottom: 10px;">
+                        <button onclick="updateProfile()">Update Profile</button>
+                    </div>
+                    
+                    <div class="endpoint-card">
+                        <h3><span class="method put">PUT</span>Change Password</h3>
+                        <input type="password" id="currentPassword" placeholder="Current password" style="width: 100%; margin-bottom: 5px;">
+                        <input type="password" id="newPassword" placeholder="New password" style="width: 100%; margin-bottom: 10px;">
+                        <button onclick="changePassword()">Change Password</button>
+                    </div>
+                    
+                    <div class="endpoint-card">
+                        <h3><span class="method delete">DELETE</span>Delete User (Admin)</h3>
+                        <input type="number" id="deleteUserId" placeholder="User ID to delete" style="width: 100%; margin-bottom: 10px;">
+                        <button onclick="deleteUser()">Delete User</button>
+                    </div>
+                    
+                    <!-- Server Endpoints -->
+                    <div class="endpoint-card">
+                        <h3><span class="method get">GET</span>Servers</h3>
+                        <button onclick="testEndpoint('GET', '/servers/')">Test</button>
+                    </div>
+                    
+                    <div class="endpoint-card">
+                        <h3><span class="method post">POST</span>Create Server</h3>
+                        <textarea id="serverData" rows="4" placeholder='{"name": "test-server", "server_type": "vanilla", "version": "1.20.1"}'></textarea>
+                        <button onclick="testEndpointWithData('POST', '/servers/', 'serverData')">Test</button>
+                    </div>
+                    
+                    <!-- Group Endpoints -->
+                    <div class="endpoint-card">
+                        <h3><span class="method get">GET</span>Groups</h3>
+                        <button onclick="testEndpoint('GET', '/groups/')">Test</button>
+                    </div>
+                    
+                    <div class="endpoint-card">
+                        <h3><span class="method post">POST</span>Create Group</h3>
+                        <textarea id="groupData" rows="3" placeholder='{"name": "test-group", "type": "op"}'></textarea>
+                        <button onclick="testEndpointWithData('POST', '/groups/', 'groupData')">Test</button>
+                    </div>
+                    
+                    <!-- Template Endpoints -->
+                    <div class="endpoint-card">
+                        <h3><span class="method get">GET</span>Templates</h3>
+                        <button onclick="testEndpoint('GET', '/templates/')">Test</button>
+                    </div>
+                    
+                    <!-- Backup Endpoints -->
+                    <div class="endpoint-card">
+                        <h3><span class="method get">GET</span>Backups</h3>
+                        <button onclick="testEndpoint('GET', '/backups/')">Test</button>
+                    </div>
+                </div>
+                
+                <div id="endpointResponse" class="response" style="display: none;"></div>
+            </div>
+            
+            <!-- Custom Request -->
+            <div class="section">
+                <h2>🛠️ Custom Request</h2>
+                <div class="form-group">
+                    <label for="customMethod">Method:</label>
+                    <select id="customMethod">
+                        <option value="GET">GET</option>
+                        <option value="POST">POST</option>
+                        <option value="PUT">PUT</option>
+                        <option value="DELETE">DELETE</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="customEndpoint">Endpoint (e.g., /users/me):</label>
+                    <input type="text" id="customEndpoint" value="/users/me">
+                </div>
+                <div class="form-group">
+                    <label for="customData">Request Body (JSON):</label>
+                    <textarea id="customData" rows="5" placeholder='{"key": "value"}'></textarea>
+                </div>
+                <button onclick="makeCustomRequest()">Send Request</button>
+                
+                <div id="customResponse" class="response" style="display: none;"></div>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        let authToken = '';
+        const apiBaseUrl = () => document.getElementById('apiUrl').value;
+        
+        function showResponse(elementId, response, isError = false) {
+            const element = document.getElementById(elementId);
+            element.style.display = 'block';
+            element.textContent = JSON.stringify(response, null, 2);
+            element.className = isError ? 'response error' : 'response';
+        }
+        
+        function updateTokenDisplay(token) {
+            const tokenDiv = document.getElementById('tokenDisplay');
+            if (token) {
+                authToken = token;
+                tokenDiv.innerHTML = `<div class="token-display">🔑 Token: ${token.substring(0, 50)}...</div>`;
+            } else {
+                tokenDiv.innerHTML = '';
+            }
+        }
+        
+        async function registerUser() {
+            const userData = {
+                username: document.getElementById('regUsername').value,
+                email: document.getElementById('regEmail').value,
+                password: document.getElementById('regPassword').value,
+                full_name: document.getElementById('regFullName').value
+            };
+            
+            try {
+                const response = await fetch(`${apiBaseUrl()}/users/register`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(userData)
+                });
+                
+                const data = await response.json();
+                showResponse('authResponse', data, !response.ok);
+            } catch (error) {
+                showResponse('authResponse', { error: error.message }, true);
+            }
+        }
+        
+        async function loginUser() {
+            const formData = new FormData();
+            formData.append('username', document.getElementById('loginUsername').value);
+            formData.append('password', document.getElementById('loginPassword').value);
+            
+            try {
+                const response = await fetch(`${apiBaseUrl()}/auth/token`, {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                const data = await response.json();
+                showResponse('authResponse', data, !response.ok);
+                
+                if (response.ok && data.access_token) {
+                    updateTokenDisplay(data.access_token);
+                }
+            } catch (error) {
+                showResponse('authResponse', { error: error.message }, true);
+            }
+        }
+        
+        async function testEndpoint(method, endpoint) {
+            if (!authToken) {
+                showResponse('endpointResponse', { error: 'Please login first to get authentication token' }, true);
+                return;
+            }
+            
+            try {
+                const response = await fetch(`${apiBaseUrl()}${endpoint}`, {
+                    method: method,
+                    headers: {
+                        'Authorization': `Bearer ${authToken}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+                
+                const data = await response.json();
+                showResponse('endpointResponse', { 
+                    endpoint: `${method} ${endpoint}`,
+                    status: response.status,
+                    data: data 
+                }, !response.ok);
+            } catch (error) {
+                showResponse('endpointResponse', { 
+                    endpoint: `${method} ${endpoint}`,
+                    error: error.message 
+                }, true);
+            }
+        }
+        
+        async function testEndpointWithData(method, endpoint, dataElementId) {
+            if (!authToken) {
+                showResponse('endpointResponse', { error: 'Please login first to get authentication token' }, true);
+                return;
+            }
+            
+            const dataElement = document.getElementById(dataElementId);
+            let requestData = {};
+            
+            if (dataElement.value.trim()) {
+                try {
+                    requestData = JSON.parse(dataElement.value);
+                } catch (error) {
+                    showResponse('endpointResponse', { error: 'Invalid JSON data' }, true);
+                    return;
+                }
+            }
+            
+            try {
+                const response = await fetch(`${apiBaseUrl()}${endpoint}`, {
+                    method: method,
+                    headers: {
+                        'Authorization': `Bearer ${authToken}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(requestData)
+                });
+                
+                const data = await response.json();
+                showResponse('endpointResponse', { 
+                    endpoint: `${method} ${endpoint}`,
+                    requestData: requestData,
+                    status: response.status,
+                    data: data 
+                }, !response.ok);
+            } catch (error) {
+                showResponse('endpointResponse', { 
+                    endpoint: `${method} ${endpoint}`,
+                    error: error.message 
+                }, true);
+            }
+        }
+        
+        async function makeCustomRequest() {
+            const method = document.getElementById('customMethod').value;
+            const endpoint = document.getElementById('customEndpoint').value;
+            const customData = document.getElementById('customData').value;
+            
+            let requestData = {};
+            if (customData.trim()) {
+                try {
+                    requestData = JSON.parse(customData);
+                } catch (error) {
+                    showResponse('customResponse', { error: 'Invalid JSON data' }, true);
+                    return;
+                }
+            }
+            
+            const headers = {
+                'Content-Type': 'application/json'
+            };
+            
+            if (authToken) {
+                headers['Authorization'] = `Bearer ${authToken}`;
+            }
+            
+            const requestOptions = {
+                method: method,
+                headers: headers
+            };
+            
+            if (method !== 'GET' && customData.trim()) {
+                requestOptions.body = JSON.stringify(requestData);
+            }
+            
+            try {
+                const response = await fetch(`${apiBaseUrl()}${endpoint}`, requestOptions);
+                
+                const data = await response.json();
+                showResponse('customResponse', { 
+                    endpoint: `${method} ${endpoint}`,
+                    requestData: requestData,
+                    status: response.status,
+                    data: data 
+                }, !response.ok);
+            } catch (error) {
+                showResponse('customResponse', { 
+                    endpoint: `${method} ${endpoint}`,
+                    error: error.message 
+                }, true);
+            }
+        }
+        
+        // User management functions
+        async function approveUser() {
+            if (!authToken) {
+                showResponse('endpointResponse', { error: 'Please login first to get authentication token' }, true);
+                return;
+            }
+            
+            const userId = document.getElementById('approveUserId').value;
+            if (!userId) {
+                showResponse('endpointResponse', { error: 'Please enter a user ID to approve' }, true);
+                return;
+            }
+            
+            try {
+                const response = await fetch(`${apiBaseUrl()}/users/approve/${userId}`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${authToken}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+                
+                const data = await response.json();
+                showResponse('endpointResponse', { 
+                    endpoint: `POST /users/approve/${userId}`,
+                    status: response.status,
+                    data: data 
+                }, !response.ok);
+            } catch (error) {
+                showResponse('endpointResponse', { 
+                    endpoint: `POST /users/approve/${userId}`,
+                    error: error.message 
+                }, true);
+            }
+        }
+        
+        async function changeUserRole() {
+            if (!authToken) {
+                showResponse('endpointResponse', { error: 'Please login first to get authentication token' }, true);
+                return;
+            }
+            
+            const userId = document.getElementById('roleUserId').value;
+            const newRole = document.getElementById('newRole').value;
+            
+            if (!userId) {
+                showResponse('endpointResponse', { error: 'Please enter a user ID' }, true);
+                return;
+            }
+            
+            try {
+                const response = await fetch(`${apiBaseUrl()}/users/role/${userId}`, {
+                    method: 'PUT',
+                    headers: {
+                        'Authorization': `Bearer ${authToken}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ role: newRole })
+                });
+                
+                const data = await response.json();
+                showResponse('endpointResponse', { 
+                    endpoint: `PUT /users/role/${userId}`,
+                    requestData: { role: newRole },
+                    status: response.status,
+                    data: data 
+                }, !response.ok);
+            } catch (error) {
+                showResponse('endpointResponse', { 
+                    endpoint: `PUT /users/role/${userId}`,
+                    error: error.message 
+                }, true);
+            }
+        }
+        
+        async function updateProfile() {
+            if (!authToken) {
+                showResponse('endpointResponse', { error: 'Please login first to get authentication token' }, true);
+                return;
+            }
+            
+            const username = document.getElementById('updateUsername').value;
+            const email = document.getElementById('updateEmail').value;
+            
+            if (!username && !email) {
+                showResponse('endpointResponse', { error: 'Please enter username or email to update' }, true);
+                return;
+            }
+            
+            const updateData = {};
+            if (username) updateData.username = username;
+            if (email) updateData.email = email;
+            
+            try {
+                const response = await fetch(`${apiBaseUrl()}/users/me`, {
+                    method: 'PUT',
+                    headers: {
+                        'Authorization': `Bearer ${authToken}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(updateData)
+                });
+                
+                const data = await response.json();
+                showResponse('endpointResponse', { 
+                    endpoint: 'PUT /users/me',
+                    requestData: updateData,
+                    status: response.status,
+                    data: data 
+                }, !response.ok);
+                
+                // Update token if new one is provided
+                if (response.ok && data.access_token && data.access_token !== '') {
+                    updateTokenDisplay(data.access_token);
+                }
+            } catch (error) {
+                showResponse('endpointResponse', { 
+                    endpoint: 'PUT /users/me',
+                    error: error.message 
+                }, true);
+            }
+        }
+        
+        async function changePassword() {
+            if (!authToken) {
+                showResponse('endpointResponse', { error: 'Please login first to get authentication token' }, true);
+                return;
+            }
+            
+            const currentPassword = document.getElementById('currentPassword').value;
+            const newPassword = document.getElementById('newPassword').value;
+            
+            if (!currentPassword || !newPassword) {
+                showResponse('endpointResponse', { error: 'Please enter both current and new passwords' }, true);
+                return;
+            }
+            
+            try {
+                const response = await fetch(`${apiBaseUrl()}/users/me/password`, {
+                    method: 'PUT',
+                    headers: {
+                        'Authorization': `Bearer ${authToken}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        current_password: currentPassword,
+                        new_password: newPassword
+                    })
+                });
+                
+                const data = await response.json();
+                showResponse('endpointResponse', { 
+                    endpoint: 'PUT /users/me/password',
+                    status: response.status,
+                    data: data 
+                }, !response.ok);
+                
+                // Update token if new one is provided
+                if (response.ok && data.access_token) {
+                    updateTokenDisplay(data.access_token);
+                    // Clear password fields
+                    document.getElementById('currentPassword').value = '';
+                    document.getElementById('newPassword').value = '';
+                }
+            } catch (error) {
+                showResponse('endpointResponse', { 
+                    endpoint: 'PUT /users/me/password',
+                    error: error.message 
+                }, true);
+            }
+        }
+        
+        async function deleteUser() {
+            if (!authToken) {
+                showResponse('endpointResponse', { error: 'Please login first to get authentication token' }, true);
+                return;
+            }
+            
+            const userId = document.getElementById('deleteUserId').value;
+            if (!userId) {
+                showResponse('endpointResponse', { error: 'Please enter a user ID to delete' }, true);
+                return;
+            }
+            
+            if (!confirm(`Are you sure you want to delete user ${userId}?`)) {
+                return;
+            }
+            
+            try {
+                const response = await fetch(`${apiBaseUrl()}/users/${userId}`, {
+                    method: 'DELETE',
+                    headers: {
+                        'Authorization': `Bearer ${authToken}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+                
+                const data = await response.json();
+                showResponse('endpointResponse', { 
+                    endpoint: `DELETE /users/${userId}`,
+                    status: response.status,
+                    data: data 
+                }, !response.ok);
+            } catch (error) {
+                showResponse('endpointResponse', { 
+                    endpoint: `DELETE /users/${userId}`,
+                    error: error.message 
+                }, true);
+            }
+        }
+        
+        // Initialize with some sample data
+        document.getElementById('serverData').value = JSON.stringify({
+            "name": "test-server",
+            "server_type": "vanilla",
+            "version": "1.20.1",
+            "description": "Test server created from API tester"
+        }, null, 2);
+        
+        document.getElementById('groupData').value = JSON.stringify({
+            "name": "test-group",
+            "type": "op",
+            "description": "Test group created from API tester"
+        }, null, 2);
+    </script>
+</body>
+</html>
