@@ -154,7 +154,7 @@ class BackupScheduler:
                 # Check if server exists and is not deleted
                 server = (
                     db.query(Server)
-                    .filter(Server.id == server_id, Server.is_deleted == False)
+                    .filter(Server.id == server_id, Server.is_deleted.is_(False))
                     .first()
                 )
 

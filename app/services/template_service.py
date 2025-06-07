@@ -58,7 +58,7 @@ class TemplateService:
             # Get server from database
             server = (
                 db.query(Server)
-                .filter(and_(Server.id == server_id, Server.is_deleted == False))
+                .filter(and_(Server.id == server_id, Server.is_deleted.is_(False)))
                 .first()
             )
 
@@ -435,7 +435,7 @@ class TemplateService:
             # Check if template is in use
             servers_using_template = (
                 db.query(Server)
-                .filter(Server.template_id == template_id, Server.is_deleted == False)
+                .filter(Server.template_id == template_id, Server.is_deleted.is_(False))
                 .count()
             )
 

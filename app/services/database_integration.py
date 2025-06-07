@@ -49,7 +49,7 @@ class DatabaseIntegrationService:
         try:
             with self.SessionLocal() as db:
                 # Get all servers from database
-                servers = db.query(Server).filter(Server.is_deleted == False).all()
+                servers = db.query(Server).filter(Server.is_deleted.is_(False)).all()
 
                 # Get currently running servers from manager
                 running_server_ids = set(minecraft_server_manager.list_running_servers())
