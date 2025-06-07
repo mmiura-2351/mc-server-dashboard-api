@@ -2,7 +2,7 @@ import shutil
 import zipfile
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Annotated, Any, Dict, List, Optional
 
 import aiofiles
 from fastapi import UploadFile
@@ -21,9 +21,13 @@ from app.users.models import User
 
 
 class FileValidationService:
-    """Service for validating file operations and access"""
+    """Service for validating file operations and access.
+    
+    This service handles all validation logic for file operations including
+    server existence, path safety, file permissions, and access control.
+    """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.allowed_extensions = {
             "config": [".properties", ".yml", ".yaml", ".json", ".txt", ".conf"],
             "world": [".dat", ".dat_old", ".mca", ".mcr"],
@@ -40,8 +44,23 @@ class FileValidationService:
             "banned-ips.json",
         ]
 
-    def validate_server_exists(self, server_id: int, db: Session) -> Server:
-        """Validate server exists and return it"""
+    def validate_server_exists(
+        self, 
+        server_id: Annotated[int, "ID of the server to validate"], 
+        db: Annotated[Session, "Database session for queries"]
+    ) -> Annotated[Server, "Validated server instance"]:
+        """Validate that a server exists in the database.
+        
+        Args:
+            server_id: The ID of the server to validate
+            db: Database session for querying
+            
+        Returns:
+            Server instance if validation passes
+            
+        Raises:
+            ServerNotFoundException: If server doesn't exist
+        """
         server = db.query(Server).filter(Server.id == server_id).first()
         if not server:
             raise ServerNotFoundException(str(server_id))

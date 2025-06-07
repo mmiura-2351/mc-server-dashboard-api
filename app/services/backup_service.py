@@ -3,7 +3,7 @@ import shutil
 import tarfile
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
+from typing import Annotated, Optional
 
 from sqlalchemy import and_
 from sqlalchemy.orm import Session
@@ -24,11 +24,29 @@ logger = logging.getLogger(__name__)
 
 
 class BackupValidationService:
-    """Service for validating backup operations"""
+    """Service for validating backup operations.
+    
+    This service handles all validation logic for backup operations including
+    server existence, backup availability, and state checks.
+    """
 
     @staticmethod
-    def validate_server_for_backup(server_id: int, db: Session) -> Server:
-        """Validate server exists and can be backed up"""
+    def validate_server_for_backup(
+        server_id: Annotated[int, "ID of the server to validate"], 
+        db: Annotated[Session, "Database session for queries"]
+    ) -> Annotated[Server, "Validated server instance"]:
+        """Validate that a server exists and can be backed up.
+        
+        Args:
+            server_id: The ID of the server to validate
+            db: Database session for querying
+            
+        Returns:
+            Server instance if validation passes
+            
+        Raises:
+            ServerNotFoundException: If server doesn't exist or is deleted
+        """
         server = (
             db.query(Server)
             .filter(and_(Server.id == server_id, not Server.is_deleted))
@@ -41,8 +59,22 @@ class BackupValidationService:
         return server
 
     @staticmethod
-    def validate_backup_exists(backup_id: int, db: Session) -> Backup:
-        """Validate backup exists"""
+    def validate_backup_exists(
+        backup_id: Annotated[int, "ID of the backup to validate"], 
+        db: Annotated[Session, "Database session for queries"]
+    ) -> Annotated[Backup, "Validated backup instance"]:
+        """Validate that a backup exists in the database.
+        
+        Args:
+            backup_id: The ID of the backup to validate
+            db: Database session for querying
+            
+        Returns:
+            Backup instance if validation passes
+            
+        Raises:
+            BackupNotFoundException: If backup doesn't exist
+        """
         backup = db.query(Backup).filter(Backup.id == backup_id).first()
 
         if not backup:
@@ -228,13 +260,31 @@ class BackupService:
 
     async def create_backup(
         self,
-        server_id: int,
-        name: str,
-        description: Optional[str] = None,
-        backup_type: BackupType = BackupType.manual,
-        db: Session = None,
-    ) -> Backup:
-        """Create a backup of a server"""
+        server_id: Annotated[int, "ID of the server to backup"],
+        name: Annotated[str, "Name for the backup"],
+        description: Annotated[Optional[str], "Optional description for the backup"] = None,
+        backup_type: Annotated[BackupType, "Type of backup (manual/scheduled)"] = BackupType.manual,
+        db: Annotated[Session, "Database session"] = None,
+    ) -> Annotated[Backup, "Created backup instance"]:
+        """Create a comprehensive backup of a server.
+        
+        This method validates the server, creates backup records, performs the actual
+        file backup operation, and updates the database with the results.
+        
+        Args:
+            server_id: The ID of the server to backup
+            name: Human-readable name for the backup
+            description: Optional description of the backup purpose
+            backup_type: Type of backup (manual, scheduled, etc.)
+            db: Database session for operations
+            
+        Returns:
+            The created backup instance with complete metadata
+            
+        Raises:
+            ServerNotFoundException: If server doesn't exist
+            FileOperationException: If backup creation fails
+        """
         # Validate server
         server = self.validation_service.validate_server_for_backup(server_id, db)
 

@@ -1,6 +1,6 @@
 import json
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Annotated, Any, Dict, List, Optional
 
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
@@ -11,34 +11,178 @@ from app.servers.models import Server
 from app.users.models import Role, User
 
 
-class GroupService:
-    def __init__(self, db: Session):
-        self.db = db
-
-    def _check_group_access(self, user: User, group: Group) -> None:
-        """Check if user has access to the group"""
+class GroupAccessService:
+    """Service for handling group and server access validation.
+    
+    This service centralizes access control logic for groups and servers,
+    ensuring proper permission checks throughout the system.
+    """
+    
+    @staticmethod
+    def check_group_access(user: Annotated[User, "User requesting access"], group: Annotated[Group, "Group to access"]) -> None:
+        """Check if user has access to the specified group.
+        
+        Args:
+            user: The user requesting access
+            group: The group to access
+            
+        Raises:
+            HTTPException: If user doesn't have permission to access the group
+        """
         if user.role != Role.admin and group.owner_id != user.id:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="You don't have permission to access this group",
             )
 
-    def _check_server_access(self, user: User, server: Server) -> None:
-        """Check if user has access to the server"""
+    @staticmethod
+    def check_server_access(user: Annotated[User, "User requesting access"], server: Annotated[Server, "Server to access"]) -> None:
+        """Check if user has access to the specified server.
+        
+        Args:
+            user: The user requesting access
+            server: The server to access
+            
+        Raises:
+            HTTPException: If user doesn't have permission to access the server
+        """
         if user.role != Role.admin and server.owner_id != user.id:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="You don't have permission to access this server",
             )
 
+
+class GroupFileService:
+    """Service for handling group-related file operations.
+    
+    This service manages the synchronization of group data with server files,
+    specifically handling ops.json and whitelist.json updates.
+    """
+    
+    def __init__(self, db: Annotated[Session, "Database session"]):
+        self.db = db
+
+    async def update_server_files(self, server_id: Annotated[int, "ID of server to update"]) -> None:
+        """Update ops.json and whitelist.json files for a server.
+        
+        This method retrieves all groups attached to a server and regenerates
+        the ops.json and whitelist.json files based on group memberships.
+        
+        Args:
+            server_id: The ID of the server to update
+        """
+        try:
+            # Get server info
+            server = self.db.query(Server).filter(Server.id == server_id).first()
+            if not server:
+                return
+
+            # Get all groups attached to this server
+            server_groups = (
+                self.db.query(Group)
+                .join(ServerGroup, Group.id == ServerGroup.group_id)
+                .filter(ServerGroup.server_id == server_id)
+                .order_by(ServerGroup.priority.desc())
+                .all()
+            )
+
+            # Build ops and whitelist data
+            ops_data = []
+            whitelist_data = []
+
+            for group in server_groups:
+                players = group.get_players()
+
+                for player in players:
+                    player_entry = {
+                        "uuid": player["uuid"],
+                        "name": player["username"],
+                        "level": 4 if group.type == GroupType.ops else 0,
+                        "bypassesPlayerLimit": group.type == GroupType.ops,
+                    }
+
+                    if group.type == GroupType.ops:
+                        # Add to ops if not already present
+                        if not any(op["uuid"] == player["uuid"] for op in ops_data):
+                            ops_data.append(player_entry)
+
+                    if group.type == GroupType.whitelist:
+                        # Add to whitelist if not already present
+                        whitelist_entry = {
+                            "uuid": player["uuid"],
+                            "name": player["username"],
+                        }
+                        if not any(wl["uuid"] == player["uuid"] for wl in whitelist_data):
+                            whitelist_data.append(whitelist_entry)
+
+            # Write to server files
+            server_path = Path(f"servers/{server.name}")
+
+            if server_path.exists():
+                # Update ops.json
+                ops_file = server_path / "ops.json"
+                with open(ops_file, "w", encoding="utf-8") as f:
+                    json.dump(ops_data, f, indent=2)
+
+                # Update whitelist.json
+                whitelist_file = server_path / "whitelist.json"
+                with open(whitelist_file, "w", encoding="utf-8") as f:
+                    json.dump(whitelist_data, f, indent=2)
+
+        except Exception as e:
+            # Log error but don't fail the main operation
+            print(f"Error updating server files for server {server_id}: {e}")
+
+    async def update_all_affected_servers(self, group_id: Annotated[int, "ID of group that was modified"]) -> None:
+        """Update all servers that have the specified group attached.
+        
+        Args:
+            group_id: The ID of the group that was modified
+        """
+        affected_servers = (
+            self.db.query(ServerGroup.server_id)
+            .filter(ServerGroup.group_id == group_id)
+            .all()
+        )
+
+        for (server_id,) in affected_servers:
+            await self.update_server_files(server_id)
+
+
+class GroupService:
+    """Main service for orchestrating group management operations.
+    
+    This service handles CRUD operations for groups, player management,
+    and server attachments with proper access control and audit logging.
+    """
+    
+    def __init__(self, db: Annotated[Session, "Database session"]):
+        self.db = db
+        self.access_service = GroupAccessService()
+        self.file_service = GroupFileService(db)
+
     def create_group(
         self,
-        user: User,
-        name: str,
-        group_type: GroupType,
-        description: Optional[str] = None,
-    ) -> Group:
-        """Create a new group"""
+        user: Annotated[User, "User creating the group"],
+        name: Annotated[str, "Name of the group"],
+        group_type: Annotated[GroupType, "Type of group (ops/whitelist)"],
+        description: Annotated[Optional[str], "Optional description"] = None,
+    ) -> Annotated[Group, "Created group instance"]:
+        """Create a new group with the specified parameters.
+        
+        Args:
+            user: The user creating the group
+            name: Name of the group
+            group_type: Type of group (ops or whitelist)
+            description: Optional description of the group's purpose
+            
+        Returns:
+            The created group instance
+            
+        Raises:
+            HTTPException: If group name already exists for this user
+        """
         # Check if group name already exists for this user
         existing_group = (
             self.db.query(Group)
