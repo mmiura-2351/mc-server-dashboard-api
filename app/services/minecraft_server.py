@@ -53,11 +53,13 @@ class MinecraftServerManager:
                 logger.warning(f"Server {server.id} is already running")
                 return False
 
-            server_dir = self.base_directory / str(server.id)
-            server_dir.mkdir(exist_ok=True)
+            server_dir = Path(server.directory_path)
+            if not server_dir.exists():
+                logger.error(f"Server directory not found: {server_dir}")
+                return False
 
             # Prepare command
-            jar_path = server_dir / f"server-{server.minecraft_version}.jar"
+            jar_path = server_dir / "server.jar"
             if not jar_path.exists():
                 logger.error(f"Server JAR not found: {jar_path}")
                 return False
