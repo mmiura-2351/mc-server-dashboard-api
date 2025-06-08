@@ -41,7 +41,7 @@ async def read_file(
     """Read content of a text file"""
     # Check server access
     authorization_service.check_server_access(server_id, current_user, db)
-    
+
     content = await file_management_service.read_file(
         server_id=server_id,
         file_path=file_path,
@@ -58,7 +58,7 @@ async def read_file(
     file_info = None
     if files:
         file_info = FileInfoResponse(**files[0])
-    
+
     return FileReadResponse(
         content=content,
         encoding=encoding,
@@ -76,7 +76,7 @@ async def download_file(
     """Download a file or directory (as zip) from server"""
     # Check server access
     authorization_service.check_server_access(server_id, current_user, db)
-    
+
     file_location, filename = await file_management_service.download_file(
         server_id=server_id,
         file_path=file_path,
@@ -124,7 +124,7 @@ async def search_files(
 ):
     """Search for files in server directory"""
     from app.files.schemas import FileSearchResult
-    
+
     # Check server access
     authorization_service.check_server_access(server_id, current_user, db)
 
@@ -151,7 +151,7 @@ async def search_files(
             file_data = {k: v for k, v in result.items() if k != "match_type"}
             matches = []  # Content matches would need separate implementation
             match_count = 1 if "match_type" in result else 0
-        
+
         formatted_results.append(
             FileSearchResult(
                 file=FileInfoResponse(**file_data),
@@ -200,7 +200,6 @@ async def create_directory(
     result = await file_management_service.create_directory(
         server_id=server_id,
         directory_path=full_path,
-        user=current_user,
         db=db,
     )
 
@@ -220,14 +219,14 @@ async def list_server_files(
     """List files and directories in server directory"""
     # Check server access
     authorization_service.check_server_access(server_id, current_user, db)
-    
+
     files = await file_management_service.get_server_files(
         server_id=server_id,
         path=path,
         file_type=file_type,
         db=db,
     )
-    
+
     # Convert dict results to schema objects
     file_responses = [FileInfoResponse(**file_data) for file_data in files]
 

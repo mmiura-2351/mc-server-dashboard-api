@@ -188,13 +188,13 @@ class TemplateFilterRequest(BaseModel):
 class TemplateCloneRequest(BaseModel):
     """Request schema for cloning template"""
 
-    name: str = Field(..., min_length=1, max_length=100, description="Name for the cloned template")
+    name: str = Field(
+        ..., min_length=1, max_length=100, description="Name for the cloned template"
+    )
     description: Optional[str] = Field(
         None, max_length=500, description="Description for the cloned template"
     )
-    is_public: bool = Field(
-        False, description="Whether cloned template should be public"
-    )
+    is_public: bool = Field(False, description="Whether cloned template should be public")
 
     @field_validator("name")
     @classmethod
