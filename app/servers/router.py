@@ -275,9 +275,48 @@ async def start_server(
         # Start the server
         success = await minecraft_server_manager.start_server(server)
         if not success:
+            # Get more detailed error information
+            logger.error(f"Server {server_id} failed to start - checking system state")
+
+            # Check if Java is available
+            import subprocess
+
+            try:
+                java_check = subprocess.run(
+                    ["java", "-version"], capture_output=True, timeout=5
+                )
+                if java_check.returncode != 0:
+                    logger.error(
+                        f"Java not available: {java_check.stderr.decode() if java_check.stderr else 'Unknown Java error'}"
+                    )
+                    raise HTTPException(
+                        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                        detail="Server start failed: Java runtime not available",
+                    )
+            except (subprocess.TimeoutExpired, FileNotFoundError):
+                logger.error("Java executable not found")
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail="Server start failed: Java executable not found",
+                )
+
+            # Check server files
+            from pathlib import Path
+
+            server_dir = Path(server.directory_path)
+            jar_path = server_dir / "server.jar"
+
+            if not jar_path.exists():
+                logger.error(f"Server JAR missing: {jar_path}")
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail="Server start failed: server.jar not found",
+                )
+
+            # Generic failure if we can't determine specific cause
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Failed to start server",
+                detail="Server start failed: Check server configuration and system requirements",
             )
 
         # Database status will be updated automatically via callback

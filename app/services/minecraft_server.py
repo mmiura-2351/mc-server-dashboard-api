@@ -1,5 +1,7 @@
 import asyncio
 import logging
+import os
+import subprocess
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -46,8 +48,71 @@ class MinecraftServerManager:
                     f"Failed to update database status for server {server_id}: {e}"
                 )
 
+    async def _check_java_availability(self) -> bool:
+        """Check if Java is available in the system"""
+        try:
+            result = subprocess.run(
+                ["java", "-version"], capture_output=True, text=True, timeout=10
+            )
+            if result.returncode == 0:
+                logger.debug(
+                    f"Java version detected: {result.stderr.split()[2] if result.stderr else 'unknown'}"
+                )
+                return True
+            else:
+                logger.error("Java is not available or not working properly")
+                return False
+        except (
+            subprocess.TimeoutExpired,
+            FileNotFoundError,
+            subprocess.SubprocessError,
+        ) as e:
+            logger.error(f"Java availability check failed: {e}")
+            return False
+
+    async def _ensure_eula_accepted(self, server_dir: Path) -> bool:
+        """Ensure EULA is accepted by creating eula.txt"""
+        try:
+            eula_path = server_dir / "eula.txt"
+            if not eula_path.exists():
+                logger.info(f"Creating EULA acceptance file: {eula_path}")
+                with open(eula_path, "w") as f:
+                    f.write("eula=true\n")
+            else:
+                # Check if EULA is already accepted
+                with open(eula_path, "r") as f:
+                    content = f.read()
+                    if "eula=true" not in content:
+                        logger.info(f"Updating EULA acceptance in: {eula_path}")
+                        with open(eula_path, "w") as f:
+                            f.write("eula=true\n")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to ensure EULA acceptance: {e}")
+            return False
+
+    async def _validate_server_files(self, server_dir: Path) -> tuple[bool, str]:
+        """Validate that all required server files exist and are accessible"""
+        try:
+            # Check server.jar exists and is readable
+            jar_path = server_dir / "server.jar"
+            if not jar_path.exists():
+                return False, f"Server JAR not found: {jar_path}"
+
+            if not os.access(jar_path, os.R_OK):
+                return False, f"Server JAR is not readable: {jar_path}"
+
+            # Check directory permissions
+            if not os.access(server_dir, os.W_OK):
+                return False, f"Server directory is not writable: {server_dir}"
+
+            return True, "All files validated successfully"
+
+        except Exception as e:
+            return False, f"File validation failed: {e}"
+
     async def start_server(self, server: Server) -> bool:
-        """Start a Minecraft server"""
+        """Start a Minecraft server with comprehensive pre-checks"""
         try:
             if server.id in self.processes:
                 logger.warning(f"Server {server.id} is already running")
@@ -58,29 +123,98 @@ class MinecraftServerManager:
                 logger.error(f"Server directory not found: {server_dir}")
                 return False
 
-            # Prepare command
-            jar_path = server_dir / "server.jar"
-            if not jar_path.exists():
-                logger.error(f"Server JAR not found: {jar_path}")
+            # Pre-flight checks
+            logger.info(f"Starting pre-flight checks for server {server.id}")
+
+            # Check Java availability
+            if not await self._check_java_availability():
+                logger.error(f"Java is not available for server {server.id}")
                 return False
 
+            # Validate server files
+            files_valid, validation_message = await self._validate_server_files(
+                server_dir
+            )
+            if not files_valid:
+                logger.error(
+                    f"Server {server.id} file validation failed: {validation_message}"
+                )
+                return False
+            logger.debug(f"Server {server.id} file validation: {validation_message}")
+
+            # Ensure EULA is accepted
+            if not await self._ensure_eula_accepted(server_dir):
+                logger.error(f"Failed to ensure EULA acceptance for server {server.id}")
+                return False
+
+            # Prepare command with absolute paths
+            jar_path = server_dir / "server.jar"
+            abs_server_dir = server_dir.absolute()
+            abs_jar_path = jar_path.absolute()
+            
+            # Ensure we're using absolute paths
             cmd = [
                 "java",
                 f"-Xmx{server.max_memory}M",
                 f"-Xms{min(server.max_memory, 512)}M",
                 "-jar",
-                str(jar_path),
+                str(abs_jar_path),
                 "nogui",
             ]
 
-            # Create process
-            process = await asyncio.create_subprocess_exec(
-                *cmd,
-                cwd=str(server_dir),
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.STDOUT,
-                stdin=asyncio.subprocess.PIPE,
-            )
+            logger.info(f"Starting server {server.id} in directory: {abs_server_dir}")
+            logger.info(f"Command: {' '.join(cmd)}")
+            logger.info(f"JAR path exists: {abs_jar_path.exists()}")
+            logger.info(f"Directory writable: {os.access(abs_server_dir, os.W_OK)}")
+
+            # Create process with detailed error handling
+            # Note: Using stdin=None can help with some processes that don't expect stdin interaction
+            try:
+                process = await asyncio.create_subprocess_exec(
+                    *cmd,
+                    cwd=str(abs_server_dir),
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.STDOUT,
+                    stdin=asyncio.subprocess.PIPE,
+                    env=dict(os.environ, TERM='xterm'),  # Set terminal environment
+                )
+            except OSError as e:
+                logger.error(f"Failed to create subprocess for server {server.id}: {e}")
+                return False
+            except Exception as e:
+                logger.error(
+                    f"Unexpected error creating subprocess for server {server.id}: {e}"
+                )
+                return False
+
+            # Verify process was created successfully
+            if process is None:
+                logger.error(f"Process creation returned None for server {server.id}")
+                return False
+                
+            # Check if process exited immediately
+            if process.returncode is not None:
+                logger.error(f"Process exited immediately with code {process.returncode} for server {server.id}")
+                return False
+                
+            # Additional verification - wait and check multiple times
+            for i in range(3):  # Check 3 times over 300ms
+                await asyncio.sleep(0.1)
+                if process.returncode is not None:
+                    logger.error(f"Process exited within {(i+1)*100}ms with code {process.returncode} for server {server.id}")
+                    # Try to read any immediate error output
+                    try:
+                        if process.stdout:
+                            error_data = await asyncio.wait_for(
+                                process.stdout.read(1024), timeout=0.1
+                            )
+                            if error_data:
+                                logger.error(f"Server {server.id} immediate error: {error_data.decode()[:500]}")
+                    except Exception:
+                        pass
+                    return False
+            
+            logger.info(f"Process verification successful for server {server.id} - PID: {process.pid}")
 
             # Create server process tracking
             log_queue = asyncio.Queue(maxsize=1000)
@@ -95,20 +229,23 @@ class MinecraftServerManager:
 
             self.processes[server.id] = server_process
 
-            # Start log reading task
+            # Start background tasks
             asyncio.create_task(self._read_server_logs(server_process))
-
-            # Start status monitoring task
             asyncio.create_task(self._monitor_server(server_process))
 
             # Notify database of status change
             self._notify_status_change(server.id, ServerStatus.starting)
 
-            logger.info(f"Started server {server.id} with PID {process.pid}")
+            logger.info(f"Successfully started server {server.id} with PID {process.pid}")
             return True
 
         except Exception as e:
-            logger.error(f"Failed to start server {server.id}: {e}")
+            logger.error(
+                f"Critical error starting server {server.id}: {e}", exc_info=True
+            )
+            # Cleanup if process was partially created
+            if server.id in self.processes:
+                del self.processes[server.id]
             return False
 
     async def stop_server(self, server_id: int, force: bool = False) -> bool:
@@ -273,10 +410,35 @@ class MinecraftServerManager:
     async def _monitor_server(self, server_process: ServerProcess):
         """Monitor server process and update status"""
         try:
-            # Wait for process to finish
+            # Check if process failed immediately (within 5 seconds)
+            try:
+                await asyncio.wait_for(server_process.process.wait(), timeout=5.0)
+
+                # Process ended immediately - this is likely an error
+                return_code = server_process.process.returncode
+                logger.error(
+                    f"Server {server_process.server_id} failed to start - exited immediately with code {return_code}"
+                )
+
+                server_process.status = ServerStatus.error
+                self._notify_status_change(server_process.server_id, ServerStatus.error)
+
+                # Clean up
+                if server_process.server_id in self.processes:
+                    del self.processes[server_process.server_id]
+                return
+
+            except asyncio.TimeoutError:
+                # Process is still running after 5 seconds - this is good
+                logger.debug(
+                    f"Server {server_process.server_id} process is stable after 5 seconds"
+                )
+                pass
+
+            # Continue monitoring for normal process termination
             await server_process.process.wait()
 
-            # Process has ended
+            # Process has ended normally
             return_code = server_process.process.returncode
 
             if return_code == 0:
@@ -300,6 +462,10 @@ class MinecraftServerManager:
             server_process.status = ServerStatus.error
             # Notify database of error status
             self._notify_status_change(server_process.server_id, ServerStatus.error)
+
+            # Clean up
+            if server_process.server_id in self.processes:
+                del self.processes[server_process.server_id]
 
     async def shutdown_all(self):
         """Shutdown all running servers"""
