@@ -22,6 +22,7 @@ class TestFileManagementService:
         server = Mock(spec=Server)
         server.id = 1
         server.name = "test_server"
+        server.directory_path = "servers/test_server"
         return server
     
     @pytest.fixture
@@ -121,8 +122,7 @@ class TestFileManagementService:
             await file_management_service.read_file(server_id=999, file_path="test.txt", db=mock_db)
 
     @pytest.mark.asyncio
-    @patch('pathlib.Path.exists')
-    async def test_read_file_path_traversal(self, mock_exists, mock_server, mock_db):
+    async def test_read_file_path_traversal(self, mock_server, mock_db):
         """Test read_file with path traversal attempt"""
         mock_db.query.return_value.filter.return_value.first.return_value = mock_server
         
@@ -260,10 +260,9 @@ class TestFileManagementService:
                     )
 
     @pytest.mark.asyncio
-    @patch('pathlib.Path.mkdir')
     @patch('pathlib.Path.exists')
     @patch('aiofiles.open')
-    async def test_write_file_success(self, mock_aiofiles_open, mock_exists, mock_mkdir, mock_server, mock_user, mock_db):
+    async def test_write_file_success(self, mock_aiofiles_open, mock_exists, mock_server, mock_user, mock_db):
         """Test successful file write"""
         mock_db.query.return_value.filter.return_value.first.return_value = mock_server
         mock_exists.return_value = False
@@ -278,19 +277,20 @@ class TestFileManagementService:
             ]
             with patch('pathlib.Path.suffix', ".txt"):
                 with patch('pathlib.Path.name', "test.txt"):
-                    with patch('pathlib.Path.stat') as mock_stat:
-                        mock_stat.return_value.st_size = 7
-                        mock_stat.return_value.st_mtime = 1640995200
-                        with patch('pathlib.Path.is_dir', return_value=False):
-                            with patch('pathlib.Path.is_file', return_value=True):
-                                with patch('pathlib.Path.relative_to', return_value=Path("test.txt")):
-                                    result = await file_management_service.write_file(
-                                        server_id=1,
-                                        file_path="test.txt",
-                                        content="content",
-                                        user=mock_user,
-                                        db=mock_db
-                                    )
+                    with patch('pathlib.Path.mkdir'):
+                        with patch('pathlib.Path.stat') as mock_stat:
+                            mock_stat.return_value.st_size = 7
+                            mock_stat.return_value.st_mtime = 1640995200
+                            with patch('pathlib.Path.is_dir', return_value=False):
+                                with patch('pathlib.Path.is_file', return_value=True):
+                                    with patch('pathlib.Path.relative_to', return_value=Path("test.txt")):
+                                        result = await file_management_service.write_file(
+                                            server_id=1,
+                                            file_path="test.txt",
+                                            content="content",
+                                            user=mock_user,
+                                            db=mock_db
+                                        )
                                     
                                     assert "updated successfully" in result["message"]
                                     assert result["file"]["name"] == "test.txt"
@@ -382,9 +382,8 @@ class TestFileManagementService:
             await file_management_service.upload_file(server_id=999, file=mock_file, db=mock_db)
 
     @pytest.mark.asyncio
-    @patch('pathlib.Path.mkdir')
     @patch('aiofiles.open')
-    async def test_upload_file_success(self, mock_aiofiles_open, mock_mkdir, mock_server, mock_user, mock_db):
+    async def test_upload_file_success(self, mock_aiofiles_open, mock_server, mock_user, mock_db):
         """Test successful file upload"""
         mock_db.query.return_value.filter.return_value.first.return_value = mock_server
         
@@ -438,7 +437,7 @@ class TestFileManagementService:
                 with patch('pathlib.Path.name', "test.txt"):
                     result = await file_management_service.download_file(server_id=1, file_path="test.txt", db=mock_db)
                     
-                    file_path, filename = result
+                    _, filename = result
                     assert filename == "test.txt"
 
     @pytest.mark.asyncio
@@ -450,8 +449,7 @@ class TestFileManagementService:
             await file_management_service.create_directory(server_id=999, directory_path="testdir", db=mock_db)
 
     @pytest.mark.asyncio
-    @patch('pathlib.Path.mkdir')
-    async def test_create_directory_success(self, mock_mkdir, mock_server, mock_db):
+    async def test_create_directory_success(self, mock_server, mock_db):
         """Test successful directory creation"""
         mock_db.query.return_value.filter.return_value.first.return_value = mock_server
         
@@ -460,15 +458,20 @@ class TestFileManagementService:
                 Path("/servers/test_server/newdir"),  # target_dir.resolve()
                 Path("/servers/test_server")  # server_path.resolve()
             ]
+            with patch('pathlib.Path.mkdir') as mock_mkdir:
+                with patch('pathlib.Path.stat') as mock_stat:
+                    mock_stat.return_value.st_size = 0
+                    mock_stat.return_value.st_mtime = 1640995200.0
+                    with patch('pathlib.Path.is_dir', return_value=True):
+                        with patch('pathlib.Path.is_file', return_value=False):
+                            result = await file_management_service.create_directory(
+                                server_id=1,
+                                directory_path="newdir",
+                                db=mock_db
+                            )
             
-            result = await file_management_service.create_directory(
-                server_id=1,
-                directory_path="newdir",
-                db=mock_db
-            )
-            
-            assert "created successfully" in result["message"]
-            mock_mkdir.assert_called_once()
+                            assert "created successfully" in result["message"]
+                            mock_mkdir.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_search_files_server_not_found(self, mock_db):
