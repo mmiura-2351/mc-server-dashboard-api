@@ -20,8 +20,8 @@ class TestServerExportImport:
         """Test successful server export"""
         server_id = sample_server.id
         
-        # Create mock server directory and files
-        server_dir = Path("./servers") / str(server_id)
+        # Create mock server directory and files using the server's directory_path
+        server_dir = Path(sample_server.directory_path)
         server_dir.mkdir(parents=True, exist_ok=True)
         
         # Create some test files
@@ -116,8 +116,7 @@ class TestServerExportImport:
         assert server_data["max_players"] == 30
         
         # Verify server directory was created
-        server_id = server_data["id"]
-        server_dir = Path("./servers") / str(server_id)
+        server_dir = Path(server_data["directory_path"])
         assert server_dir.exists()
         assert (server_dir / "server.properties").exists()
         assert (server_dir / "world" / "level.dat").exists()
@@ -236,7 +235,7 @@ class TestServerExportImport:
     def test_export_excludes_log_files(self, client: TestClient, admin_headers, sample_server):
         """Test that export excludes log and temporary files"""
         server_id = sample_server.id
-        server_dir = Path("./servers") / str(server_id)
+        server_dir = Path(sample_server.directory_path)
         server_dir.mkdir(parents=True, exist_ok=True)
         
         # Create files that should be included
@@ -276,3 +275,54 @@ class TestServerExportImport:
             import shutil
             if server_dir.exists():
                 shutil.rmtree(server_dir)
+    
+    def test_import_server_port_conflict_only_with_running_servers(self, client: TestClient, admin_headers, db):
+        """Test that import allows port conflicts with stopped servers"""
+        # Create a stopped server with port 25565
+        from app.servers.models import Server, ServerType, ServerStatus
+        stopped_server = Server(
+            name="Stopped Server",
+            description="A stopped server",
+            minecraft_version="1.20.1", 
+            server_type=ServerType.vanilla,
+            status=ServerStatus.stopped,
+            directory_path="./servers/stopped_server",
+            port=25565,
+            max_memory=1024,
+            max_players=20,
+            owner_id=1  # Assuming admin user has ID 1
+        )
+        db.add(stopped_server)
+        db.commit()
+        
+        # Create test ZIP file
+        zip_buffer = io.BytesIO()
+        metadata = {
+            "minecraft_version": "1.20.1",
+            "server_type": "vanilla",
+            "max_memory": 1024,
+            "max_players": 20
+        }
+        
+        with zipfile.ZipFile(zip_buffer, 'w') as zipf:
+            zipf.writestr("export_metadata.json", json.dumps(metadata))
+            zipf.writestr("server.properties", "server-port=25565")
+        zip_buffer.seek(0)
+        
+        # Test import - should succeed because stopped server doesn't conflict
+        files = {"file": ("test.zip", zip_buffer, "application/zip")}
+        import uuid
+        unique_name = f"Imported Server {uuid.uuid4().hex[:8]}"
+        data = {"name": unique_name}
+        
+        response = client.post("/api/v1/servers/import", headers=admin_headers, files=files, data=data)
+        
+        assert response.status_code == status.HTTP_201_CREATED
+        server_data = response.json()
+        assert server_data["port"] == 25565  # Should get the same port as stopped server
+        
+        # Cleanup
+        import shutil
+        server_dir = Path(server_data["directory_path"])
+        if server_dir.exists():
+            shutil.rmtree(server_dir)

@@ -17,6 +17,7 @@ from fastapi import (
     status,
 )
 from fastapi.responses import FileResponse
+from sqlalchemy import and_
 from sqlalchemy.orm import Session
 
 from app.auth.dependencies import get_current_user
@@ -663,7 +664,7 @@ async def export_server(
         server = check_server_owner_or_admin(server_id, current_user, db)
 
         # Check if server exists and get server directory
-        server_dir = Path("./servers") / str(server_id)
+        server_dir = Path(server.directory_path)
         if not server_dir.exists():
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND, detail="Server directory not found"
@@ -854,10 +855,19 @@ async def import_server(
                         detail=f"Invalid export file: missing {field} in metadata",
                     )
 
-            # Find available port
+            # Find available port (only check running servers)
             from app.servers.models import Server
 
-            used_ports = db.query(Server.port).filter(not Server.is_deleted).all()
+            used_ports = (
+                db.query(Server.port)
+                .filter(
+                    and_(
+                        not Server.is_deleted,
+                        Server.status.in_([ServerStatus.running, ServerStatus.starting]),
+                    )
+                )
+                .all()
+            )
             used_ports = {port[0] for port in used_ports}
 
             port = 25565
@@ -886,7 +896,7 @@ async def import_server(
             server = await server_service.create_server(create_request, current_user, db)
 
             # Replace server directory with imported files
-            server_dir = Path("./servers") / str(server.id)
+            server_dir = Path(server.directory_path)
 
             # Remove auto-generated files
             if server_dir.exists():
