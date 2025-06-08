@@ -151,7 +151,7 @@ class MinecraftServerManager:
             jar_path = server_dir / "server.jar"
             abs_server_dir = server_dir.absolute()
             abs_jar_path = jar_path.absolute()
-            
+
             # Ensure we're using absolute paths
             cmd = [
                 "java",
@@ -176,7 +176,7 @@ class MinecraftServerManager:
                     stdout=asyncio.subprocess.PIPE,
                     stderr=asyncio.subprocess.STDOUT,
                     stdin=asyncio.subprocess.PIPE,
-                    env=dict(os.environ, TERM='xterm'),  # Set terminal environment
+                    env=dict(os.environ, TERM="xterm"),  # Set terminal environment
                 )
             except OSError as e:
                 logger.error(f"Failed to create subprocess for server {server.id}: {e}")
@@ -191,17 +191,21 @@ class MinecraftServerManager:
             if process is None:
                 logger.error(f"Process creation returned None for server {server.id}")
                 return False
-                
+
             # Check if process exited immediately
             if process.returncode is not None:
-                logger.error(f"Process exited immediately with code {process.returncode} for server {server.id}")
+                logger.error(
+                    f"Process exited immediately with code {process.returncode} for server {server.id}"
+                )
                 return False
-                
+
             # Additional verification - wait and check multiple times
             for i in range(3):  # Check 3 times over 300ms
                 await asyncio.sleep(0.1)
                 if process.returncode is not None:
-                    logger.error(f"Process exited within {(i+1)*100}ms with code {process.returncode} for server {server.id}")
+                    logger.error(
+                        f"Process exited within {(i+1)*100}ms with code {process.returncode} for server {server.id}"
+                    )
                     # Try to read any immediate error output
                     try:
                         if process.stdout:
@@ -209,12 +213,16 @@ class MinecraftServerManager:
                                 process.stdout.read(1024), timeout=0.1
                             )
                             if error_data:
-                                logger.error(f"Server {server.id} immediate error: {error_data.decode()[:500]}")
+                                logger.error(
+                                    f"Server {server.id} immediate error: {error_data.decode()[:500]}"
+                                )
                     except Exception:
                         pass
                     return False
-            
-            logger.info(f"Process verification successful for server {server.id} - PID: {process.pid}")
+
+            logger.info(
+                f"Process verification successful for server {server.id} - PID: {process.pid}"
+            )
 
             # Create server process tracking
             log_queue = asyncio.Queue(maxsize=1000)
@@ -261,40 +269,79 @@ class MinecraftServerManager:
             # Notify database of status change
             self._notify_status_change(server_id, ServerStatus.stopping)
 
+            # Check if process is already terminated
+            if server_process.process.poll() is not None:
+                logger.info(f"Server {server_id} process already terminated")
+                # Clean up immediately if process is already dead
+                del self.processes[server_id]
+                self._notify_status_change(server_id, ServerStatus.stopped)
+                return True
+
             if not force:
                 # Send graceful stop command
                 try:
-                    server_process.process.stdin.write(b"stop\n")
-                    await server_process.process.stdin.drain()
+                    # Check if stdin is available and process is still running
+                    if (
+                        server_process.process.stdin
+                        and not server_process.process.stdin.is_closing()
+                    ):
+                        server_process.process.stdin.write(b"stop\n")
+                        await server_process.process.stdin.drain()
 
-                    # Wait for graceful shutdown
-                    await asyncio.wait_for(server_process.process.wait(), timeout=30.0)
-                except asyncio.TimeoutError:
+                        # Wait for graceful shutdown with shorter timeout
+                        await asyncio.wait_for(
+                            server_process.process.wait(), timeout=15.0
+                        )
+                    else:
+                        logger.warning(
+                            f"Server {server_id} stdin not available, forcing termination"
+                        )
+                        force = True
+                except (asyncio.TimeoutError, OSError, BrokenPipeError) as e:
                     logger.warning(
-                        f"Server {server_id} did not stop gracefully, forcing termination"
+                        f"Server {server_id} graceful stop failed ({type(e).__name__}), forcing termination"
                     )
                     force = True
 
             if force:
                 # Force termination
-                server_process.process.terminate()
                 try:
-                    await asyncio.wait_for(server_process.process.wait(), timeout=10.0)
-                except asyncio.TimeoutError:
-                    server_process.process.kill()
-                    await server_process.process.wait()
+                    if (
+                        server_process.process.poll() is None
+                    ):  # Only terminate if still running
+                        server_process.process.terminate()
+                        try:
+                            await asyncio.wait_for(
+                                server_process.process.wait(), timeout=5.0
+                            )
+                        except asyncio.TimeoutError:
+                            logger.warning(
+                                f"Server {server_id} did not respond to SIGTERM, sending SIGKILL"
+                            )
+                            server_process.process.kill()
+                            await server_process.process.wait()
+                except (ProcessLookupError, OSError) as e:
+                    logger.info(f"Server {server_id} process already terminated: {e}")
 
             # Clean up
-            del self.processes[server_id]
+            if server_id in self.processes:
+                del self.processes[server_id]
 
             # Notify database of final stopped status
             self._notify_status_change(server_id, ServerStatus.stopped)
 
-            logger.info(f"Stopped server {server_id}")
+            logger.info(f"Successfully stopped server {server_id}")
             return True
 
         except Exception as e:
             logger.error(f"Failed to stop server {server_id}: {e}")
+            # Ensure cleanup even if there was an error
+            try:
+                if server_id in self.processes:
+                    del self.processes[server_id]
+                self._notify_status_change(server_id, ServerStatus.stopped)
+            except Exception as cleanup_error:
+                logger.error(f"Failed to cleanup server {server_id}: {cleanup_error}")
             return False
 
     async def send_command(self, server_id: int, command: str) -> bool:

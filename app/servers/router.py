@@ -363,20 +363,24 @@ async def stop_server(
 
         # Stop the server
         success = await minecraft_server_manager.stop_server(server_id, force=force)
-        if not success:
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Failed to stop server",
-            )
-
-        # Database status will be updated automatically via callback
-        # when the server actually stops
-
-        return {"message": "Server stop initiated"}
+        if success:
+            return {"message": "Server stop initiated"}
+        else:
+            # If stop_server returns False, check if the server is actually stopped
+            # Sometimes the process might have stopped but returned False due to timing
+            final_status = minecraft_server_manager.get_server_status(server_id)
+            if final_status == ServerStatus.stopped:
+                return {"message": "Server stop completed"}
+            else:
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail="Failed to stop server",
+                )
 
     except HTTPException:
         raise
     except Exception as e:
+        logger.error(f"Unexpected error stopping server {server_id}: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to stop server: {str(e)}",
