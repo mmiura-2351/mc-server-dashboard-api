@@ -258,3 +258,30 @@ class ServerCreationProgress(BaseModel):
     message: str
     completed: bool = False
     error: Optional[str] = None
+
+
+class ServerImportRequest(BaseModel):
+    name: str = Field(..., min_length=1, max_length=100, description="Server name")
+    description: Optional[str] = Field(
+        None, max_length=500, description="Server description"
+    )
+
+    @field_validator("name")
+    @classmethod
+    def validate_name(cls, v):
+        if not v.strip():
+            raise ValueError("Server name cannot be empty")
+        import re
+
+        if not re.match(r"^[a-zA-Z0-9\s\-_]+$", v):
+            raise ValueError("Server name contains invalid characters")
+        return v.strip()
+
+
+class ServerExportResponse(BaseModel):
+    export_id: str
+    server_id: int
+    server_name: str
+    file_size: int
+    created_at: datetime
+    download_url: str
