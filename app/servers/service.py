@@ -50,14 +50,20 @@ class ServerValidationService:
         if existing_name:
             raise ConflictException(f"Server with name '{request.name}' already exists")
 
-        # Check for existing server with same port
+        # Check for existing server with same port that is currently running
         existing_port = (
             db.query(Server)
-            .filter(and_(Server.port == request.port, Server.is_deleted.is_(False)))
+            .filter(
+                and_(
+                    Server.port == request.port,
+                    Server.is_deleted.is_(False),
+                    Server.status.in_([ServerStatus.running, ServerStatus.starting]),
+                )
+            )
             .first()
         )
         if existing_port:
-            raise ConflictException(f"Server with port {request.port} already exists")
+            raise ConflictException(f"Server with port {request.port} is already running")
 
     def validate_server_exists(self, server_id: int, db: Session) -> Server:
         """Validate server exists and return it"""
