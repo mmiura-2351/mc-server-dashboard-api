@@ -101,3 +101,52 @@ def unapproved_user(db):
 def user_service(db):
     """UserServiceのインスタンスを提供"""
     return UserService(db)
+
+
+@pytest.fixture
+def admin_headers(client, admin_user):
+    """管理者用認証ヘッダーを生成"""
+    login_data = {
+        "username": admin_user.username,
+        "password": "adminpassword"
+    }
+    response = client.post("/api/v1/auth/token", data=login_data)
+    if response.status_code != 200:
+        print(f"Login failed: {response.status_code} - {response.text}")
+    response_data = response.json()
+    token = response_data["access_token"]
+    return {"Authorization": f"Bearer {token}"}
+
+
+@pytest.fixture
+def user_headers(client, test_user):
+    """一般ユーザー用認証ヘッダーを生成"""
+    login_data = {
+        "username": test_user.username,
+        "password": "testpassword"
+    }
+    response = client.post("/api/v1/auth/token", data=login_data)
+    token = response.json()["access_token"]
+    return {"Authorization": f"Bearer {token}"}
+
+
+@pytest.fixture
+def sample_server(db, admin_user):
+    """テスト用サーバーを作成"""
+    from app.servers.models import Server, ServerType, ServerStatus
+    server = Server(
+        name="Test Server",
+        description="A test server",
+        minecraft_version="1.20.1",
+        server_type=ServerType.vanilla,
+        status=ServerStatus.stopped,
+        directory_path="./servers/1",
+        port=25565,
+        max_memory=1024,
+        max_players=20,
+        owner_id=admin_user.id
+    )
+    db.add(server)
+    db.commit()
+    db.refresh(server)
+    return server
