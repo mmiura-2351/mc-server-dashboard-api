@@ -270,7 +270,7 @@ class MinecraftServerManager:
             self._notify_status_change(server_id, ServerStatus.stopping)
 
             # Check if process is already terminated
-            if server_process.process.poll() is not None:
+            if server_process.process.returncode is not None:
                 logger.info(f"Server {server_id} process already terminated")
                 # Clean up immediately if process is already dead
                 del self.processes[server_id]
@@ -307,7 +307,7 @@ class MinecraftServerManager:
                 # Force termination
                 try:
                     if (
-                        server_process.process.poll() is None
+                        server_process.process.returncode is None
                     ):  # Only terminate if still running
                         server_process.process.terminate()
                         try:
@@ -477,10 +477,11 @@ class MinecraftServerManager:
 
             except asyncio.TimeoutError:
                 # Process is still running after 5 seconds - this is good
-                logger.debug(
-                    f"Server {server_process.server_id} process is stable after 5 seconds"
+                logger.info(
+                    f"Server {server_process.server_id} process is stable after 5 seconds - marking as running"
                 )
-                pass
+                server_process.status = ServerStatus.running
+                self._notify_status_change(server_process.server_id, ServerStatus.running)
 
             # Continue monitoring for normal process termination
             await server_process.process.wait()
