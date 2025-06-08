@@ -399,6 +399,20 @@
                         <button onclick="testEndpoint('GET', '/servers/versions/supported')">Test</button>
                     </div>
                     
+                    <div class="endpoint-card">
+                        <h3><span class="method get">GET</span>Export Server</h3>
+                        <input type="number" id="exportServerId" placeholder="Server ID" style="width: 100%; margin-bottom: 5px;">
+                        <button onclick="testServerExport()">Export</button>
+                    </div>
+                    
+                    <div class="endpoint-card">
+                        <h3><span class="method post">POST</span>Import Server</h3>
+                        <input type="text" id="importServerName" placeholder="Server name" style="width: 100%; margin-bottom: 5px;">
+                        <input type="text" id="importServerDescription" placeholder="Description (optional)" style="width: 100%; margin-bottom: 5px;">
+                        <input type="file" id="importServerFile" accept=".zip" style="width: 100%; margin-bottom: 5px;">
+                        <button onclick="testServerImport()">Import</button>
+                    </div>
+                    
                     <!-- Group Management Endpoints -->
                     <div class="endpoint-card">
                         <h3><span class="method get">GET</span>List Groups</h3>
@@ -1240,6 +1254,160 @@
             } catch (error) {
                 showResponse('API Request', { 
                     endpoint: `GET ${endpoint}`,
+                    error: error.message 
+                }, true);
+            }
+        }
+        
+        // Server Export/Import Functions
+        async function testServerExport() {
+            if (!authToken) {
+                showResponse('API Request', { error: 'Please login first to get authentication token' }, true);
+                return;
+            }
+            
+            const serverId = document.getElementById('exportServerId').value;
+            
+            if (!serverId) {
+                showResponse('API Request', { error: 'Please enter a server ID' }, true);
+                return;
+            }
+            
+            try {
+                const response = await fetch(`${apiBaseUrl()}/servers/${serverId}/export`, {
+                    method: 'GET',
+                    headers: {
+                        'Authorization': `Bearer ${authToken}`,
+                    }
+                });
+                
+                if (response.ok) {
+                    // Handle file download
+                    const blob = await response.blob();
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.style.display = 'none';
+                    a.href = url;
+                    
+                    // Extract filename from response headers
+                    const contentDisposition = response.headers.get('content-disposition');
+                    let filename = `server_${serverId}_export.zip`;
+                    if (contentDisposition) {
+                        const match = contentDisposition.match(/filename="(.+)"/);
+                        if (match) {
+                            filename = match[1];
+                        }
+                    }
+                    a.download = filename;
+                    
+                    document.body.appendChild(a);
+                    a.click();
+                    window.URL.revokeObjectURL(url);
+                    document.body.removeChild(a);
+                    
+                    showResponse('API Request', { 
+                        endpoint: `GET /servers/${serverId}/export`,
+                        status: response.status,
+                        message: `File downloaded: ${filename}`,
+                        size: `${Math.round(blob.size / 1024)} KB`
+                    }, false);
+                } else {
+                    const data = await response.json();
+                    showResponse('API Request', { 
+                        endpoint: `GET /servers/${serverId}/export`,
+                        status: response.status,
+                        data: data 
+                    }, true);
+                }
+            } catch (error) {
+                showResponse('API Request', { 
+                    endpoint: `GET /servers/${serverId}/export`,
+                    error: error.message 
+                }, true);
+            }
+        }
+        
+        async function testServerImport() {
+            if (!authToken) {
+                showResponse('API Request', { error: 'Please login first to get authentication token' }, true);
+                return;
+            }
+            
+            const name = document.getElementById('importServerName').value;
+            const description = document.getElementById('importServerDescription').value;
+            const fileInput = document.getElementById('importServerFile');
+            
+            if (!name) {
+                showResponse('API Request', { error: 'Please enter a server name' }, true);
+                return;
+            }
+            
+            if (!fileInput.files || fileInput.files.length === 0) {
+                showResponse('API Request', { error: 'Please select a ZIP file to import' }, true);
+                return;
+            }
+            
+            const file = fileInput.files[0];
+            
+            // Validate file type
+            if (!file.name.toLowerCase().endsWith('.zip')) {
+                showResponse('API Request', { error: 'Please select a ZIP file' }, true);
+                return;
+            }
+            
+            // Check file size (500MB limit)
+            const maxSize = 500 * 1024 * 1024; // 500MB
+            if (file.size > maxSize) {
+                showResponse('API Request', { 
+                    error: `File too large. Maximum size is 500MB, selected file is ${Math.round(file.size / (1024*1024))}MB` 
+                }, true);
+                return;
+            }
+            
+            try {
+                const formData = new FormData();
+                formData.append('name', name);
+                if (description) {
+                    formData.append('description', description);
+                }
+                formData.append('file', file);
+                
+                showResponse('API Request', { 
+                    message: 'Uploading file... Please wait',
+                    filename: file.name,
+                    size: `${Math.round(file.size / 1024)} KB`
+                }, false);
+                
+                const response = await fetch(`${apiBaseUrl()}/servers/import`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${authToken}`,
+                    },
+                    body: formData
+                });
+                
+                const data = await response.json();
+                showResponse('API Request', { 
+                    endpoint: 'POST /servers/import',
+                    requestData: {
+                        name: name,
+                        description: description,
+                        filename: file.name,
+                        size: `${Math.round(file.size / 1024)} KB`
+                    },
+                    status: response.status,
+                    data: data 
+                }, !response.ok);
+                
+                // Clear form on success
+                if (response.ok) {
+                    document.getElementById('importServerName').value = '';
+                    document.getElementById('importServerDescription').value = '';
+                    document.getElementById('importServerFile').value = '';
+                }
+            } catch (error) {
+                showResponse('API Request', { 
+                    endpoint: 'POST /servers/import',
                     error: error.message 
                 }, true);
             }
