@@ -22,6 +22,10 @@ class UserService:
         """IDでユーザーを取得"""
         return self.db.query(models.User).filter(models.User.id == user_id).first()
 
+    def get_user_by_id(self, user_id: int) -> Optional[models.User]:
+        """IDでユーザーを取得（公開メソッド）"""
+        return self._get_user_by_id(user_id)
+
     def _check_admin_permission(self, current_user: models.User) -> None:
         """管理者権限をチェック"""
         if current_user.role != models.Role.admin:
