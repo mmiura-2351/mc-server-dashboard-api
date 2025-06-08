@@ -1,3 +1,4 @@
+import logging
 import shutil
 import zipfile
 from datetime import datetime
@@ -18,6 +19,8 @@ from app.core.exceptions import (
 from app.servers.models import Server
 from app.types import FileType
 from app.users.models import User
+
+logger = logging.getLogger(__name__)
 
 
 class FileValidationService:
@@ -67,11 +70,16 @@ class FileValidationService:
         return server
 
     def validate_server_directory(self, server_path: Path) -> None:
-        """Validate server directory exists"""
+        """Validate server directory exists, create if it doesn't"""
         if not server_path.exists():
-            raise FileOperationException(
-                "access", str(server_path), "Server directory not found"
-            )
+            # Create the server directory if it doesn't exist
+            try:
+                server_path.mkdir(parents=True, exist_ok=True)
+                logger.info(f"Created server directory: {server_path}")
+            except Exception as e:
+                raise FileOperationException(
+                    "access", str(server_path), f"Failed to create server directory: {e}"
+                )
 
     def validate_path_safety(self, server_path: Path, target_path: Path) -> None:
         """Validate path is safe and within server directory"""
@@ -165,6 +173,12 @@ class FileInfoService:
                 "type": self._determine_file_type(file_path),
                 "readable": self._is_file_readable(file_path),
                 "writable": self._is_file_writable(file_path),
+                "permissions": {
+                    "read": self._is_file_readable(file_path),
+                    "write": self._is_file_writable(file_path),
+                    "execute": file_path.is_file()
+                    and file_path.suffix in [".sh", ".bat", ".exe"],
+                },
             }
         except Exception as e:
             handle_file_error("get info", str(file_path), e)
@@ -360,7 +374,7 @@ class FileSearchService:
         """Search for files by name and optionally content"""
         # Validate server
         server = self.validation_service.validate_server_exists(server_id, db)
-        server_path = Path(f"servers/{server.name}")
+        server_path = Path(server.directory_path)
         self.validation_service.validate_server_directory(server_path)
 
         start_time = datetime.now()
@@ -477,7 +491,7 @@ class FileManagementService:
         """Get files and directories in server path"""
         # Validate server and paths
         server = self.validation_service.validate_server_exists(server_id, db)
-        server_path = Path(f"servers/{server.name}")
+        server_path = Path(server.directory_path)
         self.validation_service.validate_server_directory(server_path)
 
         target_path = server_path / path
@@ -516,7 +530,7 @@ class FileManagementService:
         """Read file content"""
         # Validate server and file
         server = self.validation_service.validate_server_exists(server_id, db)
-        server_path = Path(f"servers/{server.name}")
+        server_path = Path(server.directory_path)
         target_file = server_path / file_path
 
         self.validation_service.validate_path_safety(server_path, target_file)
@@ -539,7 +553,7 @@ class FileManagementService:
         """Write content to file"""
         # Validate server and file
         server = self.validation_service.validate_server_exists(server_id, db)
-        server_path = Path(f"servers/{server.name}")
+        server_path = Path(server.directory_path)
         target_file = server_path / file_path
 
         self.validation_service.validate_path_safety(server_path, target_file)
@@ -570,7 +584,7 @@ class FileManagementService:
         """Delete file or directory"""
         # Validate server and file
         server = self.validation_service.validate_server_exists(server_id, db)
-        server_path = Path(f"servers/{server.name}")
+        server_path = Path(server.directory_path)
         target_path = server_path / file_path
 
         self.validation_service.validate_path_safety(server_path, target_path)
@@ -594,7 +608,7 @@ class FileManagementService:
         """Upload file to server directory"""
         # Validate server
         server = self.validation_service.validate_server_exists(server_id, db)
-        server_path = Path(f"servers/{server.name}")
+        server_path = Path(server.directory_path)
         target_dir = server_path / destination_path
 
         self.validation_service.validate_path_safety(server_path, target_dir)
@@ -643,11 +657,11 @@ class FileManagementService:
         server_id: int,
         directory_path: str,
         db: Session = None,
-    ) -> Dict[str, str]:
+    ) -> Dict[str, Any]:
         """Create new directory"""
         # Validate server
         server = self.validation_service.validate_server_exists(server_id, db)
-        server_path = Path(f"servers/{server.name}")
+        server_path = Path(server.directory_path)
         target_dir = server_path / directory_path
 
         self.validation_service.validate_path_safety(server_path, target_dir)
@@ -655,7 +669,13 @@ class FileManagementService:
         # Create directory
         self.operation_service.create_directory(target_dir)
 
-        return {"message": f"Directory '{directory_path}' created successfully"}
+        # Get directory info
+        directory_info = await self.info_service.get_file_info(target_dir, server_path)
+
+        return {
+            "message": f"Directory '{directory_path}' created successfully",
+            "directory": directory_info,
+        }
 
     async def move_file(
         self,
@@ -668,7 +688,7 @@ class FileManagementService:
         """Move file or directory"""
         # Validate server
         server = self.validation_service.validate_server_exists(server_id, db)
-        server_path = Path(f"servers/{server.name}")
+        server_path = Path(server.directory_path)
         source = server_path / source_path
         destination = server_path / destination_path
 
@@ -691,7 +711,7 @@ class FileManagementService:
         """Download file from server directory"""
         # Validate server and file
         server = self.validation_service.validate_server_exists(server_id, db)
-        server_path = Path(f"servers/{server.name}")
+        server_path = Path(server.directory_path)
         target_file = server_path / file_path
 
         self.validation_service.validate_path_safety(server_path, target_file)
