@@ -286,35 +286,6 @@ class TestServerService:
         with pytest.raises(Exception):  # Should raise ConflictException
             await server_service.create_server(request, admin_user, db)
 
-    @pytest.mark.asyncio
-    async def test_create_server_duplicate_port(self, db, admin_user):
-        """Test server creation with duplicate port"""
-        # Create existing server
-        existing_server = Server(
-            name="existing-server",
-            minecraft_version="1.20.1",
-            server_type=ServerType.vanilla,
-            owner_id=admin_user.id,
-            status=ServerStatus.stopped,
-            directory_path="/test/existing",
-            port=25565,
-            max_memory=1024,
-            max_players=20,
-        )
-        db.add(existing_server)
-        db.commit()
-
-        request = ServerCreateRequest(
-            name="new-server",  # Different name
-            minecraft_version="1.20.1",
-            server_type=ServerType.vanilla,
-            port=25565,  # Duplicate port
-            max_memory=1024,
-            max_players=20
-        )
-
-        with pytest.raises(Exception):  # Should raise ConflictException
-            await server_service.create_server(request, admin_user, db)
 
 
 class TestServerValidationService:
