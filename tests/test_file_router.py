@@ -30,7 +30,7 @@ class TestFileRouter:
             {
                 "name": "server.properties",
                 "path": "server.properties",
-                "type": FileType.config,
+                "type": FileType.text,
                 "is_directory": False,
                 "size": 1024,
                 "modified": datetime.now(),
@@ -80,7 +80,7 @@ class TestFileRouter:
         mock_check_access.return_value = None  # No exception means access granted
 
         headers = get_auth_headers(admin_user.username)
-        response = client.get("/api/v1/files/servers/1/files?file_type=config", headers=headers)
+        response = client.get("/api/v1/files/servers/1/files?file_type=text", headers=headers)
 
         assert response.status_code == status.HTTP_200_OK
         mock_get_files.assert_called_once()
@@ -95,7 +95,7 @@ class TestFileRouter:
         mock_get_files.return_value = [{
             "name": "server.properties",
             "path": "server.properties",
-            "type": FileType.config,
+            "type": FileType.text,
             "is_directory": False,
             "size": 1024,
             "modified": datetime.now(),
@@ -121,7 +121,7 @@ class TestFileRouter:
         mock_get_files.return_value = [{
             "name": "test.txt",
             "path": "test.txt",
-            "type": FileType.config,
+            "type": FileType.text,
             "is_directory": False,
             "size": 1024,
             "modified": datetime.now(),
@@ -147,7 +147,7 @@ class TestFileRouter:
             "file": {
                 "name": "server.properties",
                 "path": "server.properties",
-                "type": FileType.config,
+                "type": FileType.text,
                 "is_directory": False,
                 "size": 1024,
                 "modified": datetime.now(),
@@ -196,7 +196,7 @@ class TestFileRouter:
             "file": {
                 "name": "test.txt",
                 "path": "test.txt",
-                "type": FileType.config,
+                "type": FileType.text,
                 "is_directory": False,
                 "size": 1024,
                 "modified": datetime.now(),
@@ -380,7 +380,7 @@ class TestFileRouter:
                     "file": {
                         "name": "server.properties", 
                         "path": "server.properties",
-                        "type": FileType.config,
+                        "type": FileType.text,
                         "is_directory": False,
                         "size": 1024,
                         "modified": datetime.now(),
@@ -421,7 +421,7 @@ class TestFileRouter:
                     "file": {
                         "name": "config.yml", 
                         "path": "config.yml",
-                        "type": FileType.config,
+                        "type": FileType.text,
                         "is_directory": False,
                         "size": 512,
                         "modified": datetime.now(),
@@ -438,7 +438,7 @@ class TestFileRouter:
 
         search_data = {
             "query": "25565",
-            "file_type": FileType.config,
+            "file_type": FileType.text,
             "include_content": True,
             "max_results": 50
         }
