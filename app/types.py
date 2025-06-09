@@ -10,12 +10,9 @@ from app.users.models import User
 
 
 class FileType(str, Enum):
+    text = "text"
     directory = "directory"
-    config = "config"
-    world = "world"
-    plugin = "plugin"
-    mod = "mod"
-    log = "log"
+    binary = "binary"
     other = "other"
 
 
