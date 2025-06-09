@@ -217,24 +217,60 @@ async def list_server_files(
     db: Session = Depends(get_db),
 ):
     """List files and directories in server directory"""
-    # Check server access
-    authorization_service.check_server_access(server_id, current_user, db)
+    import logging
 
-    files = await file_management_service.get_server_files(
-        server_id=server_id,
-        path=path,
-        file_type=file_type,
-        db=db,
-    )
+    logger = logging.getLogger(__name__)
 
-    # Convert dict results to schema objects
-    file_responses = [FileInfoResponse(**file_data) for file_data in files]
+    try:
+        # Check server access
+        authorization_service.check_server_access(server_id, current_user, db)
 
-    return FileListResponse(
-        files=file_responses,
-        current_path=path,
-        total_files=len(file_responses),
-    )
+        logger.info(f"Listing files for server {server_id}, path: '{path}'")
+
+        files = await file_management_service.get_server_files(
+            server_id=server_id,
+            path=path,
+            file_type=file_type,
+            db=db,
+        )
+
+        # Convert dict results to schema objects
+        file_responses = [FileInfoResponse(**file_data) for file_data in files]
+
+        logger.info(
+            f"Successfully listed {len(file_responses)} files for server {server_id}"
+        )
+
+        return FileListResponse(
+            files=file_responses,
+            current_path=path,
+            total_files=len(file_responses),
+        )
+    except Exception as e:
+        logger.error(f"Error listing files for server {server_id}: {str(e)}")
+
+        # Check if it's a server not found error
+        from app.core.exceptions import ServerNotFoundException
+
+        if isinstance(e, ServerNotFoundException):
+            raise HTTPException(status_code=404, detail=f"Server {server_id} not found")
+
+        # Check if it's a file operation error (directory doesn't exist)
+        from app.core.exceptions import FileOperationException
+
+        if isinstance(e, FileOperationException) and "Path not found" in str(e):
+            raise HTTPException(
+                status_code=404, detail=f"Directory not found for server {server_id}"
+            )
+
+        # Check if it's an access denied error
+        from app.core.exceptions import AccessDeniedException
+
+        if isinstance(e, AccessDeniedException):
+            raise HTTPException(status_code=403, detail="Access denied")
+
+        # Generic server error for other cases
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
 
 @router.put(
