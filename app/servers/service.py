@@ -153,6 +153,19 @@ class ServerFileSystemService:
                 "create directory", str(self.base_directory / server_name), e
             )
 
+    async def ensure_server_directory_exists(self, server_id: int) -> Path:
+        """Ensure server directory exists, create if it doesn't"""
+        try:
+            server_dir = self.base_directory / str(server_id)
+            server_dir.mkdir(parents=True, exist_ok=True)
+
+            logger.info(f"Ensured server directory exists: {server_dir}")
+            return server_dir
+        except Exception as e:
+            handle_file_error(
+                "ensure directory", str(self.base_directory / str(server_id)), e
+            )
+
     async def generate_server_files(
         self, server: Server, request: ServerCreateRequest, server_dir: Path
     ) -> None:

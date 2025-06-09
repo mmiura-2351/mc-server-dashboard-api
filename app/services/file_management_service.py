@@ -184,27 +184,64 @@ class FileInfoService:
             handle_file_error("get info", str(file_path), e)
 
     def _determine_file_type(self, file_path: Path) -> str:
-        """Determine file type based on extension and location"""
+        """Determine file type based on extension"""
         if file_path.is_dir():
             return "directory"
 
         suffix = file_path.suffix.lower()
-        file_name = file_path.name.lower()
 
-        if suffix == ".jar":
-            if "plugin" in str(file_path).lower():
-                return "plugin"
-            elif "mod" in str(file_path).lower():
-                return "mod"
-            return "jar"
-        elif suffix in [".properties", ".yml", ".yaml", ".json", ".conf"]:
-            return "config"
-        elif suffix in [".log", ".gz"]:
-            return "log"
-        elif suffix in [".dat", ".mca", ".mcr"]:
-            return "world"
-        elif "log" in file_name:
-            return "log"
+        # Text files
+        text_extensions = [
+            ".txt",
+            ".md",
+            ".yml",
+            ".yaml",
+            ".json",
+            ".properties",
+            ".conf",
+            ".log",
+            ".sh",
+            ".bat",
+            ".xml",
+            ".html",
+            ".css",
+            ".js",
+            ".py",
+            ".java",
+            ".cpp",
+            ".c",
+            ".h",
+            ".ini",
+            ".cfg",
+        ]
+
+        # Binary files
+        binary_extensions = [
+            ".jar",
+            ".zip",
+            ".tar",
+            ".gz",
+            ".exe",
+            ".dll",
+            ".so",
+            ".dylib",
+            ".png",
+            ".jpg",
+            ".jpeg",
+            ".gif",
+            ".bmp",
+            ".ico",
+            ".pdf",
+            ".dat",
+            ".mca",
+            ".mcr",
+            ".bin",
+        ]
+
+        if suffix in text_extensions:
+            return "text"
+        elif suffix in binary_extensions:
+            return "binary"
         else:
             return "other"
 
