@@ -699,13 +699,15 @@ class FileManagementService:
 
         # Upload file
         target_file = target_dir / file.filename
-        file_size = await self.operation_service.upload_file(file, target_file)
+        await self.operation_service.upload_file(file, target_file)
+
+        # Get file info for response
+        file_info = await self.info_service.get_file_info(target_file, server_path)
 
         result = {
             "message": f"File '{file.filename}' uploaded successfully",
-            "filename": file.filename,
-            "size": file_size,
-            "path": str(target_file.relative_to(server_path)),
+            "file": file_info,
+            "extracted_files": [],
         }
 
         # Extract if archive and requested
@@ -713,12 +715,15 @@ class FileManagementService:
             extracted_files = self.operation_service.extract_archive(
                 target_file, target_dir
             )
-            result["extracted"] = True
             result["extracted_files"] = extracted_files
 
             # Delete archive after extraction
             target_file.unlink()
-            result["archive_deleted"] = True
+
+            # Update message to reflect extraction
+            result["message"] = (
+                f"Archive '{file.filename}' uploaded and extracted successfully"
+            )
 
         return result
 
