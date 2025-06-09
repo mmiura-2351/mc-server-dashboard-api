@@ -35,20 +35,15 @@ async def read_file(
     server_id: int,
     file_path: str,
     encoding: str = "utf-8",
+    image: bool = False,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Read content of a text file"""
+    """Read content of a text file or image"""
     # Check server access
     authorization_service.check_server_access(server_id, current_user, db)
 
-    content = await file_management_service.read_file(
-        server_id=server_id,
-        file_path=file_path,
-        encoding=encoding,
-        db=db,
-    )
-
+    # Get file info first
     files = await file_management_service.get_server_files(
         server_id=server_id,
         path=file_path,
@@ -59,10 +54,35 @@ async def read_file(
     if files:
         file_info = FileInfoResponse(**files[0])
 
+    # Handle image reading
+    if image:
+        image_data = await file_management_service.read_image_as_base64(
+            server_id=server_id,
+            file_path=file_path,
+            db=db,
+        )
+        return FileReadResponse(
+            content="",
+            encoding="base64",
+            file_info=file_info,
+            is_image=True,
+            image_data=image_data,
+        )
+
+    # Handle text file reading
+    content = await file_management_service.read_file(
+        server_id=server_id,
+        file_path=file_path,
+        encoding=encoding,
+        db=db,
+    )
+
     return FileReadResponse(
         content=content,
         encoding=encoding,
         file_info=file_info,
+        is_image=False,
+        image_data=None,
     )
 
 
