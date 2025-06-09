@@ -305,6 +305,17 @@ class FileOperationService:
         except Exception as e:
             handle_file_error("read", str(file_path), e)
 
+    async def read_image_as_base64(self, file_path: Path) -> str:
+        """Read image file and return as base64 encoded string"""
+        import base64
+
+        try:
+            async with aiofiles.open(file_path, mode="rb") as f:
+                image_data = await f.read()
+                return base64.b64encode(image_data).decode("utf-8")
+        except Exception as e:
+            handle_file_error("read image", str(file_path), e)
+
     async def write_file_content(
         self,
         file_path: Path,
@@ -576,6 +587,42 @@ class FileManagementService:
 
         # Read file content
         return await self.operation_service.read_file_content(target_file, encoding)
+
+    async def read_image_as_base64(
+        self,
+        server_id: int,
+        file_path: str,
+        db: Session = None,
+    ) -> str:
+        """Read image file and return as base64 encoded string"""
+        # Validate server and file
+        server = self.validation_service.validate_server_exists(server_id, db)
+        server_path = Path(server.directory_path)
+        target_file = server_path / file_path
+
+        self.validation_service.validate_path_safety(server_path, target_file)
+        self.validation_service.validate_path_exists(target_file)
+
+        # Check if file is actually an image
+        if not self._is_image_file(target_file):
+            raise InvalidRequestException(f"File {file_path} is not a valid image file")
+
+        # Read image as base64
+        return await self.operation_service.read_image_as_base64(target_file)
+
+    def _is_image_file(self, file_path: Path) -> bool:
+        """Check if file is a valid image file"""
+        image_extensions = [
+            ".png",
+            ".jpg",
+            ".jpeg",
+            ".gif",
+            ".bmp",
+            ".ico",
+            ".webp",
+            ".svg",
+        ]
+        return file_path.suffix.lower() in image_extensions
 
     async def write_file(
         self,
