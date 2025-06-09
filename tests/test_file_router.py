@@ -219,7 +219,7 @@ class TestFileRouter:
         mock_check_access.return_value = None  # No exception means access granted
         mock_can_modify.return_value = True
         mock_upload_file.return_value = {
-            "message": "File uploaded successfully",
+            "message": "File 'test.txt' uploaded successfully",
             "file": {
                 "name": "test.txt",
                 "path": "test.txt",
@@ -227,7 +227,7 @@ class TestFileRouter:
                 "is_directory": False,
                 "size": 1024,
                 "modified": datetime.now(),
-                "permissions": {"readable": True, "writable": True}
+                "permissions": {"read": True, "write": True, "execute": False}
             },
             "extracted_files": []
         }
@@ -245,7 +245,7 @@ class TestFileRouter:
 
         assert response.status_code == status.HTTP_200_OK
         data = response.json()
-        assert data["message"] == "File uploaded successfully"
+        assert data["message"] == "File 'test.txt' uploaded successfully"
 
     @patch('app.services.authorization_service.authorization_service.check_server_access')
     @patch('app.services.authorization_service.authorization_service.can_modify_files')
@@ -255,15 +255,15 @@ class TestFileRouter:
         mock_check_access.return_value = None  # No exception means access granted
         mock_can_modify.return_value = True
         mock_upload_file.return_value = {
-            "message": "Archive uploaded and extracted",
+            "message": "Archive 'test.zip' uploaded and extracted successfully",
             "file": {
                 "name": "test.zip",
                 "path": "test.zip",
-                "type": FileType.other,
+                "type": FileType.binary,
                 "is_directory": False,
                 "size": 2048,
                 "modified": datetime.now(),
-                "permissions": {"readable": True, "writable": True}
+                "permissions": {"read": True, "write": True, "execute": False}
             },
             "extracted_files": ["file1.txt", "file2.txt"]
         }
