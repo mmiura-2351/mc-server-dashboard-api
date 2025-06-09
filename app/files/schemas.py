@@ -26,6 +26,8 @@ class FileReadResponse(BaseModel):
     content: str
     encoding: str
     file_info: FileInfoResponse
+    is_image: bool = False
+    image_data: Optional[str] = None
 
 
 class FileWriteRequest(BaseModel):
