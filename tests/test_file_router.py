@@ -544,3 +544,166 @@ class TestFileRouter:
         response = client.post("/api/v1/files/servers/1/files/upload", headers=headers)
 
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+
+
+class TestFileRenameRouter:
+    """Test cases for File rename router endpoint"""
+
+    @patch('app.services.authorization_service.authorization_service.can_modify_files')
+    @patch('app.services.file_management_service.file_management_service.rename_file')
+    def test_rename_file_success(self, mock_rename_file, mock_can_modify, client, admin_user):
+        """Test successful file rename"""
+        mock_can_modify.return_value = True
+        mock_rename_file.return_value = {
+            "message": "Successfully renamed 'test.txt' to 'renamed.txt'",
+            "old_path": "test.txt",
+            "new_path": "renamed.txt",
+            "file": {
+                "name": "renamed.txt",
+                "path": "renamed.txt",
+                "type": FileType.text,
+                "is_directory": False,
+                "size": 1024,
+                "modified": datetime.now(),
+                "permissions": {"readable": True, "writable": True}
+            }
+        }
+
+        rename_data = {
+            "new_name": "renamed.txt"
+        }
+
+        headers = get_auth_headers(admin_user.username)
+        response = client.patch("/api/v1/files/servers/1/files/test.txt/rename", json=rename_data, headers=headers)
+
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert data["message"] == "Successfully renamed 'test.txt' to 'renamed.txt'"
+        assert data["old_path"] == "test.txt"
+        assert data["new_path"] == "renamed.txt"
+        assert data["file"]["name"] == "renamed.txt"
+
+    @patch('app.services.authorization_service.authorization_service.can_modify_files')
+    @patch('app.services.file_management_service.file_management_service.rename_file')
+    def test_rename_directory_success(self, mock_rename_file, mock_can_modify, client, admin_user):
+        """Test successful directory rename"""
+        mock_can_modify.return_value = True
+        mock_rename_file.return_value = {
+            "message": "Successfully renamed 'old_folder' to 'new_folder'",
+            "old_path": "old_folder",
+            "new_path": "new_folder",
+            "file": {
+                "name": "new_folder",
+                "path": "new_folder",
+                "type": FileType.directory,
+                "is_directory": True,
+                "size": None,
+                "modified": datetime.now(),
+                "permissions": {"readable": True, "writable": True}
+            }
+        }
+
+        rename_data = {
+            "new_name": "new_folder"
+        }
+
+        headers = get_auth_headers(admin_user.username)
+        response = client.patch("/api/v1/files/servers/1/files/old_folder/rename", json=rename_data, headers=headers)
+
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert data["message"] == "Successfully renamed 'old_folder' to 'new_folder'"
+        assert data["file"]["is_directory"] is True
+
+    @patch('app.services.authorization_service.authorization_service.can_modify_files')
+    def test_rename_file_insufficient_permissions(self, mock_can_modify, client, test_user):
+        """Test that users without modify permissions cannot rename files"""
+        mock_can_modify.return_value = False
+
+        rename_data = {
+            "new_name": "renamed.txt"
+        }
+
+        headers = get_auth_headers(test_user.username)
+        response = client.patch("/api/v1/files/servers/1/files/test.txt/rename", json=rename_data, headers=headers)
+
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+
+    @patch('app.services.authorization_service.authorization_service.can_modify_files')
+    @patch('app.services.file_management_service.file_management_service.rename_file')
+    def test_rename_file_invalid_filename(self, mock_rename_file, mock_can_modify, client, admin_user):
+        """Test rename with invalid filename"""
+        mock_can_modify.return_value = True
+        
+        from app.core.exceptions import InvalidRequestException
+        mock_rename_file.side_effect = InvalidRequestException("Invalid filename: contains illegal characters")
+
+        rename_data = {
+            "new_name": "invalid<>filename.txt"
+        }
+
+        headers = get_auth_headers(admin_user.username)
+        response = client.patch("/api/v1/files/servers/1/files/test.txt/rename", json=rename_data, headers=headers)
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+
+    @patch('app.services.authorization_service.authorization_service.can_modify_files')
+    @patch('app.services.file_management_service.file_management_service.rename_file')
+    def test_rename_file_already_exists(self, mock_rename_file, mock_can_modify, client, admin_user):
+        """Test rename when target file already exists"""
+        mock_can_modify.return_value = True
+        
+        from app.core.exceptions import FileOperationException
+        mock_rename_file.side_effect = FileOperationException(
+            "rename", "test.txt", "File or directory 'existing.txt' already exists"
+        )
+
+        rename_data = {
+            "new_name": "existing.txt"
+        }
+
+        headers = get_auth_headers(admin_user.username)
+        response = client.patch("/api/v1/files/servers/1/files/test.txt/rename", json=rename_data, headers=headers)
+
+        assert response.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
+
+    @patch('app.services.authorization_service.authorization_service.can_modify_files')
+    @patch('app.services.file_management_service.file_management_service.rename_file')
+    def test_rename_file_not_found(self, mock_rename_file, mock_can_modify, client, admin_user):
+        """Test rename when source file doesn't exist"""
+        mock_can_modify.return_value = True
+        
+        from app.core.exceptions import FileOperationException
+        mock_rename_file.side_effect = FileOperationException(
+            "access", "nonexistent.txt", "Path not found"
+        )
+
+        rename_data = {
+            "new_name": "renamed.txt"
+        }
+
+        headers = get_auth_headers(admin_user.username)
+        response = client.patch("/api/v1/files/servers/1/files/nonexistent.txt/rename", json=rename_data, headers=headers)
+
+        assert response.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
+
+    def test_rename_file_validation_errors(self, client, admin_user):
+        """Test rename validation errors"""
+        # Missing new_name in request body
+        headers = get_auth_headers(admin_user.username)
+        response = client.patch("/api/v1/files/servers/1/files/test.txt/rename", json={}, headers=headers)
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+
+        # Empty new_name
+        response = client.patch("/api/v1/files/servers/1/files/test.txt/rename", json={"new_name": ""}, headers=headers)
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+
+        # new_name too long (over 255 characters)
+        long_name = "a" * 256
+        response = client.patch("/api/v1/files/servers/1/files/test.txt/rename", json={"new_name": long_name}, headers=headers)
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+
+    def test_rename_file_requires_authentication(self, client):
+        """Test that rename operations require authentication"""
+        response = client.patch("/api/v1/files/servers/1/files/test.txt/rename", json={"new_name": "renamed.txt"})
+        assert response.status_code == status.HTTP_401_UNAUTHORIZED

@@ -13,6 +13,8 @@ from app.files.schemas import (
     FileInfoResponse,
     FileListResponse,
     FileReadResponse,
+    FileRenameRequest,
+    FileRenameResponse,
     FileSearchRequest,
     FileSearchResponse,
     FileUploadResponse,
@@ -341,3 +343,28 @@ async def delete_file(
     )
 
     return FileDeleteResponse(**result)
+
+
+@router.patch(
+    "/servers/{server_id}/files/{file_path:path}/rename", response_model=FileRenameResponse
+)
+async def rename_file(
+    server_id: int,
+    file_path: str,
+    request: FileRenameRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Rename a file or directory"""
+    if not authorization_service.can_modify_files(current_user):
+        raise HTTPException(status_code=403, detail="Insufficient permissions")
+
+    result = await file_management_service.rename_file(
+        server_id=server_id,
+        file_path=file_path,
+        new_name=request.new_name,
+        user=current_user,
+        db=db,
+    )
+
+    return FileRenameResponse(**result)

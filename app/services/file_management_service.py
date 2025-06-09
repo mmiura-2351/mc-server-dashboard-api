@@ -791,6 +791,86 @@ class FileManagementService:
 
         return {"message": f"Moved '{source_path}' to '{destination_path}' successfully"}
 
+    async def rename_file(
+        self,
+        server_id: int,
+        file_path: str,
+        new_name: str,
+        user: User = None,
+        db: Session = None,
+    ) -> Dict[str, Any]:
+        """Rename file or directory"""
+        # Validate server
+        server = self.validation_service.validate_server_exists(server_id, db)
+        server_path = Path(server.directory_path)
+        source_path = server_path / file_path
+        
+        # Validate source path
+        self.validation_service.validate_path_safety(server_path, source_path)
+        self.validation_service.validate_path_exists(source_path)
+        self.validation_service.validate_path_deletable(source_path, user)
+        
+        # Validate new name
+        if not self._is_valid_filename(new_name):
+            raise InvalidRequestException("Invalid filename: contains illegal characters")
+        
+        # Create destination path (same directory, new name)
+        destination_path = source_path.parent / new_name
+        
+        # Check if destination already exists
+        if destination_path.exists():
+            raise FileOperationException(
+                "rename", str(source_path), f"File or directory '{new_name}' already exists"
+            )
+        
+        # Validate destination path safety
+        self.validation_service.validate_path_safety(server_path, destination_path)
+        
+        # Perform rename operation
+        self.operation_service.move_file_or_directory(source_path, destination_path)
+        
+        # Get updated file info
+        file_info = await self.info_service.get_file_info(destination_path, server_path)
+        
+        return {
+            "message": f"Successfully renamed '{source_path.name}' to '{new_name}'",
+            "old_path": file_path,
+            "new_path": str(destination_path.relative_to(server_path)),
+            "file": file_info,
+        }
+    
+    def _is_valid_filename(self, filename: str) -> bool:
+        """Validate filename against illegal characters and patterns"""
+        import re
+        
+        # Check for empty or whitespace-only names
+        if not filename or not filename.strip():
+            return False
+        
+        # Check for illegal characters (Windows + Unix)
+        illegal_chars = r'[<>:"/\\|?*\x00-\x1f]'
+        if re.search(illegal_chars, filename):
+            return False
+        
+        # Check for reserved names (Windows)
+        reserved_names = {
+            "CON", "PRN", "AUX", "NUL",
+            "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9",
+            "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9"
+        }
+        if filename.upper().split('.')[0] in reserved_names:
+            return False
+        
+        # Check for names starting/ending with dots or spaces
+        if filename.startswith('.') or filename.endswith('.') or filename.endswith(' '):
+            return False
+        
+        # Check length (most filesystems have 255 character limit)
+        if len(filename.encode('utf-8')) > 255:
+            return False
+        
+        return True
+
     async def download_file(
         self,
         server_id: int,
