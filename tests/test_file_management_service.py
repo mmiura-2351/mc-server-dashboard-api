@@ -400,15 +400,26 @@ class TestFileManagementService:
                 Path("/servers/test_server")  # server_path.resolve()
             ]
             
-            result = await file_management_service.upload_file(
-                server_id=1,
-                file=mock_file,
-                user=mock_user,
-                db=mock_db
-            )
+            # Mock all file system operations
+            with patch('pathlib.Path.mkdir') as mock_mkdir:
+                with patch('pathlib.Path.stat') as mock_stat:
+                    mock_stat.return_value.st_size = 12  # len(b"file content")
+                    mock_stat.return_value.st_mtime = 1640995200
+                    with patch('pathlib.Path.is_dir', return_value=False):
+                        with patch('pathlib.Path.is_file', return_value=True):
+                            with patch('pathlib.Path.suffix', ".txt"):
+                                with patch('pathlib.Path.relative_to', return_value=Path("test.txt")):
+                                    with patch('pathlib.Path.name', "test.txt"):
+                                        result = await file_management_service.upload_file(
+                                            server_id=1,
+                                            file=mock_file,
+                                            user=mock_user,
+                                            db=mock_db
+                                        )
             
             assert "uploaded successfully" in result["message"]
-            assert result["filename"] == "test.txt"
+            assert result["file"]["name"] == "test.txt"
+            assert result["extracted_files"] == []
             mock_aio_file.write.assert_called_once_with(b"file content")
 
     @pytest.mark.asyncio
