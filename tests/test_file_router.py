@@ -136,6 +136,33 @@ class TestFileRouter:
         assert data["encoding"] == "latin-1"
 
     @patch('app.services.authorization_service.authorization_service.check_server_access')
+    @patch('app.services.file_management_service.file_management_service.get_server_files')
+    @patch('app.services.file_management_service.file_management_service.read_image_as_base64')
+    def test_read_image_success(self, mock_read_image, mock_get_files, mock_check_access, client, admin_user):
+        """Test reading image file as base64"""
+        mock_check_access.return_value = None  # No exception means access granted
+        mock_read_image.return_value = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+        mock_get_files.return_value = [{
+            "name": "test.png",
+            "path": "test.png",
+            "type": FileType.binary,
+            "is_directory": False,
+            "size": 1024,
+            "modified": datetime.now(),
+            "permissions": {"readable": True, "writable": True}
+        }]
+
+        headers = get_auth_headers(admin_user.username)
+        response = client.get("/api/v1/files/servers/1/files/test.png/read?image=true", headers=headers)
+
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert data["is_image"] is True
+        assert data["encoding"] == "base64"
+        assert data["image_data"] is not None
+        assert data["content"] == ""
+
+    @patch('app.services.authorization_service.authorization_service.check_server_access')
     @patch('app.services.authorization_service.authorization_service.can_modify_files')
     @patch('app.services.file_management_service.file_management_service.write_file')
     def test_write_file_success(self, mock_write_file, mock_can_modify, mock_check_access, client, admin_user):
