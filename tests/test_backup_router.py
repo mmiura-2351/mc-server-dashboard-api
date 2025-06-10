@@ -554,3 +554,271 @@ class TestBackupRouter:
             assert data["enabled"] is False
             assert data["last_backup"] is None
             assert data["next_backup"] == "2024-06-11T14:30:22"
+
+    def test_update_server_schedule_existing_schedule(self, client, admin_user, db):
+        """Test updating an existing server backup schedule"""
+        # Create test server
+        server = Server(
+            id=1,
+            name="Test Server",
+            description="Test server description",
+            minecraft_version="1.20.4",
+            server_type=ServerType.vanilla,
+            directory_path="/servers/test-server",
+            port=25565,
+            owner_id=admin_user.id,
+            is_deleted=False,
+        )
+        db.add(server)
+        db.commit()
+
+        existing_schedule = {
+            "interval_hours": 24,
+            "max_backups": 7,
+            "enabled": True,
+            "last_backup": datetime(2024, 6, 10, 14, 30, 22),
+            "next_backup": datetime(2024, 6, 11, 14, 30, 22),
+        }
+
+        updated_schedule = {
+            "interval_hours": 12,
+            "max_backups": 5,
+            "enabled": False,
+            "last_backup": datetime(2024, 6, 10, 14, 30, 22),
+            "next_backup": datetime(2024, 6, 11, 2, 30, 22),
+        }
+
+        with patch(
+            "app.services.backup_scheduler.backup_scheduler.get_server_schedule"
+        ) as mock_get_schedule, \
+        patch(
+            "app.services.backup_scheduler.backup_scheduler.update_server_schedule"
+        ) as mock_update_schedule:
+            
+            # First call returns existing schedule, second call returns updated schedule
+            mock_get_schedule.side_effect = [existing_schedule, updated_schedule]
+            mock_update_schedule.return_value = None
+
+            response = client.put(
+                "/api/v1/backups/scheduler/servers/1/schedule",
+                params={
+                    "interval_hours": 12,
+                    "max_backups": 5,
+                    "enabled": False,
+                },
+                headers=get_auth_headers(admin_user.username),
+            )
+
+            assert response.status_code == status.HTTP_200_OK
+            data = response.json()
+            assert "Updated backup schedule for server 1" in data["message"]
+            assert data["schedule"]["interval_hours"] == 12
+            assert data["schedule"]["max_backups"] == 5
+            assert data["schedule"]["enabled"] is False
+
+    def test_update_server_schedule_create_new_schedule(self, client, admin_user, db):
+        """Test creating a new backup schedule for server with no existing schedule"""
+        # Create test server
+        server = Server(
+            id=1,
+            name="Test Server",
+            description="Test server description",
+            minecraft_version="1.20.4",
+            server_type=ServerType.vanilla,
+            directory_path="/servers/test-server",
+            port=25565,
+            owner_id=admin_user.id,
+            is_deleted=False,
+        )
+        db.add(server)
+        db.commit()
+
+        new_schedule = {
+            "interval_hours": 48,
+            "max_backups": 10,
+            "enabled": True,
+            "last_backup": None,
+            "next_backup": datetime(2024, 6, 12, 14, 30, 22),
+        }
+
+        with patch(
+            "app.services.backup_scheduler.backup_scheduler.get_server_schedule"
+        ) as mock_get_schedule, \
+        patch(
+            "app.services.backup_scheduler.backup_scheduler.add_server_schedule"
+        ) as mock_add_schedule:
+            
+            # First call returns None (no existing schedule), second call returns new schedule
+            mock_get_schedule.side_effect = [None, new_schedule]
+            mock_add_schedule.return_value = None
+
+            response = client.put(
+                "/api/v1/backups/scheduler/servers/1/schedule",
+                params={
+                    "interval_hours": 48,
+                    "max_backups": 10,
+                    "enabled": True,
+                },
+                headers=get_auth_headers(admin_user.username),
+            )
+
+            assert response.status_code == status.HTTP_200_OK
+            data = response.json()
+            assert "Created new backup schedule for server 1" in data["message"]
+            assert data["schedule"]["interval_hours"] == 48
+            assert data["schedule"]["max_backups"] == 10
+            assert data["schedule"]["enabled"] is True
+
+    def test_update_server_schedule_create_with_defaults(self, client, admin_user, db):
+        """Test creating a new backup schedule with default values when parameters not provided"""
+        # Create test server
+        server = Server(
+            id=1,
+            name="Test Server",
+            description="Test server description",
+            minecraft_version="1.20.4",
+            server_type=ServerType.vanilla,
+            directory_path="/servers/test-server",
+            port=25565,
+            owner_id=admin_user.id,
+            is_deleted=False,
+        )
+        db.add(server)
+        db.commit()
+
+        default_schedule = {
+            "interval_hours": 24,  # Default
+            "max_backups": 7,     # Default
+            "enabled": True,      # Default
+            "last_backup": None,
+            "next_backup": datetime(2024, 6, 12, 14, 30, 22),
+        }
+
+        with patch(
+            "app.services.backup_scheduler.backup_scheduler.get_server_schedule"
+        ) as mock_get_schedule, \
+        patch(
+            "app.services.backup_scheduler.backup_scheduler.add_server_schedule"
+        ) as mock_add_schedule:
+            
+            mock_get_schedule.side_effect = [None, default_schedule]
+            mock_add_schedule.return_value = None
+
+            response = client.put(
+                "/api/v1/backups/scheduler/servers/1/schedule",
+                headers=get_auth_headers(admin_user.username),
+            )
+
+            assert response.status_code == status.HTTP_200_OK
+            data = response.json()
+            assert "Created new backup schedule for server 1" in data["message"]
+            assert data["schedule"]["interval_hours"] == 24
+            assert data["schedule"]["max_backups"] == 7
+            assert data["schedule"]["enabled"] is True
+
+            # Verify add_server_schedule was called with defaults
+            mock_add_schedule.assert_called_once_with(
+                server_id=1,
+                interval_hours=24,
+                max_backups=7,
+                enabled=True,
+            )
+
+    def test_update_server_schedule_server_not_found(self, client, admin_user, db):
+        """Test updating schedule for non-existent server"""
+        response = client.put(
+            "/api/v1/backups/scheduler/servers/999/schedule",
+            params={"interval_hours": 24},
+            headers=get_auth_headers(admin_user.username),
+        )
+
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+        assert "Server not found" in response.json()["detail"]
+
+    def test_update_server_schedule_non_admin_forbidden(self, client, test_user, db):
+        """Test that non-admin users cannot update server schedules"""
+        # Create test server
+        server = Server(
+            id=1,
+            name="Test Server",
+            description="Test server description",
+            minecraft_version="1.20.4",
+            server_type=ServerType.vanilla,
+            directory_path="/servers/test-server",
+            port=25565,
+            owner_id=test_user.id,
+            is_deleted=False,
+        )
+        db.add(server)
+        db.commit()
+
+        response = client.put(
+            "/api/v1/backups/scheduler/servers/1/schedule",
+            params={"interval_hours": 24},
+            headers=get_auth_headers(test_user.username),
+        )
+
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+        assert "Only admins can manage backup schedules" in response.json()["detail"]
+
+    def test_update_server_schedule_partial_update(self, client, admin_user, db):
+        """Test partial update of existing schedule (only some parameters)"""
+        # Create test server
+        server = Server(
+            id=1,
+            name="Test Server",
+            description="Test server description",
+            minecraft_version="1.20.4",
+            server_type=ServerType.vanilla,
+            directory_path="/servers/test-server",
+            port=25565,
+            owner_id=admin_user.id,
+            is_deleted=False,
+        )
+        db.add(server)
+        db.commit()
+
+        existing_schedule = {
+            "interval_hours": 24,
+            "max_backups": 7,
+            "enabled": True,
+            "last_backup": None,
+            "next_backup": datetime(2024, 6, 11, 14, 30, 22),
+        }
+
+        updated_schedule = {
+            "interval_hours": 24,  # Unchanged
+            "max_backups": 10,     # Updated
+            "enabled": True,       # Unchanged
+            "last_backup": None,
+            "next_backup": datetime(2024, 6, 11, 14, 30, 22),
+        }
+
+        with patch(
+            "app.services.backup_scheduler.backup_scheduler.get_server_schedule"
+        ) as mock_get_schedule, \
+        patch(
+            "app.services.backup_scheduler.backup_scheduler.update_server_schedule"
+        ) as mock_update_schedule:
+            
+            mock_get_schedule.side_effect = [existing_schedule, updated_schedule]
+            mock_update_schedule.return_value = None
+
+            response = client.put(
+                "/api/v1/backups/scheduler/servers/1/schedule",
+                params={"max_backups": 10},  # Only update max_backups
+                headers=get_auth_headers(admin_user.username),
+            )
+
+            assert response.status_code == status.HTTP_200_OK
+            data = response.json()
+            assert "Updated backup schedule for server 1" in data["message"]
+            assert data["schedule"]["max_backups"] == 10
+
+            # Verify update_server_schedule was called with correct parameters
+            mock_update_schedule.assert_called_once_with(
+                server_id=1,
+                interval_hours=None,
+                max_backups=10,
+                enabled=None,
+            )

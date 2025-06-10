@@ -608,11 +608,13 @@ async def update_server_schedule(
     ),
     enabled: Optional[bool] = Query(None, description="Enable/disable scheduled backups"),
     current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ):
     """
     Update server backup schedule (admin only)
 
     Updates the backup schedule settings for a server.
+    Creates a new schedule if none exists for the server.
     """
     try:
         # Only admins can manage scheduler
@@ -622,15 +624,42 @@ async def update_server_schedule(
                 detail="Only admins can manage backup schedules",
             )
 
+        # Check if server exists in database
+        server = (
+            db.query(Server)
+            .filter(Server.id == server_id, Server.is_deleted.is_(False))
+            .first()
+        )
+        if not server:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Server not found"
+            )
+
         from app.services.backup_scheduler import backup_scheduler
 
         schedule = backup_scheduler.get_server_schedule(server_id)
+
+        # If no schedule exists, create a new one with default values
         if not schedule:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Server not found in backup schedule",
+            # Set default values for new schedule
+            default_interval = interval_hours or 24
+            default_max_backups = max_backups or 7
+            default_enabled = enabled if enabled is not None else True
+
+            backup_scheduler.add_server_schedule(
+                server_id=server_id,
+                interval_hours=default_interval,
+                max_backups=default_max_backups,
+                enabled=default_enabled,
             )
 
+            updated_schedule = backup_scheduler.get_server_schedule(server_id)
+            return {
+                "message": f"Created new backup schedule for server {server_id}",
+                "schedule": updated_schedule,
+            }
+
+        # Update existing schedule
         backup_scheduler.update_server_schedule(
             server_id=server_id,
             interval_hours=interval_hours,
