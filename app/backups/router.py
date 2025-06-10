@@ -653,6 +653,55 @@ async def update_server_schedule(
         )
 
 
+@router.get("/scheduler/servers/{server_id}/schedule")
+async def get_server_schedule(
+    server_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Get backup schedule for a specific server
+
+    Returns the backup schedule configuration for the specified server.
+    Users can view schedules for servers they own, admins can view any schedule.
+    """
+    try:
+        # Check server access
+        authorization_service.check_server_access(server_id, current_user, db)
+
+        from app.services.backup_scheduler import backup_scheduler
+
+        schedule = backup_scheduler.get_server_schedule(server_id)
+
+        # Return 200 with null values if no schedule exists
+        if not schedule:
+            return {
+                "server_id": server_id,
+                "interval_hours": None,
+                "max_backups": None,
+                "enabled": False,
+                "last_backup": None,
+                "next_backup": None,
+            }
+
+        return {
+            "server_id": server_id,
+            "interval_hours": schedule["interval_hours"],
+            "max_backups": schedule["max_backups"],
+            "enabled": schedule["enabled"],
+            "last_backup": schedule.get("last_backup"),
+            "next_backup": schedule.get("next_backup"),
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get server schedule: {str(e)}",
+        )
+
+
 @router.delete("/scheduler/servers/{server_id}/schedule")
 async def remove_server_from_schedule(
     server_id: int, current_user: User = Depends(get_current_user)
