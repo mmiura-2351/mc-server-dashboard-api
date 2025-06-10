@@ -71,17 +71,19 @@ async def read_file(
             image_data=image_data,
         )
 
-    # Handle text file reading
-    content = await file_management_service.read_file(
+    # Handle text file reading with automatic encoding detection
+    content, detected_encoding = await file_management_service.read_file(
         server_id=server_id,
         file_path=file_path,
-        encoding=encoding,
+        encoding=(
+            encoding if encoding != "utf-8" else None
+        ),  # Enable auto-detection for default case
         db=db,
     )
 
     return FileReadResponse(
         content=content,
-        encoding=encoding,
+        encoding=detected_encoding,
         file_info=file_info,
         is_image=False,
         image_data=None,
@@ -346,7 +348,8 @@ async def delete_file(
 
 
 @router.patch(
-    "/servers/{server_id}/files/{file_path:path}/rename", response_model=FileRenameResponse
+    "/servers/{server_id}/files/{file_path:path}/rename",
+    response_model=FileRenameResponse,
 )
 async def rename_file(
     server_id: int,

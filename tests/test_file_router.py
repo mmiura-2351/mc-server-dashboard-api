@@ -91,7 +91,7 @@ class TestFileRouter:
     def test_read_file_success(self, mock_read_file, mock_get_files, mock_check_access, client, admin_user):
         """Test reading file content"""
         mock_check_access.return_value = None  # No exception means access granted
-        mock_read_file.return_value = "server-port=25565\nmax-players=20"
+        mock_read_file.return_value = ("server-port=25565\nmax-players=20", "utf-8")
         mock_get_files.return_value = [{
             "name": "server.properties",
             "path": "server.properties",
@@ -117,7 +117,7 @@ class TestFileRouter:
     def test_read_file_with_encoding(self, mock_read_file, mock_get_files, mock_check_access, client, admin_user):
         """Test reading file with custom encoding"""
         mock_check_access.return_value = None  # No exception means access granted
-        mock_read_file.return_value = "content"
+        mock_read_file.return_value = ("content", "latin-1")
         mock_get_files.return_value = [{
             "name": "test.txt",
             "path": "test.txt",

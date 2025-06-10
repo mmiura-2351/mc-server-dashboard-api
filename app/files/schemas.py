@@ -84,7 +84,9 @@ class FileSearchResponse(BaseModel):
 
 
 class FileRenameRequest(BaseModel):
-    new_name: str = Field(..., min_length=1, max_length=255, description="New filename or directory name")
+    new_name: str = Field(
+        ..., min_length=1, max_length=255, description="New filename or directory name"
+    )
 
 
 class FileRenameResponse(BaseModel):
