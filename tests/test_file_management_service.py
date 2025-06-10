@@ -168,16 +168,20 @@ class TestFileManagementService:
     @pytest.mark.asyncio
     @patch('pathlib.Path.exists')
     @patch('pathlib.Path.is_dir')
-    @patch('aiofiles.open')
-    async def test_read_file_success(self, mock_aiofiles_open, mock_is_dir, mock_exists, mock_server, mock_db):
+    @patch('app.services.file_management_service.EncodingHandler.safe_read_text_file')
+    async def test_read_file_success(self, mock_safe_read, mock_is_dir, mock_exists, mock_server, mock_db):
         """Test successful file read"""
         mock_db.query.return_value.filter.return_value.first.return_value = mock_server
         mock_exists.return_value = True
         mock_is_dir.return_value = False
         
-        mock_file = AsyncMock()
-        mock_file.read.return_value = "file content"
-        mock_aiofiles_open.return_value.__aenter__.return_value = mock_file
+        # Mock encoding handler to return success
+        mock_safe_read.return_value = {
+            'success': True,
+            'content': 'file content',
+            'encoding': 'utf-8',
+            'error': None
+        }
         
         with patch('pathlib.Path.resolve') as mock_resolve:
             mock_resolve.side_effect = [
@@ -187,19 +191,27 @@ class TestFileManagementService:
             with patch('pathlib.Path.suffix', ".txt"):
                 result = await file_management_service.read_file(server_id=1, file_path="test.txt", db=mock_db)
                 
-                assert result == "file content"
+                # Result should be a tuple (content, encoding)
+                assert result[0] == "file content"  # content
+                assert result[1] == "utf-8"  # encoding
 
     @pytest.mark.asyncio
     @patch('pathlib.Path.exists')
     @patch('pathlib.Path.is_dir')
-    @patch('aiofiles.open')
-    async def test_read_file_unicode_error(self, mock_aiofiles_open, mock_is_dir, mock_exists, mock_server, mock_db):
+    @patch('app.services.file_management_service.EncodingHandler.safe_read_text_file')
+    async def test_read_file_unicode_error(self, mock_safe_read, mock_is_dir, mock_exists, mock_server, mock_db):
         """Test read_file with unicode decode error"""
         mock_db.query.return_value.filter.return_value.first.return_value = mock_server
         mock_exists.return_value = True
         mock_is_dir.return_value = False
         
-        mock_aiofiles_open.side_effect = UnicodeDecodeError('utf-8', b'', 0, 1, 'invalid')
+        # Mock encoding handler to return failure
+        mock_safe_read.return_value = {
+            'success': False,
+            'content': '',
+            'encoding': None,
+            'error': 'Unable to decode file with any encoding'
+        }
         
         with patch('pathlib.Path.resolve') as mock_resolve:
             mock_resolve.side_effect = [
@@ -207,7 +219,7 @@ class TestFileManagementService:
                 Path("/servers/test_server")  # server_path.resolve()
             ]
             with patch('pathlib.Path.suffix', ".txt"):
-                with pytest.raises(InvalidRequestException):
+                with pytest.raises(FileOperationException):
                     await file_management_service.read_file(server_id=1, file_path="binary.txt", db=mock_db)
 
     @pytest.mark.asyncio

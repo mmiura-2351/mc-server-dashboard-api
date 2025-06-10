@@ -17,6 +17,7 @@ from app.core.exceptions import (
     handle_file_error,
 )
 from app.servers.models import Server
+from app.services.encoding_handler import EncodingHandler
 from app.types import FileType
 from app.users.models import User
 
@@ -293,11 +294,32 @@ class FileOperationService:
     def __init__(self, backup_service: FileBackupService):
         self.backup_service = backup_service
 
-    async def read_file_content(self, file_path: Path, encoding: str = "utf-8") -> str:
-        """Read file content with specified encoding"""
+    async def read_file_content(
+        self, file_path: Path, encoding: str = None
+    ) -> tuple[str, str]:
+        """Read file content with automatic encoding detection
+
+        Returns:
+            Tuple of (content, detected_encoding)
+        """
         try:
-            async with aiofiles.open(file_path, mode="r", encoding=encoding) as f:
-                return await f.read()
+            if encoding:
+                # If encoding is specified, use it directly
+                async with aiofiles.open(file_path, mode="r", encoding=encoding) as f:
+                    content = await f.read()
+                    return content, encoding
+            else:
+                # Use encoding detection for better compatibility
+                result = EncodingHandler.safe_read_text_file(str(file_path))
+                if result["success"]:
+                    logger.info(
+                        f"File read successfully with encoding: {result['encoding']}"
+                    )
+                    return result["content"], result["encoding"]
+                else:
+                    raise InvalidRequestException(
+                        f"Unable to decode file: {result['error']}"
+                    )
         except UnicodeDecodeError:
             raise InvalidRequestException(
                 f"Unable to decode file with {encoding} encoding"
@@ -572,10 +594,14 @@ class FileManagementService:
         self,
         server_id: int,
         file_path: str,
-        encoding: str = "utf-8",
+        encoding: str = None,
         db: Session = None,
-    ) -> str:
-        """Read file content"""
+    ) -> tuple[str, str]:
+        """Read file content with encoding detection
+
+        Returns:
+            Tuple of (content, detected_encoding)
+        """
         # Validate server and file
         server = self.validation_service.validate_server_exists(server_id, db)
         server_path = Path(server.directory_path)
@@ -585,7 +611,7 @@ class FileManagementService:
         self.validation_service.validate_path_exists(target_file)
         self.validation_service.validate_file_readable(target_file)
 
-        # Read file content
+        # Read file content with encoding detection
         return await self.operation_service.read_file_content(target_file, encoding)
 
     async def read_image_as_base64(
@@ -804,71 +830,92 @@ class FileManagementService:
         server = self.validation_service.validate_server_exists(server_id, db)
         server_path = Path(server.directory_path)
         source_path = server_path / file_path
-        
+
         # Validate source path
         self.validation_service.validate_path_safety(server_path, source_path)
         self.validation_service.validate_path_exists(source_path)
         self.validation_service.validate_path_deletable(source_path, user)
-        
+
         # Validate new name
         if not self._is_valid_filename(new_name):
             raise InvalidRequestException("Invalid filename: contains illegal characters")
-        
+
         # Create destination path (same directory, new name)
         destination_path = source_path.parent / new_name
-        
+
         # Check if destination already exists
         if destination_path.exists():
             raise FileOperationException(
-                "rename", str(source_path), f"File or directory '{new_name}' already exists"
+                "rename",
+                str(source_path),
+                f"File or directory '{new_name}' already exists",
             )
-        
+
         # Validate destination path safety
         self.validation_service.validate_path_safety(server_path, destination_path)
-        
+
         # Perform rename operation
         self.operation_service.move_file_or_directory(source_path, destination_path)
-        
+
         # Get updated file info
         file_info = await self.info_service.get_file_info(destination_path, server_path)
-        
+
         return {
             "message": f"Successfully renamed '{source_path.name}' to '{new_name}'",
             "old_path": file_path,
             "new_path": str(destination_path.relative_to(server_path)),
             "file": file_info,
         }
-    
+
     def _is_valid_filename(self, filename: str) -> bool:
         """Validate filename against illegal characters and patterns"""
         import re
-        
+
         # Check for empty or whitespace-only names
         if not filename or not filename.strip():
             return False
-        
+
         # Check for illegal characters (Windows + Unix)
         illegal_chars = r'[<>:"/\\|?*\x00-\x1f]'
         if re.search(illegal_chars, filename):
             return False
-        
+
         # Check for reserved names (Windows)
         reserved_names = {
-            "CON", "PRN", "AUX", "NUL",
-            "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9",
-            "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9"
+            "CON",
+            "PRN",
+            "AUX",
+            "NUL",
+            "COM1",
+            "COM2",
+            "COM3",
+            "COM4",
+            "COM5",
+            "COM6",
+            "COM7",
+            "COM8",
+            "COM9",
+            "LPT1",
+            "LPT2",
+            "LPT3",
+            "LPT4",
+            "LPT5",
+            "LPT6",
+            "LPT7",
+            "LPT8",
+            "LPT9",
         }
-        if filename.upper().split('.')[0] in reserved_names:
+        if filename.upper().split(".")[0] in reserved_names:
             return False
-        
+
         # Check for names starting/ending with dots or spaces
-        if filename.startswith('.') or filename.endswith('.') or filename.endswith(' '):
+        if filename.startswith(".") or filename.endswith(".") or filename.endswith(" "):
             return False
-        
+
         # Check length (most filesystems have 255 character limit)
-        if len(filename.encode('utf-8')) > 255:
+        if len(filename.encode("utf-8")) > 255:
             return False
-        
+
         return True
 
     async def download_file(
