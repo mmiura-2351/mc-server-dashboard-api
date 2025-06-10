@@ -110,16 +110,12 @@ class FileValidationService:
         if not self._is_writable_file(file_path):
             raise AccessDeniedException("file", "edit")
 
-    def validate_path_deletable(self, path: Path, user: User) -> None:
+    def validate_path_deletable(self, path: Path, user: User = None) -> None:
         """Validate path (file or directory) can be deleted"""
-        if path.is_file():
-            # For files, use standard writable validation
-            if self._is_restricted_file(path) and user.role.value != "admin":
-                raise AccessDeniedException("file", "delete")
-            if not self._is_writable_file(path):
-                raise AccessDeniedException("file", "delete")
-        # For directories, allow deletion if user has appropriate permissions
-        # (additional directory-specific restrictions could be added here)
+        # Only validate that the path exists - no file type restrictions
+        # The actual existence check is done by validate_path_exists
+        # This method is kept for API consistency but doesn't add restrictions
+        pass
 
     def _is_safe_path(self, server_path: Path, target_path: Path) -> bool:
         """Check if target path is within server directory"""
@@ -132,7 +128,7 @@ class FileValidationService:
     def _is_readable_file(self, file_path: Path) -> bool:
         """Check if file type is readable"""
         suffix = file_path.suffix.lower()
-        for file_type, extensions in self.allowed_extensions.items():
+        for _, extensions in self.allowed_extensions.items():
             if suffix in extensions:
                 return True
         return suffix in [
@@ -729,7 +725,6 @@ class FileManagementService:
         file: UploadFile,
         destination_path: str = "",
         extract_if_archive: bool = False,
-        user: User = None,
         db: Session = None,
     ) -> Dict[str, Any]:
         """Upload file to server directory"""

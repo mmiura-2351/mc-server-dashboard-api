@@ -425,7 +425,6 @@ class TestFileManagementService:
                                         result = await file_management_service.upload_file(
                                             server_id=1,
                                             file=mock_file,
-                                            user=mock_user,
                                             db=mock_db
                                         )
             
