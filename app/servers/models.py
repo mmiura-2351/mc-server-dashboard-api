@@ -68,6 +68,9 @@ class Server(Base):
     server_groups = relationship(
         "ServerGroup", back_populates="server", cascade="all, delete-orphan"
     )
+    file_edit_history = relationship(
+        "FileEditHistory", back_populates="server", cascade="all, delete-orphan"
+    )
 
 
 class BackupType(enum.Enum):

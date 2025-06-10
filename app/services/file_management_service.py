@@ -18,6 +18,7 @@ from app.core.exceptions import (
 )
 from app.servers.models import Server
 from app.services.encoding_handler import EncodingHandler
+from app.services.file_history_service import file_history_service
 from app.types import FileType
 from app.users.models import User
 
@@ -357,22 +358,59 @@ class FileOperationService:
         content: str,
         encoding: str = "utf-8",
         create_backup: bool = True,
+        server_id: int = None,
+        user_id: int = None,
+        description: str = None,
+        db: Session = None,
     ) -> Optional[str]:
-        """Write content to file with specified encoding"""
+        """Write content to file with specified encoding and create history backup"""
         try:
             file_path.parent.mkdir(parents=True, exist_ok=True)
 
-            backup_path = None
-            if create_backup and file_path.exists():
-                backup_path = await self.backup_service.create_file_backup(file_path)
+            backup_record = None
+            if create_backup and file_path.exists() and server_id is not None:
+                # Read current content for history backup
+                try:
+                    async with aiofiles.open(file_path, mode="r", encoding=encoding) as f:
+                        current_content = await f.read()
 
+                    # Extract relative file path from server directory
+                    relative_path = self._extract_relative_path(file_path, server_id, db)
+
+                    # Create history backup using new service
+                    backup_record = await file_history_service.create_version_backup(
+                        server_id=server_id,
+                        file_path=relative_path,
+                        content=current_content,
+                        user_id=user_id,
+                        description=description,
+                        db=db,
+                    )
+                except Exception as e:
+                    logger.warning(f"Failed to create history backup: {e}")
+
+            # Write new content
             async with aiofiles.open(file_path, mode="w", encoding=encoding) as f:
                 await f.write(content)
 
-            return backup_path
+            return str(backup_record.backup_file_path) if backup_record else None
 
         except Exception as e:
             handle_file_error("write", str(file_path), e)
+
+    def _extract_relative_path(self, file_path: Path, server_id: int, db: Session) -> str:
+        """Extract relative path from server directory"""
+        server = db.query(Server).filter(Server.id == server_id).first()
+        if not server:
+            raise ServerNotFoundException(f"Server {server_id} not found")
+
+        server_path = Path(server.directory_path)
+        try:
+            relative_path = file_path.relative_to(server_path)
+            return str(relative_path)
+        except ValueError:
+            # If file is not within server directory, use the filename
+            return file_path.name
 
     async def upload_file(self, file: UploadFile, target_path: Path) -> int:
         """Upload file to target path and return file size"""
@@ -682,9 +720,16 @@ class FileManagementService:
         self.validation_service.validate_path_safety(server_path, target_file)
         self.validation_service.validate_file_writable(target_file, user)
 
-        # Write file content
+        # Write file content with history backup
         backup_path = await self.operation_service.write_file_content(
-            target_file, content, encoding, create_backup
+            file_path=target_file,
+            content=content,
+            encoding=encoding,
+            create_backup=create_backup,
+            server_id=server_id,
+            user_id=user.id if user else None,
+            description=None,
+            db=db,
         )
 
         # Get updated file info

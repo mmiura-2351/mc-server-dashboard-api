@@ -1,15 +1,17 @@
 from typing import Optional
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
 from app.auth.dependencies import get_current_user
 from app.core.database import get_db
 from app.files.schemas import (
+    DeleteVersionResponse,
     DirectoryCreateRequest,
     DirectoryCreateResponse,
     FileDeleteResponse,
+    FileHistoryListResponse,
     FileInfoResponse,
     FileListResponse,
     FileReadResponse,
@@ -18,10 +20,15 @@ from app.files.schemas import (
     FileSearchRequest,
     FileSearchResponse,
     FileUploadResponse,
+    FileVersionContentResponse,
     FileWriteRequest,
     FileWriteResponse,
+    RestoreFromVersionRequest,
+    RestoreResponse,
+    ServerFileHistoryStatsResponse,
 )
 from app.services.authorization_service import authorization_service
+from app.services.file_history_service import file_history_service
 from app.services.file_management_service import file_management_service
 from app.types import FileType
 from app.users.models import User
@@ -371,3 +378,156 @@ async def rename_file(
     )
 
     return FileRenameResponse(**result)
+
+
+# File Edit History Endpoints
+@router.get(
+    "/servers/{server_id}/files/{file_path:path}/history",
+    response_model=FileHistoryListResponse,
+)
+async def get_file_edit_history(
+    server_id: int,
+    file_path: str,
+    limit: int = Query(
+        20, ge=1, le=100, description="Maximum number of versions to return"
+    ),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Get edit history for a file"""
+    # Check server access
+    authorization_service.check_server_access(server_id, current_user, db)
+
+    # Get file history
+    history = await file_history_service.get_file_history(
+        server_id=server_id, file_path=file_path, limit=limit, db=db
+    )
+
+    return FileHistoryListResponse(
+        file_path=file_path, total_versions=len(history), history=history
+    )
+
+
+@router.get(
+    "/servers/{server_id}/files/{file_path:path}/history/{version}",
+    response_model=FileVersionContentResponse,
+)
+async def get_file_version_content(
+    server_id: int,
+    file_path: str,
+    version: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Get content of specific version"""
+    # Check server access
+    authorization_service.check_server_access(server_id, current_user, db)
+
+    # Get version content
+    content, history_record = await file_history_service.get_version_content(
+        server_id=server_id, file_path=file_path, version_number=version, db=db
+    )
+
+    return FileVersionContentResponse(
+        file_path=file_path,
+        version_number=version,
+        content=content,
+        encoding="utf-8",
+        created_at=history_record.created_at,
+        editor_username=history_record.editor.username if history_record.editor else None,
+        description=history_record.description,
+    )
+
+
+@router.post(
+    "/servers/{server_id}/files/{file_path:path}/history/{version}/restore",
+    response_model=RestoreResponse,
+)
+async def restore_from_version(
+    server_id: int,
+    file_path: str,
+    version: int,
+    request: RestoreFromVersionRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Restore file from specific version"""
+    # Check permissions (only operators and admins can restore)
+    if not authorization_service.can_modify_files(current_user):
+        raise HTTPException(status_code=403, detail="Insufficient permissions")
+
+    # Check server access
+    authorization_service.check_server_access(server_id, current_user, db)
+
+    # Restore from version
+    content, backup_created = await file_history_service.restore_from_history(
+        server_id=server_id,
+        file_path=file_path,
+        version_number=version,
+        user_id=current_user.id,
+        create_backup_before_restore=request.create_backup_before_restore,
+        description=request.description,
+        db=db,
+    )
+
+    # Get updated file info
+    files = await file_management_service.get_server_files(
+        server_id=server_id, path=file_path, db=db
+    )
+    file_info = FileInfoResponse(**files[0]) if files else None
+
+    return RestoreResponse(
+        message=f"Successfully restored '{file_path}' to version {version}",
+        file=file_info,
+        backup_created=backup_created,
+        restored_from_version=version,
+    )
+
+
+@router.delete(
+    "/servers/{server_id}/files/{file_path:path}/history/{version}",
+    response_model=DeleteVersionResponse,
+)
+async def delete_file_version(
+    server_id: int,
+    file_path: str,
+    version: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Delete specific version (admin only)"""
+    # Check admin permissions
+    if current_user.role.value != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required")
+
+    # Check server access
+    authorization_service.check_server_access(server_id, current_user, db)
+
+    # Delete version
+    await file_history_service.delete_version(
+        server_id=server_id, file_path=file_path, version_number=version, db=db
+    )
+
+    return DeleteVersionResponse(
+        message=f"Successfully deleted version {version} of '{file_path}'",
+        deleted_version=version,
+    )
+
+
+@router.get(
+    "/servers/{server_id}/files/history/statistics",
+    response_model=ServerFileHistoryStatsResponse,
+)
+async def get_server_file_history_stats(
+    server_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Get file edit history statistics for server"""
+    # Check server access
+    authorization_service.check_server_access(server_id, current_user, db)
+
+    # Get statistics
+    stats = await file_history_service.get_server_statistics(server_id=server_id, db=db)
+
+    return ServerFileHistoryStatsResponse(**stats)

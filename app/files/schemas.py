@@ -94,3 +94,71 @@ class FileRenameResponse(BaseModel):
     old_path: str
     new_path: str
     file: FileInfoResponse
+
+
+# File Edit History Schemas
+class FileHistoryRecord(BaseModel):
+    id: int
+    server_id: int
+    file_path: str
+    version_number: int
+    file_size: int
+    content_hash: Optional[str]
+    editor_user_id: Optional[int]
+    editor_username: Optional[str]
+    created_at: datetime
+    description: Optional[str]
+
+    class Config:
+        from_attributes = True
+
+
+class FileHistoryListResponse(BaseModel):
+    file_path: str
+    total_versions: int
+    history: List[FileHistoryRecord]
+
+
+class FileVersionContentResponse(BaseModel):
+    file_path: str
+    version_number: int
+    content: str
+    encoding: str
+    created_at: datetime
+    editor_username: Optional[str]
+    description: Optional[str]
+
+
+class RestoreFromVersionRequest(BaseModel):
+    create_backup_before_restore: bool = Field(
+        True, description="復元前に現在の内容をバックアップ"
+    )
+    description: Optional[str] = Field(None, description="復元操作の説明")
+
+
+class RestoreResponse(BaseModel):
+    message: str
+    file: FileInfoResponse
+    backup_created: bool
+    restored_from_version: int
+
+
+class DeleteVersionResponse(BaseModel):
+    message: str
+    deleted_version: int
+
+
+class ServerFileHistoryStatsResponse(BaseModel):
+    server_id: int
+    total_files_with_history: int
+    total_versions: int
+    total_storage_used: int  # bytes
+    oldest_version_date: Optional[datetime]
+    most_edited_file: Optional[str]
+    most_edited_file_versions: Optional[int]
+
+
+class CleanupResult(BaseModel):
+    deleted_versions: int
+    freed_storage: int  # bytes
+    cleanup_type: str
