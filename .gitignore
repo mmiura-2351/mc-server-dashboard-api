@@ -26,6 +26,7 @@ coverage.json
 /cache/
 /servers/
 /backups/
+/file_history/
 
 # Test screenshots
 /screenshots/
