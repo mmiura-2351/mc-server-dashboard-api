@@ -135,7 +135,19 @@ class FileValidationService:
         for file_type, extensions in self.allowed_extensions.items():
             if suffix in extensions:
                 return True
-        return suffix in [".txt", ".md", ".yml", ".yaml", ".json", ".properties"]
+        return suffix in [
+            ".txt",
+            ".md",
+            ".yml",
+            ".yaml",
+            ".json",
+            ".properties",
+            ".sh",
+            ".bat",
+            ".ini",
+            ".cfg",
+            ".xml",
+        ]
 
     def _is_writable_file(self, file_path: Path) -> bool:
         """Check if file type is writable"""
@@ -261,6 +273,11 @@ class FileInfoService:
             ".properties",
             ".conf",
             ".log",
+            ".sh",
+            ".bat",
+            ".ini",
+            ".cfg",
+            ".xml",
         ]
         return suffix in readable_extensions
 
