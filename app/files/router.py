@@ -237,150 +237,7 @@ async def create_directory(
     return DirectoryCreateResponse(**result)
 
 
-# General endpoints (must come after specific ones)
-@router.get("/servers/{server_id}/files", response_model=FileListResponse)
-@router.get("/servers/{server_id}/files/{path:path}", response_model=FileListResponse)
-async def list_server_files(
-    server_id: int,
-    path: str = "",
-    file_type: Optional[FileType] = None,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
-    """List files and directories in server directory"""
-    import logging
-
-    logger = logging.getLogger(__name__)
-
-    try:
-        # Check server access
-        authorization_service.check_server_access(server_id, current_user, db)
-
-        logger.info(f"Listing files for server {server_id}, path: '{path}'")
-
-        files = await file_management_service.get_server_files(
-            server_id=server_id,
-            path=path,
-            file_type=file_type,
-            db=db,
-        )
-
-        # Convert dict results to schema objects
-        file_responses = [FileInfoResponse(**file_data) for file_data in files]
-
-        logger.info(
-            f"Successfully listed {len(file_responses)} files for server {server_id}"
-        )
-
-        return FileListResponse(
-            files=file_responses,
-            current_path=path,
-            total_files=len(file_responses),
-        )
-    except Exception as e:
-        logger.error(f"Error listing files for server {server_id}: {str(e)}")
-
-        # Check if it's a server not found error
-        from app.core.exceptions import ServerNotFoundException
-
-        if isinstance(e, ServerNotFoundException):
-            raise HTTPException(status_code=404, detail=f"Server {server_id} not found")
-
-        # Check if it's a file operation error (directory doesn't exist)
-        from app.core.exceptions import FileOperationException
-
-        if isinstance(e, FileOperationException) and "Path not found" in str(e):
-            raise HTTPException(
-                status_code=404, detail=f"Directory not found for server {server_id}"
-            )
-
-        # Check if it's an access denied error
-        from app.core.exceptions import AccessDeniedException
-
-        if isinstance(e, AccessDeniedException):
-            raise HTTPException(status_code=403, detail="Access denied")
-
-        # Generic server error for other cases
-        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
-
-
-@router.put(
-    "/servers/{server_id}/files/{file_path:path}", response_model=FileWriteResponse
-)
-async def write_file(
-    server_id: int,
-    file_path: str,
-    request: FileWriteRequest,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
-    """Write content to a file"""
-    if not authorization_service.can_modify_files(current_user):
-        raise HTTPException(status_code=403, detail="Insufficient permissions")
-
-    result = await file_management_service.write_file(
-        server_id=server_id,
-        file_path=file_path,
-        content=request.content,
-        encoding=request.encoding,
-        create_backup=request.create_backup,
-        user=current_user,
-        db=db,
-    )
-
-    return FileWriteResponse(**result)
-
-
-@router.delete(
-    "/servers/{server_id}/files/{file_path:path}", response_model=FileDeleteResponse
-)
-async def delete_file(
-    server_id: int,
-    file_path: str,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
-    """Delete a file or directory from server"""
-    if not authorization_service.can_modify_files(current_user):
-        raise HTTPException(status_code=403, detail="Insufficient permissions")
-
-    result = await file_management_service.delete_file(
-        server_id=server_id,
-        file_path=file_path,
-        user=current_user,
-        db=db,
-    )
-
-    return FileDeleteResponse(**result)
-
-
-@router.patch(
-    "/servers/{server_id}/files/{file_path:path}/rename",
-    response_model=FileRenameResponse,
-)
-async def rename_file(
-    server_id: int,
-    file_path: str,
-    request: FileRenameRequest,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
-    """Rename a file or directory"""
-    if not authorization_service.can_modify_files(current_user):
-        raise HTTPException(status_code=403, detail="Insufficient permissions")
-
-    result = await file_management_service.rename_file(
-        server_id=server_id,
-        file_path=file_path,
-        new_name=request.new_name,
-        user=current_user,
-        db=db,
-    )
-
-    return FileRenameResponse(**result)
-
-
-# File Edit History Endpoints
+# File Edit History Endpoints (must come before general path endpoints)
 @router.get(
     "/servers/{server_id}/files/{file_path:path}/history",
     response_model=FileHistoryListResponse,
@@ -531,3 +388,146 @@ async def get_server_file_history_stats(
     stats = await file_history_service.get_server_statistics(server_id=server_id, db=db)
 
     return ServerFileHistoryStatsResponse(**stats)
+
+
+# General endpoints (must come after specific ones)
+@router.get("/servers/{server_id}/files", response_model=FileListResponse)
+@router.get("/servers/{server_id}/files/{path:path}", response_model=FileListResponse)
+async def list_server_files(
+    server_id: int,
+    path: str = "",
+    file_type: Optional[FileType] = None,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """List files and directories in server directory"""
+    import logging
+
+    logger = logging.getLogger(__name__)
+
+    try:
+        # Check server access
+        authorization_service.check_server_access(server_id, current_user, db)
+
+        logger.info(f"Listing files for server {server_id}, path: '{path}'")
+
+        files = await file_management_service.get_server_files(
+            server_id=server_id,
+            path=path,
+            file_type=file_type,
+            db=db,
+        )
+
+        # Convert dict results to schema objects
+        file_responses = [FileInfoResponse(**file_data) for file_data in files]
+
+        logger.info(
+            f"Successfully listed {len(file_responses)} files for server {server_id}"
+        )
+
+        return FileListResponse(
+            files=file_responses,
+            current_path=path,
+            total_files=len(file_responses),
+        )
+    except Exception as e:
+        logger.error(f"Error listing files for server {server_id}: {str(e)}")
+
+        # Check if it's a server not found error
+        from app.core.exceptions import ServerNotFoundException
+
+        if isinstance(e, ServerNotFoundException):
+            raise HTTPException(status_code=404, detail=f"Server {server_id} not found")
+
+        # Check if it's a file operation error (directory doesn't exist)
+        from app.core.exceptions import FileOperationException
+
+        if isinstance(e, FileOperationException) and "Path not found" in str(e):
+            raise HTTPException(
+                status_code=404, detail=f"Directory not found for server {server_id}"
+            )
+
+        # Check if it's an access denied error
+        from app.core.exceptions import AccessDeniedException
+
+        if isinstance(e, AccessDeniedException):
+            raise HTTPException(status_code=403, detail="Access denied")
+
+        # Generic server error for other cases
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+
+
+@router.put(
+    "/servers/{server_id}/files/{file_path:path}", response_model=FileWriteResponse
+)
+async def write_file(
+    server_id: int,
+    file_path: str,
+    request: FileWriteRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Write content to a file"""
+    if not authorization_service.can_modify_files(current_user):
+        raise HTTPException(status_code=403, detail="Insufficient permissions")
+
+    result = await file_management_service.write_file(
+        server_id=server_id,
+        file_path=file_path,
+        content=request.content,
+        encoding=request.encoding,
+        create_backup=request.create_backup,
+        user=current_user,
+        db=db,
+    )
+
+    return FileWriteResponse(**result)
+
+
+@router.delete(
+    "/servers/{server_id}/files/{file_path:path}", response_model=FileDeleteResponse
+)
+async def delete_file(
+    server_id: int,
+    file_path: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Delete a file or directory from server"""
+    if not authorization_service.can_modify_files(current_user):
+        raise HTTPException(status_code=403, detail="Insufficient permissions")
+
+    result = await file_management_service.delete_file(
+        server_id=server_id,
+        file_path=file_path,
+        user=current_user,
+        db=db,
+    )
+
+    return FileDeleteResponse(**result)
+
+
+@router.patch(
+    "/servers/{server_id}/files/{file_path:path}/rename",
+    response_model=FileRenameResponse,
+)
+async def rename_file(
+    server_id: int,
+    file_path: str,
+    request: FileRenameRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Rename a file or directory"""
+    if not authorization_service.can_modify_files(current_user):
+        raise HTTPException(status_code=403, detail="Insufficient permissions")
+
+    result = await file_management_service.rename_file(
+        server_id=server_id,
+        file_path=file_path,
+        new_name=request.new_name,
+        user=current_user,
+        db=db,
+    )
+
+    return FileRenameResponse(**result)
