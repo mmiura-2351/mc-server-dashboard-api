@@ -475,7 +475,7 @@ The Minecraft Server Dashboard API is a solid, production-ready application with
   - Time: 12-16 hours
 
 - [x] **TEST-2**: Add tests for Minecraft Server Manager
-  - Coverage: 21.91% → 47.16% (significant improvement achieved)
+  - Coverage: 21.91% → 70% (significant improvement achieved)
   - Impact: High (core functionality)
   - Difficulty: High  
   - Time: 10-12 hours
