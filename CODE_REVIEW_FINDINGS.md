@@ -519,7 +519,7 @@ The Minecraft Server Dashboard API is a solid, production-ready application with
   - Difficulty: High
   - Time: 10-12 hours
 
-- [ ] **MEDIUM-4**: Restrict CORS origins from wildcard
+- [x] **MEDIUM-4**: Restrict CORS origins from wildcard
   - Change from `allow_origins=["*"]` to specific domains
   - Impact: Medium (security)
   - Difficulty: Low

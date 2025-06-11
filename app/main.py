@@ -8,6 +8,7 @@ from app.auth.router import router as auth_router
 # Import models to ensure they are registered with SQLAlchemy
 from app.backups.router import router as backups_router
 from app.backups.scheduler_router import router as scheduler_router
+from app.core.config import settings
 from app.core.database import Base, engine
 from app.files.router import router as files_router
 from app.groups.router import router as groups_router
@@ -60,12 +61,7 @@ app = FastAPI(lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000",
-        "http://127.0.0.1:3000",
-        "https://127.0.0.1:3000",
-        "*",
-    ],
+    allow_origins=settings.cors_origins_list,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
