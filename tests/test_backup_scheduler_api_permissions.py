@@ -203,8 +203,8 @@ class TestBackupSchedulerAPIPermissions:
         db.commit()
         
         # Clear scheduler cache to avoid conflicts with other tests
-        from app.services.new_backup_scheduler import new_backup_scheduler
-        new_backup_scheduler.clear_cache()
+        from app.services.backup_scheduler import backup_scheduler
+        backup_scheduler.clear_cache()
         
         # スケジュール作成
         schedule = BackupSchedule(

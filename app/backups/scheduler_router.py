@@ -18,7 +18,7 @@ from app.backups.schemas import (
 )
 from app.core.database import get_db
 from app.services.authorization_service import authorization_service
-from app.services.new_backup_scheduler import new_backup_scheduler
+from app.services.backup_scheduler import backup_scheduler
 from app.users.models import Role, User
 
 router = APIRouter(tags=["backup-scheduler"])
@@ -57,7 +57,7 @@ async def create_backup_schedule(
                 detail="Only operators and admins can create backup schedules",
             )
 
-        schedule = await new_backup_scheduler.create_schedule(
+        schedule = await backup_scheduler.create_schedule(
             db=db,
             server_id=server_id,
             interval_hours=request.interval_hours,
@@ -112,7 +112,7 @@ async def get_backup_schedule(
         # Check server access (owner or admin)
         authorization_service.check_server_access(server_id, current_user, db)
 
-        schedule = await new_backup_scheduler.get_schedule(db=db, server_id=server_id)
+        schedule = await backup_scheduler.get_schedule(db=db, server_id=server_id)
 
         if not schedule:
             raise HTTPException(
@@ -158,7 +158,7 @@ async def update_backup_schedule(
                 detail="Only operators and admins can update backup schedules",
             )
 
-        schedule = await new_backup_scheduler.update_schedule(
+        schedule = await backup_scheduler.update_schedule(
             db=db,
             server_id=server_id,
             interval_hours=request.interval_hours,
@@ -215,7 +215,7 @@ async def delete_backup_schedule(
                 detail="Only operators and admins can delete backup schedules",
             )
 
-        success = await new_backup_scheduler.delete_schedule(
+        success = await backup_scheduler.delete_schedule(
             db=db,
             server_id=server_id,
             executed_by_user_id=current_user.id,
@@ -317,8 +317,8 @@ async def get_scheduler_status(
             )
 
         # Get all schedules
-        all_schedules = await new_backup_scheduler.list_schedules(db=db)
-        enabled_schedules = await new_backup_scheduler.list_schedules(db=db, enabled_only=True)
+        all_schedules = await backup_scheduler.list_schedules(db=db)
+        enabled_schedules = await backup_scheduler.list_schedules(db=db, enabled_only=True)
 
         # Find next execution time
         next_execution = None
@@ -328,10 +328,10 @@ async def get_scheduler_status(
                 next_execution = min(next_times)
 
         return SchedulerStatusResponse(
-            is_running=new_backup_scheduler.is_running,
+            is_running=backup_scheduler.is_running,
             total_schedules=len(all_schedules),
             enabled_schedules=len(enabled_schedules),
-            cache_size=new_backup_scheduler.cache_size,
+            cache_size=backup_scheduler.cache_size,
             next_execution=next_execution,
         )
 
@@ -367,7 +367,7 @@ async def list_all_backup_schedules(
                 detail="Only admins can list all backup schedules",
             )
 
-        schedules = await new_backup_scheduler.list_schedules(db=db, enabled_only=enabled_only)
+        schedules = await backup_scheduler.list_schedules(db=db, enabled_only=enabled_only)
 
         return [BackupScheduleResponse.from_orm(schedule) for schedule in schedules]
 
