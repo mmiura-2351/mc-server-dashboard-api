@@ -436,4 +436,164 @@ The Minecraft Server Dashboard API is a solid, production-ready application with
 
 ---
 
+## 📋 Priority-Based Task List
+
+### 🔴 Critical Priority (Week 1-2)
+**Impact: High | Difficulty: Low-Medium**
+
+- [ ] **CRITICAL-1**: Remove Japanese comments and standardize all code to English
+  - Files: `app/backups/scheduler_router.py`, `app/auth/router.py`
+  - Impact: High (production readiness)
+  - Difficulty: Low
+  - Time: 2-4 hours
+
+- [ ] **CRITICAL-2**: Fix WebSocket service file path validation bugs
+  - File: `app/services/websocket_service.py:99-108`
+  - Impact: High (runtime errors)
+  - Difficulty: Low
+  - Time: 2-3 hours
+
+- [ ] **CRITICAL-3**: Standardize authorization patterns across all routers
+  - Replace local helpers with `authorization_service`
+  - Impact: High (security consistency)
+  - Difficulty: Medium
+  - Time: 6-8 hours
+
+- [ ] **CRITICAL-4**: Fix backup scheduler database session management
+  - File: `app/services/backup_scheduler.py:438-443`
+  - Impact: High (resource leaks)
+  - Difficulty: Low
+  - Time: 1-2 hours
+
+### 🟡 High Priority Testing (Week 2-3)
+**Impact: High | Difficulty: Medium-High**
+
+- [ ] **TEST-1**: Add comprehensive tests for MinecraftAPI Service
+  - Coverage: 0% → 80%
+  - Impact: High (critical service untested)
+  - Difficulty: High
+  - Time: 12-16 hours
+
+- [ ] **TEST-2**: Add tests for Minecraft Server Manager
+  - Coverage: 21.91% → 70%
+  - Impact: High (core functionality)
+  - Difficulty: High  
+  - Time: 10-12 hours
+
+- [ ] **TEST-3**: Add tests for Authorization Service
+  - Coverage: 34.91% → 80%
+  - Impact: High (security critical)
+  - Difficulty: Medium
+  - Time: 8-10 hours
+
+- [ ] **TEST-4**: Add tests for Template Service
+  - Coverage: 41.83% → 70%
+  - Impact: Medium (feature completeness)
+  - Difficulty: Medium
+  - Time: 6-8 hours
+
+- [ ] **TEST-5**: Add tests for File History Service
+  - Coverage: 17.13% → 60%
+  - Impact: Medium (audit functionality)
+  - Difficulty: Medium
+  - Time: 4-6 hours
+
+### 🟠 Medium Priority (Week 3-4)
+**Impact: Medium | Difficulty: Medium**
+
+- [ ] **MEDIUM-1**: Split large `servers/router.py` into modules
+  - Current: 972 lines → Split into management/control/import_export
+  - Impact: Medium (maintainability)
+  - Difficulty: Medium
+  - Time: 8-10 hours
+
+- [ ] **MEDIUM-2**: Fix N+1 query patterns with batch queries
+  - Add eager loading for relationships
+  - Impact: Medium (performance)
+  - Difficulty: Medium
+  - Time: 6-8 hours
+
+- [ ] **MEDIUM-3**: Implement streaming for large backup operations
+  - File: `app/services/backup_service.py:134-140`
+  - Impact: Medium (large file handling)
+  - Difficulty: High
+  - Time: 10-12 hours
+
+- [ ] **MEDIUM-4**: Restrict CORS origins from wildcard
+  - Change from `allow_origins=["*"]` to specific domains
+  - Impact: Medium (security)
+  - Difficulty: Low
+  - Time: 1 hour
+
+- [ ] **MEDIUM-5**: Add integration tests for end-to-end workflows
+  - Server lifecycle, multi-user operations, backup/restore
+  - Impact: Medium (quality assurance)
+  - Difficulty: High
+  - Time: 12-16 hours
+
+- [ ] **MEDIUM-6**: Fix role enum inconsistency in file validation
+  - File: `app/services/file_management_service.py:106-113`
+  - Impact: Low (code consistency)
+  - Difficulty: Low
+  - Time: 1 hour
+
+### 🟢 Low Priority (Future Sprints)
+**Impact: Low-Medium | Difficulty: Various**
+
+- [ ] **LOW-1**: Add startup error handling and graceful degradation
+  - File: `app/main.py:28-43`
+  - Impact: Medium (reliability)
+  - Difficulty: Medium
+  - Time: 4-6 hours
+
+- [ ] **LOW-2**: Optimize database engine usage in database_integration
+  - Reuse main engine instead of creating separate one
+  - Impact: Low (resource optimization)
+  - Difficulty: Low
+  - Time: 2 hours
+
+- [ ] **LOW-3**: Expand restricted files list for enhanced security
+  - Add more critical Minecraft server files
+  - Impact: Low (defense in depth)
+  - Difficulty: Low
+  - Time: 1 hour
+
+- [ ] **LOW-4**: Implement performance monitoring middleware
+  - Request timing, database query monitoring, memory tracking
+  - Impact: Medium (observability)
+  - Difficulty: Medium
+  - Time: 8-10 hours
+
+- [ ] **LOW-5**: Update API documentation for consistency
+  - Sync docs with actual implementation
+  - Impact: Low (documentation quality)
+  - Difficulty: Low
+  - Time: 4-6 hours
+
+- [ ] **LOW-6**: Add deployment and production setup guides
+  - Missing production documentation
+  - Impact: Medium (operational readiness)
+  - Difficulty: Low
+  - Time: 6-8 hours
+
+### 📊 Task Summary by Priority
+
+| Priority | Tasks | Estimated Time | Impact |
+|----------|-------|---------------|--------|
+| 🔴 Critical | 4 | 11-17 hours | High |
+| 🟡 High (Testing) | 5 | 40-52 hours | High |
+| 🟠 Medium | 6 | 38-48 hours | Medium |
+| 🟢 Low | 6 | 25-37 hours | Low-Medium |
+| **Total** | **21** | **114-154 hours** | - |
+
+### 🎯 Recommended Sprint Planning
+
+**Sprint 1 (Week 1)**: Critical fixes (CRITICAL-1 to CRITICAL-4)
+**Sprint 2 (Week 2)**: High priority testing (TEST-1, TEST-2)
+**Sprint 3 (Week 3)**: Remaining testing (TEST-3 to TEST-5) + MEDIUM-1
+**Sprint 4 (Week 4)**: Medium priority items (MEDIUM-2 to MEDIUM-6)
+**Future Sprints**: Low priority improvements
+
+---
+
 *This report was generated through comprehensive static analysis, test coverage review, and architectural assessment. All findings include specific file references and actionable recommendations.*
