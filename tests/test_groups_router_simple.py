@@ -21,10 +21,13 @@ class TestGroupsRouterConfiguration:
         from app.groups.router import (
             router,
             GroupService,
-            GroupType,
-            Role,
             User
         )
+        # Import GroupType from models instead of router
+        from app.groups.models import GroupType
+        # Import Role from users.models instead of router  
+        from app.users.models import Role
+        
         assert router is not None
         assert GroupService is not None
         assert GroupType is not None
