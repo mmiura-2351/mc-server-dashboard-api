@@ -4,6 +4,7 @@ Database-based persistent backup scheduler
 """
 
 import asyncio
+import logging
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Tuple
 
@@ -12,6 +13,8 @@ from sqlalchemy.orm import Session
 from app.backups.models import BackupSchedule, BackupScheduleLog, ScheduleAction
 from app.servers.models import Server, ServerStatus
 from app.services.minecraft_server import minecraft_server_manager
+
+logger = logging.getLogger(__name__)
 
 
 class BackupSchedulerService:
@@ -434,13 +437,20 @@ class BackupSchedulerService:
             return
 
         self._running = True
-        # Load schedules from database
-        from app.core.database import get_db
-        db = next(get_db())
+        # Load schedules from database using proper session management
+        from app.core.database import SessionLocal
+        db_session = SessionLocal()
         try:
-            await self.load_schedules_from_db(db)
+            await self.load_schedules_from_db(db_session)
+            logger.info("Successfully loaded schedules from database")
+        except Exception as e:
+            logger.error(f"Failed to load schedules from database during startup: {e}")
+            # Continue startup even if schedule loading fails - scheduler can still accept new schedules
         finally:
-            db.close()
+            try:
+                db_session.close()
+            except Exception as e:
+                logger.warning(f"Error closing database session during scheduler startup: {e}")
         
         # Start scheduler task
         self._task = asyncio.create_task(self._scheduler_loop())
@@ -467,13 +477,24 @@ class BackupSchedulerService:
         """
         while self._running:
             try:
-                # Database access is expected to be injected during actual implementation
-                # This is a skeleton implementation
+                # TODO: Implement actual backup execution logic
+                # When implementing, use proper session management:
+                # from app.core.database import SessionLocal
+                # db_session = SessionLocal()
+                # try:
+                #     # Execute scheduled backups
+                #     pass
+                # except Exception as e:
+                #     logger.error(f"Error executing scheduled backups: {e}")
+                # finally:
+                #     db_session.close()
+                
                 await asyncio.sleep(600)  # Wait 10 minutes
             except asyncio.CancelledError:
+                logger.info("Backup scheduler loop cancelled")
                 break
-            except Exception:
-                # Log output will be added during actual implementation
+            except Exception as e:
+                logger.error(f"Unexpected error in backup scheduler loop: {e}")
                 await asyncio.sleep(60)  # Retry after 1 minute on error
 
     # ===================

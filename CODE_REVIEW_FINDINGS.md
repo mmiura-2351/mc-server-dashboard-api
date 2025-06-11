@@ -459,7 +459,7 @@ The Minecraft Server Dashboard API is a solid, production-ready application with
   - Difficulty: Medium
   - Time: 6-8 hours
 
-- [ ] **CRITICAL-4**: Fix backup scheduler database session management
+- [x] **CRITICAL-4**: Fix backup scheduler database session management
   - File: `app/services/backup_scheduler.py:438-443`
   - Impact: High (resource leaks)
   - Difficulty: Low
