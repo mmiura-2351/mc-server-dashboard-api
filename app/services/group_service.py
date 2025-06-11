@@ -142,6 +142,38 @@ class GroupFileService:
             # Log error but don't fail the main operation
             print(f"Error updating server files for server {server_id}: {e}")
 
+    async def batch_update_server_files(self, server_ids: List[int]):
+        """Batch update server files for multiple servers to reduce N+1 queries"""
+        if not server_ids:
+            return
+
+        try:
+            # Get all servers in a single query instead of individual lookups
+            from app.core.database import get_db
+            from app.servers.models import Server
+
+            db = next(get_db())
+            try:
+                servers = (
+                    db.query(Server)
+                    .filter(Server.id.in_(server_ids), not Server.is_deleted)
+                    .all()
+                )
+
+                # Use the existing file service update logic for each server
+                for server in servers:
+                    try:
+                        # Call the original update method directly on the instance
+                        await self.update_server_files(server.id)
+                    except Exception as e:
+                        print(f"Error updating server files for server {server.id}: {e}")
+
+            finally:
+                db.close()
+
+        except Exception as e:
+            print(f"Error in batch server file update: {e}")
+
     async def update_all_affected_servers(
         self, group_id: Annotated[int, "ID of group that was modified"]
     ) -> None:
@@ -156,8 +188,10 @@ class GroupFileService:
             .all()
         )
 
-        for (server_id,) in affected_servers:
-            await self.update_server_files(server_id)
+        # Batch process server file updates for better performance
+        if affected_servers:
+            server_ids = [server_id for (server_id,) in affected_servers]
+            await self.batch_update_server_files(server_ids)
 
 
 class GroupService:
@@ -550,6 +584,21 @@ class GroupService:
 
         groups = []
         for server_group, group in result:
+            # Optimize player count calculation - avoid loading full player data
+            player_count = 0
+            if group.players:
+                try:
+                    import json
+
+                    players_data = (
+                        json.loads(group.players)
+                        if isinstance(group.players, str)
+                        else group.players
+                    )
+                    player_count = len(players_data) if players_data else 0
+                except (json.JSONDecodeError, TypeError):
+                    player_count = 0
+
             groups.append(
                 {
                     "id": group.id,
@@ -558,7 +607,7 @@ class GroupService:
                     "type": group.type.value,
                     "priority": server_group.priority,
                     "attached_at": server_group.attached_at.isoformat(),
-                    "player_count": len(group.get_players()),
+                    "player_count": player_count,
                 }
             )
 

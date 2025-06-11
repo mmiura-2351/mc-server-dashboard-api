@@ -572,9 +572,25 @@ class TemplateService:
             user_templates = query.filter(Template.created_by == user.id).count()
 
             # Get templates by server type
-            server_type_stats = {}
-            for server_type in ServerType:
-                count = query.filter(Template.server_type == server_type).count()
+            # Optimize: Use a single GROUP BY query instead of multiple individual counts
+            from sqlalchemy import func
+
+            # Apply the same access control filter for server type statistics
+            stats_query = db.query(Template)
+            if user.role.value != "admin":
+                stats_query = stats_query.filter(
+                    (Template.is_public) | (Template.created_by == user.id)
+                )
+
+            server_type_results = (
+                stats_query.with_entities(Template.server_type, func.count(Template.id))
+                .group_by(Template.server_type)
+                .all()
+            )
+
+            # Initialize all server types with 0, then populate with actual counts
+            server_type_stats = {server_type.value: 0 for server_type in ServerType}
+            for server_type, count in server_type_results:
                 server_type_stats[server_type.value] = count
 
             return {

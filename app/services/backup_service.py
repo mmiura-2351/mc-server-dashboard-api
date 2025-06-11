@@ -413,21 +413,27 @@ class BackupService:
             "error_count": 0,
         }
 
-        for server_id in server_ids:
-            try:
-                # Check if server exists
-                server = (
-                    db.query(Server)
-                    .filter(and_(Server.id == server_id, Server.is_deleted.is_(False)))
-                    .first()
-                )
+        # Optimize: Get all servers in a single query instead of individual lookups
+        valid_servers = (
+            db.query(Server)
+            .filter(and_(Server.id.in_(server_ids), Server.is_deleted.is_(False)))
+            .all()
+        )
 
-                if not server:
-                    results["failed"].append(
-                        {"server_id": server_id, "error": f"Server {server_id} not found"}
-                    )
-                    results["error_count"] += 1
-                    continue
+        valid_server_ids = {server.id for server in valid_servers}
+        server_lookup = {server.id: server for server in valid_servers}
+
+        # Track invalid server IDs
+        invalid_server_ids = set(server_ids) - valid_server_ids
+        for server_id in invalid_server_ids:
+            results["failed"].append(
+                {"server_id": server_id, "error": f"Server {server_id} not found"}
+            )
+            results["error_count"] += 1
+
+        for server_id in valid_server_ids:
+            try:
+                server = server_lookup[server_id]
 
                 # Create backup with automatic naming
                 backup_name = (
@@ -568,9 +574,18 @@ class BackupService:
             ).count()
             failed_backups = query.filter(Backup.status == BackupStatus.failed).count()
 
-            # Calculate total backup size
-            completed_query = query.filter(Backup.status == BackupStatus.completed)
-            total_size = sum(backup.file_size for backup in completed_query.all())
+            # Calculate total backup size using SQL aggregation instead of loading all records
+            from sqlalchemy import func
+
+            size_query = db.query(func.sum(Backup.file_size)).filter(
+                Backup.status == BackupStatus.completed
+            )
+
+            if server_id:
+                size_query = size_query.filter(Backup.server_id == server_id)
+
+            total_size_result = size_query.scalar()
+            total_size = total_size_result or 0
 
             return {
                 "total_backups": total_backups,

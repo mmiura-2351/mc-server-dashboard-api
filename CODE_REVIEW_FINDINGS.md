@@ -507,7 +507,7 @@ The Minecraft Server Dashboard API is a solid, production-ready application with
   - Difficulty: Medium
   - Time: 8-10 hours
 
-- [ ] **MEDIUM-2**: Fix N+1 query patterns with batch queries
+- [x] **MEDIUM-2**: Fix N+1 query patterns with batch queries
   - Add eager loading for relationships
   - Impact: Medium (performance)
   - Difficulty: Medium

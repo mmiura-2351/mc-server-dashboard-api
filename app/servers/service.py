@@ -492,7 +492,14 @@ class ServerService:
     ) -> Dict[str, Any]:
         """List servers with filtering and pagination"""
         try:
-            query = db.query(Server).filter(Server.is_deleted.is_(False))
+            # Use eager loading for owner relationship to avoid N+1 queries
+            from sqlalchemy.orm import joinedload
+
+            query = (
+                db.query(Server)
+                .options(joinedload(Server.owner))
+                .filter(Server.is_deleted.is_(False))
+            )
 
             if owner_id is not None:
                 query = query.filter(Server.owner_id == owner_id)

@@ -295,14 +295,15 @@ class TestGroupFileService:
 
         service = GroupFileService(db)
         
-        # Mock update_server_files to track calls
-        with patch.object(service, 'update_server_files') as mock_update:
+        # Mock batch_update_server_files to track calls
+        with patch.object(service, 'batch_update_server_files') as mock_batch_update:
             await service.update_all_affected_servers(1)
             
-            # Should call update_server_files for both servers
-            assert mock_update.call_count == 2
-            mock_update.assert_any_call(1)
-            mock_update.assert_any_call(2)
+            # Should call batch_update_server_files once with both server IDs
+            assert mock_batch_update.call_count == 1
+            # Extract the server IDs from the call
+            call_args = mock_batch_update.call_args[0][0]
+            assert set(call_args) == {1, 2}
 
 
 class TestGroupService:

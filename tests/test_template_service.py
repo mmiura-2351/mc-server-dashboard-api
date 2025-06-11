@@ -309,15 +309,31 @@ gamemode=survival
     
     def test_get_template_statistics(self, service, mock_user, mock_db):
         """Test get_template_statistics"""
+        mock_user.role.value = "admin"
+        
         mock_query = mock_db.query.return_value
         mock_query.filter.return_value = mock_query
-        mock_query.count.side_effect = [10, 5, 3, 2, 1, 0, 0]  # total, public, user, vanilla, forge, fabric, modded
+        mock_query.count.side_effect = [10, 5, 3]  # total, public, user
+        
+        # Mock the GROUP BY query for server type statistics
+        from app.servers.models import ServerType
+        
+        mock_query.with_entities.return_value = mock_query
+        mock_query.group_by.return_value = mock_query
+        mock_query.all.return_value = [
+            (ServerType.vanilla, 5),
+            (ServerType.paper, 3),
+            (ServerType.forge, 2)
+        ]
         
         result = service.get_template_statistics(user=mock_user, db=mock_db)
         
         assert result["total_templates"] == 10
         assert result["public_templates"] == 5
         assert result["user_templates"] == 3
+        assert result["server_type_distribution"]["vanilla"] == 5
+        assert result["server_type_distribution"]["paper"] == 3
+        assert result["server_type_distribution"]["forge"] == 2
         assert "server_type_distribution" in result
 
 

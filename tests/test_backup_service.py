@@ -151,12 +151,8 @@ class TestBackupService:
         mock_query.filter.return_value = mock_query
         mock_query.count.side_effect = [10, 8, 2]  # total, completed, failed
         
-        # Mock backup objects for size calculation
-        mock_backup1 = Mock()
-        mock_backup1.file_size = 1000000
-        mock_backup2 = Mock()
-        mock_backup2.file_size = 2000000
-        mock_query.all.return_value = [mock_backup1, mock_backup2]
+        # Mock the new SQL SUM query for total size calculation
+        mock_query.scalar.return_value = 3000000  # Sum of file sizes
         
         result = service.get_backup_statistics(server_id=1, db=mock_db)
         
