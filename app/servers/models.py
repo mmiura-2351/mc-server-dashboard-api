@@ -71,6 +71,12 @@ class Server(Base):
     file_edit_history = relationship(
         "FileEditHistory", back_populates="server", cascade="all, delete-orphan"
     )
+    backup_schedule = relationship(
+        "BackupSchedule",
+        back_populates="server",
+        uselist=False,
+        cascade="all, delete-orphan",
+    )
 
 
 class BackupType(enum.Enum):

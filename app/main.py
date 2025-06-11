@@ -4,6 +4,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.auth.router import router as auth_router
+
+# Import models to ensure they are registered with SQLAlchemy
 from app.backups.router import router as backups_router
 from app.core.database import Base, engine
 from app.files.router import router as files_router
