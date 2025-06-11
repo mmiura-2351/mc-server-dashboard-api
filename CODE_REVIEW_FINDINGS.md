@@ -447,7 +447,7 @@ The Minecraft Server Dashboard API is a solid, production-ready application with
   - Difficulty: Low
   - Time: 2-4 hours
 
-- [ ] **CRITICAL-2**: Fix WebSocket service file path validation bugs
+- [x] **CRITICAL-2**: Fix WebSocket service file path validation bugs
   - File: `app/services/websocket_service.py:99-108`
   - Impact: High (runtime errors)
   - Difficulty: Low

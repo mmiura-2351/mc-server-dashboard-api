@@ -98,12 +98,27 @@ class ConnectionManager:
         try:
             server_manager = minecraft_server_manager.get_server(str(server_id))
             if not server_manager:
+                logger.warning(f"Server manager not found for server {server_id}")
                 return
 
-            # Get the log file path
-            log_file = server_manager.server_dir / "logs" / "latest.log"
+            # Validate server_manager has required attributes
+            if not hasattr(server_manager, 'server_dir') or not server_manager.server_dir:
+                logger.error(f"Invalid server manager for server {server_id}: missing server_dir")
+                return
+
+            # Get the log file path with proper validation
+            try:
+                log_file = server_manager.server_dir / "logs" / "latest.log"
+            except Exception as e:
+                logger.error(f"Failed to construct log file path for server {server_id}: {e}")
+                return
 
             if not log_file.exists():
+                logger.debug(f"Log file does not exist for server {server_id}: {log_file}")
+                return
+
+            if not log_file.is_file():
+                logger.error(f"Log path is not a file for server {server_id}: {log_file}")
                 return
 
             # Follow the log file like 'tail -f'
@@ -131,8 +146,12 @@ class ConnectionManager:
 
         except asyncio.CancelledError:
             logger.info(f"Log streaming cancelled for server {server_id}")
+        except FileNotFoundError as e:
+            logger.warning(f"Log file not found for server {server_id}: {e}")
+        except PermissionError as e:
+            logger.error(f"Permission denied accessing log file for server {server_id}: {e}")
         except Exception as e:
-            logger.error(f"Error streaming logs for server {server_id}: {e}")
+            logger.error(f"Unexpected error streaming logs for server {server_id}: {e}")
 
     def _determine_log_type(self, log_line: str) -> str:
         """Determine the type of log message"""
@@ -207,17 +226,25 @@ class WebSocketService:
         """Send initial server status when client connects"""
         try:
             server_manager = minecraft_server_manager.get_server(str(server_id))
-            if server_manager:
-                status = await server_manager.get_status()
-                message = {
-                    "type": "initial_status",
-                    "server_id": server_id,
-                    "timestamp": datetime.now().isoformat(),
-                    "data": status,
-                }
-                await self.connection_manager.send_personal_message(websocket, message)
+            if not server_manager:
+                logger.warning(f"Server manager not found for initial status: {server_id}")
+                return
+
+            # Validate server manager has required methods
+            if not hasattr(server_manager, 'get_status') or not callable(getattr(server_manager, 'get_status')):
+                logger.error(f"Invalid server manager for server {server_id}: missing get_status method")
+                return
+
+            status = await server_manager.get_status()
+            message = {
+                "type": "initial_status",
+                "server_id": server_id,
+                "timestamp": datetime.now().isoformat(),
+                "data": status,
+            }
+            await self.connection_manager.send_personal_message(websocket, message)
         except Exception as e:
-            logger.error(f"Error sending initial status: {e}")
+            logger.error(f"Error sending initial status for server {server_id}: {e}")
 
     async def _handle_message(
         self, websocket: WebSocket, server_id: int, message: dict, user: User, db: Session
@@ -243,7 +270,20 @@ class WebSocketService:
         """Send a command to the server and broadcast the result"""
         try:
             server_manager = minecraft_server_manager.get_server(str(server_id))
-            if server_manager and server_manager.is_running():
+            if not server_manager:
+                logger.warning(f"Server manager not found for command execution: {server_id}")
+                return
+
+            # Validate server manager has required methods
+            if not hasattr(server_manager, 'is_running') or not callable(getattr(server_manager, 'is_running')):
+                logger.error(f"Invalid server manager for server {server_id}: missing is_running method")
+                return
+
+            if not hasattr(server_manager, 'send_command') or not callable(getattr(server_manager, 'send_command')):
+                logger.error(f"Invalid server manager for server {server_id}: missing send_command method")
+                return
+
+            if server_manager.is_running():
                 await server_manager.send_command(command)
 
                 # Broadcast command execution notification
@@ -256,8 +296,10 @@ class WebSocketService:
                 await self.connection_manager.broadcast_server_notification(
                     server_id, notification
                 )
+            else:
+                logger.warning(f"Cannot send command to server {server_id}: server is not running")
         except Exception as e:
-            logger.error(f"Error sending server command: {e}")
+            logger.error(f"Error sending server command '{command}' to server {server_id}: {e}")
 
     async def _monitor_server_status(self):
         """Background task to monitor server status changes"""
@@ -268,11 +310,19 @@ class WebSocketService:
                         server_manager = minecraft_server_manager.get_server(
                             str(server_id)
                         )
-                        if server_manager:
-                            status = await server_manager.get_status()
-                            await self.connection_manager.broadcast_server_status(
-                                server_id, status
-                            )
+                        if not server_manager:
+                            logger.debug(f"Server manager not found for monitoring: {server_id}")
+                            continue
+
+                        # Validate server manager has required methods
+                        if not hasattr(server_manager, 'get_status') or not callable(getattr(server_manager, 'get_status')):
+                            logger.error(f"Invalid server manager for monitoring server {server_id}: missing get_status method")
+                            continue
+
+                        status = await server_manager.get_status()
+                        await self.connection_manager.broadcast_server_status(
+                            server_id, status
+                        )
                     except Exception as e:
                         logger.error(f"Error monitoring server {server_id}: {e}")
 
