@@ -7,6 +7,7 @@ from app.auth.router import router as auth_router
 
 # Import models to ensure they are registered with SQLAlchemy
 from app.backups.router import router as backups_router
+from app.backups.scheduler_router import router as scheduler_router
 from app.core.database import Base, engine
 from app.files.router import router as files_router
 from app.groups.router import router as groups_router
@@ -74,6 +75,7 @@ app.include_router(auth_router, prefix="/api/v1/auth", tags=["auth"])
 app.include_router(users_router, prefix="/api/v1/users", tags=["users"])
 app.include_router(servers_router, prefix="/api/v1/servers", tags=["servers"])
 app.include_router(groups_router, prefix="/api/v1/groups", tags=["groups"])
+app.include_router(scheduler_router, prefix="/api/v1/backups", tags=["backup-scheduler"])
 app.include_router(backups_router, prefix="/api/v1/backups", tags=["backups"])
 app.include_router(templates_router, prefix="/api/v1/templates", tags=["templates"])
 app.include_router(files_router, prefix="/api/v1/files", tags=["files"])

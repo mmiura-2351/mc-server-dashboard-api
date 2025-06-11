@@ -508,10 +508,10 @@ async def create_scheduled_backups(
 # Backup Scheduler Management Endpoints
 
 
-@router.get("/scheduler/status")
+@router.get("/scheduler-legacy/status")
 async def get_scheduler_status(current_user: User = Depends(get_current_user)):
     """
-    Get backup scheduler status (admin only)
+    Get backup scheduler status (admin only) - LEGACY ENDPOINT
 
     Returns the current status of the backup scheduler including
     scheduled servers and their next backup times.
@@ -538,7 +538,7 @@ async def get_scheduler_status(current_user: User = Depends(get_current_user)):
         )
 
 
-@router.post("/scheduler/servers/{server_id}/schedule")
+@router.post("/scheduler-legacy/servers/{server_id}/schedule")
 async def add_server_to_schedule(
     server_id: int,
     interval_hours: int = Query(24, ge=1, le=168, description="Backup interval in hours"),
@@ -547,7 +547,7 @@ async def add_server_to_schedule(
     db: Session = Depends(get_db),
 ):
     """
-    Add server to backup schedule (admin only)
+    Add server to backup schedule (admin only) - LEGACY ENDPOINT
 
     Schedules automatic backups for the specified server.
 
@@ -597,7 +597,7 @@ async def add_server_to_schedule(
         )
 
 
-@router.put("/scheduler/servers/{server_id}/schedule")
+@router.put("/scheduler-legacy/servers/{server_id}/schedule")
 async def update_server_schedule(
     server_id: int,
     interval_hours: Optional[int] = Query(
@@ -611,7 +611,7 @@ async def update_server_schedule(
     db: Session = Depends(get_db),
 ):
     """
-    Update server backup schedule (admin only)
+    Update server backup schedule (admin only) - LEGACY ENDPOINT
 
     Updates the backup schedule settings for a server.
     Creates a new schedule if none exists for the server.
@@ -682,14 +682,14 @@ async def update_server_schedule(
         )
 
 
-@router.get("/scheduler/servers/{server_id}/schedule")
+@router.get("/scheduler-legacy/servers/{server_id}/schedule")
 async def get_server_schedule(
     server_id: int,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     """
-    Get backup schedule for a specific server
+    Get backup schedule for a specific server - LEGACY ENDPOINT
 
     Returns the backup schedule configuration for the specified server.
     Users can view schedules for servers they own, admins can view any schedule.
@@ -731,12 +731,12 @@ async def get_server_schedule(
         )
 
 
-@router.delete("/scheduler/servers/{server_id}/schedule")
+@router.delete("/scheduler-legacy/servers/{server_id}/schedule")
 async def remove_server_from_schedule(
     server_id: int, current_user: User = Depends(get_current_user)
 ):
     """
-    Remove server from backup schedule (admin only)
+    Remove server from backup schedule (admin only) - LEGACY ENDPOINT
 
     Removes a server from the automatic backup schedule.
     """

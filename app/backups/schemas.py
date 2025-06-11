@@ -201,3 +201,81 @@ class BackupRestoreWithTemplateResponse(BaseModel):
     template_id: Optional[int] = None
     template_name: Optional[str] = None
     details: Optional[Dict[str, Any]] = None
+
+
+# Backup Scheduler Schemas
+
+
+class BackupScheduleRequest(BaseModel):
+    """Request schema for creating/updating backup schedules"""
+
+    interval_hours: int = Field(
+        ..., ge=1, le=168, description="Backup interval in hours (1-168)"
+    )
+    max_backups: int = Field(
+        ..., ge=1, le=30, description="Maximum backups to keep (1-30)"
+    )
+    enabled: bool = Field(True, description="Enable/disable the schedule")
+    only_when_running: bool = Field(
+        True, description="Only backup when server is running"
+    )
+
+
+class BackupScheduleUpdateRequest(BaseModel):
+    """Request schema for updating backup schedules (all fields optional)"""
+
+    interval_hours: Optional[int] = Field(
+        None, ge=1, le=168, description="Backup interval in hours (1-168)"
+    )
+    max_backups: Optional[int] = Field(
+        None, ge=1, le=30, description="Maximum backups to keep (1-30)"
+    )
+    enabled: Optional[bool] = Field(None, description="Enable/disable the schedule")
+    only_when_running: Optional[bool] = Field(
+        None, description="Only backup when server is running"
+    )
+
+
+class BackupScheduleResponse(BaseModel):
+    """Response schema for backup schedule information"""
+
+    id: int
+    server_id: int
+    interval_hours: int
+    max_backups: int
+    enabled: bool
+    only_when_running: bool
+    last_backup_at: Optional[datetime] = None
+    next_backup_at: Optional[datetime] = None
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class BackupScheduleLogResponse(BaseModel):
+    """Response schema for backup schedule log entries"""
+
+    id: int
+    server_id: int
+    action: str
+    reason: Optional[str] = None
+    old_config: Optional[Dict[str, Any]] = None
+    new_config: Optional[Dict[str, Any]] = None
+    executed_by_user_id: Optional[int] = None
+    executed_by_username: Optional[str] = None
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class SchedulerStatusResponse(BaseModel):
+    """Response schema for scheduler status"""
+
+    is_running: bool
+    total_schedules: int
+    enabled_schedules: int
+    cache_size: int
+    next_execution: Optional[datetime] = None

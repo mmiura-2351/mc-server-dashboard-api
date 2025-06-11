@@ -479,6 +479,10 @@ class NewBackupSchedulerService:
     def cache_size(self) -> int:
         """キャッシュされているスケジュール数"""
         return len(self._schedule_cache)
+    
+    def clear_cache(self) -> None:
+        """キャッシュをクリア（テスト用）"""
+        self._schedule_cache.clear()
 
 
 # シングルトンインスタンス

@@ -311,7 +311,7 @@ class TestBackupRouter:
             }
 
             response = client.get(
-                "/api/v1/backups/scheduler/status", 
+                "/api/v1/backups/scheduler-legacy/status", 
                 headers=get_auth_headers(admin_user.username)
             )
             assert response.status_code == status.HTTP_200_OK
@@ -396,7 +396,7 @@ class TestBackupRouter:
             mock_get_schedule.return_value = mock_schedule
 
             response = client.get(
-                "/api/v1/backups/scheduler/servers/1/schedule",
+                "/api/v1/backups/scheduler-legacy/servers/1/schedule",
                 headers=get_auth_headers(test_user.username),
             )
 
@@ -437,7 +437,7 @@ class TestBackupRouter:
             mock_get_schedule.return_value = None  # No schedule found
 
             response = client.get(
-                "/api/v1/backups/scheduler/servers/1/schedule",
+                "/api/v1/backups/scheduler-legacy/servers/1/schedule",
                 headers=get_auth_headers(test_user.username),
             )
 
@@ -489,7 +489,7 @@ class TestBackupRouter:
             )
 
             response = client.get(
-                "/api/v1/backups/scheduler/servers/1/schedule",
+                "/api/v1/backups/scheduler-legacy/servers/1/schedule",
                 headers=get_auth_headers(test_user.username),
             )
 
@@ -542,7 +542,7 @@ class TestBackupRouter:
             mock_get_schedule.return_value = mock_schedule
 
             response = client.get(
-                "/api/v1/backups/scheduler/servers/1/schedule",
+                "/api/v1/backups/scheduler-legacy/servers/1/schedule",
                 headers=get_auth_headers(admin_user.username),
             )
 
@@ -600,7 +600,7 @@ class TestBackupRouter:
             mock_update_schedule.return_value = None
 
             response = client.put(
-                "/api/v1/backups/scheduler/servers/1/schedule",
+                "/api/v1/backups/scheduler-legacy/servers/1/schedule",
                 params={
                     "interval_hours": 12,
                     "max_backups": 5,
@@ -653,7 +653,7 @@ class TestBackupRouter:
             mock_add_schedule.return_value = None
 
             response = client.put(
-                "/api/v1/backups/scheduler/servers/1/schedule",
+                "/api/v1/backups/scheduler-legacy/servers/1/schedule",
                 params={
                     "interval_hours": 48,
                     "max_backups": 10,
@@ -705,7 +705,7 @@ class TestBackupRouter:
             mock_add_schedule.return_value = None
 
             response = client.put(
-                "/api/v1/backups/scheduler/servers/1/schedule",
+                "/api/v1/backups/scheduler-legacy/servers/1/schedule",
                 headers=get_auth_headers(admin_user.username),
             )
 
@@ -727,7 +727,7 @@ class TestBackupRouter:
     def test_update_server_schedule_server_not_found(self, client, admin_user, db):
         """Test updating schedule for non-existent server"""
         response = client.put(
-            "/api/v1/backups/scheduler/servers/999/schedule",
+            "/api/v1/backups/scheduler-legacy/servers/999/schedule",
             params={"interval_hours": 24},
             headers=get_auth_headers(admin_user.username),
         )
@@ -753,7 +753,7 @@ class TestBackupRouter:
         db.commit()
 
         response = client.put(
-            "/api/v1/backups/scheduler/servers/1/schedule",
+            "/api/v1/backups/scheduler-legacy/servers/1/schedule",
             params={"interval_hours": 24},
             headers=get_auth_headers(test_user.username),
         )
@@ -805,7 +805,7 @@ class TestBackupRouter:
             mock_update_schedule.return_value = None
 
             response = client.put(
-                "/api/v1/backups/scheduler/servers/1/schedule",
+                "/api/v1/backups/scheduler-legacy/servers/1/schedule",
                 params={"max_backups": 10},  # Only update max_backups
                 headers=get_auth_headers(admin_user.username),
             )
