@@ -2,6 +2,16 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## 🔨 Most Important Rule - New Rule Addition Process
+
+When receiving instructions from users that appear to require ongoing compliance (not just one-time implementation):
+
+1. Ask: "Should I make this a standard rule?"
+2. If YES response is received, add it to CLAUDE.md as an additional rule
+3. Apply it as a standard rule for all future interactions
+
+This process enables continuous improvement of project rules and ensures consistent behavior across sessions.
+
 ## Project Overview
 
 This is a comprehensive FastAPI-based backend API for managing multiple Minecraft servers. The system provides user authentication, role-based access control, real-time monitoring, backup management, and complete server lifecycle management covering 46 specific use cases.

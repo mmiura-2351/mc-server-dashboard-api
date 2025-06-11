@@ -1,227 +1,270 @@
-# Minecraft Server Dashboard API - システム概要
+# System Overview
 
-## 概要
+## Introduction
 
-Minecraft Server Dashboard APIは、複数のMinecraftサーバーを管理するためのWebベースのダッシュボードAPIです。ユーザー認証、ロールベースアクセス制御、リアルタイム監視機能を備えた包括的なサーバー管理システムを提供します。
+The Minecraft Server Dashboard API is a comprehensive FastAPI-based backend system for managing multiple Minecraft servers. It provides user authentication, role-based access control, real-time monitoring, automated backups, and complete server lifecycle management.
 
-## 🎯 システム目標
+## Key Features
 
-本システムは46の使用ケース（UC1-46）を完全にカバーし、以下の主要機能を提供します：
+### 🖥️ Multi-Server Management
+- Create and manage multiple Minecraft servers simultaneously
+- Support for Vanilla, Paper, Spigot, Forge, and Fabric server types
+- Version support from Minecraft 1.8 to 1.21.5
+- Real-time server status monitoring and control
 
-1. **マルチサーバー管理** - 複数のMinecraftサーバーの同時管理
-2. **プレイヤー管理** - OP/ホワイトリストグループの動的管理
-3. **リアルタイム監視** - サーバー状態とログのリアルタイム更新
-4. **自動バックアップ** - スケジュール型バックアップと復元
-5. **テンプレートシステム** - 再利用可能なサーバー設定
-6. **ファイル管理** - 包括的なファイル操作
-7. **セキュア認証** - JWT認証とロールベースアクセス制御
+### 👥 Player Management
+- Dynamic OP and whitelist group management
+- Multi-server group attachment with priority levels
+- Minecraft API integration for player data validation
+- Centralized player permission management
 
-## 🏗️ アーキテクチャ
+### 💾 Backup System
+- Automated scheduled backups
+- Manual backup creation with metadata
+- Server restoration from backups
+- Template creation from backups
 
-### 技術スタック
-- **フレームワーク**: FastAPI (Python 3.13+)
-- **データベース**: SQLite (SQLAlchemy ORM)
-- **認証**: JWT トークンベース認証
-- **リアルタイム通信**: WebSocket
-- **ファイル管理**: ローカルファイルシステム (aiofiles)
-- **プロセス管理**: Pythonサブプロセス
-- **HTTP クライアント**: aiohttp
-- **パッケージ管理**: uv
+### 📁 File Management
+- Secure file operations within server directories
+- File version history tracking
+- Upload/download capabilities
+- File search and batch operations
 
-### コア構造
+### 🔐 Security & Authentication
+- JWT-based authentication with refresh tokens
+- Three-tier role system (User, Operator, Admin)
+- Resource ownership validation
+- Comprehensive audit logging
+
+### 🔌 Real-time Features
+- WebSocket-based server log streaming
+- Live server status updates
+- System-wide notifications
+- Real-time console interaction
+
+## Architecture
+
+### Technology Stack
+- **Framework**: FastAPI (Python 3.13+)
+- **Database**: SQLite with SQLAlchemy ORM
+- **Authentication**: JWT tokens with PyJWT
+- **Real-time**: WebSockets
+- **Process Management**: Python subprocess
+- **File Operations**: aiofiles for async I/O
+- **Package Management**: uv
+
+### System Architecture
+
 ```
-app/
-├── main.py                    # FastAPIアプリケーションエントリポイント
-├── core/                      # コア設定とデータベース
-│   ├── config.py             # Pydantic設定管理
-│   └── database.py           # SQLAlchemy設定
-├── auth/                      # 認証システム
-│   ├── auth.py              # JWT認証ロジック
-│   ├── dependencies.py      # 認証依存関係
-│   └── router.py            # 認証エンドポイント
-├── users/                     # ユーザー管理
-├── servers/                   # サーバー管理
-├── groups/                    # グループ管理
-├── backups/                   # バックアップシステム
-├── templates/                 # テンプレートシステム
-├── files/                     # ファイル管理
-├── websockets/                # WebSocket通信
-└── services/                  # ビジネスロジック層
-```
-
-### アーキテクチャパターン
-
-#### レイヤード・アーキテクチャ
-1. **プレゼンテーション層** - FastAPIルーター
-2. **ビジネスロジック層** - Serviceクラス
-3. **データアクセス層** - SQLAlchemyモデル
-4. **インフラストラクチャ層** - ファイルシステム、プロセス管理
-
-#### 依存性注入
-- データベースセッション: `Depends(get_db)`
-- 認証: `Depends(get_current_user)`
-- サービス層: ビジネスロジック分離
-
-## 🔐 セキュリティアーキテクチャ
-
-### 認証・認可
-- **JWT認証**: セキュアなトークンベース認証
-- **ロールベースアクセス制御**: admin/operator/user の3段階権限
-- **リソースアクセス制御**: 所有者ベースのアクセス制限
-
-### データ保護
-- **パスワードハッシュ**: bcryptによる安全なパスワード保存
-- **ファイルパス検証**: ディレクトリトラバーサル攻撃対策
-- **入力検証**: Pydanticモデルによる厳密な検証
-- **監査ログ**: 全操作の追跡記録
-
-## 📊 データモデル
-
-### エンティティ関係図
-```
-Users (1) ←→ (N) Servers
-Users (1) ←→ (N) Groups  
-Users (1) ←→ (N) Templates
-Servers (1) ←→ (N) Backups
-Servers (N) ←→ (N) Groups (via ServerGroups)
-Templates (1) ←→ (N) Servers
+┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
+│   Web Client    │────▶│   FastAPI App   │────▶│    Database     │
+│   (Frontend)    │◀────│    (Backend)    │◀────│    (SQLite)     │
+└─────────────────┘     └─────────────────┘     └─────────────────┘
+                               │
+                               ├── Services Layer
+                               │   ├── MinecraftServer
+                               │   ├── BackupService
+                               │   ├── GroupService
+                               │   └── FileService
+                               │
+                               └── Infrastructure
+                                   ├── File System
+                                   ├── Process Manager
+                                   └── WebSocket Manager
 ```
 
-### 主要エンティティ
-1. **Users** - ユーザー情報（認証、ロール、承認状態）
-2. **Servers** - サーバー情報（設定、状態、ファイルパス）
-3. **Groups** - グループ情報（OP/ホワイトリスト、プレイヤーリスト）
-4. **Templates** - テンプレート情報（設定、デフォルトグループ）
-5. **Backups** - バックアップ情報（メタデータ、ファイルパス）
-6. **AuditLog** - 監査ログ（ユーザーアクション追跡）
+### Core Components
 
-## 🚀 機能詳細
+#### 1. Application Layer (`app/`)
+- **Routers**: HTTP endpoint definitions
+- **Schemas**: Pydantic models for validation
+- **Dependencies**: Dependency injection setup
 
-### 1. サーバー管理（UC1-11）
-- **マルチサーバー対応**: 複数のMinecraftサーバーを同時管理
-- **サーバータイプサポート**: Vanilla、Forge、Paper対応
-- **バージョン管理**: Minecraft 1.8～1.21.5対応
-- **プロセス制御**: 開始、停止、再起動、コマンド実行
-- **設定管理**: server.propertiesの動的更新
+#### 2. Business Logic Layer (`app/services/`)
+- **MinecraftServer**: Server process management
+- **BackupService**: Backup operations
+- **BackupScheduler**: Automated backup scheduling
+- **GroupService**: Player group management
+- **FileManagementService**: File operations
+- **WebSocketService**: Real-time communication
 
-### 2. グループ管理（UC12-19）
-- **OPグループ**: オペレーター権限の管理
-- **ホワイトリストグループ**: アクセス許可プレイヤーの管理
-- **マルチサーバー連携**: 複数サーバーへのグループ適用
-- **動的更新**: グループ変更の即座サーバー反映
+#### 3. Data Layer
+- **Models**: SQLAlchemy ORM models
+- **Database**: SQLite with migrations
+- **File Storage**: Local filesystem for servers and backups
 
-### 3. リアルタイム監視（UC20）
-- **サーバー状態監視**: プロセス状態のリアルタイム追跡
-- **ログストリーミング**: WebSocketによるコンソール出力ストリーム
-- **通知システム**: システム全体の通知配信
+#### 4. Security Layer
+- **Authentication**: JWT token management
+- **Authorization**: Role-based access control
+- **Validation**: Input sanitization and path validation
 
-### 4. バックアップシステム（UC21-28）
-- **自動バックアップ**: スケジュール型バックアップ
-- **手動バックアップ**: オンデマンドバックアップ作成
-- **復元機能**: バックアップからのサーバー復元
-- **テンプレート作成**: バックアップからのテンプレート生成
+## Data Model
 
-### 5. テンプレートシステム（UC7, UC37）
-- **サーバーテンプレート**: 再利用可能なサーバー設定
-- **カスタムテンプレート**: 独自設定テンプレートの作成
-- **公開/非公開**: テンプレートの共有設定
-- **クローン機能**: 既存テンプレートの複製
+### Core Entities
+1. **Users**: User accounts with roles and permissions
+2. **Servers**: Minecraft server instances
+3. **Groups**: Player permission groups (OP/whitelist)
+4. **Backups**: Server backup records
+5. **Templates**: Reusable server configurations
+6. **FileEditHistory**: File version tracking
+7. **AuditLogs**: System activity logging
 
-### 6. ファイル管理（UC29-37）
-- **RESTfulAPI**: 直感的なファイル操作インターフェース
-- **CRUD操作**: 読み取り、書き込み、削除操作
-- **ディレクトリ管理**: フォルダ作成と管理
-- **ファイル検索**: 名前・内容による検索
-- **転送機能**: アップロード/ダウンロード
+### Relationships
+- Users own Servers, Groups, and Templates
+- Servers can have multiple Backups
+- Groups can be attached to multiple Servers
+- Templates can be used to create new Servers
+- All actions are tracked in AuditLogs
 
-### 7. ユーザー管理（UC38-46）
-- **ユーザー認証**: 登録、ログイン、プロフィール管理
-- **承認システム**: 管理者による新規ユーザー承認
-- **ロール管理**: user/operator/admin の権限管理
-- **アカウント管理**: アクティベーション、非アクティブ化
+## API Design
 
-## 🌐 API設計
+### RESTful Principles
+- Resource-oriented URLs
+- HTTP methods for operations (GET, POST, PUT, DELETE)
+- Consistent response formats
+- Proper HTTP status codes
 
-### RESTful設計原則
-- **リソース指向**: 明確なリソース識別
-- **HTTPメソッド**: 適切なHTTPメソッド使用
-- **ステータスコード**: 標準HTTPステータスコード
-- **統一URL構造**: `/api/v1/` プレフィックス
-
-### レスポンス形式
-```json
-{
-  "id": 1,
-  "name": "resource_name",
-  "status": "active",
-  "created_at": "2024-01-01T00:00:00Z"
-}
+### API Structure
+```
+/api/v1/
+├── /auth         - Authentication endpoints
+├── /users        - User management
+├── /servers      - Server operations
+├── /groups       - Group management
+├── /backups      - Backup operations
+├── /templates    - Template management
+├── /files        - File operations
+└── /ws           - WebSocket connections
 ```
 
-### エラーハンドリング
-```json
-{
-  "detail": "Descriptive error message"
-}
-```
+## Security Model
 
-## 📈 パフォーマンス最適化
+### Authentication Flow
+1. User registers and awaits admin approval
+2. Admin approves user account
+3. User logs in and receives JWT tokens
+4. Tokens used for API authentication
+5. Refresh token for token renewal
 
-### データベース最適化
-- **インデックス**: 頻繁なクエリのインデックス最適化
-- **ページネーション**: 大量データの効率的処理
-- **クエリ最適化**: N+1問題の回避
+### Authorization Levels
+- **User**: Basic access to assigned resources
+- **Operator**: Can create and manage servers
+- **Admin**: Full system access
 
-### 非同期処理
-- **ファイル操作**: 非同期I/O処理
-- **プロセス管理**: 非同期プロセス監視
-- **WebSocket**: 効率的なリアルタイム通信
+### Security Features
+- Password hashing with bcrypt
+- JWT tokens with expiration
+- Path traversal protection
+- Input validation and sanitization
+- Rate limiting on sensitive endpoints
 
-## 🔧 開発・運用
+## Development
 
-### 開発環境
+### Environment Setup
 ```bash
-# アプリケーション起動
+# Install dependencies
+uv sync
+
+# Start development server
 uv run fastapi dev
 
-# テスト実行
+# Run tests
 uv run pytest
 
-# コード品質チェック
+# Code quality checks
 uv run ruff check app/
 uv run black app/
-
-# カバレッジ測定
-uv run coverage run -m pytest && uv run coverage report
-
-# ブラウザテスト環境
-./testing/scripts/test_server.sh start   # テスト環境開始
-./testing/scripts/test_server.sh stop    # テスト環境停止
 ```
 
-### 設定管理
-```env
+### Configuration
+Environment variables in `.env`:
+```
 SECRET_KEY=your-secret-key
 DATABASE_URL=sqlite:///./app.db
+ALGORITHM=HS256
+ACCESS_TOKEN_EXPIRE_MINUTES=30
 ```
 
-### 品質保証
-- **包括的テスト**: 主要機能の完全テストカバレッジ
-- **コード品質**: Ruff linting + Black formatting
-- **型安全性**: Pydanticモデルによる型チェック
-- **セキュリティ**: 脆弱性対策の実装
+## Use Cases Coverage
 
-## 🎯 使用ケース対応表
+The system implements 46 comprehensive use cases:
 
-| カテゴリ | 使用ケース | 実装状況 | 主要エンドポイント |
-|---------|-----------|---------|-------------------|
-| サーバー管理 | UC1-7 | ✅ 完了 | `/api/v1/servers/*` |
-| サーバー操作 | UC8-11 | ✅ 完了 | `/api/v1/servers/{id}/start` |
-| プレイヤー管理 | UC12-19 | ✅ 完了 | `/api/v1/groups/*` |
-| 監視 | UC20 | ✅ 完了 | WebSocket `/api/v1/ws/*` |
-| バックアップ | UC21-28 | ✅ 完了 | `/api/v1/backups/*` |
-| ファイル管理 | UC29-37 | ✅ 完了 | `/api/v1/files/*` |
-| アカウント管理 | UC38-42 | ✅ 完了 | `/api/v1/auth/*` |
-| 管理機能 | UC43-46 | ✅ 完了 | `/api/v1/users/*` |
+### Server Management (UC1-11)
+- Server creation, configuration, deletion
+- Start, stop, restart operations
+- Console command execution
+- Status monitoring
 
-この実装は、要求された46の使用ケースを完全にカバーし、堅牢なMinecraftサーバー管理システムを提供します。
+### Player Management (UC12-19)
+- Group creation and management
+- Player addition/removal
+- Server attachment/detachment
+- Dynamic configuration updates
+
+### Monitoring (UC20)
+- Real-time server status
+- Log streaming
+- System notifications
+
+### Backup Management (UC21-28)
+- Manual and scheduled backups
+- Backup restoration
+- Template creation from backups
+- Backup statistics
+
+### File Management (UC29-37)
+- File CRUD operations
+- Directory management
+- File search
+- Upload/download
+- Version history
+
+### Account Management (UC38-42)
+- User registration
+- Profile management
+- Password changes
+- Account deletion
+
+### Administrative Functions (UC43-46)
+- User approval
+- Role management
+- System synchronization
+- Cache management
+
+## Performance Considerations
+
+### Optimization Strategies
+- Database indexing for frequent queries
+- Pagination for large datasets
+- Async I/O for file operations
+- Connection pooling for WebSockets
+- JAR file caching for server downloads
+
+### Scalability
+- Stateless API design
+- Horizontal scaling ready
+- Database optimization
+- Efficient file storage
+
+## Monitoring & Maintenance
+
+### System Health
+- Server process monitoring
+- Database connection checks
+- File system space monitoring
+- Backup verification
+
+### Logging
+- Application logs
+- Audit logs for security
+- Error tracking
+- Performance metrics
+
+## Future Enhancements
+
+Potential areas for expansion:
+- Plugin management system
+- Advanced server metrics
+- Cluster support
+- External storage backends
+- Advanced scheduling features

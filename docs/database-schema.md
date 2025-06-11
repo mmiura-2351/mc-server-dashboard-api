@@ -1,268 +1,194 @@
 # Database Schema
 
-This document defines the database schema for the Minecraft Server Management Dashboard.
+## Overview
 
-## Entity Relationship Overview
+The Minecraft Server Dashboard API uses SQLite with SQLAlchemy ORM. The database consists of 10 tables managing users, servers, groups, backups, templates, and system operations.
+
+## Entity Relationships
 
 ```
 Users (1) ←→ (N) Servers
 Users (1) ←→ (N) Groups  
 Users (1) ←→ (N) Templates
+Users (1) ←→ (N) RefreshTokens
 Servers (1) ←→ (N) Backups
-Servers (N) ←→ (N) Groups (via ServerGroups junction table)
-Templates (1) ←→ (N) Servers
+Servers (1) ←→ (N) ServerConfigurations
+Servers (1) ←→ (N) FileEditHistory
+Servers (N) ←→ (N) Groups (via ServerGroups)
+All entities → AuditLogs
 ```
 
-## Table Definitions
+## Tables
 
-### Users Table
-```sql
-CREATE TABLE users (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    username VARCHAR(50) UNIQUE NOT NULL,
-    email VARCHAR(255) UNIQUE NOT NULL,
-    hashed_password VARCHAR(255) NOT NULL,
-    role ENUM('admin', 'operator', 'user') DEFAULT 'user',
-    is_active BOOLEAN DEFAULT TRUE,
-    is_approved BOOLEAN DEFAULT FALSE,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-);
-```
+### users
+User accounts and authentication
+- `id` (INTEGER, PK)
+- `username` (VARCHAR 50, UNIQUE)
+- `email` (VARCHAR 255, UNIQUE)
+- `full_name` (VARCHAR 255)
+- `hashed_password` (VARCHAR 255)
+- `role` (ENUM: user/operator/admin)
+- `is_active` (BOOLEAN)
+- `is_approved` (BOOLEAN)
+- `created_at` (DATETIME)
+- `updated_at` (DATETIME)
 
-### Servers Table
-```sql
-CREATE TABLE servers (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name VARCHAR(100) NOT NULL,
-    description TEXT,
-    minecraft_version VARCHAR(20) NOT NULL,
-    server_type ENUM('vanilla', 'forge', 'paper') NOT NULL,
-    status ENUM('stopped', 'starting', 'running', 'stopping', 'error') DEFAULT 'stopped',
-    directory_path VARCHAR(500) NOT NULL,
-    port INTEGER DEFAULT 25565,
-    max_memory INTEGER DEFAULT 1024, -- MB
-    max_players INTEGER DEFAULT 20,
-    owner_id INTEGER NOT NULL,
-    template_id INTEGER NULL,
-    is_deleted BOOLEAN DEFAULT FALSE,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (owner_id) REFERENCES users(id),
-    FOREIGN KEY (template_id) REFERENCES templates(id)
-);
-```
+### refresh_tokens
+JWT refresh token management
+- `id` (INTEGER, PK)
+- `token` (VARCHAR 255, UNIQUE)
+- `user_id` (INTEGER, FK → users)
+- `expires_at` (DATETIME)
+- `created_at` (DATETIME)
 
-### Groups Table
-```sql
-CREATE TABLE groups (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name VARCHAR(100) NOT NULL,
-    description TEXT,
-    type ENUM('op', 'whitelist') NOT NULL,
-    players JSON NOT NULL, -- Array of player objects
-    owner_id INTEGER NOT NULL,
-    is_template BOOLEAN DEFAULT FALSE,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (owner_id) REFERENCES users(id)
-);
-```
+### servers
+Minecraft server instances
+- `id` (INTEGER, PK)
+- `name` (VARCHAR 100)
+- `description` (TEXT)
+- `minecraft_version` (VARCHAR 20)
+- `server_type` (ENUM: vanilla/paper/spigot/forge/fabric)
+- `status` (ENUM: stopped/starting/running/stopping/error)
+- `directory_path` (VARCHAR 500)
+- `port` (INTEGER)
+- `max_memory` (INTEGER)
+- `min_memory` (INTEGER)
+- `max_players` (INTEGER)
+- `owner_id` (INTEGER, FK → users)
+- `template_id` (INTEGER, FK → templates)
+- `is_deleted` (BOOLEAN)
+- `created_at` (DATETIME)
+- `updated_at` (DATETIME)
 
-### ServerGroups Table (Junction)
-```sql
-CREATE TABLE server_groups (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    server_id INTEGER NOT NULL,
-    group_id INTEGER NOT NULL,
-    priority INTEGER DEFAULT 0,
-    attached_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (server_id) REFERENCES servers(id) ON DELETE CASCADE,
-    FOREIGN KEY (group_id) REFERENCES groups(id) ON DELETE CASCADE,
-    UNIQUE(server_id, group_id)
-);
-```
+### groups
+Player groups for OP/whitelist management
+- `id` (INTEGER, PK)
+- `name` (VARCHAR 100)
+- `description` (TEXT)
+- `group_type` (ENUM: op/whitelist)
+- `players` (JSON) - Array of player objects
+- `owner_id` (INTEGER, FK → users)
+- `is_template` (BOOLEAN)
+- `created_at` (DATETIME)
+- `updated_at` (DATETIME)
 
-### Templates Table
-```sql
-CREATE TABLE templates (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name VARCHAR(100) NOT NULL,
-    description TEXT,
-    minecraft_version VARCHAR(20) NOT NULL,
-    server_type ENUM('vanilla', 'forge', 'paper') NOT NULL,
-    configuration JSON NOT NULL, -- server.properties and other settings
-    default_groups JSON, -- Default group attachments
-    created_by INTEGER NOT NULL,
-    is_public BOOLEAN DEFAULT FALSE,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (created_by) REFERENCES users(id)
-);
-```
+### server_groups
+Junction table for server-group relationships
+- `id` (INTEGER, PK)
+- `server_id` (INTEGER, FK → servers)
+- `group_id` (INTEGER, FK → groups)
+- `priority` (INTEGER)
+- `attached_at` (DATETIME)
+- UNIQUE(server_id, group_id)
 
-### Backups Table
-```sql
-CREATE TABLE backups (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    server_id INTEGER NOT NULL,
-    name VARCHAR(100) NOT NULL,
-    description TEXT,
-    file_path VARCHAR(500) NOT NULL,
-    file_size BIGINT NOT NULL, -- bytes
-    backup_type ENUM('manual', 'scheduled', 'pre_update') DEFAULT 'manual',
-    status ENUM('creating', 'completed', 'failed') DEFAULT 'creating',
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (server_id) REFERENCES servers(id)
-);
-```
+### backups
+Server backup records
+- `id` (INTEGER, PK)
+- `server_id` (INTEGER, FK → servers)
+- `name` (VARCHAR 100)
+- `description` (TEXT)
+- `file_path` (VARCHAR 500)
+- `file_size` (BIGINT)
+- `metadata` (JSON)
+- `backup_type` (ENUM: manual/scheduled/pre_update)
+- `status` (ENUM: creating/completed/failed)
+- `created_at` (DATETIME)
 
-### ServerConfigurations Table
-```sql
-CREATE TABLE server_configurations (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    server_id INTEGER NOT NULL,
-    configuration_key VARCHAR(100) NOT NULL,
-    configuration_value TEXT NOT NULL,
-    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (server_id) REFERENCES servers(id) ON DELETE CASCADE,
-    UNIQUE(server_id, configuration_key)
-);
-```
+### server_configurations
+Key-value configuration storage
+- `id` (INTEGER, PK)
+- `server_id` (INTEGER, FK → servers)
+- `configuration_key` (VARCHAR 100)
+- `configuration_value` (TEXT)
+- `updated_at` (DATETIME)
+- UNIQUE(server_id, configuration_key)
 
-### AuditLog Table
-```sql
-CREATE TABLE audit_logs (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id INTEGER,
-    action VARCHAR(100) NOT NULL,
-    resource_type VARCHAR(50) NOT NULL,
-    resource_id INTEGER,
-    details JSON,
-    ip_address VARCHAR(45),
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (user_id) REFERENCES users(id)
-);
-```
+### templates
+Reusable server configurations
+- `id` (INTEGER, PK)
+- `name` (VARCHAR 100)
+- `description` (TEXT)
+- `minecraft_version` (VARCHAR 20)
+- `server_type` (ENUM: vanilla/paper/spigot/forge/fabric)
+- `configuration` (JSON)
+- `created_by` (INTEGER, FK → users)
+- `is_public` (BOOLEAN)
+- `usage_count` (INTEGER)
+- `created_at` (DATETIME)
+- `updated_at` (DATETIME)
 
-## Indexes
+### file_edit_history
+File version tracking
+- `id` (INTEGER, PK)
+- `server_id` (INTEGER, FK → servers)
+- `file_path` (VARCHAR 500)
+- `content` (TEXT)
+- `content_hash` (VARCHAR 64)
+- `version` (INTEGER)
+- `edited_by` (INTEGER, FK → users)
+- `comment` (TEXT)
+- `file_size` (INTEGER)
+- `created_at` (DATETIME)
+- INDEX(server_id, file_path, version)
 
-### Performance Indexes
-```sql
-CREATE INDEX idx_users_username ON users(username);
-CREATE INDEX idx_users_email ON users(email);
-CREATE INDEX idx_users_role ON users(role);
-CREATE INDEX idx_users_is_approved ON users(is_approved);
+### audit_logs
+System activity tracking
+- `id` (INTEGER, PK)
+- `user_id` (INTEGER, FK → users)
+- `action` (VARCHAR 100)
+- `resource_type` (VARCHAR 50)
+- `resource_id` (INTEGER)
+- `details` (JSON)
+- `ip_address` (VARCHAR 45)
+- `created_at` (DATETIME)
 
-CREATE INDEX idx_servers_owner_id ON servers(owner_id);
-CREATE INDEX idx_servers_status ON servers(status);
-CREATE INDEX idx_servers_is_deleted ON servers(is_deleted);
-CREATE INDEX idx_servers_template_id ON servers(template_id);
-
-CREATE INDEX idx_groups_owner_id ON groups(owner_id);
-CREATE INDEX idx_groups_type ON groups(type);
-CREATE INDEX idx_groups_name ON groups(name);
-
-CREATE INDEX idx_server_groups_server_id ON server_groups(server_id);
-CREATE INDEX idx_server_groups_group_id ON server_groups(group_id);
-
-CREATE INDEX idx_backups_server_id ON backups(server_id);
-CREATE INDEX idx_backups_created_at ON backups(created_at);
-CREATE INDEX idx_backups_status ON backups(status);
-
-CREATE INDEX idx_templates_created_by ON templates(created_by);
-CREATE INDEX idx_templates_is_public ON templates(is_public);
-
-CREATE INDEX idx_audit_logs_user_id ON audit_logs(user_id);
-CREATE INDEX idx_audit_logs_action ON audit_logs(action);
-CREATE INDEX idx_audit_logs_created_at ON audit_logs(created_at);
-```
-
-## Data Types and Constraints
+## Key Features
 
 ### JSON Field Structures
 
-#### Groups.players
+**groups.players**
 ```json
-[
-    {
-        "uuid": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
-        "username": "player_name",
-        "added_at": "2024-01-01T00:00:00Z"
-    }
-]
+[{
+  "uuid": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
+  "username": "player_name",
+  "added_at": "2024-01-01T00:00:00Z"
+}]
 ```
 
-#### Templates.configuration
+**templates.configuration**
 ```json
 {
-    "server_properties": {
-        "difficulty": "normal",
-        "gamemode": "survival",
-        "max_players": 20,
-        "pvp": true,
-        "spawn_protection": 16
-    },
-    "jvm_args": ["-Xmx2G", "-Xms1G"],
-    "plugins": ["plugin1", "plugin2"]
+  "server_properties": {
+    "difficulty": "normal",
+    "gamemode": "survival"
+  },
+  "jvm_args": ["-Xmx2G", "-Xms1G"]
 }
 ```
 
-#### Templates.default_groups
+**backups.metadata**
 ```json
 {
-    "op_groups": [1, 2],
-    "whitelist_groups": [3, 4]
+  "minecraft_version": "1.20.1",
+  "world_size": 1234567890,
+  "player_data_included": true
 }
 ```
 
-#### AuditLog.details
-```json
-{
-    "old_value": "previous_state",
-    "new_value": "new_state",
-    "affected_fields": ["field1", "field2"],
-    "metadata": {}
-}
-```
+### Indexes
+- User lookups: username, email, role, is_approved
+- Server queries: owner_id, status, is_deleted
+- Group searches: owner_id, group_type, name
+- Performance: foreign keys, timestamps, status fields
 
-## Migration Strategy
-
-### Initial Setup
-1. Create tables in dependency order
-2. Insert default admin user
-3. Create default templates
-4. Set up indexes
-
-### Version Updates
-- Use SQLAlchemy migrations for schema changes
-- Backup database before major migrations
-- Test migrations on development data
+### Constraints
+- Cascade deletes for dependent records
+- Unique constraints on critical fields
+- Foreign key integrity
+- Soft delete support on servers
 
 ## Security Considerations
-
-### Data Protection
-- Hash passwords using bcrypt
-- Encrypt sensitive configuration values
-- Sanitize JSON inputs
-- Validate foreign key relationships
-
-### Access Control
-- Row-level security for user-owned resources
-- Admin override capabilities
+- Passwords hashed with bcrypt
+- Row-level security through ownership checks
 - Audit logging for all modifications
-- Soft delete for data retention
-
-## Performance Considerations
-
-### Query Optimization
-- Use appropriate indexes for common queries
-- Implement pagination for large result sets
-- Cache frequently accessed configuration data
-- Optimize JSON field queries
-
-### Scalability
-- Consider partitioning for audit logs
-- Implement backup cleanup policies
-- Monitor index usage and performance
-- Plan for horizontal scaling if needed
+- Content deduplication via SHA256 hashing
