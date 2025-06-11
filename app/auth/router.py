@@ -45,7 +45,7 @@ def login(
 
         return TokenResponse(access_token=access_token, refresh_token=refresh_token)
     except HTTPException:
-        # UserService.authenticate_userで投げられたHTTPExceptionをそのまま再発生
+        # Re-raise HTTPException thrown by UserService.authenticate_user
         raise
 
 
@@ -65,7 +65,7 @@ def refresh_access_token(request: RefreshTokenRequest, db: DatabaseSession):
             status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found or inactive"
         )
 
-    # 新しいアクセストークンとリフレッシュトークンを生成
+    # Generate new access token and refresh token
     access_token = create_access_token(data={"sub": user.username})
     new_refresh_token = create_refresh_token(user.id, db)
 

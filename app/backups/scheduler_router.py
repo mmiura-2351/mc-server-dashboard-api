@@ -1,6 +1,6 @@
 """
-新しいバックアップスケジューラーAPIエンドポイント
-サーバー所有者と管理者のアクセス許可対応
+New backup scheduler API endpoints
+Server owner and admin access permission support
 """
 from typing import List
 

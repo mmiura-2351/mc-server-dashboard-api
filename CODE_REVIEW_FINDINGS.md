@@ -441,7 +441,7 @@ The Minecraft Server Dashboard API is a solid, production-ready application with
 ### 🔴 Critical Priority (Week 1-2)
 **Impact: High | Difficulty: Low-Medium**
 
-- [ ] **CRITICAL-1**: Remove Japanese comments and standardize all code to English
+- [x] **CRITICAL-1**: Remove Japanese comments and standardize all code to English
   - Files: `app/backups/scheduler_router.py`, `app/auth/router.py`
   - Impact: High (production readiness)
   - Difficulty: Low

@@ -1,6 +1,6 @@
 """
-新しいBackupSchedulerService実装
-データベースベースの永続化対応バックアップスケジューラー
+New BackupSchedulerService implementation
+Database-based persistent backup scheduler
 """
 
 import asyncio
@@ -16,16 +16,16 @@ from app.services.minecraft_server import minecraft_server_manager
 
 class BackupSchedulerService:
     """
-    データベース永続化対応のバックアップスケジューラー
+    Database persistence-compatible backup scheduler
     """
 
     def __init__(self):
         self._running = False
         self._task: Optional[asyncio.Task] = None
-        self._schedule_cache: Dict[int, BackupSchedule] = {}  # パフォーマンス用キャッシュ
+        self._schedule_cache: Dict[int, BackupSchedule] = {}  # Performance cache
 
     # ===================
-    # スケジュール管理
+    # Schedule management
     # ===================
 
     async def create_schedule(
@@ -39,24 +39,24 @@ class BackupSchedulerService:
         executed_by_user_id: Optional[int] = None,
     ) -> BackupSchedule:
         """
-        新しいバックアップスケジュールを作成
+        Create new backup schedule
 
         Args:
-            db: データベースセッション
-            server_id: サーバーID
-            interval_hours: バックアップ間隔（時間）
-            max_backups: 保持するバックアップ数
-            enabled: スケジュールの有効/無効
-            only_when_running: サーバー稼働中のみ実行するか
-            executed_by_user_id: 実行者のユーザーID（ログ用）
+            db: Database session
+            server_id: Server ID
+            interval_hours: Backup interval (hours)
+            max_backups: Number of backups to retain
+            enabled: Schedule enabled/disabled
+            only_when_running: Execute only when server is running
+            executed_by_user_id: User ID of the executor (for logging)
 
         Returns:
-            作成されたBackupSchedule
+            Created BackupSchedule
 
         Raises:
-            ValueError: 既にスケジュールが存在する場合
+            ValueError: When a schedule already exists
         """
-        # 既存スケジュールの確認
+        # Check for existing schedule
         existing_schedule = (
             db.query(BackupSchedule).filter(BackupSchedule.server_id == server_id).first()
         )
@@ -64,7 +64,7 @@ class BackupSchedulerService:
         if existing_schedule:
             raise ValueError(f"Server {server_id} already has a backup schedule")
 
-        # サーバーの存在確認
+        # Check server existence
         server = (
             db.query(Server)
             .filter(Server.id == server_id, Server.is_deleted.is_(False))
@@ -74,11 +74,11 @@ class BackupSchedulerService:
         if not server:
             raise ValueError(f"Server {server_id} not found or deleted")
 
-        # 次回バックアップ時刻を計算
+        # Calculate next backup time
         now = datetime.utcnow()
         next_backup_at = now + timedelta(hours=interval_hours)
 
-        # スケジュール作成
+        # Create schedule
         schedule = BackupSchedule(
             server_id=server_id,
             interval_hours=interval_hours,
@@ -92,10 +92,10 @@ class BackupSchedulerService:
         db.commit()
         db.refresh(schedule)
 
-        # キャッシュ更新
+        # Update cache
         self._schedule_cache[server_id] = schedule
 
-        # ログ作成
+        # Create log
         await self._log_schedule_action(
             db=db,
             server_id=server_id,
@@ -123,24 +123,24 @@ class BackupSchedulerService:
         executed_by_user_id: Optional[int] = None,
     ) -> BackupSchedule:
         """
-        既存のバックアップスケジュールを更新
+        Update existing backup schedule
 
         Args:
-            db: データベースセッション
-            server_id: サーバーID
-            interval_hours: バックアップ間隔（時間）
-            max_backups: 保持するバックアップ数
-            enabled: スケジュールの有効/無効
-            only_when_running: サーバー稼働中のみ実行するか
-            executed_by_user_id: 実行者のユーザーID（ログ用）
+            db: Database session
+            server_id: Server ID
+            interval_hours: Backup interval (hours)
+            max_backups: Number of backups to retain
+            enabled: Schedule enabled/disabled
+            only_when_running: Execute only when server is running
+            executed_by_user_id: User ID of the executor (for logging)
 
         Returns:
-            更新されたBackupSchedule
+            Updated BackupSchedule
 
         Raises:
-            ValueError: スケジュールが存在しない場合
+            ValueError: When schedule does not exist
         """
-        # 既存スケジュールの取得
+        # Get existing schedule
         schedule = (
             db.query(BackupSchedule).filter(BackupSchedule.server_id == server_id).first()
         )
@@ -148,7 +148,7 @@ class BackupSchedulerService:
         if not schedule:
             raise ValueError(f"No backup schedule found for server {server_id}")
 
-        # 変更前の設定を保存（ログ用）
+        # Save previous configuration (for logging)
         old_config = {
             "interval_hours": schedule.interval_hours,
             "max_backups": schedule.max_backups,
@@ -156,10 +156,10 @@ class BackupSchedulerService:
             "only_when_running": schedule.only_when_running,
         }
 
-        # 更新実行
+        # Execute update
         if interval_hours is not None:
             schedule.interval_hours = interval_hours
-            # インターバル変更時は次回実行時刻も再計算
+            # Recalculate next execution time when interval changes
             if schedule.last_backup_at:
                 schedule.next_backup_at = schedule.last_backup_at + timedelta(
                     hours=interval_hours
@@ -178,16 +178,16 @@ class BackupSchedulerService:
         if only_when_running is not None:
             schedule.only_when_running = only_when_running
 
-        # updated_atを手動で更新
+        # Manually update updated_at
         schedule.updated_at = datetime.utcnow()
 
         db.commit()
         db.refresh(schedule)
 
-        # キャッシュ更新
+        # Update cache
         self._schedule_cache[server_id] = schedule
 
-        # 変更後の設定
+        # Configuration after changes
         new_config = {
             "interval_hours": schedule.interval_hours,
             "max_backups": schedule.max_backups,
@@ -195,7 +195,7 @@ class BackupSchedulerService:
             "only_when_running": schedule.only_when_running,
         }
 
-        # ログ作成
+        # Create log
         await self._log_schedule_action(
             db=db,
             server_id=server_id,
@@ -212,17 +212,17 @@ class BackupSchedulerService:
         self, db: Session, server_id: int, executed_by_user_id: Optional[int] = None
     ) -> bool:
         """
-        バックアップスケジュールを削除
+        Delete backup schedule
 
         Args:
-            db: データベースセッション
-            server_id: サーバーID
-            executed_by_user_id: 実行者のユーザーID（ログ用）
+            db: Database session
+            server_id: Server ID
+            executed_by_user_id: User ID of the executor (for logging)
 
         Returns:
-            削除成功時True、スケジュールが存在しない場合False
+            True if deletion successful, False if no schedule exists
         """
-        # 既存スケジュールの取得
+        # Get existing schedule
         schedule = (
             db.query(BackupSchedule).filter(BackupSchedule.server_id == server_id).first()
         )
@@ -230,7 +230,7 @@ class BackupSchedulerService:
         if not schedule:
             return False
 
-        # 削除前の設定を保存（ログ用）
+        # Save configuration before deletion (for logging)
         old_config = {
             "interval_hours": schedule.interval_hours,
             "max_backups": schedule.max_backups,
@@ -238,15 +238,15 @@ class BackupSchedulerService:
             "only_when_running": schedule.only_when_running,
         }
 
-        # 削除実行
+        # Execute deletion
         db.delete(schedule)
         db.commit()
 
-        # キャッシュから削除
+        # Remove from cache
         if server_id in self._schedule_cache:
             del self._schedule_cache[server_id]
 
-        # ログ作成
+        # Create log
         await self._log_schedule_action(
             db=db,
             server_id=server_id,
@@ -260,25 +260,25 @@ class BackupSchedulerService:
 
     async def get_schedule(self, db: Session, server_id: int) -> Optional[BackupSchedule]:
         """
-        指定サーバーのバックアップスケジュールを取得
+        Get backup schedule for specified server
 
         Args:
-            db: データベースセッション
-            server_id: サーバーID
+            db: Database session
+            server_id: Server ID
 
         Returns:
-            BackupSchedule またはNone
+            BackupSchedule or None
         """
-        # キャッシュから確認
+        # Check cache
         if server_id in self._schedule_cache:
             return self._schedule_cache[server_id]
 
-        # データベースから取得
+        # Get from database
         schedule = (
             db.query(BackupSchedule).filter(BackupSchedule.server_id == server_id).first()
         )
 
-        # キャッシュに追加
+        # Add to cache
         if schedule:
             self._schedule_cache[server_id] = schedule
 
@@ -288,14 +288,14 @@ class BackupSchedulerService:
         self, db: Session, enabled_only: bool = False
     ) -> List[BackupSchedule]:
         """
-        全バックアップスケジュールを取得
+        Get all backup schedules
 
         Args:
-            db: データベースセッション
-            enabled_only: 有効なスケジュールのみ取得するか
+            db: Database session
+            enabled_only: Whether to get only enabled schedules
 
         Returns:
-            BackupScheduleのリスト
+            List of BackupSchedules
         """
         query = db.query(BackupSchedule)
 
@@ -304,19 +304,19 @@ class BackupSchedulerService:
 
         schedules = query.all()
 
-        # キャッシュ更新
+        # Update cache
         for schedule in schedules:
             self._schedule_cache[schedule.server_id] = schedule
 
         return schedules
 
     # ===================
-    # 実行判定
+    # Execution decision
     # ===================
 
     async def _should_execute_backup(self, schedule: BackupSchedule) -> Tuple[bool, str]:
         """
-        バックアップ実行可否を判定
+        Determine whether backup should be executed
 
         Args:
             schedule: BackupSchedule
@@ -324,20 +324,20 @@ class BackupSchedulerService:
         Returns:
             (should_execute: bool, reason: str)
         """
-        # 1. スケジュール有効性チェック
+        # 1. Schedule validity check
         if not schedule.enabled:
             return False, "Schedule is disabled"
 
-        # 2. 実行時刻チェック
+        # 2. Execution time check
         now = datetime.utcnow()
         if schedule.next_backup_at and now < schedule.next_backup_at:
             return False, f"Not yet time (next: {schedule.next_backup_at})"
 
-        # 3. サーバー存在チェック
-        # Note: ここではDBアクセスを避けてschedule.serverリレーションを使用想定
-        # 実際のDBアクセスが必要な場合は呼び出し元で事前チェック
+        # 3. Server existence check
+        # Note: DB access is avoided here, expected to use schedule.server relation
+        # If actual DB access is needed, pre-check should be done by caller
 
-        # 4. サーバー状態チェック（新機能）
+        # 4. Server status check (new feature)
         if schedule.only_when_running:
             try:
                 status = minecraft_server_manager.get_server_status(schedule.server_id)
@@ -350,13 +350,13 @@ class BackupSchedulerService:
 
     async def get_due_schedules(self, db: Session) -> List[BackupSchedule]:
         """
-        実行予定のバックアップスケジュールを取得
+        Get backup schedules due for execution
 
         Args:
-            db: データベースセッション
+            db: Database session
 
         Returns:
-            実行予定のBackupScheduleリスト
+            List of BackupSchedules due for execution
         """
         now = datetime.utcnow()
 
@@ -369,25 +369,25 @@ class BackupSchedulerService:
         return due_schedules
 
     # ===================
-    # データベース操作
+    # Database operations
     # ===================
 
     async def load_schedules_from_db(self, db: Session) -> None:
         """
-        データベースからスケジュールをキャッシュに読み込み
+        Load schedules from database into cache
 
         Args:
-            db: データベースセッション
+            db: Database session
         """
         schedules = await self.list_schedules(db=db)
 
-        # キャッシュクリアして再構築
+        # Clear cache and rebuild
         self._schedule_cache.clear()
         for schedule in schedules:
             self._schedule_cache[schedule.server_id] = schedule
 
     # ===================
-    # ログ機能
+    # Logging functionality
     # ===================
 
     async def _log_schedule_action(
@@ -401,16 +401,16 @@ class BackupSchedulerService:
         executed_by_user_id: Optional[int] = None,
     ) -> None:
         """
-        スケジュール操作ログを作成
+        Create schedule operation log
 
         Args:
-            db: データベースセッション
-            server_id: サーバーID
-            action: 実行されたアクション
-            reason: 理由・詳細
-            old_config: 変更前設定
-            new_config: 変更後設定
-            executed_by_user_id: 実行者のユーザーID
+            db: Database session
+            server_id: Server ID
+            action: Action that was executed
+            reason: Reason/details
+            old_config: Configuration before changes
+            new_config: Configuration after changes
+            executed_by_user_id: User ID of the executor
         """
         log = BackupScheduleLog(
             server_id=server_id,
@@ -425,16 +425,16 @@ class BackupSchedulerService:
         db.commit()
 
     # ===================
-    # スケジューラー制御
+    # Scheduler control
     # ===================
 
     async def start_scheduler(self) -> None:
-        """スケジューラー開始"""
+        """Start scheduler"""
         if self._running:
             return
 
         self._running = True
-        # データベースからスケジュールを読み込み
+        # Load schedules from database
         from app.core.database import get_db
         db = next(get_db())
         try:
@@ -442,11 +442,11 @@ class BackupSchedulerService:
         finally:
             db.close()
         
-        # スケジューラータスクを開始
+        # Start scheduler task
         self._task = asyncio.create_task(self._scheduler_loop())
 
     async def stop_scheduler(self) -> None:
-        """スケジューラー停止"""
+        """Stop scheduler"""
         if not self._running:
             return
 
@@ -462,38 +462,38 @@ class BackupSchedulerService:
 
     async def _scheduler_loop(self) -> None:
         """
-        スケジューラーメインループ
-        10分間隔で実行予定のバックアップをチェック
+        Scheduler main loop
+        Check for due backups every 10 minutes
         """
         while self._running:
             try:
-                # データベースアクセスは実際の実装時に注入される想定
-                # ここではスケルトン実装
-                await asyncio.sleep(600)  # 10分待機
+                # Database access is expected to be injected during actual implementation
+                # This is a skeleton implementation
+                await asyncio.sleep(600)  # Wait 10 minutes
             except asyncio.CancelledError:
                 break
             except Exception:
-                # ログ出力は実際の実装時に追加
-                await asyncio.sleep(60)  # エラー時は1分後にリトライ
+                # Log output will be added during actual implementation
+                await asyncio.sleep(60)  # Retry after 1 minute on error
 
     # ===================
-    # プロパティ
+    # Properties
     # ===================
 
     @property
     def is_running(self) -> bool:
-        """スケジューラーが稼働中かどうか"""
+        """Whether the scheduler is running"""
         return self._running
 
     @property
     def cache_size(self) -> int:
-        """キャッシュされているスケジュール数"""
+        """Number of cached schedules"""
         return len(self._schedule_cache)
     
     def clear_cache(self) -> None:
-        """キャッシュをクリア（テスト用）"""
+        """Clear cache (for testing)"""
         self._schedule_cache.clear()
 
 
-# シングルトンインスタンス
+# Singleton instance
 backup_scheduler = BackupSchedulerService()

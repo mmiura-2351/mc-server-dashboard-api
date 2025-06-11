@@ -15,19 +15,19 @@ class UserService:
         self.db = db
 
     def _get_user_by_username(self, username: str) -> Optional[models.User]:
-        """ユーザー名でユーザーを取得"""
+        """Retrieve user by username"""
         return self.db.query(models.User).filter(models.User.username == username).first()
 
     def _get_user_by_id(self, user_id: int) -> Optional[models.User]:
-        """IDでユーザーを取得"""
+        """Retrieve user by ID"""
         return self.db.query(models.User).filter(models.User.id == user_id).first()
 
     def get_user_by_id(self, user_id: int) -> Optional[models.User]:
-        """IDでユーザーを取得（公開メソッド）"""
+        """Retrieve user by ID (public method)"""
         return self._get_user_by_id(user_id)
 
     def _check_admin_permission(self, current_user: models.User) -> None:
-        """管理者権限をチェック"""
+        """Check administrator permissions"""
         if current_user.role != models.Role.admin:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
@@ -35,11 +35,11 @@ class UserService:
             )
 
     def _is_first_user(self) -> bool:
-        """最初のユーザーかどうかをチェック"""
+        """Check if this is the first user registration"""
         return self.db.query(models.User).count() == 0
 
     def register_user(self, user_create: schemas.UserCreate) -> models.User:
-        """新規ユーザー登録"""
+        """Register new user"""
         existing_user = self._get_user_by_username(user_create.username)
         if existing_user:
             raise HTTPException(
@@ -47,7 +47,7 @@ class UserService:
                 detail="Username already registered",
             )
 
-        # 最初のユーザーは管理者として自動承認
+        # First user is automatically approved as administrator
         is_first_user = self._is_first_user()
         role = models.Role.admin if is_first_user else models.Role.user
         is_approved = is_first_user
@@ -67,7 +67,7 @@ class UserService:
         return db_user
 
     def authenticate_user(self, username: str, password: str) -> Optional[models.User]:
-        """ユーザー認証"""
+        """Authenticate user"""
         user = self._get_user_by_username(username)
         if not user:
             return None
@@ -86,7 +86,7 @@ class UserService:
     def update_role(
         self, current_user: models.User, target_user_id: int, new_role: models.Role
     ) -> models.User:
-        """ユーザーのロールを更新"""
+        """Update user role"""
         self._check_admin_permission(current_user)
 
         target_user = self._get_user_by_id(target_user_id)
@@ -95,7 +95,7 @@ class UserService:
                 status_code=status.HTTP_404_NOT_FOUND, detail="User not found"
             )
 
-        # Role enumを直接設定
+        # Set Role enum directly
         target_user.role = new_role
 
         self.db.commit()
@@ -103,7 +103,7 @@ class UserService:
         return target_user
 
     def approve_user(self, current_user: models.User, target_user_id: int) -> models.User:
-        """ユーザーを承認"""
+        """Approve user"""
         self._check_admin_permission(current_user)
 
         target_user = self._get_user_by_id(target_user_id)
@@ -120,10 +120,10 @@ class UserService:
     def update_user_info(
         self, current_user: models.User, user_update: schemas.UserUpdate
     ) -> schemas.UserWithToken:
-        """ユーザー情報を更新"""
+        """Update user information"""
         username_changed = False
 
-        # ユーザー名の重複チェック
+        # Check for username duplication
         if user_update.username and user_update.username != current_user.username:
             existing_user = self._get_user_by_username(user_update.username)
             if existing_user:
@@ -134,9 +134,9 @@ class UserService:
             current_user.username = user_update.username
             username_changed = True
 
-        # メールアドレスの更新
+        # Update email address
         if user_update.email and user_update.email != current_user.email:
-            # メールアドレスの重複チェック
+            # Check for email address duplication
             existing_user = (
                 self.db.query(models.User)
                 .filter(
@@ -155,19 +155,19 @@ class UserService:
         self.db.commit()
         self.db.refresh(current_user)
 
-        # usernameが変更された場合は新しいトークンを生成
+        # Generate new token if username was changed
         if username_changed:
             access_token = create_access_token(data={"sub": current_user.username})
             return schemas.UserWithToken(user=current_user, access_token=access_token)
         else:
-            # usernameが変更されていない場合は空のトークンを返す（フロントエンドで判定）
+            # Return empty token if username was not changed (frontend will handle this)
             return schemas.UserWithToken(user=current_user, access_token="")
 
     def update_password(
         self, current_user: models.User, password_update: schemas.PasswordUpdate
     ) -> schemas.UserWithToken:
-        """パスワードを更新"""
-        # 現在のパスワードを確認
+        """Update password"""
+        # Verify current password
         if not pwd_context.verify(
             password_update.current_password, current_user.hashed_password
         ):
@@ -176,26 +176,26 @@ class UserService:
                 detail="Current password is incorrect",
             )
 
-        # 新しいパスワードをハッシュ化して保存
+        # Hash and save new password
         current_user.hashed_password = pwd_context.hash(password_update.new_password)
         self.db.commit()
         self.db.refresh(current_user)
 
-        # パスワード変更時は新しいトークンを生成
+        # Generate new token when password is changed
         access_token = create_access_token(data={"sub": current_user.username})
         return schemas.UserWithToken(user=current_user, access_token=access_token)
 
     def delete_user_account(
         self, current_user: models.User, user_delete: schemas.UserDelete
     ) -> None:
-        """ユーザーアカウントを削除"""
-        # パスワードを確認
+        """Delete user account"""
+        # Verify password
         if not pwd_context.verify(user_delete.password, current_user.hashed_password):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST, detail="Password is incorrect"
             )
 
-        # 管理者が最後の一人の場合は削除を拒否
+        # Reject deletion if this is the last administrator
         if current_user.role == models.Role.admin:
             admin_count = (
                 self.db.query(models.User)
@@ -214,7 +214,7 @@ class UserService:
     def delete_user_by_admin(
         self, current_user: models.User, target_user_id: int
     ) -> None:
-        """管理者によるユーザー削除"""
+        """Delete user by administrator"""
         self._check_admin_permission(current_user)
 
         target_user = self._get_user_by_id(target_user_id)
@@ -223,14 +223,14 @@ class UserService:
                 status_code=status.HTTP_404_NOT_FOUND, detail="User not found"
             )
 
-        # 自分自身を削除しようとした場合
+        # If trying to delete own account
         if target_user.id == current_user.id:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Cannot delete your own account",
             )
 
-        # 管理者が最後の一人の場合は削除を拒否
+        # Reject deletion if this is the last administrator
         if target_user.role == models.Role.admin:
             admin_count = (
                 self.db.query(models.User)
@@ -247,6 +247,6 @@ class UserService:
         self.db.commit()
 
     def get_all_users(self, current_user: models.User) -> list[models.User]:
-        """全ユーザー一覧を取得（管理者のみ）"""
+        """Get all users list (admin only)"""
         self._check_admin_permission(current_user)
         return self.db.query(models.User).all()

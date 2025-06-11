@@ -131,9 +131,9 @@ class FileVersionContentResponse(BaseModel):
 
 class RestoreFromVersionRequest(BaseModel):
     create_backup_before_restore: bool = Field(
-        True, description="復元前に現在の内容をバックアップ"
+        True, description="Backup current content before restoration"
     )
-    description: Optional[str] = Field(None, description="復元操作の説明")
+    description: Optional[str] = Field(None, description="Description of restoration operation")
 
 
 class RestoreResponse(BaseModel):

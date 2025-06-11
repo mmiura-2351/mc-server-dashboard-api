@@ -21,7 +21,7 @@ from app.websockets.router import router as websockets_router
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # DBのテーブルを作成
+    # Create database tables
     Base.metadata.create_all(bind=engine)
 
     # Initialize database integration with MinecraftServerManager

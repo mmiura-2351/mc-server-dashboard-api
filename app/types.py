@@ -16,6 +16,6 @@ class FileType(str, Enum):
     other = "other"
 
 
-# 共通の型定義
+# Common type definitions
 DatabaseSession = Annotated[Session, Depends(get_db)]
 CurrentUser = Annotated[User, Depends(get_current_user)]

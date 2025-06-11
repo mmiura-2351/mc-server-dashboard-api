@@ -3,20 +3,20 @@ from sqlalchemy.orm import declarative_base, sessionmaker
 
 from app.core.config import settings
 
-# SQLiteのデータベースURL（相対パスのファイル）
+# SQLite database URL (relative path file)
 DATABASE_URL = settings.DATABASE_URL
 
-# connect_argsはSQLiteの場合に必要（スレッド制約を回避）
+# connect_args is necessary for SQLite (to avoid thread constraints)
 engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
 
-# セッションローカルクラスの作成
+# Create session local class
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
-# ベースクラス（モデルの継承元）
+# Base class (inheritance source for models)
 Base = declarative_base()
 
 
-# Dependency用のDBセッション取得関数（FastAPIで依存注入に使う）
+# DB session acquisition function for Dependency (used for dependency injection in FastAPI)
 def get_db():
     db = SessionLocal()
     try:

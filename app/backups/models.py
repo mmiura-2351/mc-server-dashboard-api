@@ -18,7 +18,7 @@ from app.core.database import Base
 
 
 class ScheduleAction(str, PyEnum):
-    """バックアップスケジュールのアクション種別"""
+    """Backup schedule action types"""
 
     created = "created"
     updated = "updated"
@@ -28,43 +28,43 @@ class ScheduleAction(str, PyEnum):
 
 
 class BackupSchedule(Base):
-    """バックアップスケジュール設定"""
+    """Backup schedule configuration"""
 
     __tablename__ = "backup_schedules"
 
     # Primary Key
     id = Column(Integer, primary_key=True, index=True)
 
-    # Foreign Key (Unique: 1サーバー1スケジュール)
+    # Foreign Key (Unique: 1 schedule per server)
     server_id = Column(
         Integer, ForeignKey("servers.id"), unique=True, nullable=False, index=True
     )
 
-    # スケジュール設定
+    # Schedule configuration
     interval_hours = Column(
         Integer,
         nullable=False,
-        # CHECK制約: 1時間〜1週間（168時間）
+        # CHECK constraint: 1 hour to 1 week (168 hours)
     )
     max_backups = Column(
         Integer,
         nullable=False,
-        # CHECK制約: 1〜30個
+        # CHECK constraint: 1 to 30 items
     )
     enabled = Column(Boolean, default=True, nullable=False, index=True)
     only_when_running = Column(Boolean, default=True, nullable=False)
 
-    # 実行状態管理
+    # Execution state management
     last_backup_at = Column(DateTime, nullable=True)
     next_backup_at = Column(DateTime, nullable=True, index=True)
 
-    # タイムスタンプ
+    # Timestamps
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(
         DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
     )
 
-    # リレーション
+    # Relations
     server = relationship("Server", back_populates="backup_schedule")
 
     # CHECK制約
@@ -83,7 +83,7 @@ class BackupSchedule(Base):
 
 
 class BackupScheduleLog(Base):
-    """バックアップスケジュール操作ログ（監査用）"""
+    """Backup schedule operation log (for auditing)"""
 
     __tablename__ = "backup_schedule_logs"
 
@@ -96,11 +96,11 @@ class BackupScheduleLog(Base):
     executed_by_user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
-    # リレーション
+    # Relations
     server = relationship("Server")
     executed_by = relationship("User")
 
-    # SQLAlchemyのEnumで自動的に制約が設定されるため、CHECK制約は不要
+    # CHECK constraint is unnecessary as SQLAlchemy Enum automatically sets constraints
 
     def __repr__(self):
         return f"<BackupScheduleLog(id={self.id}, server_id={self.server_id}, action={self.action})>"
