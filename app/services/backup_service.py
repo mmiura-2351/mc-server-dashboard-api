@@ -105,7 +105,11 @@ class BackupFileService:
         self.backups_directory = backups_directory
 
     async def create_backup_file(
-        self, server: Server, backup_id: int, backup_type: BackupType
+        self,
+        server: Server,
+        backup_id: int,
+        backup_type: BackupType,
+        progress_callback=None,
     ) -> str:
         """Create the actual backup file (tar.gz)"""
         try:
@@ -118,7 +122,10 @@ class BackupFileService:
             backup_filename = self._generate_backup_filename(server.id, backup_id)
             backup_path = self.backups_directory / backup_filename
 
-            self._create_tar_backup(server_dir, backup_path)
+            # Use async backup creation for better performance
+            await self._create_tar_backup_async(
+                server_dir, backup_path, progress_callback
+            )
 
             logger.info(f"Created backup file: {backup_filename}")
             return backup_filename
@@ -131,13 +138,169 @@ class BackupFileService:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         return f"backup_{server_id}_{backup_id}_{timestamp}.tar.gz"
 
-    def _create_tar_backup(self, server_dir: Path, backup_path: Path) -> None:
-        """Create tar.gz backup of server directory"""
+    async def _create_tar_backup_async(
+        self, server_dir: Path, backup_path: Path, progress_callback=None
+    ) -> None:
+        """Create tar.gz backup asynchronously with chunked processing"""
+        import asyncio
+
+        # Run the blocking tar creation in a thread pool to avoid blocking the event loop
+        loop = asyncio.get_event_loop()
+        await loop.run_in_executor(
+            None,
+            self._create_tar_backup_chunked,
+            server_dir,
+            backup_path,
+            progress_callback,
+        )
+
+    def _create_tar_backup_chunked(
+        self, server_dir: Path, backup_path: Path, progress_callback=None
+    ) -> None:
+        """Create tar.gz backup with chunked processing for large files"""
+        total_files = 0
+        processed_files = 0
+        total_size = 0
+        processed_size = 0
+
+        # Count total files and calculate total size for progress tracking
+        for item in server_dir.rglob("*"):
+            if item.is_file():
+                total_files += 1
+                total_size += item.stat().st_size
+
+        logger.info(
+            f"Starting backup of {total_files} files ({total_size / (1024*1024):.1f}MB) from {server_dir}"
+        )
+
+        if progress_callback:
+            progress_callback(0, total_files, 0, total_size)
+
         with tarfile.open(backup_path, "w:gz") as tar:
             for item in server_dir.rglob("*"):
                 if item.is_file():
                     arcname = item.relative_to(server_dir)
-                    tar.add(item, arcname=arcname)
+                    file_size = item.stat().st_size
+
+                    try:
+                        # Use streaming backup for large files (>100MB)
+                        if file_size > 100 * 1024 * 1024:
+                            logger.debug(
+                                f"Processing large file: {item} ({file_size / (1024*1024):.1f}MB)"
+                            )
+                            self._add_large_file_to_tar_chunked(tar, item, arcname)
+                        else:
+                            tar.add(item, arcname=arcname)
+
+                        processed_files += 1
+                        processed_size += file_size
+
+                        # Report progress every 100 files or for large files
+                        if processed_files % 100 == 0 or file_size > 50 * 1024 * 1024:
+                            progress = (processed_files / total_files) * 100
+                            size_progress = (processed_size / total_size) * 100
+                            logger.info(
+                                f"Backup progress: {processed_files}/{total_files} files ({progress:.1f}%), {processed_size / (1024*1024):.1f}/{total_size / (1024*1024):.1f}MB ({size_progress:.1f}%)"
+                            )
+
+                            if progress_callback:
+                                progress_callback(
+                                    processed_files,
+                                    total_files,
+                                    processed_size,
+                                    total_size,
+                                )
+
+                    except Exception as e:
+                        logger.warning(f"Failed to add file {item} to backup: {e}")
+                        continue
+
+        logger.info(
+            f"Backup completed: {processed_files}/{total_files} files processed ({processed_size / (1024*1024):.1f}MB)"
+        )
+
+        if progress_callback:
+            progress_callback(processed_files, total_files, processed_size, total_size)
+
+    def _create_tar_backup(self, server_dir: Path, backup_path: Path) -> None:
+        """Create tar.gz backup of server directory with streaming for large files"""
+        with tarfile.open(backup_path, "w:gz") as tar:
+            for item in server_dir.rglob("*"):
+                if item.is_file():
+                    arcname = item.relative_to(server_dir)
+                    # Use streaming backup for large files (>100MB)
+                    if item.stat().st_size > 100 * 1024 * 1024:
+                        self._add_large_file_to_tar(tar, item, arcname)
+                    else:
+                        tar.add(item, arcname=arcname)
+
+    def _add_large_file_to_tar_chunked(
+        self, tar: tarfile.TarFile, file_path: Path, arcname: Path
+    ) -> None:
+        """Add large file to tar using chunked streaming to reduce memory usage"""
+        try:
+            # Get file info for tar header
+            tarinfo = tar.gettarinfo(file_path, arcname)
+
+            # Add file header first
+            tar.addfile(tarinfo)
+
+            # Stream file content in larger chunks for better performance
+            chunk_size = 64 * 1024  # 64KB chunks for better I/O performance
+            bytes_written = 0
+
+            with open(file_path, "rb") as source_file:
+                while bytes_written < tarinfo.size:
+                    remaining = tarinfo.size - bytes_written
+                    chunk_size_to_read = min(chunk_size, remaining)
+
+                    chunk = source_file.read(chunk_size_to_read)
+                    if not chunk:
+                        break
+
+                    tar.fileobj.write(chunk)
+                    bytes_written += len(chunk)
+
+            # Ensure proper padding for tar format
+            blocks_written = (tarinfo.size + 511) // 512
+            padding_needed = (blocks_written * 512) - tarinfo.size
+            if padding_needed > 0:
+                tar.fileobj.write(b"\0" * padding_needed)
+
+        except Exception as e:
+            logger.warning(f"Failed to add large file {file_path} to backup: {e}")
+            # Fallback to regular add for problematic files
+            tar.add(file_path, arcname=arcname)
+
+    def _add_large_file_to_tar(
+        self, tar: tarfile.TarFile, file_path: Path, arcname: Path
+    ) -> None:
+        """Add large file to tar using streaming to reduce memory usage"""
+        try:
+            # Get file info for tar header
+            tarinfo = tar.gettarinfo(file_path, arcname)
+
+            # Add file header first
+            tar.addfile(tarinfo)
+
+            # Stream file content in chunks
+            with open(file_path, "rb") as source_file:
+                while True:
+                    chunk = source_file.read(8192)  # 8KB chunks
+                    if not chunk:
+                        break
+                    tar.fileobj.write(chunk)
+
+            # Ensure proper padding for tar format
+            blocks_written = (tarinfo.size + 511) // 512
+            padding_needed = (blocks_written * 512) - tarinfo.size
+            if padding_needed > 0:
+                tar.fileobj.write(b"\0" * padding_needed)
+
+        except Exception as e:
+            logger.warning(f"Failed to add large file {file_path} to backup: {e}")
+            # Fallback to regular add for problematic files
+            tar.add(file_path, arcname=arcname)
 
     async def restore_backup_file(self, backup: Backup, target_server: Server) -> None:
         """Restore the backup file to target server directory"""
@@ -169,11 +332,36 @@ class BackupFileService:
             logger.info(f"Created temporary backup of current state: {temp_backup_dir}")
 
     def _extract_backup_to_directory(self, backup_path: Path, target_dir: Path) -> None:
-        """Extract backup archive to target directory"""
+        """Extract backup archive to target directory with memory optimization"""
         target_dir.mkdir(parents=True, exist_ok=True)
 
         with tarfile.open(backup_path, "r:gz") as tar:
-            tar.extractall(path=target_dir)
+            # Extract files one by one to reduce memory usage
+            members = tar.getmembers()
+            total_members = len(members)
+            processed = 0
+
+            logger.info(f"Starting extraction of {total_members} files to {target_dir}")
+
+            for member in members:
+                try:
+                    tar.extract(member, path=target_dir)
+                    processed += 1
+
+                    # Log progress every 100 files
+                    if processed % 100 == 0:
+                        progress = (processed / total_members) * 100
+                        logger.info(
+                            f"Extraction progress: {processed}/{total_members} files ({progress:.1f}%)"
+                        )
+
+                except Exception as e:
+                    logger.warning(f"Failed to extract {member.name}: {e}")
+                    continue
+
+            logger.info(
+                f"Extraction completed: {processed}/{total_members} files extracted"
+            )
 
     def delete_backup_file(self, backup_path: str) -> None:
         """Delete backup file from filesystem"""
