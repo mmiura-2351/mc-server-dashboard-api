@@ -106,18 +106,28 @@ class MinecraftAPIService:
         Returns:
             Generated UUID based on username
         """
-        import uuid
         import hashlib
 
         # Create a UUID based on the username using MD5 hash
         # This matches Minecraft's offline UUID generation
         # Use namespace for offline players as defined by Minecraft
         offline_string = f"OfflinePlayer:{username}"
-        
+
         # Generate MD5 hash
-        md5_hash = hashlib.md5(offline_string.encode('utf-8')).hexdigest()
-        
+        md5_hash = hashlib.md5(offline_string.encode("utf-8")).hexdigest()
+
         # Convert to UUID format (version 3, MD5 based)
-        uuid_hex = md5_hash[:8] + '-' + md5_hash[8:12] + '-' + '3' + md5_hash[13:16] + '-' + md5_hash[16:20] + '-' + md5_hash[20:32]
-        
+        uuid_hex = (
+            md5_hash[:8]
+            + "-"
+            + md5_hash[8:12]
+            + "-"
+            + "3"
+            + md5_hash[13:16]
+            + "-"
+            + md5_hash[16:20]
+            + "-"
+            + md5_hash[20:32]
+        )
+
         return uuid_hex

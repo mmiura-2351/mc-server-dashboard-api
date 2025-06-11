@@ -102,19 +102,25 @@ class ConnectionManager:
                 return
 
             # Validate server_manager has required attributes
-            if not hasattr(server_manager, 'server_dir') or not server_manager.server_dir:
-                logger.error(f"Invalid server manager for server {server_id}: missing server_dir")
+            if not hasattr(server_manager, "server_dir") or not server_manager.server_dir:
+                logger.error(
+                    f"Invalid server manager for server {server_id}: missing server_dir"
+                )
                 return
 
             # Get the log file path with proper validation
             try:
                 log_file = server_manager.server_dir / "logs" / "latest.log"
             except Exception as e:
-                logger.error(f"Failed to construct log file path for server {server_id}: {e}")
+                logger.error(
+                    f"Failed to construct log file path for server {server_id}: {e}"
+                )
                 return
 
             if not log_file.exists():
-                logger.debug(f"Log file does not exist for server {server_id}: {log_file}")
+                logger.debug(
+                    f"Log file does not exist for server {server_id}: {log_file}"
+                )
                 return
 
             if not log_file.is_file():
@@ -149,7 +155,9 @@ class ConnectionManager:
         except FileNotFoundError as e:
             logger.warning(f"Log file not found for server {server_id}: {e}")
         except PermissionError as e:
-            logger.error(f"Permission denied accessing log file for server {server_id}: {e}")
+            logger.error(
+                f"Permission denied accessing log file for server {server_id}: {e}"
+            )
         except Exception as e:
             logger.error(f"Unexpected error streaming logs for server {server_id}: {e}")
 
@@ -227,12 +235,18 @@ class WebSocketService:
         try:
             server_manager = minecraft_server_manager.get_server(str(server_id))
             if not server_manager:
-                logger.warning(f"Server manager not found for initial status: {server_id}")
+                logger.warning(
+                    f"Server manager not found for initial status: {server_id}"
+                )
                 return
 
             # Validate server manager has required methods
-            if not hasattr(server_manager, 'get_status') or not callable(getattr(server_manager, 'get_status')):
-                logger.error(f"Invalid server manager for server {server_id}: missing get_status method")
+            if not hasattr(server_manager, "get_status") or not callable(
+                getattr(server_manager, "get_status")
+            ):
+                logger.error(
+                    f"Invalid server manager for server {server_id}: missing get_status method"
+                )
                 return
 
             status = await server_manager.get_status()
@@ -271,16 +285,26 @@ class WebSocketService:
         try:
             server_manager = minecraft_server_manager.get_server(str(server_id))
             if not server_manager:
-                logger.warning(f"Server manager not found for command execution: {server_id}")
+                logger.warning(
+                    f"Server manager not found for command execution: {server_id}"
+                )
                 return
 
             # Validate server manager has required methods
-            if not hasattr(server_manager, 'is_running') or not callable(getattr(server_manager, 'is_running')):
-                logger.error(f"Invalid server manager for server {server_id}: missing is_running method")
+            if not hasattr(server_manager, "is_running") or not callable(
+                getattr(server_manager, "is_running")
+            ):
+                logger.error(
+                    f"Invalid server manager for server {server_id}: missing is_running method"
+                )
                 return
 
-            if not hasattr(server_manager, 'send_command') or not callable(getattr(server_manager, 'send_command')):
-                logger.error(f"Invalid server manager for server {server_id}: missing send_command method")
+            if not hasattr(server_manager, "send_command") or not callable(
+                getattr(server_manager, "send_command")
+            ):
+                logger.error(
+                    f"Invalid server manager for server {server_id}: missing send_command method"
+                )
                 return
 
             if server_manager.is_running():
@@ -297,9 +321,13 @@ class WebSocketService:
                     server_id, notification
                 )
             else:
-                logger.warning(f"Cannot send command to server {server_id}: server is not running")
+                logger.warning(
+                    f"Cannot send command to server {server_id}: server is not running"
+                )
         except Exception as e:
-            logger.error(f"Error sending server command '{command}' to server {server_id}: {e}")
+            logger.error(
+                f"Error sending server command '{command}' to server {server_id}: {e}"
+            )
 
     async def _monitor_server_status(self):
         """Background task to monitor server status changes"""
@@ -311,12 +339,18 @@ class WebSocketService:
                             str(server_id)
                         )
                         if not server_manager:
-                            logger.debug(f"Server manager not found for monitoring: {server_id}")
+                            logger.debug(
+                                f"Server manager not found for monitoring: {server_id}"
+                            )
                             continue
 
                         # Validate server manager has required methods
-                        if not hasattr(server_manager, 'get_status') or not callable(getattr(server_manager, 'get_status')):
-                            logger.error(f"Invalid server manager for monitoring server {server_id}: missing get_status method")
+                        if not hasattr(server_manager, "get_status") or not callable(
+                            getattr(server_manager, "get_status")
+                        ):
+                            logger.error(
+                                f"Invalid server manager for monitoring server {server_id}: missing get_status method"
+                            )
                             continue
 
                         status = await server_manager.get_status()

@@ -2,6 +2,7 @@
 New backup scheduler API endpoints
 Server owner and admin access permission support
 """
+
 from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -37,12 +38,12 @@ async def create_backup_schedule(
 ):
     """
     Create a backup schedule for a server
-    
+
     Create an automated backup schedule for the specified server.
     Only server owners and admins can create schedules.
-    
+
     - **interval_hours**: How often to create backups (1-168 hours)
-    - **max_backups**: Maximum number of backups to keep (1-30)  
+    - **max_backups**: Maximum number of backups to keep (1-30)
     - **enabled**: Whether the schedule is active
     - **only_when_running**: Only backup when server is running
     """
@@ -104,7 +105,7 @@ async def get_backup_schedule(
 ):
     """
     Get backup schedule for a server
-    
+
     Returns the backup schedule configuration for the specified server.
     Server owners and admins can access schedules.
     """
@@ -143,7 +144,7 @@ async def update_backup_schedule(
 ):
     """
     Update backup schedule for a server
-    
+
     Updates the backup schedule settings for a server.
     Only server owners and admins can update schedules.
     """
@@ -200,7 +201,7 @@ async def delete_backup_schedule(
 ):
     """
     Delete backup schedule for a server
-    
+
     Removes the backup schedule for the specified server.
     Only server owners and admins can delete schedules.
     """
@@ -249,7 +250,7 @@ async def get_backup_schedule_logs(
 ):
     """
     Get backup schedule logs for a server
-    
+
     Returns the history of backup schedule operations for the specified server.
     Server owners and admins can access logs.
     """
@@ -274,13 +275,13 @@ async def get_backup_schedule_logs(
         log_responses = []
         for log in logs:
             log_data = BackupScheduleLogResponse.from_orm(log)
-            
+
             # Add username if executed by a user
             if log.executed_by_user_id:
                 user = db.query(User).filter(User.id == log.executed_by_user_id).first()
                 if user:
                     log_data.executed_by_username = user.username
-            
+
             log_responses.append(log_data)
 
         return log_responses
@@ -304,7 +305,7 @@ async def get_scheduler_status(
 ):
     """
     Get backup scheduler status (admin only)
-    
+
     Returns the current status of the backup scheduler including
     total schedules, enabled schedules, and system information.
     """
@@ -318,7 +319,9 @@ async def get_scheduler_status(
 
         # Get all schedules
         all_schedules = await backup_scheduler.list_schedules(db=db)
-        enabled_schedules = await backup_scheduler.list_schedules(db=db, enabled_only=True)
+        enabled_schedules = await backup_scheduler.list_schedules(
+            db=db, enabled_only=True
+        )
 
         # Find next execution time
         next_execution = None
@@ -355,7 +358,7 @@ async def list_all_backup_schedules(
 ):
     """
     List all backup schedules (admin only)
-    
+
     Returns a list of all backup schedules in the system.
     Only admins can access this endpoint.
     """
@@ -367,7 +370,9 @@ async def list_all_backup_schedules(
                 detail="Only admins can list all backup schedules",
             )
 
-        schedules = await backup_scheduler.list_schedules(db=db, enabled_only=enabled_only)
+        schedules = await backup_scheduler.list_schedules(
+            db=db, enabled_only=enabled_only
+        )
 
         return [BackupScheduleResponse.from_orm(schedule) for schedule in schedules]
 

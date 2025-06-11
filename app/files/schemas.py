@@ -133,7 +133,9 @@ class RestoreFromVersionRequest(BaseModel):
     create_backup_before_restore: bool = Field(
         True, description="Backup current content before restoration"
     )
-    description: Optional[str] = Field(None, description="Description of restoration operation")
+    description: Optional[str] = Field(
+        None, description="Description of restoration operation"
+    )
 
 
 class RestoreResponse(BaseModel):

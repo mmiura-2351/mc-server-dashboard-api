@@ -11,16 +11,16 @@ from app.auth.auth import create_access_token
 
 
 class TestBackupSchedulerAPIPermissions:
-    """バックアップスケジューラーAPIの権限テスト"""
+    """Backup scheduler API permission tests"""
 
     @pytest.fixture
     def client(self):
-        """テストクライアント"""
+        """Test client"""
         return TestClient(app)
 
     @pytest.fixture
     def admin_user(self, db: Session):
-        """管理者ユーザー"""
+        """Admin user"""
         user = User(
             username="admin_user",
             email="admin@example.com",
@@ -36,7 +36,7 @@ class TestBackupSchedulerAPIPermissions:
 
     @pytest.fixture
     def operator_user(self, db: Session):
-        """オペレーターユーザー"""
+        """Operator user"""
         user = User(
             username="operator_user",
             email="operator@example.com",
@@ -52,7 +52,7 @@ class TestBackupSchedulerAPIPermissions:
 
     @pytest.fixture
     def regular_user(self, db: Session):
-        """一般ユーザー"""
+        """Regular user"""
         user = User(
             username="regular_user",
             email="user@example.com",
@@ -68,7 +68,7 @@ class TestBackupSchedulerAPIPermissions:
 
     @pytest.fixture
     def other_user(self, db: Session):
-        """他のユーザー（サーバー所有者ではない）"""
+        """Other user (not server owner)"""
         user = User(
             username="other_user",
             email="other@example.com",
@@ -84,7 +84,7 @@ class TestBackupSchedulerAPIPermissions:
 
     @pytest.fixture
     def owner_server(self, db: Session, operator_user: User):
-        """オペレーターユーザーが所有するサーバー"""
+        """Server owned by operator user"""
         server = Server(
             name="owner-test-server",
             description="Owner test server",
@@ -103,7 +103,7 @@ class TestBackupSchedulerAPIPermissions:
 
     @pytest.fixture
     def admin_server(self, db: Session, admin_user: User):
-        """管理者ユーザーが所有するサーバー"""
+        """Server owned by admin user"""
         server = Server(
             name="admin-test-server",
             description="Admin test server",
@@ -121,12 +121,12 @@ class TestBackupSchedulerAPIPermissions:
         return server
 
     def get_auth_headers(self, user: User):
-        """認証ヘッダーを取得"""
+        """Get authentication header"""
         token = create_access_token(data={"sub": user.username})
         return {"Authorization": f"Bearer {token}"}
 
     def test_create_schedule_as_server_owner(self, client: TestClient, db: Session, operator_user: User, owner_server: Server):
-        """サーバー所有者がスケジュール作成可能"""
+        """Server owner can create schedule"""
         headers = self.get_auth_headers(operator_user)
         
         response = client.post(
@@ -149,7 +149,7 @@ class TestBackupSchedulerAPIPermissions:
         assert data["only_when_running"] is True
 
     def test_create_schedule_as_admin(self, client: TestClient, db: Session, admin_user: User, owner_server: Server):
-        """管理者が他人のサーバーのスケジュール作成可能"""
+        """Admin can create schedule for other user's server"""
         headers = self.get_auth_headers(admin_user)
         
         response = client.post(
@@ -166,7 +166,7 @@ class TestBackupSchedulerAPIPermissions:
         assert response.status_code == 201
 
     def test_create_schedule_as_non_owner_forbidden(self, client: TestClient, db: Session, other_user: User, owner_server: Server):
-        """非所有者ユーザーはスケジュール作成不可"""
+        """Non-owner user cannot create schedule"""
         headers = self.get_auth_headers(other_user)
         
         response = client.post(
@@ -182,7 +182,7 @@ class TestBackupSchedulerAPIPermissions:
         assert "access" in response.json()["detail"].lower()
 
     def test_create_schedule_as_regular_user_forbidden(self, client: TestClient, db: Session, regular_user: User, owner_server: Server):
-        """一般ユーザーはスケジュール作成不可"""
+        """Regular user cannot create schedule"""
         headers = self.get_auth_headers(regular_user)
         
         response = client.post(
@@ -197,7 +197,7 @@ class TestBackupSchedulerAPIPermissions:
         assert response.status_code == 403
 
     def test_get_schedule_as_server_owner(self, client: TestClient, db: Session, operator_user: User, owner_server: Server):
-        """サーバー所有者がスケジュール取得可能"""
+        """Server owner can get schedule"""
         # Clear any existing schedules for this server first
         db.query(BackupSchedule).filter(BackupSchedule.server_id == owner_server.id).delete()
         db.commit()
@@ -206,7 +206,7 @@ class TestBackupSchedulerAPIPermissions:
         from app.services.backup_scheduler import backup_scheduler
         backup_scheduler.clear_cache()
         
-        # スケジュール作成
+        # Create schedule
         schedule = BackupSchedule(
             server_id=owner_server.id,
             interval_hours=6,
@@ -233,12 +233,12 @@ class TestBackupSchedulerAPIPermissions:
         assert data["only_when_running"] is True
 
     def test_get_schedule_as_admin(self, client: TestClient, db: Session, admin_user: User, owner_server: Server):
-        """管理者が他人のサーバーのスケジュール取得可能"""
+        """Admin can get schedule for other user's server"""
         # Clear any existing schedules for this server first
         db.query(BackupSchedule).filter(BackupSchedule.server_id == owner_server.id).delete()
         db.commit()
         
-        # スケジュール作成
+        # Create schedule
         schedule = BackupSchedule(
             server_id=owner_server.id,
             interval_hours=8,
@@ -257,7 +257,7 @@ class TestBackupSchedulerAPIPermissions:
         assert response.status_code == 200
 
     def test_get_schedule_as_non_owner_forbidden(self, client: TestClient, db: Session, other_user: User, owner_server: Server):
-        """非所有者ユーザーはスケジュール取得不可"""
+        """Non-owner user cannot get schedule"""
         headers = self.get_auth_headers(other_user)
         
         response = client.get(
@@ -268,12 +268,12 @@ class TestBackupSchedulerAPIPermissions:
         assert response.status_code == 403
 
     def test_update_schedule_as_server_owner(self, client: TestClient, db: Session, operator_user: User, owner_server: Server):
-        """サーバー所有者がスケジュール更新可能"""
+        """Server owner can update schedule"""
         # Clear any existing schedules for this server first
         db.query(BackupSchedule).filter(BackupSchedule.server_id == owner_server.id).delete()
         db.commit()
         
-        # スケジュール作成
+        # Create schedule
         schedule = BackupSchedule(
             server_id=owner_server.id,
             interval_hours=12,
@@ -301,7 +301,7 @@ class TestBackupSchedulerAPIPermissions:
         assert data["enabled"] is False
 
     def test_update_schedule_as_non_owner_forbidden(self, client: TestClient, db: Session, other_user: User, owner_server: Server):
-        """非所有者ユーザーはスケジュール更新不可"""
+        """Non-owner user cannot update schedule"""
         headers = self.get_auth_headers(other_user)
         
         response = client.put(
@@ -316,12 +316,12 @@ class TestBackupSchedulerAPIPermissions:
         assert response.status_code == 403
 
     def test_delete_schedule_as_server_owner(self, client: TestClient, db: Session, operator_user: User, owner_server: Server):
-        """サーバー所有者がスケジュール削除可能"""
+        """Server owner can delete schedule"""
         # Clear any existing schedules for this server first
         db.query(BackupSchedule).filter(BackupSchedule.server_id == owner_server.id).delete()
         db.commit()
         
-        # スケジュール作成
+        # Create schedule
         schedule = BackupSchedule(
             server_id=owner_server.id,
             interval_hours=12,
@@ -339,19 +339,19 @@ class TestBackupSchedulerAPIPermissions:
         
         assert response.status_code == 204
 
-        # 削除確認
+        # Confirm deletion
         deleted_schedule = db.query(BackupSchedule).filter(
             BackupSchedule.server_id == owner_server.id
         ).first()
         assert deleted_schedule is None
 
     def test_delete_schedule_as_admin(self, client: TestClient, db: Session, admin_user: User, owner_server: Server):
-        """管理者が他人のサーバーのスケジュール削除可能"""
+        """Admin can delete schedule for other user's server"""
         # Clear any existing schedules for this server first
         db.query(BackupSchedule).filter(BackupSchedule.server_id == owner_server.id).delete()
         db.commit()
         
-        # スケジュール作成
+        # Create schedule
         schedule = BackupSchedule(
             server_id=owner_server.id,
             interval_hours=12,
@@ -370,7 +370,7 @@ class TestBackupSchedulerAPIPermissions:
         assert response.status_code == 204
 
     def test_delete_schedule_as_non_owner_forbidden(self, client: TestClient, db: Session, other_user: User, owner_server: Server):
-        """非所有者ユーザーはスケジュール削除不可"""
+        """Non-owner user cannot delete schedule"""
         headers = self.get_auth_headers(other_user)
         
         response = client.delete(
@@ -381,50 +381,50 @@ class TestBackupSchedulerAPIPermissions:
         assert response.status_code == 403
 
     def test_scheduler_status_admin_only(self, client: TestClient, db: Session, admin_user: User, operator_user: User):
-        """スケジューラー状態は管理者のみアクセス可能"""
-        # 管理者アクセス
+        """Only admin can access scheduler status"""
+        # Admin access
         headers = self.get_auth_headers(admin_user)
         response = client.get("/api/v1/backups/scheduler/status", headers=headers)
         assert response.status_code == 200
 
-        # 非管理者アクセス
+        # Non-admin access
         headers = self.get_auth_headers(operator_user)
         response = client.get("/api/v1/backups/scheduler/status", headers=headers)
         assert response.status_code == 403
 
     def test_create_schedule_validation_errors(self, client: TestClient, db: Session, operator_user: User, owner_server: Server):
-        """スケジュール作成のバリデーションエラーテスト"""
+        """Schedule creation validation error test"""
         headers = self.get_auth_headers(operator_user)
         
-        # interval_hours範囲外
+        # interval_hours out of range
         response = client.post(
             f"/api/v1/backups/scheduler/servers/{owner_server.id}/schedule",
             headers=headers,
             json={
-                "interval_hours": 0,  # 無効値
+                "interval_hours": 0,  # Invalid value
                 "max_backups": 10
             }
         )
         assert response.status_code == 422
 
-        # max_backups範囲外
+        # max_backups out of range
         response = client.post(
             f"/api/v1/backups/scheduler/servers/{owner_server.id}/schedule",
             headers=headers,
             json={
                 "interval_hours": 12,
-                "max_backups": 50  # 無効値
+                "max_backups": 50  # Invalid value
             }
         )
         assert response.status_code == 422
 
     def test_create_schedule_duplicate_server(self, client: TestClient, db: Session, operator_user: User, owner_server: Server):
-        """重複スケジュール作成エラーテスト"""
+        """Duplicate schedule creation error test"""
         # Clear any existing schedules for this server first
         db.query(BackupSchedule).filter(BackupSchedule.server_id == owner_server.id).delete()
         db.commit()
         
-        # 既存スケジュール作成
+        # Create existing schedule
         schedule = BackupSchedule(
             server_id=owner_server.id,
             interval_hours=12,
@@ -448,11 +448,11 @@ class TestBackupSchedulerAPIPermissions:
         assert "already has" in response.json()["detail"].lower()
 
     def test_operations_on_nonexistent_server(self, client: TestClient, db: Session, operator_user: User):
-        """存在しないサーバーでの操作テスト"""
+        """Test operations on non-existent server"""
         headers = self.get_auth_headers(operator_user)
         nonexistent_server_id = 99999
         
-        # 作成
+        # Create
         response = client.post(
             f"/api/v1/backups/scheduler/servers/{nonexistent_server_id}/schedule",
             headers=headers,
@@ -463,14 +463,14 @@ class TestBackupSchedulerAPIPermissions:
         )
         assert response.status_code == 404
 
-        # 取得
+        # Get
         response = client.get(
             f"/api/v1/backups/scheduler/servers/{nonexistent_server_id}/schedule",
             headers=headers
         )
         assert response.status_code == 404
 
-        # 更新
+        # Update
         response = client.put(
             f"/api/v1/backups/scheduler/servers/{nonexistent_server_id}/schedule",
             headers=headers,
@@ -480,7 +480,7 @@ class TestBackupSchedulerAPIPermissions:
         )
         assert response.status_code == 404
 
-        # 削除
+        # Delete
         response = client.delete(
             f"/api/v1/backups/scheduler/servers/{nonexistent_server_id}/schedule",
             headers=headers

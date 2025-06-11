@@ -439,6 +439,7 @@ class BackupSchedulerService:
         self._running = True
         # Load schedules from database using proper session management
         from app.core.database import SessionLocal
+
         db_session = SessionLocal()
         try:
             await self.load_schedules_from_db(db_session)
@@ -450,8 +451,10 @@ class BackupSchedulerService:
             try:
                 db_session.close()
             except Exception as e:
-                logger.warning(f"Error closing database session during scheduler startup: {e}")
-        
+                logger.warning(
+                    f"Error closing database session during scheduler startup: {e}"
+                )
+
         # Start scheduler task
         self._task = asyncio.create_task(self._scheduler_loop())
 
@@ -488,7 +491,7 @@ class BackupSchedulerService:
                 #     logger.error(f"Error executing scheduled backups: {e}")
                 # finally:
                 #     db_session.close()
-                
+
                 await asyncio.sleep(600)  # Wait 10 minutes
             except asyncio.CancelledError:
                 logger.info("Backup scheduler loop cancelled")
@@ -510,7 +513,7 @@ class BackupSchedulerService:
     def cache_size(self) -> int:
         """Number of cached schedules"""
         return len(self._schedule_cache)
-    
+
     def clear_cache(self) -> None:
         """Clear cache (for testing)"""
         self._schedule_cache.clear()

@@ -9,11 +9,11 @@ from app.users.models import User, Role
 
 
 class TestBackupScheduleService:
-    """BackupScheduleのCRUD操作テスト"""
+    """BackupSchedule CRUD operation tests"""
 
     @pytest.fixture
     def test_user(self, db: Session):
-        """テスト用ユーザー"""
+        """Test user"""
         user = User(
             username="scheduleuser",
             email="schedule@example.com",
@@ -28,7 +28,7 @@ class TestBackupScheduleService:
 
     @pytest.fixture
     def test_server(self, db: Session, test_user: User):
-        """テスト用サーバー"""
+        """Test server"""
         server = Server(
             name="schedule-test-server",
             description="Schedule test server",
@@ -45,8 +45,8 @@ class TestBackupScheduleService:
         return server
 
     def test_create_schedule_success(self, db: Session, test_server: Server):
-        """スケジュール作成の正常ケーステスト"""
-        # スケジュール作成
+        """Schedule creation normal case test"""
+        # Create schedule
         schedule = BackupSchedule(
             server_id=test_server.id,
             interval_hours=6,
@@ -57,7 +57,7 @@ class TestBackupScheduleService:
         db.add(schedule)
         db.commit()
 
-        # 検証
+        # Verify
         created_schedule = db.query(BackupSchedule).filter(
             BackupSchedule.server_id == test_server.id
         ).first()
@@ -70,8 +70,8 @@ class TestBackupScheduleService:
         assert created_schedule.only_when_running is False
 
     def test_get_schedule_by_server_id(self, db: Session, test_server: Server):
-        """サーバーIDでスケジュール取得テスト"""
-        # スケジュール作成
+        """Get schedule by server ID test"""
+        # Create schedule
         schedule = BackupSchedule(
             server_id=test_server.id,
             interval_hours=12,
@@ -80,7 +80,7 @@ class TestBackupScheduleService:
         db.add(schedule)
         db.commit()
 
-        # 取得テスト
+        # Get test
         found_schedule = db.query(BackupSchedule).filter(
             BackupSchedule.server_id == test_server.id
         ).first()
@@ -90,8 +90,8 @@ class TestBackupScheduleService:
         assert found_schedule.server_id == test_server.id
 
     def test_update_schedule_success(self, db: Session, test_server: Server):
-        """スケジュール更新テスト"""
-        # スケジュール作成
+        """Schedule update test"""
+        # Create schedule
         schedule = BackupSchedule(
             server_id=test_server.id,
             interval_hours=12,
@@ -103,14 +103,14 @@ class TestBackupScheduleService:
 
         original_updated_at = schedule.updated_at
 
-        # 更新実行
+        # Execute update
         schedule.interval_hours = 24
         schedule.max_backups = 5
         schedule.enabled = False
         schedule.only_when_running = False
         db.commit()
 
-        # 検証
+        # Verify
         updated_schedule = db.query(BackupSchedule).filter(
             BackupSchedule.id == schedule.id
         ).first()
@@ -122,8 +122,8 @@ class TestBackupScheduleService:
         assert updated_schedule.updated_at > original_updated_at
 
     def test_delete_schedule_success(self, db: Session, test_server: Server):
-        """スケジュール削除テスト"""
-        # スケジュール作成
+        """Schedule deletion test"""
+        # Create schedule
         schedule = BackupSchedule(
             server_id=test_server.id,
             interval_hours=8,
@@ -133,19 +133,19 @@ class TestBackupScheduleService:
         db.commit()
         schedule_id = schedule.id
 
-        # 削除実行
+        # Execute deletion
         db.delete(schedule)
         db.commit()
 
-        # 検証
+        # Verify
         deleted_schedule = db.query(BackupSchedule).filter(
             BackupSchedule.id == schedule_id
         ).first()
         assert deleted_schedule is None
 
     def test_list_all_schedules(self, db: Session, test_user: User):
-        """全スケジュール一覧取得テスト"""
-        # 複数のサーバーとスケジュールを作成
+        """Get all schedules list test"""
+        # Create multiple servers and schedules
         servers = []
         schedules = []
         
@@ -178,19 +178,19 @@ class TestBackupScheduleService:
         
         db.commit()
 
-        # 全スケジュール取得
+        # Get all schedules
         all_schedules = db.query(BackupSchedule).all()
         assert len(all_schedules) == 3
 
-        # 有効なスケジュールのみ取得
+        # Get only enabled schedules
         enabled_schedules = db.query(BackupSchedule).filter(
             BackupSchedule.enabled == True
         ).all()
         assert len(enabled_schedules) == 2
 
     def test_list_schedules_with_server_relationship(self, db: Session, test_user: User):
-        """サーバー情報を含むスケジュール取得テスト"""
-        # サーバーとスケジュール作成
+        """Get schedule with server information test"""
+        # Create server and schedule
         server = Server(
             name="relationship-test-server",
             description="Relationship test",
@@ -213,7 +213,7 @@ class TestBackupScheduleService:
         db.add(schedule)
         db.commit()
 
-        # リレーションシップを含む取得
+        # Get with relationships
         schedule_with_server = db.query(BackupSchedule).filter(
             BackupSchedule.server_id == server.id
         ).first()
@@ -223,8 +223,8 @@ class TestBackupScheduleService:
         assert schedule_with_server.server.max_memory == 2048
 
     def test_schedule_execution_time_management(self, db: Session, test_server: Server):
-        """スケジュール実行時刻管理テスト"""
-        # スケジュール作成
+        """Schedule execution time management test"""
+        # Create schedule
         schedule = BackupSchedule(
             server_id=test_server.id,
             interval_hours=6,
@@ -233,7 +233,7 @@ class TestBackupScheduleService:
         db.add(schedule)
         db.commit()
 
-        # 実行時刻の設定
+        # Set execution time
         now = datetime.utcnow()
         next_backup = now + timedelta(hours=6)
         
@@ -241,7 +241,7 @@ class TestBackupScheduleService:
         schedule.next_backup_at = next_backup
         db.commit()
 
-        # 検証
+        # Verify
         updated_schedule = db.query(BackupSchedule).filter(
             BackupSchedule.id == schedule.id
         ).first()
@@ -251,25 +251,25 @@ class TestBackupScheduleService:
         assert updated_schedule.next_backup_at > updated_schedule.last_backup_at
 
     def test_schedule_due_for_backup_query(self, db: Session, test_user: User):
-        """バックアップ実行予定のスケジュール検索テスト"""
-        # 現在時刻
+        """Backup execution scheduled search test"""
+        # Current time
         now = datetime.utcnow()
         
-        # 3つのサーバーとスケジュールを作成
+        # Create 3 servers and schedules
         servers_data = [
             {
                 "name": "past-due-server",
-                "next_backup": now - timedelta(hours=1),  # 実行予定過ぎ
+                "next_backup": now - timedelta(hours=1),  # Past execution time
                 "enabled": True
             },
             {
                 "name": "future-backup-server", 
-                "next_backup": now + timedelta(hours=1),  # まだ実行予定じゃない
+                "next_backup": now + timedelta(hours=1),  # Not yet scheduled
                 "enabled": True
             },
             {
                 "name": "disabled-server",
-                "next_backup": now - timedelta(hours=1),  # 実行予定過ぎだが無効
+                "next_backup": now - timedelta(hours=1),  # Past execution time but disabled
                 "enabled": False
             }
         ]
@@ -300,7 +300,7 @@ class TestBackupScheduleService:
         
         db.commit()
 
-        # 実行予定のスケジュール検索（有効かつ実行時刻が過ぎている）
+        # Search for scheduled executions (enabled and past execution time)
         due_schedules = db.query(BackupSchedule).filter(
             BackupSchedule.enabled == True,
             BackupSchedule.next_backup_at <= now
@@ -311,11 +311,11 @@ class TestBackupScheduleService:
 
 
 class TestBackupScheduleLogService:
-    """BackupScheduleLogのCRUD操作テスト"""
+    """BackupScheduleLog CRUD operation tests"""
 
     @pytest.fixture
     def test_user(self, db: Session):
-        """テスト用ユーザー"""
+        """Test user"""
         user = User(
             username="loguser",
             email="log@example.com",
@@ -330,7 +330,7 @@ class TestBackupScheduleLogService:
 
     @pytest.fixture
     def test_server(self, db: Session, test_user: User):
-        """テスト用サーバー"""
+        """Test server"""
         server = Server(
             name="log-test-server",
             description="Log test server",
@@ -347,7 +347,7 @@ class TestBackupScheduleLogService:
         return server
 
     def test_create_schedule_log_success(self, db: Session, test_server: Server, test_user: User):
-        """スケジュールログ作成テスト"""
+        """Schedule log creation test"""
         log = BackupScheduleLog(
             server_id=test_server.id,
             action=ScheduleAction.created,
@@ -358,7 +358,7 @@ class TestBackupScheduleLogService:
         db.add(log)
         db.commit()
 
-        # 検証
+        # Verify
         created_log = db.query(BackupScheduleLog).filter(
             BackupScheduleLog.server_id == test_server.id
         ).first()
@@ -370,8 +370,8 @@ class TestBackupScheduleLogService:
         assert created_log.executed_by_user_id == test_user.id
 
     def test_get_logs_by_server_id(self, db: Session, test_server: Server, test_user: User):
-        """サーバーIDでログ取得テスト"""
-        # 複数のログを作成
+        """Get logs by server ID test"""
+        # Create multiple logs
         actions = [ScheduleAction.created, ScheduleAction.updated, ScheduleAction.executed]
         
         for action in actions:
@@ -385,7 +385,7 @@ class TestBackupScheduleLogService:
         
         db.commit()
 
-        # サーバーのログ取得
+        # Get server logs
         server_logs = db.query(BackupScheduleLog).filter(
             BackupScheduleLog.server_id == test_server.id
         ).order_by(BackupScheduleLog.created_at).all()
@@ -394,8 +394,8 @@ class TestBackupScheduleLogService:
         assert [log.action for log in server_logs] == actions
 
     def test_get_logs_by_action_type(self, db: Session, test_server: Server, test_user: User):
-        """アクション種別でログ取得テスト"""
-        # 異なるアクションのログを作成
+        """Get logs by action type test"""
+        # Create logs with different actions
         log1 = BackupScheduleLog(
             server_id=test_server.id,
             action=ScheduleAction.executed,
@@ -417,7 +417,7 @@ class TestBackupScheduleLogService:
         db.add_all([log1, log2, log3])
         db.commit()
 
-        # executed アクションのみ取得
+        # Get only executed actions
         executed_logs = db.query(BackupScheduleLog).filter(
             BackupScheduleLog.server_id == test_server.id,
             BackupScheduleLog.action == ScheduleAction.executed
@@ -425,7 +425,7 @@ class TestBackupScheduleLogService:
         
         assert len(executed_logs) == 2
         
-        # skipped アクションのみ取得
+        # Get only skipped actions
         skipped_logs = db.query(BackupScheduleLog).filter(
             BackupScheduleLog.server_id == test_server.id,
             BackupScheduleLog.action == ScheduleAction.skipped
@@ -434,7 +434,7 @@ class TestBackupScheduleLogService:
         assert len(skipped_logs) == 1
 
     def test_log_with_config_changes(self, db: Session, test_server: Server, test_user: User):
-        """設定変更ログテスト"""
+        """Configuration change log test"""
         old_config = {"interval_hours": 12, "max_backups": 10, "enabled": True}
         new_config = {"interval_hours": 6, "max_backups": 15, "enabled": True}
         
@@ -449,7 +449,7 @@ class TestBackupScheduleLogService:
         db.add(log)
         db.commit()
 
-        # 検証
+        # Verify
         created_log = db.query(BackupScheduleLog).filter(
             BackupScheduleLog.action == ScheduleAction.updated
         ).first()
@@ -460,17 +460,17 @@ class TestBackupScheduleLogService:
         assert created_log.new_config["max_backups"] == 15
 
     def test_system_executed_log(self, db: Session, test_server: Server):
-        """システム実行ログテスト（ユーザー指定なし）"""
+        """System execution log test (no user specified)"""
         log = BackupScheduleLog(
             server_id=test_server.id,
             action=ScheduleAction.executed,
             reason="Automated system execution",
-            executed_by_user_id=None  # システム実行
+            executed_by_user_id=None  # System execution
         )
         db.add(log)
         db.commit()
 
-        # 検証
+        # Verify
         system_log = db.query(BackupScheduleLog).filter(
             BackupScheduleLog.executed_by_user_id.is_(None)
         ).first()
@@ -481,10 +481,10 @@ class TestBackupScheduleLogService:
         assert system_log.executed_by is None
 
     def test_log_chronological_order(self, db: Session, test_server: Server, test_user: User):
-        """ログの時系列順序テスト"""
+        """Log chronological order test"""
         import time
         
-        # 時間差を作るため少し待機
+        # Wait a bit to create time difference
         log1 = BackupScheduleLog(
             server_id=test_server.id,
             action=ScheduleAction.created,
@@ -494,7 +494,7 @@ class TestBackupScheduleLogService:
         db.add(log1)
         db.commit()
         
-        time.sleep(0.01)  # 確実に時刻を分ける
+        time.sleep(0.01)  # Ensure time separation
         
         log2 = BackupScheduleLog(
             server_id=test_server.id,
@@ -515,7 +515,7 @@ class TestBackupScheduleLogService:
         db.add(log3)
         db.commit()
 
-        # 時系列順で取得
+        # Get in chronological order
         chronological_logs = db.query(BackupScheduleLog).filter(
             BackupScheduleLog.server_id == test_server.id
         ).order_by(BackupScheduleLog.created_at).all()

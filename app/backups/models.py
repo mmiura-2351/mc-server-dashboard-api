@@ -67,7 +67,7 @@ class BackupSchedule(Base):
     # Relations
     server = relationship("Server", back_populates="backup_schedule")
 
-    # CHECK制約
+    # CHECK constraints
     __table_args__ = (
         CheckConstraint(
             "interval_hours >= 1 AND interval_hours <= 168",

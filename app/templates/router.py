@@ -27,8 +27,6 @@ from app.users.models import User
 router = APIRouter(tags=["templates"])
 
 
-
-
 @router.post(
     "/from-server/{server_id}",
     response_model=TemplateResponse,

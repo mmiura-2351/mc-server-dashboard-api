@@ -47,8 +47,6 @@ logger = logging.getLogger(__name__)
 router = APIRouter(tags=["servers"])
 
 
-
-
 @router.post("", response_model=ServerResponse, status_code=status.HTTP_201_CREATED)
 async def create_server(
     request: ServerCreateRequest,
