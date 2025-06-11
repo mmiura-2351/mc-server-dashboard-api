@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## 🔨 Most Important Rule - New Rule Addition Process
+## Most Important Rule - New Rule Addition Process
 
 When receiving instructions from users that appear to require ongoing compliance (not just one-time implementation):
 
@@ -11,6 +11,36 @@ When receiving instructions from users that appear to require ongoing compliance
 3. Apply it as a standard rule for all future interactions
 
 This process enables continuous improvement of project rules and ensures consistent behavior across sessions.
+
+## Standard Development Rules
+
+### Rule 1: Task Completion and CI Verification
+**Always verify CI passes and commit changes after completing any task.**
+
+When completing any significant task or feature implementation:
+1. **CI Verification**: Ensure all tests pass before committing
+2. **Code Quality**: Run lint and format checks (`uv run ruff check app/` and `uv run black app/`)
+3. **Commit Changes**: Create meaningful commit messages with proper documentation
+4. **Status Update**: Update relevant tracking documents (e.g., CODE_REVIEW_FINDINGS.md)
+
+### Rule 2: Test Code Development Process
+**Follow systematic approach for test coverage improvement.**
+
+When creating test coverage for services or components:
+1. **Establish Target Coverage**: Set target coverage percentage based on component criticality
+2. **Analyze Required Testing Elements**: 
+   - Analyze the service/component implementation thoroughly
+   - Identify uncovered lines, error paths, and edge cases
+   - Understand method signatures, exception handling, and dependencies
+   - Review existing tests to avoid duplication
+3. **Create Tests Based on Analysis**:
+   - Create comprehensive test cases targeting specific uncovered areas
+   - Focus on error handling, permission checks, and business logic validation
+   - Use appropriate mocking strategies for external dependencies
+4. **Iterate Until Coverage Target is Met**:
+   - Run coverage reports to identify remaining gaps
+   - Iterate on analysis and implementation until target coverage is achieved
+   - Ensure all tests pass and maintain code quality standards
 
 ## Project Overview
 
