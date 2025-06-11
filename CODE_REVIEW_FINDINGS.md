@@ -501,7 +501,7 @@ The Minecraft Server Dashboard API is a solid, production-ready application with
 ### 🟠 Medium Priority (Week 3-4)
 **Impact: Medium | Difficulty: Medium**
 
-- [ ] **MEDIUM-1**: Split large `servers/router.py` into modules
+- [x] **MEDIUM-1**: Split large `servers/router.py` into modules
   - Current: 972 lines → Split into management/control/import_export
   - Impact: Medium (maintainability)
   - Difficulty: Medium

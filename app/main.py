@@ -11,7 +11,7 @@ from app.backups.scheduler_router import router as scheduler_router
 from app.core.database import Base, engine
 from app.files.router import router as files_router
 from app.groups.router import router as groups_router
-from app.servers.router import router as servers_router
+from app.servers.routers import router as servers_router
 from app.templates.router import router as templates_router
 
 # Import all models to ensure they are registered with SQLAlchemy
