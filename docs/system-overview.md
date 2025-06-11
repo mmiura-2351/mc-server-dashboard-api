@@ -26,9 +26,11 @@ The Minecraft Server Dashboard API is a comprehensive FastAPI-based backend syst
 
 ### 📁 File Management
 - Secure file operations within server directories
-- File version history tracking
-- Upload/download capabilities
+- File edit history with version tracking and rollback capabilities
+- Real-time file synchronization and monitoring
+- Upload/download capabilities with validation
 - File search and batch operations
+- Automatic backup creation before edits
 
 ### 🔐 Security & Authentication
 - JWT-based authentication with refresh tokens
