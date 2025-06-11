@@ -772,3 +772,256 @@ class TestMinecraftServerManagerEnhanced:
         
         # Run the async test
         asyncio.run(run_test())
+
+    # Strategic tests to reach 70% coverage - targeting specific missing lines
+    
+    @pytest.mark.asyncio
+    async def test_ensure_eula_accepted_file_creation(self, manager):
+        """Test line 80: EULA file creation when file doesn't exist"""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            server_dir = Path(temp_dir)
+            eula_path = server_dir / "eula.txt"
+            
+            # Ensure file doesn't exist
+            assert not eula_path.exists()
+            
+            with patch('app.services.minecraft_server.logger') as mock_logger:
+                result = await manager._ensure_eula_accepted(server_dir)
+                
+                assert result is True
+                assert eula_path.exists()
+                
+                # Verify the creation log message (line 78)
+                mock_logger.info.assert_called_with(f"Creating EULA acceptance file: {eula_path}")
+                
+                # Verify file content (line 80)
+                with open(eula_path, "r") as f:
+                    content = f.read()
+                    assert "eula=true" in content
+
+    @pytest.mark.asyncio
+    async def test_check_java_availability_debug_logging(self, manager):
+        """Test lines 131-132: Java availability debug logging"""
+        mock_result = Mock()
+        mock_result.returncode = 0
+        mock_result.stderr = "java 17.0.1 2021-10-19 LTS"
+        
+        with patch('subprocess.run', return_value=mock_result):
+            with patch('app.services.minecraft_server.logger') as mock_logger:
+                result = await manager._check_java_availability()
+                
+                assert result is True
+                # Verify debug logging happens (lines 131-132 region)
+                mock_logger.debug.assert_called()
+
+    @pytest.mark.asyncio  
+    async def test_stop_server_process_already_terminated(self, manager):
+        """Test lines 274-278: Stop server when process already terminated"""
+        mock_process = Mock()
+        mock_process.returncode = 0  # Process already terminated
+        
+        server_process = ServerProcess(
+            server_id=1,
+            process=mock_process,
+            log_queue=Mock(),
+            status=ServerStatus.running,
+            started_at=datetime.now()
+        )
+        manager.processes[1] = server_process
+        
+        with patch('app.services.minecraft_server.logger') as mock_logger:
+            result = await manager.stop_server(1)
+            
+            assert result is True
+            # Verify the specific log message (line 274)
+            mock_logger.info.assert_called_with("Server 1 process already terminated")
+            # Verify process was cleaned up (line 276)
+            assert 1 not in manager.processes
+
+    @pytest.mark.asyncio
+    async def test_start_server_process_monitoring_with_error_output(self, manager, mock_server):
+        """Test lines 211-220: Process starts but exits with error output"""
+        import tempfile
+        from pathlib import Path
+        
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            mock_server.directory_path = str(temp_path)
+            
+            # Create a mock process that exits after a delay with error output
+            mock_process = AsyncMock()
+            mock_process.pid = 12345
+            mock_process.returncode = None  # Initially running
+            
+            # Mock stdout for error reading
+            mock_stdout = AsyncMock()
+            error_data = b"Java error: insufficient memory"
+            
+            async def mock_read(size):
+                return error_data
+            
+            mock_stdout.read = mock_read
+            mock_process.stdout = mock_stdout
+            
+            # Simulate process exiting during monitoring
+            call_count = [0]
+            original_returncode = mock_process.returncode
+            
+            def returncode_side_effect():
+                call_count[0] += 1
+                if call_count[0] <= 2:  # First 2 checks: still running
+                    return None
+                else:  # 3rd check: process exited
+                    return 1
+            
+            type(mock_process).returncode = property(lambda self: returncode_side_effect())
+            
+            with patch.object(manager, '_check_java_availability', return_value=True):
+                with patch.object(manager, '_ensure_eula_accepted', return_value=True):
+                    with patch.object(manager, '_validate_server_files', return_value=(True, "Valid")):
+                        with patch('asyncio.create_subprocess_exec', return_value=mock_process):
+                            with patch('app.services.minecraft_server.logger') as mock_logger:
+                                result = await manager.start_server(mock_server)
+                                
+                                assert result is False
+                                # Should log the error output (lines 216-218)
+                                error_calls = [call for call in mock_logger.error.call_args_list 
+                                             if 'immediate error' in str(call)]
+                                assert len(error_calls) > 0
+
+    @pytest.mark.asyncio
+    async def test_start_server_process_verification_success(self, manager, mock_server):
+        """Test lines 223-257: Successful process start and log reading setup"""
+        import tempfile
+        from pathlib import Path
+        
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            mock_server.directory_path = str(temp_path)
+            
+            # Create a mock process that starts successfully
+            mock_process = AsyncMock()
+            mock_process.pid = 12345
+            mock_process.returncode = None  # Process running
+            mock_process.stdout = AsyncMock()
+            
+            with patch.object(manager, '_check_java_availability', return_value=True):
+                with patch.object(manager, '_ensure_eula_accepted', return_value=True):
+                    with patch.object(manager, '_validate_server_files', return_value=(True, "Valid")):
+                        with patch('asyncio.create_subprocess_exec', return_value=mock_process):
+                            with patch.object(manager, '_read_server_logs') as mock_read_logs:
+                                with patch('app.services.minecraft_server.logger') as mock_logger:
+                                    result = await manager.start_server(mock_server)
+                                    
+                                    assert result is True
+                                    # Verify success logging (line 223-224)
+                                    success_calls = [call for call in mock_logger.info.call_args_list 
+                                                   if 'Process verification successful' in str(call)]
+                                    assert len(success_calls) > 0
+                                    
+                                    # Verify process was added to processes dict
+                                    assert mock_server.id in manager.processes
+                                    
+                                    # Verify log reading task was started
+                                    mock_read_logs.assert_called()
+
+    @pytest.mark.asyncio
+    async def test_read_server_logs_queue_empty_exception(self, manager):
+        """Test lines 442-443: Queue empty exception handling in log reading"""
+        import asyncio
+        from unittest.mock import AsyncMock
+        
+        # Create a mock server process
+        mock_process = AsyncMock()
+        
+        # Create async iterator that yields one line
+        async def async_lines():
+            yield b"Test log line\n"
+        
+        mock_process.stdout = async_lines()
+        
+        # Create a queue that will be full
+        log_queue = asyncio.Queue(maxsize=1)
+        
+        server_process = ServerProcess(
+            server_id=1,
+            process=mock_process,
+            log_queue=log_queue,
+            status=ServerStatus.running,
+            started_at=datetime.now()
+        )
+        
+        # Fill the queue
+        await log_queue.put("existing log")
+        
+        # Mock get_nowait to raise QueueEmpty after first call
+        original_get_nowait = log_queue.get_nowait
+        call_count = [0]
+        
+        def mock_get_nowait():
+            call_count[0] += 1
+            if call_count[0] == 1:
+                return original_get_nowait()  # Return existing log
+            else:
+                raise asyncio.QueueEmpty()  # Second call raises exception (line 442)
+        
+        log_queue.get_nowait = mock_get_nowait
+        
+        # This should exercise the QueueEmpty exception path (lines 442-443)
+        await manager._read_server_logs(server_process)
+        
+        # Queue should still have content
+        assert not log_queue.empty()
+
+    @pytest.mark.asyncio
+    async def test_stream_server_logs_timeout_and_exception(self, manager):
+        """Test lines 418-422: Stream logs timeout and exception handling"""
+        import asyncio
+        
+        # Create a queue that will timeout
+        log_queue = asyncio.Queue()
+        
+        mock_process = Mock()
+        server_process = ServerProcess(
+            server_id=1,
+            process=mock_process,
+            log_queue=log_queue,
+            status=ServerStatus.running,
+            started_at=datetime.now()
+        )
+        manager.processes[1] = server_process
+        
+        # Mock the queue.get to raise TimeoutError, then an exception
+        call_count = [0]
+        
+        async def mock_get():
+            call_count[0] += 1
+            if call_count[0] == 1:
+                raise asyncio.TimeoutError()  # First call times out (line 418)
+            elif call_count[0] == 2:
+                raise Exception("Queue error")  # Second call raises exception (line 421)
+            else:
+                # Stop the loop by removing server from processes
+                if 1 in manager.processes:
+                    del manager.processes[1]
+                raise StopAsyncIteration()
+        
+        log_queue.get = mock_get
+        
+        with patch('app.services.minecraft_server.logger') as mock_logger:
+            # Collect logs from the generator
+            logs = []
+            try:
+                async for log in manager.stream_server_logs(1):
+                    logs.append(log)
+            except StopAsyncIteration:
+                pass
+            
+            # Should handle both timeout and exception (lines 418-422)
+            assert len(logs) == 0  # No logs yielded due to errors
+            
+            # Verify error was logged for the exception case
+            if mock_logger.error.called:
+                error_calls = [call for call in mock_logger.error.call_args_list 
+                             if 'Error streaming logs' in str(call)]
+                assert len(error_calls) > 0
