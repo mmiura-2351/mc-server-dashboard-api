@@ -453,7 +453,7 @@ The Minecraft Server Dashboard API is a solid, production-ready application with
   - Difficulty: Low
   - Time: 2-3 hours
 
-- [ ] **CRITICAL-3**: Standardize authorization patterns across all routers
+- [x] **CRITICAL-3**: Standardize authorization patterns across all routers
   - Replace local helpers with `authorization_service`
   - Impact: High (security consistency)
   - Difficulty: Medium

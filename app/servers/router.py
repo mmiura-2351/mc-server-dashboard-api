@@ -36,6 +36,7 @@ from app.servers.schemas import (
     SupportedVersionsResponse,
 )
 from app.servers.service import server_service
+from app.services.authorization_service import authorization_service
 from app.services.jar_cache_manager import jar_cache_manager
 from app.services.minecraft_server import minecraft_server_manager
 from app.services.version_manager import minecraft_version_manager
@@ -46,23 +47,6 @@ logger = logging.getLogger(__name__)
 router = APIRouter(tags=["servers"])
 
 
-def check_server_owner_or_admin(server_id: int, current_user: User, db: Session):
-    """Check if user owns the server or is admin"""
-    from app.servers.models import Server
-
-    server = db.query(Server).filter(Server.id == server_id).first()
-    if not server:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Server not found"
-        )
-
-    if current_user.role != Role.admin and server.owner_id != current_user.id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Not authorized to access this server",
-        )
-
-    return server
 
 
 @router.post("", response_model=ServerResponse, status_code=status.HTTP_201_CREATED)
@@ -90,7 +74,7 @@ async def create_server(
     """
     try:
         # Only operators and admins can create servers
-        if current_user.role == Role.user:
+        if not authorization_service.can_create_server(current_user):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Only operators and admins can create servers",
@@ -152,7 +136,7 @@ async def get_server(
     """
     try:
         # Check ownership/admin access
-        check_server_owner_or_admin(server_id, current_user, db)
+        authorization_service.check_server_access(server_id, current_user, db)
 
         server = await server_service.get_server(server_id, db)
         if not server:
@@ -186,7 +170,7 @@ async def update_server(
     """
     try:
         # Check ownership/admin access
-        check_server_owner_or_admin(server_id, current_user, db)
+        authorization_service.check_server_access(server_id, current_user, db)
 
         # Check if server is running (some updates require server to be stopped)
         server_status = minecraft_server_manager.get_server_status(server_id)
@@ -228,7 +212,7 @@ async def delete_server(
     """
     try:
         # Check ownership/admin access
-        check_server_owner_or_admin(server_id, current_user, db)
+        authorization_service.check_server_access(server_id, current_user, db)
 
         success = await server_service.delete_server(server_id, db)
         if not success:
@@ -262,7 +246,7 @@ async def start_server(
     """
     try:
         # Check ownership/admin access
-        server = check_server_owner_or_admin(server_id, current_user, db)
+        server = authorization_service.check_server_access(server_id, current_user, db)
 
         # Check current status
         current_status = minecraft_server_manager.get_server_status(server_id)
@@ -352,7 +336,7 @@ async def stop_server(
     """
     try:
         # Check ownership/admin access
-        check_server_owner_or_admin(server_id, current_user, db)
+        authorization_service.check_server_access(server_id, current_user, db)
 
         # Check current status
         current_status = minecraft_server_manager.get_server_status(server_id)
@@ -400,7 +384,7 @@ async def restart_server(
     """
     try:
         # Check ownership/admin access
-        server = check_server_owner_or_admin(server_id, current_user, db)
+        server = authorization_service.check_server_access(server_id, current_user, db)
 
         current_status = minecraft_server_manager.get_server_status(server_id)
 
@@ -453,7 +437,7 @@ async def get_server_status(
     """
     try:
         # Check ownership/admin access
-        check_server_owner_or_admin(server_id, current_user, db)
+        authorization_service.check_server_access(server_id, current_user, db)
 
         from app.services.database_integration import database_integration_service
 
@@ -488,7 +472,7 @@ async def send_server_command(
     """
     try:
         # Check ownership/admin access
-        check_server_owner_or_admin(server_id, current_user, db)
+        authorization_service.check_server_access(server_id, current_user, db)
 
         # Check if server is running
         status = minecraft_server_manager.get_server_status(server_id)
@@ -531,7 +515,7 @@ async def get_server_logs(
     """
     try:
         # Check ownership/admin access
-        check_server_owner_or_admin(server_id, current_user, db)
+        authorization_service.check_server_access(server_id, current_user, db)
 
         logs = await minecraft_server_manager.get_server_logs(server_id, lines)
 
@@ -704,7 +688,7 @@ async def export_server(
     """
     try:
         # Check ownership/admin access (includes operators)
-        server = check_server_owner_or_admin(server_id, current_user, db)
+        server = authorization_service.check_server_access(server_id, current_user, db)
 
         # Check if server exists and get server directory
         server_dir = Path(server.directory_path)
@@ -819,7 +803,7 @@ async def import_server(
     """
     try:
         # Only operators and admins can import servers
-        if current_user.role == Role.user:
+        if not authorization_service.can_create_server(current_user):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Only operators and admins can import servers",

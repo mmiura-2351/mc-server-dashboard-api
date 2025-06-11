@@ -5,7 +5,8 @@ from sqlalchemy.orm import Session
 
 from app.auth.dependencies import get_current_user
 from app.core.database import get_db
-from app.servers.models import Server, ServerType
+from app.servers.models import ServerType
+from app.services.authorization_service import authorization_service
 from app.services.template_service import (
     TemplateAccessError,
     TemplateError,
@@ -21,30 +22,11 @@ from app.templates.schemas import (
     TemplateStatisticsResponse,
     TemplateUpdateRequest,
 )
-from app.users.models import Role, User
+from app.users.models import User
 
 router = APIRouter(tags=["templates"])
 
 
-def check_server_access(server_id: int, current_user: User, db: Session):
-    """Check if user has access to the server"""
-    server = (
-        db.query(Server)
-        .filter(Server.id == server_id, Server.is_deleted.is_(False))
-        .first()
-    )
-    if not server:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Server not found"
-        )
-
-    if current_user.role != Role.admin and server.owner_id != current_user.id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Not authorized to access this server",
-        )
-
-    return server
 
 
 @router.post(
@@ -71,10 +53,10 @@ async def create_template_from_server(
     """
     try:
         # Check server access
-        check_server_access(server_id, current_user, db)
+        authorization_service.check_server_access(server_id, current_user, db)
 
         # Only operators and admins can create templates
-        if current_user.role == Role.user:
+        if not authorization_service.can_create_template(current_user):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Only operators and admins can create templates",
@@ -123,7 +105,7 @@ async def create_custom_template(
     """
     try:
         # Only operators and admins can create templates
-        if current_user.role == Role.user:
+        if not authorization_service.can_create_template(current_user):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Only operators and admins can create templates",
@@ -348,7 +330,7 @@ async def clone_template(
     """
     try:
         # Only operators and admins can create templates
-        if current_user.role == Role.user:
+        if not authorization_service.can_create_template(current_user):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Only operators and admins can create templates",

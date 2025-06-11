@@ -17,8 +17,9 @@ from app.groups.schemas import (
     ServerAttachRequest,
     ServerGroupsResponse,
 )
+from app.services.authorization_service import authorization_service
 from app.services.group_service import GroupService
-from app.users.models import Role, User
+from app.users.models import User
 
 router = APIRouter(tags=["groups"])
 
@@ -41,7 +42,7 @@ async def create_group(
     """
     try:
         # Only operators and admins can create groups
-        if current_user.role == Role.user:
+        if not authorization_service.can_create_server(current_user):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Only operators and admins can create groups",
