@@ -5,11 +5,6 @@ from typing import Any, Dict
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.middleware.performance_monitoring import (
-    PerformanceMonitoringMiddleware,
-    get_performance_metrics,
-)
-
 from app.auth.router import router as auth_router
 
 # Import models to ensure they are registered with SQLAlchemy
@@ -19,6 +14,10 @@ from app.core.config import settings
 from app.core.database import Base, engine
 from app.files.router import router as files_router
 from app.groups.router import router as groups_router
+from app.middleware.performance_monitoring import (
+    PerformanceMonitoringMiddleware,
+    get_performance_metrics,
+)
 from app.servers.routers import router as servers_router
 from app.templates.router import router as templates_router
 
@@ -270,14 +269,14 @@ async def health_check():
 async def get_metrics():
     """Get performance metrics and statistics"""
     from datetime import datetime
-    
+
     metrics = get_performance_metrics()
-    
+
     return {
         "timestamp": datetime.now().isoformat(),
         "performance": metrics,
         "service_status": service_status.get_status(),
-        "message": "Performance metrics collected successfully"
+        "message": "Performance metrics collected successfully",
     }
 
 
@@ -286,7 +285,7 @@ app.add_middleware(
     PerformanceMonitoringMiddleware,
     enabled=True,
     log_slow_requests=True,
-    slow_request_threshold=1.0  # Log requests slower than 1 second
+    slow_request_threshold=1.0,  # Log requests slower than 1 second
 )
 
 app.add_middleware(

@@ -12,6 +12,7 @@ engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
 # Set up database query monitoring
 try:
     from app.middleware.database_monitoring import db_monitor
+
     db_monitor.setup_sqlalchemy_monitoring(engine)
 except ImportError:
     # Monitoring not available, continue without it
