@@ -38,6 +38,11 @@ dependencies = [
     "httpx==0.28.1",
     "black>=25.1.0",
     "ruff>=0.11.12",
+    "aiohttp>=3.12.9",
+    "aiofiles>=24.1.0",
+    "packaging>=24.0",
+    "chardet>=5.2.0",
+    "psutil>=6.1.0",
 ]
 
 [tool.uv.workspace]
@@ -58,3 +63,38 @@ fix = true
 
 [tool.ruff.lint]
 extend-select = ["I"]
+
+[dependency-groups]
+dev = [
+    "coverage[toml]>=7.8.2",
+]
+
+[tool.coverage.run]
+source = ["app"]
+omit = [
+    "*/tests/*",
+    "*/__init__.py",
+    "*/venv/*",
+    "*/.venv/*",
+]
+branch = true
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "if self.debug:",
+    "if settings.DEBUG",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if 0:",
+    "if __name__ == .__main__.:",
+    "class .*\\bProtocol\\):",
+    "@(abc\\.)?abstractmethod",
+]
+ignore_errors = true
+show_missing = true
+precision = 2
+
+[tool.coverage.html]
+directory = "htmlcov"

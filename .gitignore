@@ -16,3 +16,17 @@ wheels/
 
 # Database files
 *.db
+
+# Coverage reports
+.coverage
+htmlcov/
+coverage.json
+
+# Application runtime directories
+/cache/
+/servers/
+/backups/
+/file_history/
+
+# Test screenshots
+/screenshots/

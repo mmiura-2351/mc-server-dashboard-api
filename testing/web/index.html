@@ -1,0 +1,2347 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Minecraft Server Dashboard API Tester</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            margin: 0;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 100%;
+            height: calc(100vh - 40px);
+            margin: 0 auto;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #2c3e50 0%, #34495e 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+        
+        .header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+        }
+        
+        .header p {
+            font-size: 1.1em;
+            opacity: 0.9;
+        }
+        
+        .main-content {
+            display: flex;
+            flex: 1;
+            height: calc(100% - 120px);
+            overflow: hidden;
+        }
+        
+        .left-panel {
+            flex: 1;
+            padding: 20px;
+            overflow-y: auto;
+            border-right: 1px solid #e0e0e0;
+            background: #f9f9f9;
+        }
+        
+        .right-panel {
+            flex: 1;
+            padding: 20px;
+            overflow-y: auto;
+            background: #fff;
+        }
+        
+        .panel-title {
+            color: #2c3e50;
+            margin-bottom: 20px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #3498db;
+            font-size: 1.2em;
+            font-weight: bold;
+        }
+        
+        .section {
+            margin-bottom: 25px;
+            padding: 15px;
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+            background: white;
+        }
+        
+        .section h2 {
+            color: #2c3e50;
+            margin-bottom: 15px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #3498db;
+            font-size: 1.1em;
+        }
+        
+        .section h3 {
+            color: #34495e;
+            margin-bottom: 10px;
+            font-size: 1em;
+        }
+        
+        .form-group {
+            margin-bottom: 15px;
+        }
+        
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+            color: #555;
+        }
+        
+        input, textarea, select {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        
+        button {
+            background: linear-gradient(135deg, #3498db 0%, #2980b9 100%);
+            color: white;
+            padding: 12px 24px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 16px;
+            margin-right: 10px;
+            margin-bottom: 10px;
+            transition: all 0.3s ease;
+        }
+        
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(52, 152, 219, 0.3);
+        }
+        
+        .response {
+            background: #2c3e50;
+            color: #ecf0f1;
+            padding: 15px;
+            border-radius: 4px;
+            margin-top: 15px;
+            height: calc(100vh - 250px);
+            overflow-y: auto;
+            font-family: 'Monaco', 'Consolas', monospace;
+            font-size: 12px;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+        
+        .response-container {
+            display: block;
+        }
+        
+        .response.success {
+            border-left: 4px solid #27ae60;
+        }
+        
+        .response.error {
+            background: #e74c3c;
+            border-left: 4px solid #c0392b;
+        }
+        
+        .token-display {
+            background: #27ae60;
+            color: white;
+            padding: 10px;
+            border-radius: 4px;
+            margin: 10px 0;
+            word-break: break-all;
+        }
+        
+        .error {
+            background: #e74c3c;
+            color: white;
+            padding: 10px;
+            border-radius: 4px;
+            margin: 10px 0;
+        }
+        
+        .endpoint-grid {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 15px;
+            margin-top: 15px;
+        }
+        
+        .endpoint-card {
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            padding: 12px;
+            background: white;
+        }
+        
+        .endpoint-card h3 {
+            color: #2c3e50;
+            margin-bottom: 8px;
+            font-size: 0.9em;
+        }
+        
+        .method {
+            padding: 4px 8px;
+            border-radius: 4px;
+            color: white;
+            font-size: 12px;
+            font-weight: bold;
+            margin-right: 10px;
+        }
+        
+        .method.get { background: #3498db; }
+        .method.post { background: #2ecc71; }
+        .method.put { background: #f39c12; }
+        .method.delete { background: #e74c3c; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🎮 Minecraft Server Dashboard API Tester</h1>
+            <p>Real-time API testing interface for the Minecraft Server Management System</p>
+        </div>
+        
+        <div class="main-content">
+            <!-- Left Panel - Controls -->
+            <div class="left-panel">
+                <div class="panel-title">🎮 API Testing Controls</div>
+                
+                <!-- Authentication Section -->
+                <div class="section">
+                    <h2>🔐 Authentication</h2>
+                    
+                    <div class="form-group">
+                        <label for="apiUrl">API Base URL:</label>
+                        <input type="text" id="apiUrl" value="http://localhost:8001/api/v1">
+                    </div>
+                    
+                    <h3>User Registration</h3>
+                    <div class="form-group">
+                        <label for="regUsername">Username:</label>
+                        <input type="text" id="regUsername" value="admin">
+                    </div>
+                    <div class="form-group">
+                        <label for="regEmail">Email:</label>
+                        <input type="email" id="regEmail" value="admin@example.com">
+                    </div>
+                    <div class="form-group">
+                        <label for="regPassword">Password:</label>
+                        <input type="password" id="regPassword" value="admin123">
+                    </div>
+                    <div class="form-group">
+                        <label for="regFullName">Full Name:</label>
+                        <input type="text" id="regFullName" value="Admin User">
+                    </div>
+                    <button onclick="registerUser()">Register User</button>
+                    
+                    <h3>User Login</h3>
+                    <div class="form-group">
+                        <label for="loginUsername">Username:</label>
+                        <input type="text" id="loginUsername" value="admin">
+                    </div>
+                    <div class="form-group">
+                        <label for="loginPassword">Password:</label>
+                        <input type="password" id="loginPassword" value="admin123">
+                    </div>
+                    <button onclick="loginUser()">Login</button>
+                    
+                    <div id="tokenDisplay"></div>
+                </div>
+                
+                <!-- API Endpoints Testing -->
+                <div class="section">
+                    <h2>🧪 API Endpoints Testing</h2>
+                    
+                    <div class="endpoint-grid">
+                    <!-- Authentication Tests -->
+                    <div class="endpoint-card">
+                        <h3><span class="method get">GET</span>Current User Info</h3>
+                        <button onclick="testEndpoint('GET', '/users/me')">Test</button>
+                    </div>
+                    
+                    <div class="endpoint-card">
+                        <h3><span class="method get">GET</span>All Users (Admin)</h3>
+                        <button onclick="testEndpoint('GET', '/users/')">Test</button>
+                    </div>
+                    
+                    <!-- User Management Tests -->
+                    <div class="endpoint-card">
+                        <h3><span class="method post">POST</span>Approve User</h3>
+                        <input type="number" id="approveUserId" placeholder="User ID to approve" style="width: 100%; margin-bottom: 10px;">
+                        <button onclick="approveUser()">Approve User</button>
+                    </div>
+                    
+                    <div class="endpoint-card">
+                        <h3><span class="method put">PUT</span>Change User Role</h3>
+                        <input type="number" id="roleUserId" placeholder="User ID" style="width: 100%; margin-bottom: 5px;">
+                        <select id="newRole" style="width: 100%; margin-bottom: 10px;">
+                            <option value="user">User</option>
+                            <option value="operator">Operator</option>
+                            <option value="admin">Admin</option>
+                        </select>
+                        <button onclick="changeUserRole()">Change Role</button>
+                    </div>
+                    
+                    <div class="endpoint-card">
+                        <h3><span class="method put">PUT</span>Update Profile</h3>
+                        <input type="text" id="updateUsername" placeholder="New username" style="width: 100%; margin-bottom: 5px;">
+                        <input type="email" id="updateEmail" placeholder="New email" style="width: 100%; margin-bottom: 10px;">
+                        <button onclick="updateProfile()">Update Profile</button>
+                    </div>
+                    
+                    <div class="endpoint-card">
+                        <h3><span class="method put">PUT</span>Change Password</h3>
+                        <input type="password" id="currentPassword" placeholder="Current password" style="width: 100%; margin-bottom: 5px;">
+                        <input type="password" id="newPassword" placeholder="New password" style="width: 100%; margin-bottom: 10px;">
+                        <button onclick="changePassword()">Change Password</button>
+                    </div>
+                    
+                    <div class="endpoint-card">
+                        <h3><span class="method delete">DELETE</span>Delete User (Admin)</h3>
+                        <input type="number" id="deleteUserId" placeholder="User ID to delete" style="width: 100%; margin-bottom: 10px;">
+                        <button onclick="deleteUser()">Delete User</button>
+                    </div>
+                    
+                    <!-- Server Management Endpoints -->
+                    <div class="endpoint-card">
+                        <h3><span class="method get">GET</span>List Servers</h3>
+                        <button onclick="testEndpoint('GET', '/servers/')">Test</button>
+                    </div>
+                    
+                    <div class="endpoint-card">
+                        <h3><span class="method post">POST</span>Create Server</h3>
+                        <textarea id="serverData" rows="3" placeholder='{"name": "test-server", "server_type": "vanilla", "version": "1.20.1"}'></textarea>
+                        <button onclick="testEndpointWithData('POST', '/servers/', 'serverData')">Test</button>
+                    </div>
+                    
+                    <div class="endpoint-card">
+                        <h3><span class="method get">GET</span>Server Details</h3>
+                        <input type="number" id="serverDetailsId" placeholder="Server ID" style="width: 100%; margin-bottom: 5px;">
+                        <button onclick="testServerEndpoint('GET', 'Details')">Test</button>
+                    </div>
+                    
+                    <div class="endpoint-card">
+                        <h3><span class="method put">PUT</span>Update Server</h3>
+                        <input type="number" id="serverUpdateId" placeholder="Server ID" style="width: 100%; margin-bottom: 5px;">
+                        <textarea id="serverUpdateData" rows="2" placeholder='{"name": "updated-server"}'></textarea>
+                        <button onclick="testServerEndpointWithData('PUT', 'Update')">Test</button>
+                    </div>
+                    
+                    <div class="endpoint-card">
+                        <h3><span class="method delete">DELETE</span>Delete Server</h3>
+                        <input type="number" id="serverDeleteId" placeholder="Server ID" style="width: 100%; margin-bottom: 5px;">
+                        <button onclick="testServerEndpoint('DELETE', 'Delete')">Test</button>
+                    </div>
+                    
+                    <div class="endpoint-card">
+                        <h3><span class="method post">POST</span>Start Server</h3>
+                        <input type="number" id="serverStartId" placeholder="Server ID" style="width: 100%; margin-bottom: 5px;">
+                        <button onclick="testServerEndpoint('POST', 'Start')">Test</button>
+                    </div>
+                    
+                    <div class="endpoint-card">
+                        <h3><span class="method post">POST</span>Stop Server</h3>
+                        <input type="number" id="serverStopId" placeholder="Server ID" style="width: 100%; margin-bottom: 5px;">
+                        <button onclick="testServerEndpoint('POST', 'Stop')">Test</button>
+                    </div>
+                    
+                    <div class="endpoint-card">
+                        <h3><span class="method post">POST</span>Restart Server</h3>
+                        <input type="number" id="serverRestartId" placeholder="Server ID" style="width: 100%; margin-bottom: 5px;">
+                        <button onclick="testServerEndpoint('POST', 'Restart')">Test</button>
+                    </div>
+                    
+                    <div class="endpoint-card">
+                        <h3><span class="method get">GET</span>Server Status</h3>
+                        <input type="number" id="serverStatusId" placeholder="Server ID" style="width: 100%; margin-bottom: 5px;">
+                        <button onclick="testServerEndpoint('GET', 'Status')">Test</button>
+                    </div>
+                    
+                    <div class="endpoint-card">
+                        <h3><span class="method post">POST</span>Send Command</h3>
+                        <input type="number" id="serverCommandId" placeholder="Server ID" style="width: 100%; margin-bottom: 5px;">
+                        <input type="text" id="serverCommand" placeholder="Command" style="width: 100%; margin-bottom: 5px;">
+                        <button onclick="testServerCommand()">Test</button>
+                    </div>
+                    
+                    <div class="endpoint-card">
+                        <h3><span class="method get">GET</span>Server Logs</h3>
+                        <input type="number" id="serverLogsId" placeholder="Server ID" style="width: 100%; margin-bottom: 5px;">
+                        <input type="number" id="serverLogsLines" placeholder="Lines (optional)" style="width: 100%; margin-bottom: 5px;">
+                        <button onclick="testServerLogs()">Test</button>
+                    </div>
+                    
+                    <div class="endpoint-card">
+                        <h3><span class="method get">GET</span>Supported Versions</h3>
+                        <button onclick="testEndpoint('GET', '/servers/versions/supported')">Test</button>
+                    </div>
+                    
+                    <div class="endpoint-card">
+                        <h3><span class="method get">GET</span>Export Server</h3>
+                        <input type="number" id="exportServerId" placeholder="Server ID" style="width: 100%; margin-bottom: 5px;">
+                        <button onclick="testServerExport()">Export</button>
+                    </div>
+                    
+                    <div class="endpoint-card">
+                        <h3><span class="method post">POST</span>Import Server</h3>
+                        <input type="text" id="importServerName" placeholder="Server name" style="width: 100%; margin-bottom: 5px;">
+                        <input type="text" id="importServerDescription" placeholder="Description (optional)" style="width: 100%; margin-bottom: 5px;">
+                        <input type="file" id="importServerFile" accept=".zip" style="width: 100%; margin-bottom: 5px;">
+                        <button onclick="testServerImport()">Import</button>
+                    </div>
+                    
+                    <!-- Group Management Endpoints -->
+                    <div class="endpoint-card">
+                        <h3><span class="method get">GET</span>List Groups</h3>
+                        <button onclick="testEndpoint('GET', '/groups/')">Test</button>
+                    </div>
+                    
+                    <div class="endpoint-card">
+                        <h3><span class="method post">POST</span>Create Group</h3>
+                        <textarea id="groupData" rows="2" placeholder='{"name": "test-group", "type": "op"}'></textarea>
+                        <button onclick="testEndpointWithData('POST', '/groups/', 'groupData')">Test</button>
+                    </div>
+                    
+                    <div class="endpoint-card">
+                        <h3><span class="method get">GET</span>Group Details</h3>
+                        <input type="number" id="groupDetailsId" placeholder="Group ID" style="width: 100%; margin-bottom: 5px;">
+                        <button onclick="testGroupEndpoint('GET', 'Details')">Test</button>
+                    </div>
+                    
+                    <div class="endpoint-card">
+                        <h3><span class="method put">PUT</span>Update Group</h3>
+                        <input type="number" id="groupUpdateId" placeholder="Group ID" style="width: 100%; margin-bottom: 5px;">
+                        <textarea id="groupUpdateData" rows="2" placeholder='{"name": "updated-group"}'></textarea>
+                        <button onclick="testGroupEndpointWithData('PUT', 'Update')">Test</button>
+                    </div>
+                    
+                    <div class="endpoint-card">
+                        <h3><span class="method delete">DELETE</span>Delete Group</h3>
+                        <input type="number" id="groupDeleteId" placeholder="Group ID" style="width: 100%; margin-bottom: 5px;">
+                        <button onclick="testGroupEndpoint('DELETE', 'Delete')">Test</button>
+                    </div>
+                    
+                    <div class="endpoint-card">
+                        <h3><span class="method post">POST</span>Add Player to Group</h3>
+                        <input type="number" id="groupPlayerId" placeholder="Group ID" style="width: 100%; margin-bottom: 5px;">
+                        <input type="text" id="playerName" placeholder="Player Name" style="width: 100%; margin-bottom: 5px;">
+                        <button onclick="testAddPlayer()">Test</button>
+                    </div>
+                    
+                    <div class="endpoint-card">
+                        <h3><span class="method delete">DELETE</span>Remove Player</h3>
+                        <input type="number" id="groupRemovePlayerId" placeholder="Group ID" style="width: 100%; margin-bottom: 5px;">
+                        <input type="text" id="removePlayerUuid" placeholder="Player UUID" style="width: 100%; margin-bottom: 5px;">
+                        <button onclick="testRemovePlayer()">Test</button>
+                    </div>
+                    
+                    <div class="endpoint-card">
+                        <h3><span class="method post">POST</span>Attach to Server</h3>
+                        <input type="number" id="groupAttachId" placeholder="Group ID" style="width: 100%; margin-bottom: 5px;">
+                        <input type="number" id="attachServerId" placeholder="Server ID" style="width: 100%; margin-bottom: 5px;">
+                        <button onclick="testGroupServerAttach()">Test</button>
+                    </div>
+                    
+                    <div class="endpoint-card">
+                        <h3><span class="method delete">DELETE</span>Detach from Server</h3>
+                        <input type="number" id="groupDetachId" placeholder="Group ID" style="width: 100%; margin-bottom: 5px;">
+                        <input type="number" id="detachServerId" placeholder="Server ID" style="width: 100%; margin-bottom: 5px;">
+                        <button onclick="testGroupServerDetach()">Test</button>
+                    </div>
+                    
+                    <!-- Backup Management Endpoints -->
+                    <div class="endpoint-card">
+                        <h3><span class="method post">POST</span>Create Backup</h3>
+                        <input type="number" id="backupServerId" placeholder="Server ID" style="width: 100%; margin-bottom: 5px;">
+                        <textarea id="backupData" rows="2" placeholder='{"name": "manual-backup", "description": "Manual backup from API tester"}'></textarea>
+                        <button onclick="testCreateBackup()">Test</button>
+                    </div>
+                    
+                    <div class="endpoint-card">
+                        <h3><span class="method get">GET</span>Server Backups</h3>
+                        <input type="number" id="listBackupServerId" placeholder="Server ID" style="width: 100%; margin-bottom: 5px;">
+                        <button onclick="testServerBackups()">Test</button>
+                    </div>
+                    
+                    <div class="endpoint-card">
+                        <h3><span class="method get">GET</span>All Backups (Admin)</h3>
+                        <button onclick="testEndpoint('GET', '/backups/')">Test</button>
+                    </div>
+                    
+                    <div class="endpoint-card">
+                        <h3><span class="method get">GET</span>Backup Details</h3>
+                        <input type="number" id="backupDetailsId" placeholder="Backup ID" style="width: 100%; margin-bottom: 5px;">
+                        <button onclick="testBackupEndpoint('GET', 'Details')">Test</button>
+                    </div>
+                    
+                    <div class="endpoint-card">
+                        <h3><span class="method post">POST</span>Restore Backup</h3>
+                        <input type="number" id="restoreBackupId" placeholder="Backup ID" style="width: 100%; margin-bottom: 5px;">
+                        <textarea id="restoreData" rows="2" placeholder='{"target_server_name": "restored-server"}'></textarea>
+                        <button onclick="testRestoreBackup()">Test</button>
+                    </div>
+                    
+                    <div class="endpoint-card">
+                        <h3><span class="method delete">DELETE</span>Delete Backup</h3>
+                        <input type="number" id="deleteBackupId" placeholder="Backup ID" style="width: 100%; margin-bottom: 5px;">
+                        <button onclick="testBackupEndpoint('DELETE', 'Delete')">Test</button>
+                    </div>
+                    
+                    <div class="endpoint-card">
+                        <h3><span class="method get">GET</span>Backup Statistics</h3>
+                        <input type="number" id="statsServerId" placeholder="Server ID (optional)" style="width: 100%; margin-bottom: 5px;">
+                        <button onclick="testBackupStats()">Test</button>
+                    </div>
+                    
+                    <div class="endpoint-card">
+                        <h3><span class="method get">GET</span>Scheduler Status</h3>
+                        <button onclick="testEndpoint('GET', '/backups/scheduler/status')">Test</button>
+                    </div>
+                    
+                    <!-- Template Management Endpoints -->
+                    <div class="endpoint-card">
+                        <h3><span class="method get">GET</span>List Templates</h3>
+                        <button onclick="testEndpoint('GET', '/templates/')">Test</button>
+                    </div>
+                    
+                    <div class="endpoint-card">
+                        <h3><span class="method post">POST</span>Create from Server</h3>
+                        <input type="number" id="templateServerId" placeholder="Server ID" style="width: 100%; margin-bottom: 5px;">
+                        <textarea id="templateFromServerData" rows="2" placeholder='{"name": "template-name", "description": "Template desc"}'></textarea>
+                        <button onclick="testCreateTemplateFromServer()">Test</button>
+                    </div>
+                    
+                    <div class="endpoint-card">
+                        <h3><span class="method post">POST</span>Create Custom Template</h3>
+                        <textarea id="customTemplateData" rows="3" placeholder='{"name": "custom-template", "description": "Custom template", "minecraft_version": "1.20.1"}'></textarea>
+                        <button onclick="testEndpointWithData('POST', '/templates/', 'customTemplateData')">Test</button>
+                    </div>
+                    
+                    <div class="endpoint-card">
+                        <h3><span class="method get">GET</span>Template Details</h3>
+                        <input type="number" id="templateDetailsId" placeholder="Template ID" style="width: 100%; margin-bottom: 5px;">
+                        <button onclick="testTemplateEndpoint('GET', 'Details')">Test</button>
+                    </div>
+                    
+                    <div class="endpoint-card">
+                        <h3><span class="method put">PUT</span>Update Template</h3>
+                        <input type="number" id="templateUpdateId" placeholder="Template ID" style="width: 100%; margin-bottom: 5px;">
+                        <textarea id="templateUpdateData" rows="2" placeholder='{"name": "updated-template"}'></textarea>
+                        <button onclick="testTemplateEndpointWithData('PUT', 'Update')">Test</button>
+                    </div>
+                    
+                    <div class="endpoint-card">
+                        <h3><span class="method delete">DELETE</span>Delete Template</h3>
+                        <input type="number" id="templateDeleteId" placeholder="Template ID" style="width: 100%; margin-bottom: 5px;">
+                        <button onclick="testTemplateEndpoint('DELETE', 'Delete')">Test</button>
+                    </div>
+                    
+                    <div class="endpoint-card">
+                        <h3><span class="method post">POST</span>Clone Template</h3>
+                        <input type="number" id="cloneTemplateId" placeholder="Template ID" style="width: 100%; margin-bottom: 5px;">
+                        <textarea id="cloneTemplateData" rows="2" placeholder='{"name": "cloned-template"}'></textarea>
+                        <button onclick="testCloneTemplate()">Test</button>
+                    </div>
+                    
+                    <!-- File Management Endpoints -->
+                    <div class="endpoint-card">
+                        <h3><span class="method get">GET</span>List Server Files</h3>
+                        <input type="number" id="fileServerId" placeholder="Server ID" style="width: 100%; margin-bottom: 5px;">
+                        <input type="text" id="filePath" placeholder="Path (optional)" style="width: 100%; margin-bottom: 5px;">
+                        <button onclick="testServerFiles()">Test</button>
+                    </div>
+                    
+                    <div class="endpoint-card">
+                        <h3><span class="method get">GET</span>Read File</h3>
+                        <input type="number" id="readFileServerId" placeholder="Server ID" style="width: 100%; margin-bottom: 5px;">
+                        <input type="text" id="readFilePath" placeholder="File Path" style="width: 100%; margin-bottom: 5px;">
+                        <button onclick="testReadFile()">Test</button>
+                    </div>
+                    
+                    <div class="endpoint-card">
+                        <h3><span class="method put">PUT</span>Write File</h3>
+                        <input type="number" id="writeFileServerId" placeholder="Server ID" style="width: 100%; margin-bottom: 5px;">
+                        <input type="text" id="writeFilePath" placeholder="File Path" style="width: 100%; margin-bottom: 5px;">
+                        <textarea id="fileContent" rows="2" placeholder="File content"></textarea>
+                        <button onclick="testWriteFile()">Test</button>
+                    </div>
+                    
+                    <div class="endpoint-card">
+                        <h3><span class="method delete">DELETE</span>Delete File</h3>
+                        <input type="number" id="deleteFileServerId" placeholder="Server ID" style="width: 100%; margin-bottom: 5px;">
+                        <input type="text" id="deleteFilePath" placeholder="File Path" style="width: 100%; margin-bottom: 5px;">
+                        <button onclick="testDeleteFile()">Test</button>
+                    </div>
+                    
+                    <div class="endpoint-card">
+                        <h3><span class="method post">POST</span>Search Files</h3>
+                        <input type="number" id="searchServerId" placeholder="Server ID" style="width: 100%; margin-bottom: 5px;">
+                        <textarea id="searchData" rows="2" placeholder='{"pattern": "*.log", "search_content": "error"}'></textarea>
+                        <button onclick="testSearchFiles()">Test</button>
+                    </div>
+                    
+                    <div class="endpoint-card">
+                        <h3><span class="method post">POST</span>Create Directory</h3>
+                        <input type="number" id="createDirServerId" placeholder="Server ID" style="width: 100%; margin-bottom: 5px;">
+                        <input type="text" id="createDirPath" placeholder="Directory Path" style="width: 100%; margin-bottom: 5px;">
+                        <textarea id="createDirData" rows="1" placeholder='{"name": "new-directory"}'></textarea>
+                        <button onclick="testCreateDirectory()">Test</button>
+                    </div>
+                    </div>
+                </div>
+                
+                <!-- Custom Request -->
+                <div class="section">
+                    <h2>🛠️ Custom Request</h2>
+                    <div class="form-group">
+                        <label for="customMethod">Method:</label>
+                        <select id="customMethod">
+                            <option value="GET">GET</option>
+                            <option value="POST">POST</option>
+                            <option value="PUT">PUT</option>
+                            <option value="DELETE">DELETE</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="customEndpoint">Endpoint (e.g., /users/me):</label>
+                        <input type="text" id="customEndpoint" value="/users/me">
+                    </div>
+                    <div class="form-group">
+                        <label for="customContentType">Content-Type:</label>
+                        <select id="customContentType">
+                            <option value="application/json">application/json</option>
+                            <option value="application/x-www-form-urlencoded">application/x-www-form-urlencoded</option>
+                            <option value="multipart/form-data">multipart/form-data</option>
+                            <option value="text/plain">text/plain</option>
+                            <option value="application/xml">application/xml</option>
+                            <option value="text/html">text/html</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="customData">Request Body:</label>
+                        <textarea id="customData" rows="3" placeholder='{"key": "value"} or form data'></textarea>
+                    </div>
+                    <button onclick="makeCustomRequest()">Send Request</button>
+                </div>
+            </div>
+            
+            <!-- Right Panel - Response -->
+            <div class="right-panel">
+                <div class="panel-title">📋 Latest API Response</div>
+                
+                <div class="response-container">
+                    <div id="lastRequestInfo" style="margin-bottom: 10px; font-weight: bold; color: #2c3e50;"></div>
+                    <div id="apiResponse" class="response">No API requests executed yet. Select an API test from the left panel to see the response here.</div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        let authToken = '';
+        const apiBaseUrl = () => document.getElementById('apiUrl').value;
+        
+        function showResponse(requestInfo, response, isError = false) {
+            const responseElement = document.getElementById('apiResponse');
+            const infoElement = document.getElementById('lastRequestInfo');
+            
+            // Update request info
+            infoElement.textContent = requestInfo;
+            
+            // Update response content
+            responseElement.textContent = JSON.stringify(response, null, 2);
+            responseElement.className = isError ? 'response error' : 'response success';
+            
+            // Auto-scroll to top of response area
+            responseElement.scrollTop = 0;
+        }
+        
+        function updateTokenDisplay(token) {
+            const tokenDiv = document.getElementById('tokenDisplay');
+            if (token) {
+                authToken = token;
+                tokenDiv.innerHTML = `<div class="token-display">🔑 Token: ${token.substring(0, 50)}...</div>`;
+            } else {
+                tokenDiv.innerHTML = '';
+            }
+        }
+        
+        async function registerUser() {
+            const userData = {
+                username: document.getElementById('regUsername').value,
+                email: document.getElementById('regEmail').value,
+                password: document.getElementById('regPassword').value,
+                full_name: document.getElementById('regFullName').value
+            };
+            
+            try {
+                const response = await fetch(`${apiBaseUrl()}/users/register`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(userData)
+                });
+                
+                const data = await response.json();
+                showResponse('POST /users/register', data, !response.ok);
+            } catch (error) {
+                showResponse('POST /users/register', { error: error.message }, true);
+            }
+        }
+        
+        async function loginUser() {
+            const formData = new FormData();
+            formData.append('username', document.getElementById('loginUsername').value);
+            formData.append('password', document.getElementById('loginPassword').value);
+            
+            try {
+                const response = await fetch(`${apiBaseUrl()}/auth/token`, {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                const data = await response.json();
+                showResponse('POST /auth/token', data, !response.ok);
+                
+                if (response.ok && data.access_token) {
+                    updateTokenDisplay(data.access_token);
+                }
+            } catch (error) {
+                showResponse('POST /auth/token', { error: error.message }, true);
+            }
+        }
+        
+        async function testEndpoint(method, endpoint) {
+            if (!authToken) {
+                showResponse(`${method} ${endpoint}`, { error: 'Please login first to get authentication token' }, true);
+                return;
+            }
+            
+            try {
+                const response = await fetch(`${apiBaseUrl()}${endpoint}`, {
+                    method: method,
+                    headers: {
+                        'Authorization': `Bearer ${authToken}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+                
+                const data = await response.json();
+                showResponse(`${method} ${endpoint} - Status: ${response.status}`, data, !response.ok);
+            } catch (error) {
+                showResponse(`${method} ${endpoint}`, { error: error.message }, true);
+            }
+        }
+        
+        async function testEndpointWithData(method, endpoint, dataElementId) {
+            if (!authToken) {
+                showResponse(`${method} ${endpoint}`, { error: 'Please login first to get authentication token' }, true);
+                return;
+            }
+            
+            const dataElement = document.getElementById(dataElementId);
+            let requestData = {};
+            
+            if (dataElement.value.trim()) {
+                try {
+                    requestData = JSON.parse(dataElement.value);
+                } catch (error) {
+                    showResponse(`${method} ${endpoint}`, { error: 'Invalid JSON data' }, true);
+                    return;
+                }
+            }
+            
+            try {
+                const response = await fetch(`${apiBaseUrl()}${endpoint}`, {
+                    method: method,
+                    headers: {
+                        'Authorization': `Bearer ${authToken}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(requestData)
+                });
+                
+                const data = await response.json();
+                showResponse(`${method} ${endpoint} - Status: ${response.status}`, {
+                    requestData: requestData,
+                    response: data 
+                }, !response.ok);
+            } catch (error) {
+                showResponse(`${method} ${endpoint}`, { error: error.message }, true);
+            }
+        }
+        
+        async function makeCustomRequest() {
+            const method = document.getElementById('customMethod').value;
+            const endpoint = document.getElementById('customEndpoint').value;
+            const customData = document.getElementById('customData').value;
+            const contentType = document.getElementById('customContentType').value;
+            
+            let requestData = customData.trim();
+            let requestBody = null;
+            
+            // Prepare request body based on content type
+            if (method !== 'GET' && requestData) {
+                if (contentType === 'application/json') {
+                    try {
+                        // Validate JSON
+                        requestData = JSON.parse(customData);
+                        requestBody = JSON.stringify(requestData);
+                    } catch (error) {
+                        showResponse(`${method} ${endpoint}`, { error: 'Invalid JSON data' }, true);
+                        return;
+                    }
+                } else if (contentType === 'application/x-www-form-urlencoded') {
+                    // For form data, use the data as-is (should be key=value&key2=value2 format)
+                    requestBody = requestData;
+                    requestData = requestData; // Keep original for display
+                } else if (contentType === 'multipart/form-data') {
+                    // For multipart, we'll need to handle this differently
+                    // For now, just use the data as-is and let the browser handle it
+                    requestBody = requestData;
+                    requestData = requestData; // Keep original for display
+                } else {
+                    // For other content types (text/plain, application/xml, etc.)
+                    requestBody = requestData;
+                }
+            }
+            
+            const headers = {};
+            
+            // Only set Content-Type for non-multipart requests (browser handles multipart automatically)
+            if (contentType !== 'multipart/form-data') {
+                headers['Content-Type'] = contentType;
+            }
+            
+            if (authToken) {
+                headers['Authorization'] = `Bearer ${authToken}`;
+            }
+            
+            const requestOptions = {
+                method: method,
+                headers: headers
+            };
+            
+            if (requestBody !== null) {
+                requestOptions.body = requestBody;
+            }
+            
+            try {
+                const response = await fetch(`${apiBaseUrl()}${endpoint}`, requestOptions);
+                
+                let responseData;
+                const responseContentType = response.headers.get('content-type');
+                
+                // Try to parse response based on content type
+                if (responseContentType && responseContentType.includes('application/json')) {
+                    responseData = await response.json();
+                } else {
+                    responseData = await response.text();
+                }
+                
+                showResponse(`${method} ${endpoint} - Status: ${response.status}`, {
+                    requestData: requestData,
+                    response: responseData 
+                }, !response.ok);
+            } catch (error) {
+                showResponse(`${method} ${endpoint}`, { error: error.message }, true);
+            }
+        }
+        
+        // User management functions
+        async function approveUser() {
+            if (!authToken) {
+                showResponse('API Request', { error: 'Please login first to get authentication token' }, true);
+                return;
+            }
+            
+            const userId = document.getElementById('approveUserId').value;
+            if (!userId) {
+                showResponse('API Request', { error: 'Please enter a user ID to approve' }, true);
+                return;
+            }
+            
+            try {
+                const response = await fetch(`${apiBaseUrl()}/users/approve/${userId}`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${authToken}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+                
+                const data = await response.json();
+                showResponse(`POST /users/approve/${userId} - Status: ${response.status}`, data, !response.ok);
+            } catch (error) {
+                showResponse(`POST /users/approve/${userId}`, { error: error.message }, true);
+            }
+        }
+        
+        async function changeUserRole() {
+            if (!authToken) {
+                showResponse('API Request', { error: 'Please login first to get authentication token' }, true);
+                return;
+            }
+            
+            const userId = document.getElementById('roleUserId').value;
+            const newRole = document.getElementById('newRole').value;
+            
+            if (!userId) {
+                showResponse('API Request', { error: 'Please enter a user ID' }, true);
+                return;
+            }
+            
+            try {
+                const response = await fetch(`${apiBaseUrl()}/users/role/${userId}`, {
+                    method: 'PUT',
+                    headers: {
+                        'Authorization': `Bearer ${authToken}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ role: newRole })
+                });
+                
+                const data = await response.json();
+                showResponse('API Request', { 
+                    endpoint: `PUT /users/role/${userId}`,
+                    requestData: { role: newRole },
+                    status: response.status,
+                    data: data 
+                }, !response.ok);
+            } catch (error) {
+                showResponse('API Request', { 
+                    endpoint: `PUT /users/role/${userId}`,
+                    error: error.message 
+                }, true);
+            }
+        }
+        
+        async function updateProfile() {
+            if (!authToken) {
+                showResponse('API Request', { error: 'Please login first to get authentication token' }, true);
+                return;
+            }
+            
+            const username = document.getElementById('updateUsername').value;
+            const email = document.getElementById('updateEmail').value;
+            
+            if (!username && !email) {
+                showResponse('API Request', { error: 'Please enter username or email to update' }, true);
+                return;
+            }
+            
+            const updateData = {};
+            if (username) updateData.username = username;
+            if (email) updateData.email = email;
+            
+            try {
+                const response = await fetch(`${apiBaseUrl()}/users/me`, {
+                    method: 'PUT',
+                    headers: {
+                        'Authorization': `Bearer ${authToken}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(updateData)
+                });
+                
+                const data = await response.json();
+                showResponse('API Request', { 
+                    endpoint: 'PUT /users/me',
+                    requestData: updateData,
+                    status: response.status,
+                    data: data 
+                }, !response.ok);
+                
+                // Update token if new one is provided
+                if (response.ok && data.access_token && data.access_token !== '') {
+                    updateTokenDisplay(data.access_token);
+                }
+            } catch (error) {
+                showResponse('API Request', { 
+                    endpoint: 'PUT /users/me',
+                    error: error.message 
+                }, true);
+            }
+        }
+        
+        async function changePassword() {
+            if (!authToken) {
+                showResponse('API Request', { error: 'Please login first to get authentication token' }, true);
+                return;
+            }
+            
+            const currentPassword = document.getElementById('currentPassword').value;
+            const newPassword = document.getElementById('newPassword').value;
+            
+            if (!currentPassword || !newPassword) {
+                showResponse('API Request', { error: 'Please enter both current and new passwords' }, true);
+                return;
+            }
+            
+            try {
+                const response = await fetch(`${apiBaseUrl()}/users/me/password`, {
+                    method: 'PUT',
+                    headers: {
+                        'Authorization': `Bearer ${authToken}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        current_password: currentPassword,
+                        new_password: newPassword
+                    })
+                });
+                
+                const data = await response.json();
+                showResponse('API Request', { 
+                    endpoint: 'PUT /users/me/password',
+                    status: response.status,
+                    data: data 
+                }, !response.ok);
+                
+                // Update token if new one is provided
+                if (response.ok && data.access_token) {
+                    updateTokenDisplay(data.access_token);
+                    // Clear password fields
+                    document.getElementById('currentPassword').value = '';
+                    document.getElementById('newPassword').value = '';
+                }
+            } catch (error) {
+                showResponse('API Request', { 
+                    endpoint: 'PUT /users/me/password',
+                    error: error.message 
+                }, true);
+            }
+        }
+        
+        async function deleteUser() {
+            if (!authToken) {
+                showResponse('API Request', { error: 'Please login first to get authentication token' }, true);
+                return;
+            }
+            
+            const userId = document.getElementById('deleteUserId').value;
+            if (!userId) {
+                showResponse('API Request', { error: 'Please enter a user ID to delete' }, true);
+                return;
+            }
+            
+            if (!confirm(`Are you sure you want to delete user ${userId}?`)) {
+                return;
+            }
+            
+            try {
+                const response = await fetch(`${apiBaseUrl()}/users/${userId}`, {
+                    method: 'DELETE',
+                    headers: {
+                        'Authorization': `Bearer ${authToken}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+                
+                const data = await response.json();
+                showResponse('API Request', { 
+                    endpoint: `DELETE /users/${userId}`,
+                    status: response.status,
+                    data: data 
+                }, !response.ok);
+            } catch (error) {
+                showResponse('API Request', { 
+                    endpoint: `DELETE /users/${userId}`,
+                    error: error.message 
+                }, true);
+            }
+        }
+        
+        // Server Management Functions
+        async function testServerEndpoint(method, action) {
+            if (!authToken) {
+                showResponse('API Request', { error: 'Please login first to get authentication token' }, true);
+                return;
+            }
+            
+            const idField = `server${action}Id`;
+            const serverId = document.getElementById(idField).value;
+            
+            if (!serverId) {
+                showResponse('API Request', { error: 'Please enter a server ID' }, true);
+                return;
+            }
+            
+            let endpoint;
+            switch(action) {
+                case 'Details': endpoint = `/servers/${serverId}`; break;
+                case 'Delete': endpoint = `/servers/${serverId}`; break;
+                case 'Start': endpoint = `/servers/${serverId}/start`; break;
+                case 'Stop': endpoint = `/servers/${serverId}/stop`; break;
+                case 'Restart': endpoint = `/servers/${serverId}/restart`; break;
+                case 'Status': endpoint = `/servers/${serverId}/status`; break;
+                default: return;
+            }
+            
+            try {
+                const response = await fetch(`${apiBaseUrl()}${endpoint}`, {
+                    method: method,
+                    headers: {
+                        'Authorization': `Bearer ${authToken}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+                
+                const data = await response.json();
+                showResponse('API Request', { 
+                    endpoint: `${method} ${endpoint}`,
+                    status: response.status,
+                    data: data 
+                }, !response.ok);
+            } catch (error) {
+                showResponse('API Request', { 
+                    endpoint: `${method} ${endpoint}`,
+                    error: error.message 
+                }, true);
+            }
+        }
+        
+        async function testServerEndpointWithData(method, action) {
+            if (!authToken) {
+                showResponse('API Request', { error: 'Please login first to get authentication token' }, true);
+                return;
+            }
+            
+            const idField = `server${action}Id`;
+            const dataField = `server${action}Data`;
+            const serverId = document.getElementById(idField).value;
+            const dataElement = document.getElementById(dataField);
+            
+            if (!serverId) {
+                showResponse('API Request', { error: 'Please enter a server ID' }, true);
+                return;
+            }
+            
+            let requestData = {};
+            if (dataElement && dataElement.value.trim()) {
+                try {
+                    requestData = JSON.parse(dataElement.value);
+                } catch (error) {
+                    showResponse('API Request', { error: 'Invalid JSON data' }, true);
+                    return;
+                }
+            }
+            
+            const endpoint = `/servers/${serverId}`;
+            
+            try {
+                const response = await fetch(`${apiBaseUrl()}${endpoint}`, {
+                    method: method,
+                    headers: {
+                        'Authorization': `Bearer ${authToken}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(requestData)
+                });
+                
+                const data = await response.json();
+                showResponse('API Request', { 
+                    endpoint: `${method} ${endpoint}`,
+                    requestData: requestData,
+                    status: response.status,
+                    data: data 
+                }, !response.ok);
+            } catch (error) {
+                showResponse('API Request', { 
+                    endpoint: `${method} ${endpoint}`,
+                    error: error.message 
+                }, true);
+            }
+        }
+        
+        async function testServerCommand() {
+            if (!authToken) {
+                showResponse('API Request', { error: 'Please login first to get authentication token' }, true);
+                return;
+            }
+            
+            const serverId = document.getElementById('serverCommandId').value;
+            const command = document.getElementById('serverCommand').value;
+            
+            if (!serverId || !command) {
+                showResponse('API Request', { error: 'Please enter both server ID and command' }, true);
+                return;
+            }
+            
+            try {
+                const response = await fetch(`${apiBaseUrl()}/servers/${serverId}/command`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${authToken}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ command: command })
+                });
+                
+                const data = await response.json();
+                showResponse('API Request', { 
+                    endpoint: `POST /servers/${serverId}/command`,
+                    requestData: { command: command },
+                    status: response.status,
+                    data: data 
+                }, !response.ok);
+            } catch (error) {
+                showResponse('API Request', { 
+                    endpoint: `POST /servers/${serverId}/command`,
+                    error: error.message 
+                }, true);
+            }
+        }
+        
+        async function testServerLogs() {
+            if (!authToken) {
+                showResponse('API Request', { error: 'Please login first to get authentication token' }, true);
+                return;
+            }
+            
+            const serverId = document.getElementById('serverLogsId').value;
+            const lines = document.getElementById('serverLogsLines').value;
+            
+            if (!serverId) {
+                showResponse('API Request', { error: 'Please enter a server ID' }, true);
+                return;
+            }
+            
+            let endpoint = `/servers/${serverId}/logs`;
+            if (lines) {
+                endpoint += `?lines=${lines}`;
+            }
+            
+            try {
+                const response = await fetch(`${apiBaseUrl()}${endpoint}`, {
+                    method: 'GET',
+                    headers: {
+                        'Authorization': `Bearer ${authToken}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+                
+                const data = await response.json();
+                showResponse('API Request', { 
+                    endpoint: `GET ${endpoint}`,
+                    status: response.status,
+                    data: data 
+                }, !response.ok);
+            } catch (error) {
+                showResponse('API Request', { 
+                    endpoint: `GET ${endpoint}`,
+                    error: error.message 
+                }, true);
+            }
+        }
+        
+        // Server Export/Import Functions
+        async function testServerExport() {
+            if (!authToken) {
+                showResponse('API Request', { error: 'Please login first to get authentication token' }, true);
+                return;
+            }
+            
+            const serverId = document.getElementById('exportServerId').value;
+            
+            if (!serverId) {
+                showResponse('API Request', { error: 'Please enter a server ID' }, true);
+                return;
+            }
+            
+            try {
+                const response = await fetch(`${apiBaseUrl()}/servers/${serverId}/export`, {
+                    method: 'GET',
+                    headers: {
+                        'Authorization': `Bearer ${authToken}`,
+                    }
+                });
+                
+                if (response.ok) {
+                    // Handle file download
+                    const blob = await response.blob();
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.style.display = 'none';
+                    a.href = url;
+                    
+                    // Extract filename from response headers
+                    const contentDisposition = response.headers.get('content-disposition');
+                    let filename = `server_${serverId}_export.zip`;
+                    if (contentDisposition) {
+                        const match = contentDisposition.match(/filename="(.+)"/);
+                        if (match) {
+                            filename = match[1];
+                        }
+                    }
+                    a.download = filename;
+                    
+                    document.body.appendChild(a);
+                    a.click();
+                    window.URL.revokeObjectURL(url);
+                    document.body.removeChild(a);
+                    
+                    showResponse('API Request', { 
+                        endpoint: `GET /servers/${serverId}/export`,
+                        status: response.status,
+                        message: `File downloaded: ${filename}`,
+                        size: `${Math.round(blob.size / 1024)} KB`
+                    }, false);
+                } else {
+                    const data = await response.json();
+                    showResponse('API Request', { 
+                        endpoint: `GET /servers/${serverId}/export`,
+                        status: response.status,
+                        data: data 
+                    }, true);
+                }
+            } catch (error) {
+                showResponse('API Request', { 
+                    endpoint: `GET /servers/${serverId}/export`,
+                    error: error.message 
+                }, true);
+            }
+        }
+        
+        async function testServerImport() {
+            if (!authToken) {
+                showResponse('API Request', { error: 'Please login first to get authentication token' }, true);
+                return;
+            }
+            
+            const name = document.getElementById('importServerName').value;
+            const description = document.getElementById('importServerDescription').value;
+            const fileInput = document.getElementById('importServerFile');
+            
+            if (!name) {
+                showResponse('API Request', { error: 'Please enter a server name' }, true);
+                return;
+            }
+            
+            if (!fileInput.files || fileInput.files.length === 0) {
+                showResponse('API Request', { error: 'Please select a ZIP file to import' }, true);
+                return;
+            }
+            
+            const file = fileInput.files[0];
+            
+            // Validate file type
+            if (!file.name.toLowerCase().endsWith('.zip')) {
+                showResponse('API Request', { error: 'Please select a ZIP file' }, true);
+                return;
+            }
+            
+            // Check file size (500MB limit)
+            const maxSize = 500 * 1024 * 1024; // 500MB
+            if (file.size > maxSize) {
+                showResponse('API Request', { 
+                    error: `File too large. Maximum size is 500MB, selected file is ${Math.round(file.size / (1024*1024))}MB` 
+                }, true);
+                return;
+            }
+            
+            try {
+                const formData = new FormData();
+                formData.append('name', name);
+                if (description) {
+                    formData.append('description', description);
+                }
+                formData.append('file', file);
+                
+                showResponse('API Request', { 
+                    message: 'Uploading file... Please wait',
+                    filename: file.name,
+                    size: `${Math.round(file.size / 1024)} KB`
+                }, false);
+                
+                const response = await fetch(`${apiBaseUrl()}/servers/import`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${authToken}`,
+                    },
+                    body: formData
+                });
+                
+                const data = await response.json();
+                showResponse('API Request', { 
+                    endpoint: 'POST /servers/import',
+                    requestData: {
+                        name: name,
+                        description: description,
+                        filename: file.name,
+                        size: `${Math.round(file.size / 1024)} KB`
+                    },
+                    status: response.status,
+                    data: data 
+                }, !response.ok);
+                
+                // Clear form on success
+                if (response.ok) {
+                    document.getElementById('importServerName').value = '';
+                    document.getElementById('importServerDescription').value = '';
+                    document.getElementById('importServerFile').value = '';
+                }
+            } catch (error) {
+                showResponse('API Request', { 
+                    endpoint: 'POST /servers/import',
+                    error: error.message 
+                }, true);
+            }
+        }
+        
+        // Group Management Functions
+        async function testGroupEndpoint(method, action) {
+            if (!authToken) {
+                showResponse('API Request', { error: 'Please login first to get authentication token' }, true);
+                return;
+            }
+            
+            const idField = `group${action}Id`;
+            const groupId = document.getElementById(idField).value;
+            
+            if (!groupId) {
+                showResponse('API Request', { error: 'Please enter a group ID' }, true);
+                return;
+            }
+            
+            const endpoint = `/groups/${groupId}`;
+            
+            try {
+                const response = await fetch(`${apiBaseUrl()}${endpoint}`, {
+                    method: method,
+                    headers: {
+                        'Authorization': `Bearer ${authToken}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+                
+                const data = await response.json();
+                showResponse('API Request', { 
+                    endpoint: `${method} ${endpoint}`,
+                    status: response.status,
+                    data: data 
+                }, !response.ok);
+            } catch (error) {
+                showResponse('API Request', { 
+                    endpoint: `${method} ${endpoint}`,
+                    error: error.message 
+                }, true);
+            }
+        }
+        
+        async function testGroupEndpointWithData(method, action) {
+            if (!authToken) {
+                showResponse('API Request', { error: 'Please login first to get authentication token' }, true);
+                return;
+            }
+            
+            const idField = `group${action}Id`;
+            const dataField = `group${action}Data`;
+            const groupId = document.getElementById(idField).value;
+            const dataElement = document.getElementById(dataField);
+            
+            if (!groupId) {
+                showResponse('API Request', { error: 'Please enter a group ID' }, true);
+                return;
+            }
+            
+            let requestData = {};
+            if (dataElement && dataElement.value.trim()) {
+                try {
+                    requestData = JSON.parse(dataElement.value);
+                } catch (error) {
+                    showResponse('API Request', { error: 'Invalid JSON data' }, true);
+                    return;
+                }
+            }
+            
+            const endpoint = `/groups/${groupId}`;
+            
+            try {
+                const response = await fetch(`${apiBaseUrl()}${endpoint}`, {
+                    method: method,
+                    headers: {
+                        'Authorization': `Bearer ${authToken}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(requestData)
+                });
+                
+                const data = await response.json();
+                showResponse('API Request', { 
+                    endpoint: `${method} ${endpoint}`,
+                    requestData: requestData,
+                    status: response.status,
+                    data: data 
+                }, !response.ok);
+            } catch (error) {
+                showResponse('API Request', { 
+                    endpoint: `${method} ${endpoint}`,
+                    error: error.message 
+                }, true);
+            }
+        }
+        
+        async function testAddPlayer() {
+            if (!authToken) {
+                showResponse('API Request', { error: 'Please login first to get authentication token' }, true);
+                return;
+            }
+            
+            const groupId = document.getElementById('groupPlayerId').value;
+            const playerName = document.getElementById('playerName').value;
+            
+            if (!groupId || !playerName) {
+                showResponse('API Request', { error: 'Please enter both group ID and player name' }, true);
+                return;
+            }
+            
+            try {
+                const response = await fetch(`${apiBaseUrl()}/groups/${groupId}/players`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${authToken}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ player_name: playerName })
+                });
+                
+                const data = await response.json();
+                showResponse('API Request', { 
+                    endpoint: `POST /groups/${groupId}/players`,
+                    requestData: { player_name: playerName },
+                    status: response.status,
+                    data: data 
+                }, !response.ok);
+            } catch (error) {
+                showResponse('API Request', { 
+                    endpoint: `POST /groups/${groupId}/players`,
+                    error: error.message 
+                }, true);
+            }
+        }
+        
+        async function testRemovePlayer() {
+            if (!authToken) {
+                showResponse('API Request', { error: 'Please login first to get authentication token' }, true);
+                return;
+            }
+            
+            const groupId = document.getElementById('groupRemovePlayerId').value;
+            const playerUuid = document.getElementById('removePlayerUuid').value;
+            
+            if (!groupId || !playerUuid) {
+                showResponse('API Request', { error: 'Please enter both group ID and player UUID' }, true);
+                return;
+            }
+            
+            try {
+                const response = await fetch(`${apiBaseUrl()}/groups/${groupId}/players/${playerUuid}`, {
+                    method: 'DELETE',
+                    headers: {
+                        'Authorization': `Bearer ${authToken}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+                
+                const data = await response.json();
+                showResponse('API Request', { 
+                    endpoint: `DELETE /groups/${groupId}/players/${playerUuid}`,
+                    status: response.status,
+                    data: data 
+                }, !response.ok);
+            } catch (error) {
+                showResponse('API Request', { 
+                    endpoint: `DELETE /groups/${groupId}/players/${playerUuid}`,
+                    error: error.message 
+                }, true);
+            }
+        }
+        
+        async function testGroupServerAttach() {
+            if (!authToken) {
+                showResponse('API Request', { error: 'Please login first to get authentication token' }, true);
+                return;
+            }
+            
+            const groupId = document.getElementById('groupAttachId').value;
+            const serverId = document.getElementById('attachServerId').value;
+            
+            if (!groupId || !serverId) {
+                showResponse('API Request', { error: 'Please enter both group ID and server ID' }, true);
+                return;
+            }
+            
+            try {
+                const response = await fetch(`${apiBaseUrl()}/groups/${groupId}/servers`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${authToken}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ server_id: parseInt(serverId) })
+                });
+                
+                const data = await response.json();
+                showResponse('API Request', { 
+                    endpoint: `POST /groups/${groupId}/servers`,
+                    requestData: { server_id: parseInt(serverId) },
+                    status: response.status,
+                    data: data 
+                }, !response.ok);
+            } catch (error) {
+                showResponse('API Request', { 
+                    endpoint: `POST /groups/${groupId}/servers`,
+                    error: error.message 
+                }, true);
+            }
+        }
+        
+        async function testGroupServerDetach() {
+            if (!authToken) {
+                showResponse('API Request', { error: 'Please login first to get authentication token' }, true);
+                return;
+            }
+            
+            const groupId = document.getElementById('groupDetachId').value;
+            const serverId = document.getElementById('detachServerId').value;
+            
+            if (!groupId || !serverId) {
+                showResponse('API Request', { error: 'Please enter both group ID and server ID' }, true);
+                return;
+            }
+            
+            try {
+                const response = await fetch(`${apiBaseUrl()}/groups/${groupId}/servers/${serverId}`, {
+                    method: 'DELETE',
+                    headers: {
+                        'Authorization': `Bearer ${authToken}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+                
+                const data = await response.json();
+                showResponse('API Request', { 
+                    endpoint: `DELETE /groups/${groupId}/servers/${serverId}`,
+                    status: response.status,
+                    data: data 
+                }, !response.ok);
+            } catch (error) {
+                showResponse('API Request', { 
+                    endpoint: `DELETE /groups/${groupId}/servers/${serverId}`,
+                    error: error.message 
+                }, true);
+            }
+        }
+        
+        // Backup Management Functions
+        async function testCreateBackup() {
+            if (!authToken) {
+                showResponse('API Request', { error: 'Please login first to get authentication token' }, true);
+                return;
+            }
+            
+            const serverId = document.getElementById('backupServerId').value;
+            const dataElement = document.getElementById('backupData');
+            
+            if (!serverId) {
+                showResponse('API Request', { error: 'Please enter a server ID' }, true);
+                return;
+            }
+            
+            let requestData = {};
+            if (dataElement.value.trim()) {
+                try {
+                    requestData = JSON.parse(dataElement.value);
+                } catch (error) {
+                    showResponse('API Request', { error: 'Invalid JSON data' }, true);
+                    return;
+                }
+            }
+            
+            try {
+                const response = await fetch(`${apiBaseUrl()}/backups/servers/${serverId}/backups`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${authToken}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(requestData)
+                });
+                
+                const data = await response.json();
+                showResponse('API Request', { 
+                    endpoint: `POST /backups/servers/${serverId}/backups`,
+                    requestData: requestData,
+                    status: response.status,
+                    data: data 
+                }, !response.ok);
+            } catch (error) {
+                showResponse('API Request', { 
+                    endpoint: `POST /backups/servers/${serverId}/backups`,
+                    error: error.message 
+                }, true);
+            }
+        }
+        
+        async function testServerBackups() {
+            if (!authToken) {
+                showResponse('API Request', { error: 'Please login first to get authentication token' }, true);
+                return;
+            }
+            
+            const serverId = document.getElementById('listBackupServerId').value;
+            
+            if (!serverId) {
+                showResponse('API Request', { error: 'Please enter a server ID' }, true);
+                return;
+            }
+            
+            try {
+                const response = await fetch(`${apiBaseUrl()}/backups/servers/${serverId}/backups`, {
+                    method: 'GET',
+                    headers: {
+                        'Authorization': `Bearer ${authToken}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+                
+                const data = await response.json();
+                showResponse('API Request', { 
+                    endpoint: `GET /backups/servers/${serverId}/backups`,
+                    status: response.status,
+                    data: data 
+                }, !response.ok);
+            } catch (error) {
+                showResponse('API Request', { 
+                    endpoint: `GET /backups/servers/${serverId}/backups`,
+                    error: error.message 
+                }, true);
+            }
+        }
+        
+        async function testBackupEndpoint(method, action) {
+            if (!authToken) {
+                showResponse('API Request', { error: 'Please login first to get authentication token' }, true);
+                return;
+            }
+            
+            const idField = action === 'Details' ? 'backupDetailsId' : 'deleteBackupId';
+            const backupId = document.getElementById(idField).value;
+            
+            if (!backupId) {
+                showResponse('API Request', { error: 'Please enter a backup ID' }, true);
+                return;
+            }
+            
+            const endpoint = `/backups/backups/${backupId}`;
+            
+            try {
+                const response = await fetch(`${apiBaseUrl()}${endpoint}`, {
+                    method: method,
+                    headers: {
+                        'Authorization': `Bearer ${authToken}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+                
+                const data = await response.json();
+                showResponse('API Request', { 
+                    endpoint: `${method} ${endpoint}`,
+                    status: response.status,
+                    data: data 
+                }, !response.ok);
+            } catch (error) {
+                showResponse('API Request', { 
+                    endpoint: `${method} ${endpoint}`,
+                    error: error.message 
+                }, true);
+            }
+        }
+        
+        async function testRestoreBackup() {
+            if (!authToken) {
+                showResponse('API Request', { error: 'Please login first to get authentication token' }, true);
+                return;
+            }
+            
+            const backupId = document.getElementById('restoreBackupId').value;
+            const dataElement = document.getElementById('restoreData');
+            
+            if (!backupId) {
+                showResponse('API Request', { error: 'Please enter a backup ID' }, true);
+                return;
+            }
+            
+            let requestData = {};
+            if (dataElement.value.trim()) {
+                try {
+                    requestData = JSON.parse(dataElement.value);
+                } catch (error) {
+                    showResponse('API Request', { error: 'Invalid JSON data' }, true);
+                    return;
+                }
+            }
+            
+            try {
+                const response = await fetch(`${apiBaseUrl()}/backups/backups/${backupId}/restore`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${authToken}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(requestData)
+                });
+                
+                const data = await response.json();
+                showResponse('API Request', { 
+                    endpoint: `POST /backups/backups/${backupId}/restore`,
+                    requestData: requestData,
+                    status: response.status,
+                    data: data 
+                }, !response.ok);
+            } catch (error) {
+                showResponse('API Request', { 
+                    endpoint: `POST /backups/backups/${backupId}/restore`,
+                    error: error.message 
+                }, true);
+            }
+        }
+        
+        async function testBackupStats() {
+            if (!authToken) {
+                showResponse('API Request', { error: 'Please login first to get authentication token' }, true);
+                return;
+            }
+            
+            const serverId = document.getElementById('statsServerId').value;
+            
+            let endpoint;
+            if (serverId) {
+                endpoint = `/backups/servers/${serverId}/backups/statistics`;
+            } else {
+                endpoint = '/backups/backups/statistics';
+            }
+            
+            try {
+                const response = await fetch(`${apiBaseUrl()}${endpoint}`, {
+                    method: 'GET',
+                    headers: {
+                        'Authorization': `Bearer ${authToken}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+                
+                const data = await response.json();
+                showResponse('API Request', { 
+                    endpoint: `GET ${endpoint}`,
+                    status: response.status,
+                    data: data 
+                }, !response.ok);
+            } catch (error) {
+                showResponse('API Request', { 
+                    endpoint: `GET ${endpoint}`,
+                    error: error.message 
+                }, true);
+            }
+        }
+        
+        // Template Management Functions
+        async function testCreateTemplateFromServer() {
+            if (!authToken) {
+                showResponse('API Request', { error: 'Please login first to get authentication token' }, true);
+                return;
+            }
+            
+            const serverId = document.getElementById('templateServerId').value;
+            const dataElement = document.getElementById('templateFromServerData');
+            
+            if (!serverId) {
+                showResponse('API Request', { error: 'Please enter a server ID' }, true);
+                return;
+            }
+            
+            let requestData = {};
+            if (dataElement.value.trim()) {
+                try {
+                    requestData = JSON.parse(dataElement.value);
+                } catch (error) {
+                    showResponse('API Request', { error: 'Invalid JSON data' }, true);
+                    return;
+                }
+            }
+            
+            try {
+                const response = await fetch(`${apiBaseUrl()}/templates/from-server/${serverId}`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${authToken}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(requestData)
+                });
+                
+                const data = await response.json();
+                showResponse('API Request', { 
+                    endpoint: `POST /templates/from-server/${serverId}`,
+                    requestData: requestData,
+                    status: response.status,
+                    data: data 
+                }, !response.ok);
+            } catch (error) {
+                showResponse('API Request', { 
+                    endpoint: `POST /templates/from-server/${serverId}`,
+                    error: error.message 
+                }, true);
+            }
+        }
+        
+        async function testTemplateEndpoint(method, action) {
+            if (!authToken) {
+                showResponse('API Request', { error: 'Please login first to get authentication token' }, true);
+                return;
+            }
+            
+            const idField = `template${action}Id`;
+            const templateId = document.getElementById(idField).value;
+            
+            if (!templateId) {
+                showResponse('API Request', { error: 'Please enter a template ID' }, true);
+                return;
+            }
+            
+            const endpoint = `/templates/${templateId}`;
+            
+            try {
+                const response = await fetch(`${apiBaseUrl()}${endpoint}`, {
+                    method: method,
+                    headers: {
+                        'Authorization': `Bearer ${authToken}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+                
+                const data = await response.json();
+                showResponse('API Request', { 
+                    endpoint: `${method} ${endpoint}`,
+                    status: response.status,
+                    data: data 
+                }, !response.ok);
+            } catch (error) {
+                showResponse('API Request', { 
+                    endpoint: `${method} ${endpoint}`,
+                    error: error.message 
+                }, true);
+            }
+        }
+        
+        async function testTemplateEndpointWithData(method, action) {
+            if (!authToken) {
+                showResponse('API Request', { error: 'Please login first to get authentication token' }, true);
+                return;
+            }
+            
+            const idField = `template${action}Id`;
+            const dataField = `template${action}Data`;
+            const templateId = document.getElementById(idField).value;
+            const dataElement = document.getElementById(dataField);
+            
+            if (!templateId) {
+                showResponse('API Request', { error: 'Please enter a template ID' }, true);
+                return;
+            }
+            
+            let requestData = {};
+            if (dataElement && dataElement.value.trim()) {
+                try {
+                    requestData = JSON.parse(dataElement.value);
+                } catch (error) {
+                    showResponse('API Request', { error: 'Invalid JSON data' }, true);
+                    return;
+                }
+            }
+            
+            const endpoint = `/templates/${templateId}`;
+            
+            try {
+                const response = await fetch(`${apiBaseUrl()}${endpoint}`, {
+                    method: method,
+                    headers: {
+                        'Authorization': `Bearer ${authToken}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(requestData)
+                });
+                
+                const data = await response.json();
+                showResponse('API Request', { 
+                    endpoint: `${method} ${endpoint}`,
+                    requestData: requestData,
+                    status: response.status,
+                    data: data 
+                }, !response.ok);
+            } catch (error) {
+                showResponse('API Request', { 
+                    endpoint: `${method} ${endpoint}`,
+                    error: error.message 
+                }, true);
+            }
+        }
+        
+        async function testCloneTemplate() {
+            if (!authToken) {
+                showResponse('API Request', { error: 'Please login first to get authentication token' }, true);
+                return;
+            }
+            
+            const templateId = document.getElementById('cloneTemplateId').value;
+            const dataElement = document.getElementById('cloneTemplateData');
+            
+            if (!templateId) {
+                showResponse('API Request', { error: 'Please enter a template ID' }, true);
+                return;
+            }
+            
+            let requestData = {};
+            if (dataElement.value.trim()) {
+                try {
+                    requestData = JSON.parse(dataElement.value);
+                } catch (error) {
+                    showResponse('API Request', { error: 'Invalid JSON data' }, true);
+                    return;
+                }
+            }
+            
+            try {
+                const response = await fetch(`${apiBaseUrl()}/templates/${templateId}/clone`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${authToken}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(requestData)
+                });
+                
+                const data = await response.json();
+                showResponse('API Request', { 
+                    endpoint: `POST /templates/${templateId}/clone`,
+                    requestData: requestData,
+                    status: response.status,
+                    data: data 
+                }, !response.ok);
+            } catch (error) {
+                showResponse('API Request', { 
+                    endpoint: `POST /templates/${templateId}/clone`,
+                    error: error.message 
+                }, true);
+            }
+        }
+        
+        // File Management Functions
+        async function testServerFiles() {
+            if (!authToken) {
+                showResponse('API Request', { error: 'Please login first to get authentication token' }, true);
+                return;
+            }
+            
+            const serverId = document.getElementById('fileServerId').value;
+            const filePath = document.getElementById('filePath').value;
+            
+            if (!serverId) {
+                showResponse('API Request', { error: 'Please enter a server ID' }, true);
+                return;
+            }
+            
+            let endpoint = `/files/servers/${serverId}/files`;
+            if (filePath) {
+                endpoint += `/${filePath}`;
+            }
+            
+            try {
+                const response = await fetch(`${apiBaseUrl()}${endpoint}`, {
+                    method: 'GET',
+                    headers: {
+                        'Authorization': `Bearer ${authToken}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+                
+                const data = await response.json();
+                showResponse('API Request', { 
+                    endpoint: `GET ${endpoint}`,
+                    status: response.status,
+                    data: data 
+                }, !response.ok);
+            } catch (error) {
+                showResponse('API Request', { 
+                    endpoint: `GET ${endpoint}`,
+                    error: error.message 
+                }, true);
+            }
+        }
+        
+        async function testReadFile() {
+            if (!authToken) {
+                showResponse('API Request', { error: 'Please login first to get authentication token' }, true);
+                return;
+            }
+            
+            const serverId = document.getElementById('readFileServerId').value;
+            const filePath = document.getElementById('readFilePath').value;
+            
+            if (!serverId || !filePath) {
+                showResponse('API Request', { error: 'Please enter both server ID and file path' }, true);
+                return;
+            }
+            
+            try {
+                const response = await fetch(`${apiBaseUrl()}/files/servers/${serverId}/files/${filePath}/read`, {
+                    method: 'GET',
+                    headers: {
+                        'Authorization': `Bearer ${authToken}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+                
+                const data = await response.json();
+                showResponse('API Request', { 
+                    endpoint: `GET /files/servers/${serverId}/files/${filePath}/read`,
+                    status: response.status,
+                    data: data 
+                }, !response.ok);
+            } catch (error) {
+                showResponse('API Request', { 
+                    endpoint: `GET /files/servers/${serverId}/files/${filePath}/read`,
+                    error: error.message 
+                }, true);
+            }
+        }
+        
+        async function testWriteFile() {
+            if (!authToken) {
+                showResponse('API Request', { error: 'Please login first to get authentication token' }, true);
+                return;
+            }
+            
+            const serverId = document.getElementById('writeFileServerId').value;
+            const filePath = document.getElementById('writeFilePath').value;
+            const content = document.getElementById('fileContent').value;
+            
+            if (!serverId || !filePath) {
+                showResponse('API Request', { error: 'Please enter both server ID and file path' }, true);
+                return;
+            }
+            
+            try {
+                const response = await fetch(`${apiBaseUrl()}/files/servers/${serverId}/files/${filePath}`, {
+                    method: 'PUT',
+                    headers: {
+                        'Authorization': `Bearer ${authToken}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ content: content || '' })
+                });
+                
+                const data = await response.json();
+                showResponse('API Request', { 
+                    endpoint: `PUT /files/servers/${serverId}/files/${filePath}`,
+                    requestData: { content: content || '' },
+                    status: response.status,
+                    data: data 
+                }, !response.ok);
+            } catch (error) {
+                showResponse('API Request', { 
+                    endpoint: `PUT /files/servers/${serverId}/files/${filePath}`,
+                    error: error.message 
+                }, true);
+            }
+        }
+        
+        async function testDeleteFile() {
+            if (!authToken) {
+                showResponse('API Request', { error: 'Please login first to get authentication token' }, true);
+                return;
+            }
+            
+            const serverId = document.getElementById('deleteFileServerId').value;
+            const filePath = document.getElementById('deleteFilePath').value;
+            
+            if (!serverId || !filePath) {
+                showResponse('API Request', { error: 'Please enter both server ID and file path' }, true);
+                return;
+            }
+            
+            try {
+                const response = await fetch(`${apiBaseUrl()}/files/servers/${serverId}/files/${filePath}`, {
+                    method: 'DELETE',
+                    headers: {
+                        'Authorization': `Bearer ${authToken}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+                
+                const data = await response.json();
+                showResponse('API Request', { 
+                    endpoint: `DELETE /files/servers/${serverId}/files/${filePath}`,
+                    status: response.status,
+                    data: data 
+                }, !response.ok);
+            } catch (error) {
+                showResponse('API Request', { 
+                    endpoint: `DELETE /files/servers/${serverId}/files/${filePath}`,
+                    error: error.message 
+                }, true);
+            }
+        }
+        
+        async function testSearchFiles() {
+            if (!authToken) {
+                showResponse('API Request', { error: 'Please login first to get authentication token' }, true);
+                return;
+            }
+            
+            const serverId = document.getElementById('searchServerId').value;
+            const dataElement = document.getElementById('searchData');
+            
+            if (!serverId) {
+                showResponse('API Request', { error: 'Please enter a server ID' }, true);
+                return;
+            }
+            
+            let requestData = {};
+            if (dataElement.value.trim()) {
+                try {
+                    requestData = JSON.parse(dataElement.value);
+                } catch (error) {
+                    showResponse('API Request', { error: 'Invalid JSON data' }, true);
+                    return;
+                }
+            }
+            
+            try {
+                const response = await fetch(`${apiBaseUrl()}/files/servers/${serverId}/files/search`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${authToken}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(requestData)
+                });
+                
+                const data = await response.json();
+                showResponse('API Request', { 
+                    endpoint: `POST /files/servers/${serverId}/files/search`,
+                    requestData: requestData,
+                    status: response.status,
+                    data: data 
+                }, !response.ok);
+            } catch (error) {
+                showResponse('API Request', { 
+                    endpoint: `POST /files/servers/${serverId}/files/search`,
+                    error: error.message 
+                }, true);
+            }
+        }
+        
+        async function testCreateDirectory() {
+            if (!authToken) {
+                showResponse('API Request', { error: 'Please login first to get authentication token' }, true);
+                return;
+            }
+            
+            const serverId = document.getElementById('createDirServerId').value;
+            const dirPath = document.getElementById('createDirPath').value;
+            const dataElement = document.getElementById('createDirData');
+            
+            if (!serverId || !dirPath) {
+                showResponse('API Request', { error: 'Please enter both server ID and directory path' }, true);
+                return;
+            }
+            
+            let requestData = {};
+            if (dataElement.value.trim()) {
+                try {
+                    requestData = JSON.parse(dataElement.value);
+                } catch (error) {
+                    showResponse('API Request', { error: 'Invalid JSON data' }, true);
+                    return;
+                }
+            }
+            
+            try {
+                const response = await fetch(`${apiBaseUrl()}/files/servers/${serverId}/files/${dirPath}/directories`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${authToken}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(requestData)
+                });
+                
+                const data = await response.json();
+                showResponse('API Request', { 
+                    endpoint: `POST /files/servers/${serverId}/files/${dirPath}/directories`,
+                    requestData: requestData,
+                    status: response.status,
+                    data: data 
+                }, !response.ok);
+            } catch (error) {
+                showResponse('API Request', { 
+                    endpoint: `POST /files/servers/${serverId}/files/${dirPath}/directories`,
+                    error: error.message 
+                }, true);
+            }
+        }
+        
+        // Initialize with some sample data
+        document.getElementById('serverData').value = JSON.stringify({
+            "name": "test-server",
+            "description": "Test server created from API tester",
+            "minecraft_version": "1.20.1",
+            "server_type": "vanilla"
+        }, null, 2);
+        
+        document.getElementById('groupData').value = JSON.stringify({
+            "name": "test-group",
+            "group_type": "op",
+            "description": "Test group created from API tester"
+        }, null, 2);
+        
+        document.getElementById('backupData').value = JSON.stringify({
+            "name": "manual-backup",
+            "description": "Manual backup from API tester"
+        }, null, 2);
+        
+        document.getElementById('customTemplateData').value = JSON.stringify({
+            "name": "custom-template",
+            "description": "Custom template from API tester",
+            "minecraft_version": "1.20.1",
+            "server_type": "vanilla"
+        }, null, 2);
+    </script>
+</body>
+</html>
