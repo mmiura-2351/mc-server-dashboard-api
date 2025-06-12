@@ -31,7 +31,7 @@ from app.services.authorization_service import authorization_service
 from app.services.file_history_service import file_history_service
 from app.services.file_management_service import file_management_service
 from app.types import FileType
-from app.users.models import User
+from app.users.models import Role, User
 
 router = APIRouter()
 
@@ -354,7 +354,7 @@ async def delete_file_version(
 ):
     """Delete specific version (admin only)"""
     # Check admin permissions
-    if current_user.role.value != "admin":
+    if current_user.role != Role.admin:
         raise HTTPException(status_code=403, detail="Admin access required")
 
     # Check server access

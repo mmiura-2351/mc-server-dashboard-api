@@ -20,7 +20,7 @@ from app.servers.models import Server
 from app.services.encoding_handler import EncodingHandler
 from app.services.file_history_service import file_history_service
 from app.types import FileType
-from app.users.models import User
+from app.users.models import Role, User
 
 logger = logging.getLogger(__name__)
 
@@ -105,7 +105,7 @@ class FileValidationService:
 
     def validate_file_writable(self, file_path: Path, user: User) -> None:
         """Validate file can be written"""
-        if self._is_restricted_file(file_path) and user.role.value != "admin":
+        if self._is_restricted_file(file_path) and user.role != Role.admin:
             raise AccessDeniedException("file", "write")
 
         if not self._is_writable_file(file_path):

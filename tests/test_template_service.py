@@ -51,8 +51,7 @@ class TestTemplateService:
         user = Mock(spec=User)
         user.id = 1
         user.username = "testuser"
-        user.role = Mock()
-        user.role.value = "user"
+        user.role = Role.user
         return user
     
     @pytest.fixture
@@ -60,8 +59,7 @@ class TestTemplateService:
         admin = Mock(spec=User)
         admin.id = 2
         admin.username = "admin"
-        admin.role = Mock()
-        admin.role.value = "admin"
+        admin.role = Role.admin
         return admin
     
     @pytest.fixture

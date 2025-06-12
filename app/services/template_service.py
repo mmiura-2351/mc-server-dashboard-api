@@ -8,7 +8,7 @@ from sqlalchemy import and_
 from sqlalchemy.orm import Session
 
 from app.servers.models import Server, ServerType, Template
-from app.users.models import User
+from app.users.models import Role, User
 
 logger = logging.getLogger(__name__)
 
@@ -342,7 +342,7 @@ class TemplateService:
             query = db.query(Template)
 
             # Apply access control
-            if user.role.value != "admin":
+            if user.role != Role.admin:
                 # Non-admins can only see public templates or their own
                 query = query.filter(
                     (Template.is_public) | (Template.created_by == user.id)
@@ -466,7 +466,7 @@ class TemplateService:
     def _can_access_template(self, template: Template, user: User) -> bool:
         """Check if user can access template"""
         # Admins can access all templates
-        if user.role.value == "admin":
+        if user.role == Role.admin:
             return True
 
         # Users can access public templates or their own
@@ -475,7 +475,7 @@ class TemplateService:
     def _can_modify_template(self, template: Template, user: User) -> bool:
         """Check if user can modify template"""
         # Admins can modify all templates
-        if user.role.value == "admin":
+        if user.role == Role.admin:
             return True
 
         # Users can only modify their own templates
@@ -562,7 +562,7 @@ class TemplateService:
         try:
             # Base query with access control
             query = db.query(Template)
-            if user.role.value != "admin":
+            if user.role != Role.admin:
                 query = query.filter(
                     (Template.is_public) | (Template.created_by == user.id)
                 )
@@ -577,7 +577,7 @@ class TemplateService:
 
             # Apply the same access control filter for server type statistics
             stats_query = db.query(Template)
-            if user.role.value != "admin":
+            if user.role != Role.admin:
                 stats_query = stats_query.filter(
                     (Template.is_public) | (Template.created_by == user.id)
                 )

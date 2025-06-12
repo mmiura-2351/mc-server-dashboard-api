@@ -531,7 +531,7 @@ The Minecraft Server Dashboard API is a solid, production-ready application with
   - Difficulty: High
   - Time: 12-16 hours
 
-- [ ] **MEDIUM-6**: Fix role enum inconsistency in file validation
+- [x] **MEDIUM-6**: Fix role enum inconsistency in file validation
   - File: `app/services/file_management_service.py:106-113`
   - Impact: Low (code consistency)
   - Difficulty: Low
