@@ -70,6 +70,50 @@ When running tests, follow these guidelines:
 1. **Avoid Full Test Suite Timeouts**: Running all tests may result in timeouts. Focus on running minimal, targeted tests when possible
 2. **Extend Timeout for Full Suite**: When running the complete test suite is necessary, explicitly extend the timeout duration (e.g., use `--timeout=300000` parameter)
 
+### Rule 7: Issue Resolution Completion Process
+**Always close resolved Issues with proper documentation and status updates.**
+
+When completing issue resolution:
+1. **Verify Resolution**: Ensure all issue requirements have been fully addressed
+2. **Document Changes**: Update relevant documentation (README, CLAUDE.md, etc.) if needed
+3. **Test Validation**: Confirm all tests pass and functionality works as expected
+4. **Close with Summary**: Close issues with a summary of changes made and references to related PRs
+
+### Rule 8: Git/GitHub Workflow Standards
+**Follow standardized Git and GitHub practices for consistent project management.**
+
+**Branch Management:**
+1. **Issue-based Branches**: Create branches following pattern `fix/issue-{number}-{brief-description}` or `feature/issue-{number}-{brief-description}`
+2. **Keep Branches Focused**: One branch per issue/feature to maintain clear history
+3. **Regular Updates**: Keep feature branches updated with latest master changes
+
+**Pull Request Workflow:**
+1. **Descriptive Titles**: Use clear, descriptive PR titles that explain the change
+2. **Comprehensive Descriptions**: Include summary, changes made, testing approach, and impact assessment
+3. **Link Issues**: Always link related issues using "Resolves #X" or "Fixes #X"
+4. **Request Reviews**: Assign appropriate reviewers and respond to feedback promptly
+
+**Issue Management:**
+1. **Clear Descriptions**: Write detailed issue descriptions with clear acceptance criteria
+2. **Proper Labels**: Use appropriate labels (bug, enhancement, documentation, etc.)
+3. **Priority Setting**: Assign priority levels to help with work planning
+4. **Progress Updates**: Keep issues updated with progress and blockers
+
+### Rule 9: Pull Request Review Process
+**Conduct thorough code reviews and provide comprehensive feedback on GitHub Pull Requests.**
+
+**Review Guidelines:**
+1. **Comprehensive Coverage**: Review code quality, functionality, tests, documentation, and security implications
+2. **Constructive Feedback**: Provide specific, actionable feedback with suggestions for improvement
+3. **Code Standards**: Verify adherence to project coding standards and architectural patterns
+4. **Testing Verification**: Ensure adequate test coverage and that all tests pass
+
+**Review Process:**
+1. **Use GitHub CLI**: Utilize `gh pr view` and `gh pr review` commands for efficient review workflow
+2. **Structured Comments**: Organize feedback into categories (bugs, improvements, questions, suggestions)
+3. **Approval Criteria**: Only approve PRs that meet all quality standards and fully address the issue
+4. **Follow-up Actions**: Track that feedback is addressed before final approval and merge
+
 ## Project Overview
 
 This is a comprehensive FastAPI-based backend API for managing multiple Minecraft servers. The system provides user authentication, role-based access control, real-time monitoring, backup management, and complete server lifecycle management covering 46 specific use cases.
