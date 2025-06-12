@@ -38,35 +38,40 @@ class TestMinecraftServerManagerKeyMethods:
     @pytest.mark.asyncio
     async def test_check_java_availability_success(self, manager):
         """Test successful Java availability check"""
-        mock_result = Mock()
-        mock_result.returncode = 0
-        mock_result.stderr = "openjdk version 17.0.1"
+        mock_process = AsyncMock()
+        mock_process.returncode = 0
+        mock_process.communicate.return_value = (b"", b"openjdk version 17.0.1")
         
-        with patch('subprocess.run', return_value=mock_result):
+        with patch('asyncio.create_subprocess_exec', return_value=mock_process):
             result = await manager._check_java_availability()
             assert result is True
 
     @pytest.mark.asyncio
     async def test_check_java_availability_not_found(self, manager):
         """Test Java not found"""
-        with patch('subprocess.run', side_effect=FileNotFoundError()):
+        with patch('asyncio.create_subprocess_exec', side_effect=FileNotFoundError()):
             result = await manager._check_java_availability()
             assert result is False
 
     @pytest.mark.asyncio
     async def test_check_java_availability_timeout(self, manager):
         """Test Java check timeout"""
-        with patch('subprocess.run', side_effect=subprocess.TimeoutExpired("java", 10)):
-            result = await manager._check_java_availability()
-            assert result is False
+        mock_process = AsyncMock()
+        mock_process.communicate.side_effect = asyncio.TimeoutError()
+        
+        with patch('asyncio.create_subprocess_exec', return_value=mock_process):
+            with patch('asyncio.wait_for', side_effect=asyncio.TimeoutError()):
+                result = await manager._check_java_availability()
+                assert result is False
 
     @pytest.mark.asyncio
     async def test_check_java_availability_error_code(self, manager):
         """Test Java returns error code"""
-        mock_result = Mock()
-        mock_result.returncode = 1
+        mock_process = AsyncMock()
+        mock_process.returncode = 1
+        mock_process.communicate.return_value = (b"", b"")
         
-        with patch('subprocess.run', return_value=mock_result):
+        with patch('asyncio.create_subprocess_exec', return_value=mock_process):
             result = await manager._check_java_availability()
             assert result is False
 
