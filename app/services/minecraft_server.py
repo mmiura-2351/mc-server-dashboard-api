@@ -68,10 +68,11 @@ class MinecraftServerManager:
                             break
                 except (AttributeError, TypeError):
                     # Fallback for mock objects or queues without qsize()
-                    while True:
+                    # Use a reasonable limit to prevent infinite loops in tests
+                    for _ in range(1000):  # Safety limit
                         try:
                             server_process.log_queue.get_nowait()
-                        except asyncio.QueueEmpty:
+                        except (asyncio.QueueEmpty, AttributeError, TypeError):
                             break
 
                 # Remove from processes dict
