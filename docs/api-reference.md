@@ -13,6 +13,13 @@ Authorization: Bearer <your-jwt-token>
 
 ## API Endpoints
 
+### 🏥 Health & Monitoring
+
+| Method | Path | Description | Auth Required |
+|--------|------|-------------|---------------|
+| GET | `/health` | System health check with service status | No |
+| GET | `/metrics` | Performance metrics and statistics | No |
+
 ### 🔐 Authentication (`/api/v1/auth`)
 
 | Method | Path | Description | Auth Required |
@@ -113,12 +120,13 @@ Authorization: Bearer <your-jwt-token>
 #### Scheduling
 | Method | Path | Description | Auth Required |
 |--------|------|-------------|---------------|
-| POST | `/backups/scheduled` | Create scheduled backups | Admin |
-| GET | `/scheduler/status` | Scheduler status | Admin |
-| POST | `/scheduler/servers/{server_id}/schedule` | Add schedule | Admin |
-| PUT | `/scheduler/servers/{server_id}/schedule` | Update schedule | Admin |
-| GET | `/scheduler/servers/{server_id}/schedule` | Get schedule | Owner/Admin |
-| DELETE | `/scheduler/servers/{server_id}/schedule` | Remove schedule | Admin |
+| POST | `/scheduler/servers/{server_id}/schedule` | Create backup schedule | Owner/Admin |
+| GET | `/scheduler/servers/{server_id}/schedule` | Get backup schedule | Owner/Admin |
+| PUT | `/scheduler/servers/{server_id}/schedule` | Update backup schedule | Owner/Admin |
+| DELETE | `/scheduler/servers/{server_id}/schedule` | Delete backup schedule | Owner/Admin |
+| GET | `/scheduler/servers/{server_id}/logs` | Get schedule execution logs | Owner/Admin |
+| GET | `/scheduler/status` | Get scheduler global status | Admin |
+| GET | `/scheduler/schedules` | List all schedules | Admin |
 
 ### 📄 Templates (`/api/v1/templates`)
 

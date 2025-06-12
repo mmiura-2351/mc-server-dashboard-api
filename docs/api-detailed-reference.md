@@ -6,15 +6,16 @@
 ## 目次
 
 1. [概要](#概要)
-2. [認証システム](#認証システム)
-3. [ユーザー管理](#ユーザー管理)
-4. [サーバー管理](#サーバー管理)
-5. [グループ管理](#グループ管理)
-6. [バックアップ管理](#バックアップ管理)
-7. [テンプレート管理](#テンプレート管理)
-8. [ファイル管理](#ファイル管理)
-9. [WebSocket通信](#websocket通信)
-10. [エラーハンドリング](#エラーハンドリング)
+2. [ヘルスチェック・監視](#ヘルスチェック監視)
+3. [認証システム](#認証システム)
+4. [ユーザー管理](#ユーザー管理)
+5. [サーバー管理](#サーバー管理)
+6. [グループ管理](#グループ管理)
+7. [バックアップ管理](#バックアップ管理)
+8. [テンプレート管理](#テンプレート管理)
+9. [ファイル管理](#ファイル管理)
+10. [WebSocket通信](#websocket通信)
+11. [エラーハンドリング](#エラーハンドリング)
 
 ## 概要
 
@@ -31,6 +32,105 @@ Authorization: Bearer <access_token>
 - **user**: 基本権限（閲覧のみ）
 - **operator**: サーバー作成・管理権限
 - **admin**: システム全体の管理権限
+
+## ヘルスチェック・監視
+
+### GET /health
+**システムヘルスチェック**
+
+アプリケーションとサービスの健康状態を確認します。
+
+**リクエスト**
+- 認証不要
+
+**レスポンス**
+- Content-Type: `application/json`
+
+**正常時（200 OK）**
+```json
+{
+  "status": "healthy",
+  "timestamp": "2025-01-06T12:00:00Z",
+  "services": {
+    "database": "operational",
+    "database_integration": "operational", 
+    "backup_scheduler": "operational",
+    "websocket_service": "operational"
+  },
+  "failed_services": [],
+  "message": "All services operational"
+}
+```
+
+**異常時（503 Service Unavailable）**
+```json
+{
+  "status": "degraded",
+  "timestamp": "2025-01-06T12:00:00Z",
+  "services": {
+    "database": "operational",
+    "database_integration": "failed",
+    "backup_scheduler": "failed", 
+    "websocket_service": "operational"
+  },
+  "failed_services": ["database_integration", "backup_scheduler"],
+  "message": "Running with degraded functionality: database_integration, backup_scheduler"
+}
+```
+
+### GET /metrics
+**パフォーマンスメトリクス取得**
+
+システムのパフォーマンス統計と監視データを取得します。
+
+**リクエスト**
+- 認証不要
+
+**レスポンス**
+- Content-Type: `application/json`
+- Status: `200 OK`
+
+```json
+{
+  "timestamp": "2025-01-06T12:00:00Z",
+  "performance": {
+    "total_requests": 1250,
+    "avg_response_time_ms": 45.7,
+    "p95_response_time_ms": 125.3,
+    "p99_response_time_ms": 203.8,
+    "avg_db_queries_per_request": 2.3,
+    "avg_memory_usage_percent": 15.2,
+    "total_db_queries": 2875,
+    "slowest_endpoints": [
+      {
+        "endpoint": "POST /api/v1/servers",
+        "avg_time_ms": 234.5,
+        "request_count": 45
+      },
+      {
+        "endpoint": "GET /api/v1/backups",
+        "avg_time_ms": 156.7,
+        "request_count": 89
+      }
+    ]
+  },
+  "service_status": {
+    "database": true,
+    "database_integration": true,
+    "backup_scheduler": true,
+    "websocket_service": true,
+    "failed_services": [],
+    "healthy": true
+  },
+  "message": "Performance metrics collected successfully"
+}
+```
+
+**パフォーマンスヘッダー**
+リクエスト処理時に以下のヘッダーが自動的に追加されます：
+- `X-Response-Time`: リクエスト処理時間（ミリ秒）
+- `X-DB-Queries`: 実行されたデータベースクエリ数
+- `X-Memory-Usage`: メモリ使用率（パーセント）
 
 ## 認証システム
 
@@ -49,6 +149,7 @@ OAuth2 PasswordRequestForm形式でのログイン認証を行います。
 ```json
 {
   "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "refresh_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
   "token_type": "bearer"
 }
 ```
@@ -63,6 +164,61 @@ OAuth2 PasswordRequestForm形式でのログイン認証を行います。
 **エラーレスポンス**
 - 401: 無効なユーザー名またはパスワード
 - 403: ユーザーが未承認またはアクティブでない
+
+### POST /auth/refresh
+**アクセストークン更新**
+
+リフレッシュトークンを使用して新しいアクセストークンを取得します。
+
+**リクエスト**
+```json
+{
+  "refresh_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+}
+```
+
+**レスポンス**
+```json
+{
+  "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "refresh_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "token_type": "bearer"
+}
+```
+
+**処理詳細**
+1. リフレッシュトークンの有効性を検証
+2. トークンが有効でユーザーがアクティブな場合、新しいトークンペアを生成
+3. 古いリフレッシュトークンは無効化され、新しいトークンに置き換えられる（リフレッシュトークンローテーション）
+4. セキュリティ向上のため、1度使用されたリフレッシュトークンは再利用不可
+
+**エラーレスポンス**
+- 401: 無効または期限切れのリフレッシュトークン
+- 403: ユーザーが非アクティブまたは未承認
+
+### POST /auth/logout
+**ログアウト**
+
+ユーザーをログアウトし、リフレッシュトークンを無効化します。
+
+**リクエスト**
+```json
+{
+  "refresh_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+}
+```
+
+**レスポンス**
+```json
+{
+  "message": "Successfully logged out"
+}
+```
+
+**処理詳細**
+1. 提供されたリフレッシュトークンをデータベースから削除
+2. ログアウト後、該当するリフレッシュトークンは完全に無効化される
+3. アクセストークンは引き続き有効期限まで使用可能（短時間で自動失効）
 
 ## ユーザー管理
 
@@ -1200,10 +1356,142 @@ OPまたはホワイトリストのプレイヤーグループを作成します
 }
 ```
 
-### GET /backups/scheduler/status
-**バックアップスケジューラー状態**
+### POST /backups/scheduler/servers/{server_id}/schedule
+**バックアップスケジュール作成**
 
-自動バックアップスケジューラーの状態を取得します。
+サーバーの自動バックアップスケジュールを作成します。
+
+**権限**: サーバー所有者またはadmin
+
+**リクエスト**
+```json
+{
+  "interval_hours": 24,
+  "max_backups": 7,
+  "enabled": true,
+  "only_when_running": false
+}
+```
+
+**レスポンス**
+```json
+{
+  "id": 1,
+  "server_id": 1,
+  "interval_hours": 24,
+  "max_backups": 7,
+  "enabled": true,
+  "only_when_running": false,
+  "created_at": "2024-01-01T12:00:00Z",
+  "updated_at": "2024-01-01T12:00:00Z",
+  "last_run": null,
+  "next_run": "2024-01-02T12:00:00Z"
+}
+```
+
+### GET /backups/scheduler/servers/{server_id}/schedule
+**バックアップスケジュール取得**
+
+サーバーのバックアップスケジュール設定を取得します。
+
+**権限**: サーバー所有者またはadmin
+
+**レスポンス**
+```json
+{
+  "id": 1,
+  "server_id": 1,
+  "interval_hours": 24,
+  "max_backups": 7,
+  "enabled": true,
+  "only_when_running": false,
+  "created_at": "2024-01-01T12:00:00Z",
+  "updated_at": "2024-01-01T12:00:00Z",
+  "last_run": "2024-01-01T12:00:00Z",
+  "next_run": "2024-01-02T12:00:00Z"
+}
+```
+
+### PUT /backups/scheduler/servers/{server_id}/schedule
+**バックアップスケジュール更新**
+
+サーバーのバックアップスケジュール設定を更新します。
+
+**権限**: サーバー所有者またはadmin
+
+**リクエスト**
+```json
+{
+  "interval_hours": 48,
+  "max_backups": 10,
+  "enabled": false,
+  "only_when_running": true
+}
+```
+
+**レスポンス**: スケジュール作成と同じ形式
+
+### DELETE /backups/scheduler/servers/{server_id}/schedule
+**バックアップスケジュール削除**
+
+サーバーのバックアップスケジュールを削除します。
+
+**権限**: サーバー所有者またはadmin
+
+**レスポンス**
+```json
+{
+  "message": "Backup schedule deleted successfully"
+}
+```
+
+### GET /backups/scheduler/servers/{server_id}/logs
+**スケジュール実行ログ取得**
+
+バックアップスケジュールの実行履歴を取得します。
+
+**権限**: サーバー所有者またはadmin
+
+**クエリパラメータ**
+- `page`: ページ番号（デフォルト: 1）
+- `size`: ページサイズ（デフォルト: 50, 最大: 100）
+
+**レスポンス**
+```json
+{
+  "items": [
+    {
+      "id": 1,
+      "schedule_id": 1,
+      "executed_at": "2024-01-01T12:00:00Z",
+      "status": "success",
+      "backup_created": true,
+      "backup_id": 15,
+      "error_message": null,
+      "execution_time_seconds": 45.2
+    },
+    {
+      "id": 2,
+      "schedule_id": 1,
+      "executed_at": "2024-01-02T12:00:00Z",
+      "status": "skipped",
+      "backup_created": false,
+      "backup_id": null,
+      "error_message": "Server not running",
+      "execution_time_seconds": 0.1
+    }
+  ],
+  "total": 25,
+  "page": 1,
+  "size": 50,
+  "pages": 1
+}
+```
+
+### GET /backups/scheduler/status
+**スケジューラー全体状態**
+
+バックアップスケジューラーの全体的な状態を取得します。
 
 **権限**: admin
 
@@ -1211,59 +1499,49 @@ OPまたはホワイトリストのプレイヤーグループを作成します
 ```json
 {
   "scheduler_running": true,
-  "scheduled_servers": [
+  "total_schedules": 15,
+  "active_schedules": 12,
+  "cache_size": 1024,
+  "next_execution": "2024-01-01T13:00:00Z",
+  "uptime_seconds": 86400
+}
+```
+
+### GET /backups/scheduler/schedules
+**全スケジュール一覧**
+
+システム内の全バックアップスケジュールを取得します。
+
+**権限**: admin
+
+**クエリパラメータ**
+- `page`: ページ番号（デフォルト: 1）
+- `size`: ページサイズ（デフォルト: 50, 最大: 100）
+- `enabled`: 有効なスケジュールのみ（true/false, オプション）
+
+**レスポンス**
+```json
+{
+  "items": [
     {
+      "id": 1,
       "server_id": 1,
       "server_name": "My Server",
       "interval_hours": 24,
       "max_backups": 7,
       "enabled": true,
-      "last_backup": "2024-01-01T00:00:00Z",
-      "next_backup": "2024-01-02T00:00:00Z"
+      "only_when_running": false,
+      "last_run": "2024-01-01T12:00:00Z",
+      "next_run": "2024-01-02T12:00:00Z",
+      "owner_username": "john_doe"
     }
   ],
-  "total_scheduled": 5
+  "total": 15,
+  "page": 1,
+  "size": 50,
+  "pages": 1
 }
 ```
-
-### POST /backups/scheduler/servers/{server_id}/schedule
-**サーバーのバックアップスケジュール追加**
-
-サーバーを自動バックアップスケジュールに追加します。
-
-**権限**: admin
-
-**クエリパラメータ**
-- `interval_hours`: バックアップ間隔（1-168時間）
-- `max_backups`: 保持する最大バックアップ数（1-30）
-
-**レスポンス**
-```json
-{
-  "message": "Server 1 added to backup schedule",
-  "interval_hours": 24,
-  "max_backups": 7
-}
-```
-
-### PUT /backups/scheduler/servers/{server_id}/schedule
-**バックアップスケジュール更新**
-
-サーバーのバックアップスケジュールを更新します。
-
-**権限**: admin
-
-**クエリパラメータ**
-- `interval_hours`: バックアップ間隔（オプション）
-- `max_backups`: 最大バックアップ数（オプション）
-- `enabled`: スケジュールの有効/無効（オプション）
-
-### DELETE /backups/scheduler/servers/{server_id}/schedule
-**バックアップスケジュール削除**
-
-サーバーを自動バックアップスケジュールから削除します。
-
-**権限**: admin
 
 ## テンプレート管理
 
@@ -1517,18 +1795,20 @@ OPまたはホワイトリストのプレイヤーグループを作成します
 ### GET /files/servers/{server_id}/files/{file_path}/read
 **ファイル内容読み取り**
 
-テキストファイルの内容を読み取ります。
+テキストファイルや画像ファイルの内容を読み取ります。
 
 **権限**: サーバー所有者またはadmin
 
 **クエリパラメータ**
-- `encoding`: 文字エンコーディング（デフォルト: utf-8）
+- `encoding`: 文字エンコーディング（デフォルト: auto-detect）
+- `image`: 画像としてbase64で読み取る（true/false, デフォルト: false）
 
-**レスポンス**
+**テキストファイルのレスポンス**
 ```json
 {
   "content": "# Minecraft Server Properties\nserver-port=25565\n...",
   "encoding": "utf-8",
+  "detected_encoding": "utf-8",
   "file_info": {
     "name": "server.properties",
     "path": "server.properties",
@@ -1539,6 +1819,26 @@ OPまたはホワイトリストのプレイヤーグループを作成します
     "is_editable": true,
     "is_binary": false,
     "file_type": "config"
+  }
+}
+```
+
+**画像ファイルのレスポンス**（`image=true`の場合）
+```json
+{
+  "content": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAA...",
+  "content_type": "image/png",
+  "is_image": true,
+  "file_info": {
+    "name": "icon.png",
+    "path": "server-icon.png", 
+    "type": "file",
+    "size": 2048,
+    "modified": "2024-01-01T00:00:00Z",
+    "permissions": "rw-r--r--",
+    "is_editable": false,
+    "is_binary": true,
+    "file_type": "other"
   }
 }
 ```
@@ -1619,7 +1919,7 @@ OPまたはホワイトリストのプレイヤーグループを作成します
 - `destination_path`: 保存先パス（デフォルト: ルート）
 - `extract_if_archive`: ZIPファイルを展開するか（デフォルト: false）
 
-**レスポンス**
+**通常ファイルのレスポンス**
 ```json
 {
   "success": true,
@@ -1628,6 +1928,29 @@ OPまたはホワイトリストのプレイヤーグループを作成します
   "destination": "plugins/plugin.jar",
   "extracted": false,
   "file_size": 1048576
+}
+```
+
+**アーカイブ展開時のレスポンス**（`extract_if_archive=true`）
+```json
+{
+  "success": true,
+  "message": "Archive extracted successfully",
+  "uploaded_file": "modpack.zip",
+  "destination": "mods/",
+  "extracted": true,
+  "file_size": 50485760,
+  "extracted_files": [
+    "mods/mod1.jar",
+    "mods/mod2.jar",
+    "config/mod1-config.json"
+  ],
+  "extraction_summary": {
+    "total_files": 3,
+    "total_size": 48234567,
+    "skipped_files": [],
+    "conflicts_resolved": []
+  }
 }
 ```
 
@@ -1818,9 +2141,10 @@ OPまたはホワイトリストのプレイヤーグループを作成します
 - **401 Unauthorized**: 認証が必要
 - **403 Forbidden**: アクセス権限不足
 - **404 Not Found**: リソースが見つからない
-- **409 Conflict**: リソースの競合
+- **409 Conflict**: リソースの競合（ポート衝突、名前重複など）
 - **422 Unprocessable Entity**: バリデーションエラー
 - **500 Internal Server Error**: サーバーエラー
+- **503 Service Unavailable**: サービス利用不可（劣化状態）
 
 ### エラーレスポンス形式
 
@@ -1858,16 +2182,25 @@ OPまたはホワイトリストのプレイヤーグループを作成します
 3. **リソースエラー（404）**
    - 指定されたIDのリソースが存在しない
    - 削除済みリソースへのアクセス
+   - ファイルパスが見つからない
 
 4. **競合エラー（409）**
    - 重複する名前やポート番号
    - 実行中のサーバーへの不正な操作
    - 使用中のリソースの削除
+   - サーバーポート衝突
 
 5. **検証エラー（422）**
    - 必須フィールドの欠落
-   - フィールドの形式エラー
-   - 値の範囲外
+   - フィールドの形式エラー（Minecraft版本、ポート範囲など）
+   - 値の範囲外（interval_hours: 1-168）
+   - ファイルタイプ制限違反
+
+6. **サービス劣化エラー（503）**
+   - バックアップスケジューラー停止中
+   - データベース統合サービス異常
+   - WebSocket監視サービス停止
+   - Minecraftサーバープロセス管理エラー
 
 ### リトライポリシー
 
