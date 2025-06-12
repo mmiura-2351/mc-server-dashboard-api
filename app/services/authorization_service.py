@@ -1,6 +1,7 @@
 from functools import wraps
+from typing import Optional
 
-from fastapi import HTTPException, status
+from fastapi import HTTPException, Request, status
 from sqlalchemy.orm import Session
 
 from app.servers.models import Backup, Server
@@ -11,15 +12,54 @@ class AuthorizationService:
     """Service for handling authorization and access control"""
 
     @staticmethod
-    def check_server_access(server_id: int, user: User, db: Session) -> Server:
+    def check_server_access(
+        server_id: int,
+        user: User,
+        db: Session,
+        request: Optional[Request] = None,
+        log_access: bool = True,
+    ) -> Server:
         """Check if user has access to the server"""
         server = db.query(Server).filter(Server.id == server_id).first()
         if not server:
+            if log_access and request:
+                from app.audit.service import AuditService
+
+                AuditService.log_permission_check(
+                    db=db,
+                    request=request,
+                    resource_type="server",
+                    resource_id=server_id,
+                    permission="access",
+                    granted=False,
+                    user_id=user.id,
+                    details={"reason": "server_not_found"},
+                )
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND, detail="Server not found"
             )
 
-        if user.role != Role.admin and server.owner_id != user.id:
+        has_access = user.role == Role.admin or server.owner_id == user.id
+
+        if log_access and request:
+            from app.audit.service import AuditService
+
+            AuditService.log_permission_check(
+                db=db,
+                request=request,
+                resource_type="server",
+                resource_id=server_id,
+                permission="access",
+                granted=has_access,
+                user_id=user.id,
+                details={
+                    "server_name": server.name,
+                    "owner_id": server.owner_id,
+                    "user_role": user.role.value,
+                },
+            )
+
+        if not has_access:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Not authorized to access this server",
@@ -140,6 +180,16 @@ class AuthorizationService:
             return servers
         else:
             return [server for server in servers if server.owner_id == user.id]
+
+    @staticmethod
+    def is_admin(user: User) -> bool:
+        """Check if user is an admin"""
+        return user.role == Role.admin
+
+    @staticmethod
+    def is_operator_or_admin(user: User) -> bool:
+        """Check if user is an operator or admin"""
+        return user.role in [Role.admin, Role.operator]
 
 
 authorization_service = AuthorizationService()

@@ -5,6 +5,7 @@ from typing import Any, Dict
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.audit.router import router as audit_router
 from app.auth.router import router as auth_router
 
 # Import models to ensure they are registered with SQLAlchemy
@@ -14,6 +15,7 @@ from app.core.config import settings
 from app.core.database import Base, engine
 from app.files.router import router as files_router
 from app.groups.router import router as groups_router
+from app.middleware.audit_middleware import AuditMiddleware
 from app.middleware.performance_monitoring import (
     PerformanceMonitoringMiddleware,
     get_performance_metrics,
@@ -280,6 +282,14 @@ async def get_metrics():
     }
 
 
+# Add audit middleware (before performance monitoring for complete request tracking)
+app.add_middleware(
+    AuditMiddleware,
+    enabled=True,
+    log_all_requests=False,  # Only log specific auditable endpoints
+    exclude_health_checks=True,
+)
+
 # Add performance monitoring middleware
 app.add_middleware(
     PerformanceMonitoringMiddleware,
@@ -305,3 +315,4 @@ app.include_router(backups_router, prefix="/api/v1/backups", tags=["backups"])
 app.include_router(templates_router, prefix="/api/v1/templates", tags=["templates"])
 app.include_router(files_router, prefix="/api/v1/files", tags=["files"])
 app.include_router(websockets_router, prefix="/api/v1/ws", tags=["websockets"])
+app.include_router(audit_router, tags=["audit"])

@@ -6,10 +6,12 @@ from fastapi import (
     Depends,
     HTTPException,
     Query,
+    Request,
     status,
 )
 from sqlalchemy.orm import Session
 
+from app.audit.service import AuditService
 from app.auth.dependencies import get_current_user
 from app.core.config import settings
 from app.core.database import get_db
@@ -31,6 +33,7 @@ router = APIRouter(tags=["servers"])
 @router.post("/{server_id}/start", response_model=ServerStatusResponse)
 async def start_server(
     server_id: int,
+    request: Request,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -42,11 +45,42 @@ async def start_server(
     """
     try:
         # Check ownership/admin access
-        server = authorization_service.check_server_access(server_id, current_user, db)
+        server = authorization_service.check_server_access(
+            server_id, current_user, db, request
+        )
 
         # Check current status
         current_status = minecraft_server_manager.get_server_status(server_id)
+
+        # Log server start attempt
+        AuditService.log_server_event(
+            db=db,
+            request=request,
+            action="start_attempt",
+            server_id=server_id,
+            details={
+                "server_name": server.name,
+                "current_status": current_status.value,
+                "user_role": current_user.role.value,
+            },
+            user_id=current_user.id,
+        )
+
         if current_status not in [ServerStatus.stopped, ServerStatus.error]:
+            # Log failed start due to status
+            AuditService.log_server_event(
+                db=db,
+                request=request,
+                action="start_failed",
+                server_id=server_id,
+                details={
+                    "server_name": server.name,
+                    "reason": "invalid_status",
+                    "current_status": current_status.value,
+                    "required_status": "stopped or error",
+                },
+                user_id=current_user.id,
+            )
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail=f"Server is currently {current_status.value}, cannot start",
@@ -76,6 +110,21 @@ async def start_server(
                     logger.error(
                         f"Java not available: {stderr.decode() if stderr else 'Unknown Java error'}"
                     )
+                    # Log Java availability issue
+                    AuditService.log_server_event(
+                        db=db,
+                        request=request,
+                        action="start_failed",
+                        server_id=server_id,
+                        details={
+                            "server_name": server.name,
+                            "reason": "java_not_available",
+                            "java_error": (
+                                stderr.decode() if stderr else "Unknown Java error"
+                            ),
+                        },
+                        user_id=current_user.id,
+                    )
                     raise HTTPException(
                         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                         detail="Server start failed: Java runtime not available",
@@ -84,6 +133,19 @@ async def start_server(
                 logger.error(
                     f"Java executable check failed: {type(e).__name__}: {e}",
                     exc_info=True,
+                )
+                # Log Java executable issue
+                AuditService.log_server_event(
+                    db=db,
+                    request=request,
+                    action="start_failed",
+                    server_id=server_id,
+                    details={
+                        "server_name": server.name,
+                        "reason": "java_executable_not_found",
+                        "error": f"{type(e).__name__}: {str(e)}",
+                    },
+                    user_id=current_user.id,
                 )
                 raise HTTPException(
                     status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -96,16 +158,54 @@ async def start_server(
 
             if not jar_path.exists():
                 logger.error(f"Server JAR missing: {jar_path}")
+                # Log missing JAR file
+                AuditService.log_server_event(
+                    db=db,
+                    request=request,
+                    action="start_failed",
+                    server_id=server_id,
+                    details={
+                        "server_name": server.name,
+                        "reason": "server_jar_missing",
+                        "jar_path": str(jar_path),
+                    },
+                    user_id=current_user.id,
+                )
                 raise HTTPException(
                     status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                     detail="Server start failed: server.jar not found",
                 )
 
             # Generic failure if we can't determine specific cause
+            AuditService.log_server_event(
+                db=db,
+                request=request,
+                action="start_failed",
+                server_id=server_id,
+                details={
+                    "server_name": server.name,
+                    "reason": "unknown_configuration_issue",
+                },
+                user_id=current_user.id,
+            )
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Server start failed: Check server configuration and system requirements",
             )
+
+        # Log successful start
+        AuditService.log_server_event(
+            db=db,
+            request=request,
+            action="start_success",
+            server_id=server_id,
+            details={
+                "server_name": server.name,
+                "previous_status": current_status.value,
+                "new_status": "starting",
+            },
+            user_id=current_user.id,
+        )
 
         # Database status will be updated automatically via callback
         # when the server actually starts
@@ -119,6 +219,19 @@ async def start_server(
     except HTTPException:
         raise
     except Exception as e:
+        # Log unexpected error
+        AuditService.log_server_event(
+            db=db,
+            request=request,
+            action="start_failed",
+            server_id=server_id,
+            details={
+                "reason": "unexpected_error",
+                "error": str(e),
+                "error_type": type(e).__name__,
+            },
+            user_id=current_user.id,
+        )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to start server: {str(e)}",
@@ -264,7 +377,8 @@ async def get_server_status(
 @router.post("/{server_id}/command")
 async def send_server_command(
     server_id: int,
-    request: ServerCommandRequest,
+    command_request: ServerCommandRequest,
+    http_request: Request,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -276,29 +390,89 @@ async def send_server_command(
     """
     try:
         # Check ownership/admin access
-        authorization_service.check_server_access(server_id, current_user, db)
+        server = authorization_service.check_server_access(
+            server_id, current_user, db, http_request
+        )
 
         # Check if server is running
         status = minecraft_server_manager.get_server_status(server_id)
+
+        # Log command attempt (CRITICAL SECURITY EVENT)
+        AuditService.log_server_command_event(
+            db=db,
+            request=http_request,
+            server_id=server_id,
+            command=command_request.command,
+            success=False,  # Will update to True if successful
+            user_id=current_user.id,
+        )
+
         if status != ServerStatus.running:
+            # Log failed command due to status
+            AuditService.log_server_event(
+                db=db,
+                request=http_request,
+                action="command_failed",
+                server_id=server_id,
+                details={
+                    "server_name": server.name,
+                    "command": command_request.command,
+                    "reason": "server_not_running",
+                    "current_status": status.value,
+                },
+                user_id=current_user.id,
+            )
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail=f"Server is {status.value}, commands can only be sent to running servers",
             )
 
         # Send command
-        success = await minecraft_server_manager.send_command(server_id, request.command)
+        success = await minecraft_server_manager.send_command(
+            server_id, command_request.command
+        )
         if not success:
+            # Log failed command execution
+            AuditService.log_server_command_event(
+                db=db,
+                request=http_request,
+                server_id=server_id,
+                command=command_request.command,
+                success=False,
+                output="Command execution failed",
+                user_id=current_user.id,
+            )
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Failed to send command to server",
             )
 
-        return {"message": f"Command '{request.command}' sent to server"}
+        # Log successful command execution
+        AuditService.log_server_command_event(
+            db=db,
+            request=http_request,
+            server_id=server_id,
+            command=command_request.command,
+            success=True,
+            output="Command sent successfully",
+            user_id=current_user.id,
+        )
+
+        return {"message": f"Command '{command_request.command}' sent to server"}
 
     except HTTPException:
         raise
     except Exception as e:
+        # Log unexpected error during command execution
+        AuditService.log_server_command_event(
+            db=db,
+            request=http_request,
+            server_id=server_id,
+            command=command_request.command,
+            success=False,
+            output=f"Unexpected error: {str(e)}",
+            user_id=current_user.id,
+        )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to send command: {str(e)}",
