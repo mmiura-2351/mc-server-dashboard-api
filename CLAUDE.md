@@ -102,6 +102,29 @@ When an Issue has been successfully resolved:
 3. **Issue Linking**: Reference Issues in commit messages and PR descriptions using `Resolves #123` or `Fixes #123`
 4. **Progress Tracking**: Update Issue status and add comments during development to keep stakeholders informed
 
+### Rule 9: Pull Request Review Process
+**Conduct thorough code reviews and provide comprehensive feedback on GitHub Pull Requests.**
+
+When reviewing Pull Requests, follow this systematic approach:
+1. **Use GitHub CLI for Review**: Use `gh pr view` and `gh pr review` commands to access and review PRs efficiently
+2. **Comprehensive Review Coverage**:
+   - Security improvements and potential vulnerabilities
+   - Code quality and adherence to project standards
+   - Technical implementation correctness
+   - Performance and scalability considerations
+   - Documentation and test coverage
+3. **Structured Review Comments**:
+   - Highlight strengths with ✅ sections
+   - Identify areas for improvement with ⚠️ sections
+   - Provide specific code suggestions and examples
+   - Include pre-merge checklist items
+4. **Review Documentation**: Always post review comments directly to the PR using `gh pr review --comment` for team visibility
+5. **Assessment Categories**:
+   - APPROVE: Changes are ready for merge
+   - REQUEST CHANGES: Issues must be addressed before merge
+   - COMMENT: Feedback provided without blocking merge
+6. **Follow-up Actions**: Track review recommendations and ensure critical issues are addressed before merge
+
 ## Project Overview
 
 This is a comprehensive FastAPI-based backend API for managing multiple Minecraft servers. The system provides user authentication, role-based access control, real-time monitoring, backup management, and complete server lifecycle management covering 46 specific use cases.
