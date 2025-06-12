@@ -62,6 +62,13 @@ When addressing GitHub Issues, follow this standard procedure:
 5. **Implement Solution**: Perform the implementation and fixes following project standards
 6. **Verify and Create PR**: Confirm the issue has been properly addressed and create a pull request
 
+### Rule 5: Test Execution Guidelines
+**Be mindful of test execution performance and timeouts.**
+
+When running tests, follow these guidelines:
+1. **Avoid Full Test Suite Timeouts**: Running all tests may result in timeouts. Focus on running minimal, targeted tests when possible
+2. **Extend Timeout for Full Suite**: When running the complete test suite is necessary, explicitly extend the timeout duration (e.g., use `--timeout=300000` parameter)
+
 ## Project Overview
 
 This is a comprehensive FastAPI-based backend API for managing multiple Minecraft servers. The system provides user authentication, role-based access control, real-time monitoring, backup management, and complete server lifecycle management covering 46 specific use cases.
