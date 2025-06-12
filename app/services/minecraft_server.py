@@ -26,12 +26,14 @@ class ServerProcess:
 class MinecraftServerManager:
     """Manages Minecraft server processes using asyncio"""
 
-    def __init__(self):
+    def __init__(self, log_queue_size: int = 500):
         self.processes: Dict[int, ServerProcess] = {}
         self.base_directory = Path("servers")
         self.base_directory.mkdir(exist_ok=True)
         # Callback for database status updates
         self._status_update_callback: Optional[Callable[[int, ServerStatus], None]] = None
+        # Configurable log queue size to prevent memory leaks
+        self.log_queue_size = log_queue_size
 
     def set_status_update_callback(self, callback: Callable[[int, ServerStatus], None]):
         """Set callback function to update database when server status changes"""
@@ -46,6 +48,27 @@ class MinecraftServerManager:
                 logger.error(
                     f"Failed to update database status for server {server_id}: {e}"
                 )
+
+    async def _cleanup_server_process(self, server_id: int):
+        """Clean up server process resources including log queue"""
+        try:
+            if server_id in self.processes:
+                server_process = self.processes[server_id]
+
+                # Clear the log queue to free memory
+                while not server_process.log_queue.empty():
+                    try:
+                        server_process.log_queue.get_nowait()
+                    except asyncio.QueueEmpty:
+                        break
+
+                # Remove from processes dict
+                del self.processes[server_id]
+                logger.debug(
+                    f"Cleaned up server process {server_id} and freed log queue memory"
+                )
+        except Exception as e:
+            logger.error(f"Error during cleanup of server {server_id}: {e}")
 
     async def _check_java_availability(self) -> bool:
         """Check if Java is available in the system"""
@@ -229,8 +252,8 @@ class MinecraftServerManager:
                 f"Process verification successful for server {server.id} - PID: {process.pid}"
             )
 
-            # Create server process tracking
-            log_queue = asyncio.Queue(maxsize=1000)
+            # Create server process tracking with configurable queue size
+            log_queue = asyncio.Queue(maxsize=self.log_queue_size)
             server_process = ServerProcess(
                 server_id=server.id,
                 process=process,
@@ -258,7 +281,7 @@ class MinecraftServerManager:
             )
             # Cleanup if process was partially created
             if server.id in self.processes:
-                del self.processes[server.id]
+                await self._cleanup_server_process(server.id)
             return False
 
     async def stop_server(self, server_id: int, force: bool = False) -> bool:
@@ -278,7 +301,7 @@ class MinecraftServerManager:
             if server_process.process.returncode is not None:
                 logger.info(f"Server {server_id} process already terminated")
                 # Clean up immediately if process is already dead
-                del self.processes[server_id]
+                await self._cleanup_server_process(server_id)
                 self._notify_status_change(server_id, ServerStatus.stopped)
                 return True
 
@@ -328,9 +351,9 @@ class MinecraftServerManager:
                 except (ProcessLookupError, OSError) as e:
                     logger.info(f"Server {server_id} process already terminated: {e}")
 
-            # Clean up
+            # Clean up server process and queue
             if server_id in self.processes:
-                del self.processes[server_id]
+                await self._cleanup_server_process(server_id)
 
             # Notify database of final stopped status
             self._notify_status_change(server_id, ServerStatus.stopped)
@@ -343,7 +366,7 @@ class MinecraftServerManager:
             # Ensure cleanup even if there was an error
             try:
                 if server_id in self.processes:
-                    del self.processes[server_id]
+                    await self._cleanup_server_process(server_id)
                 self._notify_status_change(server_id, ServerStatus.stopped)
             except Exception as cleanup_error:
                 logger.error(f"Failed to cleanup server {server_id}: {cleanup_error}")
@@ -436,16 +459,23 @@ class MinecraftServerManager:
                 timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 formatted_line = f"[{timestamp}] {log_line}"
 
-                # Put in queue (drop old logs if queue is full)
+                # Put in queue with efficient full queue handling
+                if server_process.log_queue.full():
+                    # Remove oldest log to make space (more efficient than try/except)
+                    try:
+                        server_process.log_queue.get_nowait()
+                    except asyncio.QueueEmpty:
+                        pass
+
+                # Add new log entry
                 try:
                     server_process.log_queue.put_nowait(formatted_line)
                 except asyncio.QueueFull:
-                    # Remove oldest log and add new one
-                    try:
-                        server_process.log_queue.get_nowait()
-                        server_process.log_queue.put_nowait(formatted_line)
-                    except asyncio.QueueEmpty:
-                        pass
+                    # Should not happen after clearing space above, but safety check
+                    logger.debug(
+                        f"Log queue unexpectedly full for server {server_process.server_id}"
+                    )
+                    pass
 
                 # Check for server ready status
                 if "Done" in log_line and "For help" in log_line:
@@ -477,7 +507,7 @@ class MinecraftServerManager:
 
                 # Clean up
                 if server_process.server_id in self.processes:
-                    del self.processes[server_process.server_id]
+                    await self._cleanup_server_process(server_process.server_id)
                 return
 
             except asyncio.TimeoutError:
@@ -508,7 +538,7 @@ class MinecraftServerManager:
 
             # Clean up if still in processes dict
             if server_process.server_id in self.processes:
-                del self.processes[server_process.server_id]
+                await self._cleanup_server_process(server_process.server_id)
 
         except Exception as e:
             logger.error(f"Error monitoring server {server_process.server_id}: {e}")
@@ -518,7 +548,7 @@ class MinecraftServerManager:
 
             # Clean up
             if server_process.server_id in self.processes:
-                del self.processes[server_process.server_id]
+                await self._cleanup_server_process(server_process.server_id)
 
     async def shutdown_all(self):
         """Shutdown all running servers"""
