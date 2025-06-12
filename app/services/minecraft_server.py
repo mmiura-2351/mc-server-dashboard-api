@@ -58,12 +58,21 @@ class MinecraftServerManager:
                 server_process = self.processes[server_id]
 
                 # Clear the log queue to free memory efficiently
-                queue_size = server_process.log_queue.qsize()
-                for _ in range(queue_size):
-                    try:
-                        server_process.log_queue.get_nowait()
-                    except asyncio.QueueEmpty:
-                        break
+                try:
+                    # Use qsize() for efficient batch clearing if available
+                    queue_size = server_process.log_queue.qsize()
+                    for _ in range(queue_size):
+                        try:
+                            server_process.log_queue.get_nowait()
+                        except asyncio.QueueEmpty:
+                            break
+                except (AttributeError, TypeError):
+                    # Fallback for mock objects or queues without qsize()
+                    while True:
+                        try:
+                            server_process.log_queue.get_nowait()
+                        except asyncio.QueueEmpty:
+                            break
 
                 # Remove from processes dict
                 del self.processes[server_id]
