@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.servers.models import BackupStatus, BackupType
 
@@ -131,8 +131,7 @@ class BackupResponse(BaseModel):
             minecraft_version=backup.server.minecraft_version if backup.server else None,
         )
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class BackupListResponse(BaseModel):
@@ -250,8 +249,7 @@ class BackupScheduleResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class BackupScheduleLogResponse(BaseModel):
@@ -267,8 +265,7 @@ class BackupScheduleLogResponse(BaseModel):
     executed_by_username: Optional[str] = None
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class SchedulerStatusResponse(BaseModel):

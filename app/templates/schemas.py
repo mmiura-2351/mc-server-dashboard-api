@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.servers.models import ServerType
 
@@ -151,8 +151,7 @@ class TemplateResponse(BaseModel):
             creator_name=template.creator.username if template.creator else None,
         )
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class TemplateListResponse(BaseModel):

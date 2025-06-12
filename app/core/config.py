@@ -1,10 +1,12 @@
 from typing import List
 
-from pydantic import field_validator, model_validator
+from pydantic import ConfigDict, field_validator, model_validator
 from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
+    model_config = ConfigDict(env_file=".env")
+    
     SECRET_KEY: str
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
@@ -16,9 +18,6 @@ class Settings(BaseSettings):
         "http://localhost:3000,http://127.0.0.1:3000,https://127.0.0.1:3000"
     )
     ENVIRONMENT: str = "development"  # development, production, testing
-
-    class Config:
-        env_file = ".env"
 
     @field_validator("SECRET_KEY")
     @classmethod
