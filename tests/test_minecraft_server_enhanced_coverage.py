@@ -147,30 +147,30 @@ class TestMinecraftServerManagerEnhanced:
     @pytest.mark.asyncio
     async def test_check_java_availability_success(self, manager):
         """Test successful Java availability check"""
-        mock_result = Mock()
-        mock_result.returncode = 0
-        mock_result.stderr = "java 17.0.1 2021-10-19"
+        mock_process = Mock()
+        mock_process.returncode = 0
+        mock_process.communicate = AsyncMock(return_value=(b"", b"openjdk version \"17.0.1\" 2021-10-19"))
         
-        with patch('subprocess.run', return_value=mock_result) as mock_run:
+        with patch('asyncio.create_subprocess_exec', return_value=mock_process) as mock_create:
             with patch('app.services.minecraft_server.logger') as mock_logger:
                 result = await manager._check_java_availability()
                 
                 assert result is True
-                mock_run.assert_called_once_with(
-                    ["java", "-version"], 
-                    capture_output=True, 
-                    text=True, 
-                    timeout=10
+                mock_create.assert_called_once_with(
+                    "java", "-version",
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE
                 )
                 mock_logger.debug.assert_called()
 
     @pytest.mark.asyncio
     async def test_check_java_availability_failure(self, manager):
         """Test Java availability check failure"""
-        mock_result = Mock()
-        mock_result.returncode = 1
+        mock_process = Mock()
+        mock_process.returncode = 1
+        mock_process.communicate = AsyncMock(return_value=(b"", b""))
         
-        with patch('subprocess.run', return_value=mock_result):
+        with patch('asyncio.create_subprocess_exec', return_value=mock_process):
             with patch('app.services.minecraft_server.logger') as mock_logger:
                 result = await manager._check_java_availability()
                 
@@ -182,7 +182,7 @@ class TestMinecraftServerManagerEnhanced:
     @pytest.mark.asyncio
     async def test_check_java_availability_timeout(self, manager):
         """Test Java availability check timeout"""
-        with patch('subprocess.run', side_effect=subprocess.TimeoutExpired("java", 10)):
+        with patch('asyncio.wait_for', side_effect=asyncio.TimeoutError()):
             with patch('app.services.minecraft_server.logger') as mock_logger:
                 result = await manager._check_java_availability()
                 
@@ -192,7 +192,7 @@ class TestMinecraftServerManagerEnhanced:
     @pytest.mark.asyncio
     async def test_check_java_availability_file_not_found(self, manager):
         """Test Java availability check when Java not found"""
-        with patch('subprocess.run', side_effect=FileNotFoundError("java command not found")):
+        with patch('asyncio.create_subprocess_exec', side_effect=FileNotFoundError("java command not found")):
             with patch('app.services.minecraft_server.logger') as mock_logger:
                 result = await manager._check_java_availability()
                 

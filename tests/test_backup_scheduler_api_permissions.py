@@ -18,25 +18,16 @@ class TestBackupSchedulerAPIPermissions:
         """Test client"""
         return TestClient(app)
 
-    @pytest.fixture
-    def admin_user(self, db: Session):
-        """Admin user"""
-        user = User(
-            username="admin_user",
-            email="admin@example.com",
-            hashed_password="hashed_password",
-            role=Role.admin,
-            is_active=True,
-            is_approved=True
-        )
-        db.add(user)
-        db.commit()
-        db.refresh(user)
-        return user
-
+    # Use admin_user from conftest.py
+    
     @pytest.fixture
     def operator_user(self, db: Session):
         """Operator user"""
+        # Check if operator user already exists
+        existing_user = db.query(User).filter_by(username="operator_user").first()
+        if existing_user:
+            return existing_user
+            
         user = User(
             username="operator_user",
             email="operator@example.com",
@@ -53,6 +44,11 @@ class TestBackupSchedulerAPIPermissions:
     @pytest.fixture
     def regular_user(self, db: Session):
         """Regular user"""
+        # Check if regular user already exists
+        existing_user = db.query(User).filter_by(username="regular_user").first()
+        if existing_user:
+            return existing_user
+            
         user = User(
             username="regular_user",
             email="user@example.com",
@@ -69,6 +65,11 @@ class TestBackupSchedulerAPIPermissions:
     @pytest.fixture
     def other_user(self, db: Session):
         """Other user (not server owner)"""
+        # Check if other user already exists
+        existing_user = db.query(User).filter_by(username="other_user").first()
+        if existing_user:
+            return existing_user
+            
         user = User(
             username="other_user",
             email="other@example.com",

@@ -5,7 +5,7 @@ Database-based persistent backup scheduler
 
 import asyncio
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Optional, Tuple
 
 from sqlalchemy.orm import Session
@@ -78,7 +78,7 @@ class BackupSchedulerService:
             raise ValueError(f"Server {server_id} not found or deleted")
 
         # Calculate next backup time
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         next_backup_at = now + timedelta(hours=interval_hours)
 
         # Create schedule
@@ -168,7 +168,7 @@ class BackupSchedulerService:
                     hours=interval_hours
                 )
             else:
-                schedule.next_backup_at = datetime.utcnow() + timedelta(
+                schedule.next_backup_at = datetime.now(timezone.utc) + timedelta(
                     hours=interval_hours
                 )
 
@@ -182,7 +182,7 @@ class BackupSchedulerService:
             schedule.only_when_running = only_when_running
 
         # Manually update updated_at
-        schedule.updated_at = datetime.utcnow()
+        schedule.updated_at = datetime.now(timezone.utc)
 
         db.commit()
         db.refresh(schedule)
@@ -332,7 +332,7 @@ class BackupSchedulerService:
             return False, "Schedule is disabled"
 
         # 2. Execution time check
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         if schedule.next_backup_at and now < schedule.next_backup_at:
             return False, f"Not yet time (next: {schedule.next_backup_at})"
 
@@ -361,7 +361,7 @@ class BackupSchedulerService:
         Returns:
             List of BackupSchedules due for execution
         """
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
 
         due_schedules = (
             db.query(BackupSchedule)

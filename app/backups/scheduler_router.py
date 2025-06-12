@@ -68,7 +68,7 @@ async def create_backup_schedule(
             executed_by_user_id=current_user.id,
         )
 
-        return BackupScheduleResponse.from_orm(schedule)
+        return BackupScheduleResponse.model_validate(schedule)
 
     except ValueError as e:
         if "already has" in str(e):
@@ -121,7 +121,7 @@ async def get_backup_schedule(
                 detail=f"No backup schedule found for server {server_id}",
             )
 
-        return BackupScheduleResponse.from_orm(schedule)
+        return BackupScheduleResponse.model_validate(schedule)
 
     except HTTPException:
         raise
@@ -169,7 +169,7 @@ async def update_backup_schedule(
             executed_by_user_id=current_user.id,
         )
 
-        return BackupScheduleResponse.from_orm(schedule)
+        return BackupScheduleResponse.model_validate(schedule)
 
     except ValueError as e:
         if "not found" in str(e):

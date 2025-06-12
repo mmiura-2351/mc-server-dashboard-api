@@ -1,5 +1,5 @@
 import pytest
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 
@@ -234,7 +234,7 @@ class TestBackupScheduleService:
         db.commit()
 
         # Set execution time
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         next_backup = now + timedelta(hours=6)
         
         schedule.last_backup_at = now
@@ -253,7 +253,7 @@ class TestBackupScheduleService:
     def test_schedule_due_for_backup_query(self, db: Session, test_user: User):
         """Backup execution scheduled search test"""
         # Current time
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         
         # Create 3 servers and schedules
         servers_data = [
