@@ -6,12 +6,16 @@ from pydantic_settings import BaseSettings
 
 class Settings(BaseSettings):
     model_config = ConfigDict(env_file=".env")
-    
+
     SECRET_KEY: str
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     REFRESH_TOKEN_EXPIRE_DAYS: int = 30
     DATABASE_URL: str
+
+    # Server management configuration
+    SERVER_LOG_QUEUE_SIZE: int = 500
+    JAVA_CHECK_TIMEOUT: int = 5
 
     # CORS configuration
     CORS_ORIGINS: str = (
