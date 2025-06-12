@@ -1,7 +1,6 @@
 import asyncio
 import logging
 import os
-import subprocess
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -51,21 +50,27 @@ class MinecraftServerManager:
     async def _check_java_availability(self) -> bool:
         """Check if Java is available in the system"""
         try:
-            result = subprocess.run(
-                ["java", "-version"], capture_output=True, text=True, timeout=10
+            process = await asyncio.create_subprocess_exec(
+                "java",
+                "-version",
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
             )
-            if result.returncode == 0:
+            stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=10)
+
+            if process.returncode == 0:
+                stderr_text = stderr.decode("utf-8") if stderr else ""
                 logger.debug(
-                    f"Java version detected: {result.stderr.split()[2] if result.stderr else 'unknown'}"
+                    f"Java version detected: {stderr_text.split()[2] if stderr_text else 'unknown'}"
                 )
                 return True
             else:
                 logger.error("Java is not available or not working properly")
                 return False
         except (
-            subprocess.TimeoutExpired,
+            asyncio.TimeoutError,
             FileNotFoundError,
-            subprocess.SubprocessError,
+            OSError,
         ) as e:
             logger.error(f"Java availability check failed: {e}")
             return False

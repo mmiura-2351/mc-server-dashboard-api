@@ -1,5 +1,6 @@
 from typing import List
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings
 
 
@@ -18,6 +19,30 @@ class Settings(BaseSettings):
 
     class Config:
         env_file = ".env"
+
+    @field_validator("SECRET_KEY")
+    @classmethod
+    def validate_secret_key(cls, v: str) -> str:
+        """Validate SECRET_KEY meets security requirements"""
+        if len(v) < 32:
+            raise ValueError("SECRET_KEY must be at least 32 characters long")
+        if v in ["your-secret-key", "secret", "default", "change-me"]:
+            raise ValueError("SECRET_KEY cannot be a default or weak value")
+        return v
+
+    @field_validator("CORS_ORIGINS")
+    @classmethod
+    def validate_cors_origins(cls, v: str, info) -> str:
+        """Validate CORS origins for production environment"""
+        if (
+            hasattr(info.data, "ENVIRONMENT")
+            and info.data.get("ENVIRONMENT", "").lower() == "production"
+        ):
+            if "localhost" in v or "127.0.0.1" in v:
+                raise ValueError(
+                    "CORS_ORIGINS should not include localhost in production"
+                )
+        return v
 
     @property
     def cors_origins_list(self) -> List[str]:
