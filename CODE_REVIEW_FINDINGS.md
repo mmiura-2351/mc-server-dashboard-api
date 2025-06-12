@@ -552,7 +552,7 @@ The Minecraft Server Dashboard API is a solid, production-ready application with
   - Difficulty: Low
   - Time: 2 hours
 
-- [ ] **LOW-3**: Expand restricted files list for enhanced security
+- [x] **LOW-3**: Expand restricted files list for enhanced security
   - Add more critical Minecraft server files
   - Impact: Low (defense in depth)
   - Difficulty: Low

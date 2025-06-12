@@ -41,12 +41,43 @@ class FileValidationService:
             "log": [".log", ".gz"],
         }
         self.restricted_files = [
+            # Core server files
             "server.jar",
             "eula.txt",
+            # Permission and access control files
             "ops.json",
             "whitelist.json",
             "banned-players.json",
             "banned-ips.json",
+            # Server configuration files (Bukkit/Spigot/Paper)
+            "bukkit.yml",
+            "spigot.yml",
+            "paper.yml",
+            "paper-global.yml",
+            "paper-world-defaults.yml",
+            # Plugin and command configuration
+            "plugins.yml",
+            "commands.yml",
+            "permissions.yml",
+            "help.yml",
+            # World data files (critical for world integrity)
+            "level.dat",
+            "level.dat_old",
+            "session.lock",
+            # User cache and security files
+            "usercache.json",
+            "usernamecache.json",
+            # Additional server implementation JARs
+            "minecraft_server.jar",
+            "forge.jar",
+            "fabric-server-launch.jar",
+            # Plugin management files
+            "plugin.yml",
+            "mod.toml",
+            # Proxy server configurations (for multi-server setups)
+            "config.yml",
+            "velocity.toml",
+            "waterfall.yml",
         ]
 
     def validate_server_exists(

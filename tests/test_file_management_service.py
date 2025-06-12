@@ -623,3 +623,47 @@ class TestFileManagementService:
         
         result = service._is_restricted_file(Path("test.txt"))
         assert not result
+
+    def test_enhanced_restricted_files_list(self):
+        """Test that all critical Minecraft server files are properly restricted"""
+        service = file_management_service.validation_service
+        
+        # Original restricted files (should still be protected)
+        original_restricted = [
+            "server.jar", "eula.txt", "ops.json", 
+            "whitelist.json", "banned-players.json", "banned-ips.json"
+        ]
+        
+        # Newly added critical files (enhanced security)
+        new_restricted = [
+            # Server configuration files
+            "bukkit.yml", "spigot.yml", "paper.yml", "paper-global.yml", "paper-world-defaults.yml",
+            # Plugin and command configuration
+            "plugins.yml", "commands.yml", "permissions.yml", "help.yml",
+            # World data files
+            "level.dat", "level.dat_old", "session.lock",
+            # User cache and security files
+            "usercache.json", "usernamecache.json",
+            # Additional server JARs
+            "minecraft_server.jar", "forge.jar", "fabric-server-launch.jar",
+            # Plugin management
+            "plugin.yml", "mod.toml",
+            # Proxy configurations
+            "config.yml", "velocity.toml", "waterfall.yml"
+        ]
+        
+        # Test all original files are still protected
+        for filename in original_restricted:
+            assert service._is_restricted_file(Path(filename)), f"Original restricted file {filename} should be protected"
+        
+        # Test all new files are now protected
+        for filename in new_restricted:
+            assert service._is_restricted_file(Path(filename)), f"New restricted file {filename} should be protected"
+        
+        # Test that non-restricted files are not protected
+        non_restricted = [
+            "README.txt", "notes.md", "custom-config.yml", 
+            "logs/latest.log", "plugins/CustomPlugin.jar"
+        ]
+        for filename in non_restricted:
+            assert not service._is_restricted_file(Path(filename)), f"Non-restricted file {filename} should not be protected"
