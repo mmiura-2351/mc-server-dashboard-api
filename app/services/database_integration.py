@@ -1,10 +1,7 @@
 import logging
 from typing import Optional
 
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
-
-from app.core.config import settings
+from app.core.database import SessionLocal
 from app.servers.models import Server, ServerStatus
 from app.services.minecraft_server import minecraft_server_manager
 
@@ -15,11 +12,9 @@ class DatabaseIntegrationService:
     """Service for integrating MinecraftServerManager with database operations"""
 
     def __init__(self):
-        # Create a separate engine for background operations
-        self.engine = create_engine(settings.DATABASE_URL)
-        self.SessionLocal = sessionmaker(
-            autocommit=False, autoflush=False, bind=self.engine
-        )
+        # Reuse the main application's database session maker for efficiency
+        # This avoids creating duplicate connection pools and ensures consistent configuration
+        self.SessionLocal = SessionLocal
 
     def initialize(self):
         """Initialize database integration with MinecraftServerManager"""
