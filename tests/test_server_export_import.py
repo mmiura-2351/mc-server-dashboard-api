@@ -208,7 +208,8 @@ class TestServerExportImport:
         data = {"name": ""}  # Empty name
         
         response = client.post("/api/v1/servers/import", headers=admin_headers, files=files, data=data)
-        assert response.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR  # Validation error causes 500
+        # Pydantic validation errors are caught and returned as 500 in current implementation
+        assert response.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
     
     def test_import_server_file_too_large(self, client: TestClient, admin_headers):
         """Test import with file exceeding size limit"""
@@ -222,7 +223,7 @@ class TestServerExportImport:
         mock_file.read = lambda: b"fake zip content"
         
         # Patch the file parameter in the import endpoint
-        with patch('app.servers.router.File') as mock_file_class:
+        with patch('app.servers.routers.import_export.File') as mock_file_class:
             mock_file_class.return_value = mock_file
             
             files = {"file": ("large.zip", zip_buffer, "application/zip")}
@@ -276,7 +277,7 @@ class TestServerExportImport:
             if server_dir.exists():
                 shutil.rmtree(server_dir)
     
-    def test_import_server_port_conflict_only_with_running_servers(self, client: TestClient, admin_headers, db):
+    def test_import_server_port_conflict_only_with_running_servers(self, client: TestClient, admin_headers, admin_user, db):
         """Test that import allows port conflicts with stopped servers"""
         # Create a stopped server with port 25565
         from app.servers.models import Server, ServerType, ServerStatus
@@ -290,7 +291,7 @@ class TestServerExportImport:
             port=25565,
             max_memory=1024,
             max_players=20,
-            owner_id=1  # Assuming admin user has ID 1
+            owner_id=admin_user.id
         )
         db.add(stopped_server)
         db.commit()
