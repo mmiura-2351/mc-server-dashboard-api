@@ -112,7 +112,9 @@ class MinecraftServerManager:
             FileNotFoundError,
             OSError,
         ) as e:
-            logger.error(f"Java availability check failed: {type(e).__name__}: {e}")
+            logger.error(
+                f"Java availability check failed: {type(e).__name__}: {e}", exc_info=True
+            )
             return False
 
     async def _ensure_eula_accepted(self, server_dir: Path) -> bool:

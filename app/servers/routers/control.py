@@ -81,7 +81,10 @@ async def start_server(
                         detail="Server start failed: Java runtime not available",
                     )
             except (asyncio.TimeoutError, FileNotFoundError, OSError) as e:
-                logger.error(f"Java executable check failed: {type(e).__name__}: {e}")
+                logger.error(
+                    f"Java executable check failed: {type(e).__name__}: {e}",
+                    exc_info=True,
+                )
                 raise HTTPException(
                     status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                     detail="Server start failed: Java executable not found",

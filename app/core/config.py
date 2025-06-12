@@ -48,6 +48,22 @@ class Settings(BaseSettings):
                 )
         return self
 
+    @field_validator("SERVER_LOG_QUEUE_SIZE")
+    @classmethod
+    def validate_queue_size(cls, v: int) -> int:
+        """Validate SERVER_LOG_QUEUE_SIZE is within reasonable limits"""
+        if v < 100 or v > 10000:
+            raise ValueError("SERVER_LOG_QUEUE_SIZE must be between 100 and 10000")
+        return v
+
+    @field_validator("JAVA_CHECK_TIMEOUT")
+    @classmethod
+    def validate_java_timeout(cls, v: int) -> int:
+        """Validate JAVA_CHECK_TIMEOUT is within reasonable limits"""
+        if v < 1 or v > 60:
+            raise ValueError("JAVA_CHECK_TIMEOUT must be between 1 and 60 seconds")
+        return v
+
     @property
     def cors_origins_list(self) -> List[str]:
         """Parse CORS origins from comma-separated string"""
