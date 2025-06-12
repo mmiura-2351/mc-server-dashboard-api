@@ -1,7 +1,6 @@
 from typing import List
-import secrets
 
-from pydantic import field_validator
+from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings
 
 
@@ -27,18 +26,24 @@ class Settings(BaseSettings):
         """Validate SECRET_KEY meets security requirements"""
         if len(v) < 32:
             raise ValueError("SECRET_KEY must be at least 32 characters long")
-        if v in ["your-secret-key", "secret", "default", "change-me"]:
-            raise ValueError("SECRET_KEY cannot be a default or weak value")
+
+        # Check for weak values (including as prefixes)
+        weak_values = ["your-secret-key", "secret", "default", "change-me"]
+        for weak in weak_values:
+            if v.startswith(weak):
+                raise ValueError("SECRET_KEY cannot be a default or weak value")
+
         return v
 
-    @field_validator("CORS_ORIGINS")
-    @classmethod
-    def validate_cors_origins(cls, v: str, info) -> str:
+    @model_validator(mode="after")
+    def validate_cors_for_production(self):
         """Validate CORS origins for production environment"""
-        if hasattr(info.data, "ENVIRONMENT") and info.data.get("ENVIRONMENT", "").lower() == "production":
-            if "localhost" in v or "127.0.0.1" in v:
-                raise ValueError("CORS_ORIGINS should not include localhost in production")
-        return v
+        if self.ENVIRONMENT.lower() == "production":
+            if "localhost" in self.CORS_ORIGINS or "127.0.0.1" in self.CORS_ORIGINS:
+                raise ValueError(
+                    "CORS_ORIGINS should not include localhost in production"
+                )
+        return self
 
     @property
     def cors_origins_list(self) -> List[str]:
