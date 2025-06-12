@@ -2,7 +2,10 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## Most Important Rule - New Rule Addition Process
+## Standard Development Rules
+
+### Rule 1: New Rule Addition Process
+**Continuously improve project standards through rule documentation.**
 
 When receiving instructions from users that appear to require ongoing compliance (not just one-time implementation):
 
@@ -12,9 +15,7 @@ When receiving instructions from users that appear to require ongoing compliance
 
 This process enables continuous improvement of project rules and ensures consistent behavior across sessions.
 
-## Standard Development Rules
-
-### Rule 1: Task Completion and CI Verification
+### Rule 2: Task Completion and CI Verification
 **Always verify CI passes and commit changes after completing any task.**
 
 When completing any significant task or feature implementation:
@@ -23,7 +24,7 @@ When completing any significant task or feature implementation:
 3. **Commit Changes**: Create meaningful commit messages with proper documentation
 4. **Status Update**: Update relevant tracking documents (e.g., CODE_REVIEW_FINDINGS.md)
 
-### Rule 2: Test Code Development Process
+### Rule 3: Test Code Development Process
 **Follow systematic approach for test coverage improvement.**
 
 When creating test coverage for services or components:
@@ -42,7 +43,7 @@ When creating test coverage for services or components:
    - Iterate on analysis and implementation until target coverage is achieved
    - Ensure all tests pass and maintain code quality standards
 
-### Rule 3: Code Review Issue Creation
+### Rule 4: Code Review Issue Creation
 **Create GitHub Issues for improvements, bugs, and missing features found during code reviews.**
 
 When reviewing source code and identifying areas for improvement:
@@ -51,7 +52,7 @@ When reviewing source code and identifying areas for improvement:
 3. **Provide Context**: Include relevant code references, file paths, and line numbers
 4. **Document Impact**: Describe the potential impact and benefits of addressing the issue
 
-### Rule 4: Standard Issue Resolution Process
+### Rule 5: Standard Issue Resolution Process
 **Follow systematic approach when fixing GitHub Issues.**
 
 When addressing GitHub Issues, follow this standard procedure:
@@ -62,7 +63,7 @@ When addressing GitHub Issues, follow this standard procedure:
 5. **Implement Solution**: Perform the implementation and fixes following project standards
 6. **Verify and Create PR**: Confirm the issue has been properly addressed and create a pull request
 
-### Rule 5: Test Execution Guidelines
+### Rule 6: Test Execution Guidelines
 **Be mindful of test execution performance and timeouts.**
 
 When running tests, follow these guidelines:
