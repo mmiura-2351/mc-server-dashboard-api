@@ -70,6 +70,38 @@ When running tests, follow these guidelines:
 1. **Avoid Full Test Suite Timeouts**: Running all tests may result in timeouts. Focus on running minimal, targeted tests when possible
 2. **Extend Timeout for Full Suite**: When running the complete test suite is necessary, explicitly extend the timeout duration (e.g., use `--timeout=300000` parameter)
 
+### Rule 7: Issue Resolution Completion Process
+**Always close resolved Issues with proper documentation and status updates.**
+
+When an Issue has been successfully resolved:
+1. **Verify Resolution**: Confirm the Issue has been properly addressed through PR merge or direct implementation
+2. **Add Closing Comment**: Post a comment summarizing what was implemented and how the issue was resolved
+3. **Close the Issue**: Close the GitHub Issue to maintain clean project status
+4. **Reference Implementation**: Include links to relevant PRs, commits, or code changes in the closing comment
+
+### Rule 8: Git/GitHub Workflow Standards
+**Follow standardized Git and GitHub practices for consistent project management.**
+
+#### Branch Management:
+1. **Issue-Based Branches**: Always create a dedicated branch for Issue resolution (e.g., `fix/issue-123-description`, `feature/issue-456-new-feature`)
+2. **Branch Naming Convention**: Use prefixes like `fix/`, `feature/`, `enhancement/`, `refactor/` followed by issue number and brief description
+3. **Branch Cleanup**: Delete merged branches immediately after successful PR merge to maintain repository cleanliness
+
+#### Pull Request Workflow:
+1. **Mandatory Pull Requests**: All changes to main branches must go through Pull Request process - no direct commits to main/master
+2. **PR Requirements**: 
+   - Link to related Issue(s) in PR description
+   - Include comprehensive description of changes made
+   - Ensure all CI checks pass before requesting review
+   - Use meaningful PR titles that summarize the change
+3. **PR Merge Process**: Use squash merge for clean commit history when appropriate
+
+#### Issue Management:
+1. **Branch Creation**: Create a new branch for every Issue being worked on
+2. **Branch Attachment**: Attach the working branch to the Issue using GitHub's development section
+3. **Issue Linking**: Reference Issues in commit messages and PR descriptions using `Resolves #123` or `Fixes #123`
+4. **Progress Tracking**: Update Issue status and add comments during development to keep stakeholders informed
+
 ## Project Overview
 
 This is a comprehensive FastAPI-based backend API for managing multiple Minecraft servers. The system provides user authentication, role-based access control, real-time monitoring, backup management, and complete server lifecycle management covering 46 specific use cases.
