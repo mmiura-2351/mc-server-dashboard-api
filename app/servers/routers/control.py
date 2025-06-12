@@ -11,6 +11,7 @@ from fastapi import (
 from sqlalchemy.orm import Session
 
 from app.auth.dependencies import get_current_user
+from app.core.config import settings
 from app.core.database import get_db
 from app.servers.models import ServerStatus
 from app.servers.schemas import (
@@ -57,23 +58,33 @@ async def start_server(
             # Get more detailed error information
             logger.error(f"Server {server_id} failed to start - checking system state")
 
-            # Check if Java is available
-            import subprocess
+            # Check if Java is available using async subprocess
+            import asyncio
 
             try:
-                java_check = subprocess.run(
-                    ["java", "-version"], capture_output=True, timeout=5
+                process = await asyncio.create_subprocess_exec(
+                    "java",
+                    "-version",
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
                 )
-                if java_check.returncode != 0:
+                stdout, stderr = await asyncio.wait_for(
+                    process.communicate(), timeout=settings.JAVA_CHECK_TIMEOUT
+                )
+
+                if process.returncode != 0:
                     logger.error(
-                        f"Java not available: {java_check.stderr.decode() if java_check.stderr else 'Unknown Java error'}"
+                        f"Java not available: {stderr.decode() if stderr else 'Unknown Java error'}"
                     )
                     raise HTTPException(
                         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                         detail="Server start failed: Java runtime not available",
                     )
-            except (subprocess.TimeoutExpired, FileNotFoundError):
-                logger.error("Java executable not found")
+            except (asyncio.TimeoutError, FileNotFoundError, OSError) as e:
+                logger.error(
+                    f"Java executable check failed: {type(e).__name__}: {e}",
+                    exc_info=True,
+                )
                 raise HTTPException(
                     status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                     detail="Server start failed: Java executable not found",

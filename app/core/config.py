@@ -6,12 +6,16 @@ from pydantic_settings import BaseSettings
 
 class Settings(BaseSettings):
     model_config = ConfigDict(env_file=".env")
-    
+
     SECRET_KEY: str
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     REFRESH_TOKEN_EXPIRE_DAYS: int = 30
     DATABASE_URL: str
+
+    # Server management configuration
+    SERVER_LOG_QUEUE_SIZE: int = 500
+    JAVA_CHECK_TIMEOUT: int = 5
 
     # CORS configuration
     CORS_ORIGINS: str = (
@@ -43,6 +47,22 @@ class Settings(BaseSettings):
                     "CORS_ORIGINS should not include localhost in production"
                 )
         return self
+
+    @field_validator("SERVER_LOG_QUEUE_SIZE")
+    @classmethod
+    def validate_queue_size(cls, v: int) -> int:
+        """Validate SERVER_LOG_QUEUE_SIZE is within reasonable limits"""
+        if v < 100 or v > 10000:
+            raise ValueError("SERVER_LOG_QUEUE_SIZE must be between 100 and 10000")
+        return v
+
+    @field_validator("JAVA_CHECK_TIMEOUT")
+    @classmethod
+    def validate_java_timeout(cls, v: int) -> int:
+        """Validate JAVA_CHECK_TIMEOUT is within reasonable limits"""
+        if v < 1 or v > 60:
+            raise ValueError("JAVA_CHECK_TIMEOUT must be between 1 and 60 seconds")
+        return v
 
     @property
     def cors_origins_list(self) -> List[str]:
