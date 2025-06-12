@@ -621,8 +621,7 @@ class TestTemplateServicePermissionMethods:
         template.created_by = 2
         user = Mock()
         user.id = 1
-        user.role = Mock()
-        user.role.value = "admin"
+        user.role = Role.admin
         
         result = service._can_access_template(template, user)
         assert result is True
@@ -658,8 +657,7 @@ class TestTemplateServicePermissionMethods:
         template.created_by = 2
         user = Mock()
         user.id = 1
-        user.role = Mock()
-        user.role.value = "admin"
+        user.role = Role.admin
         
         result = service._can_modify_template(template, user)
         assert result is True

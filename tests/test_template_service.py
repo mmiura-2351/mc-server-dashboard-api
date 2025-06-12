@@ -307,7 +307,7 @@ gamemode=survival
     
     def test_get_template_statistics(self, service, mock_user, mock_db):
         """Test get_template_statistics"""
-        mock_user.role.value = "admin"
+        mock_user.role = Role.admin
         
         mock_query = mock_db.query.return_value
         mock_query.filter.return_value = mock_query
