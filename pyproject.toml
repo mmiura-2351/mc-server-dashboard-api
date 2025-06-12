@@ -42,6 +42,7 @@ dependencies = [
     "aiofiles>=24.1.0",
     "packaging>=24.0",
     "chardet>=5.2.0",
+    "psutil>=6.1.0",
 ]
 
 [tool.uv.workspace]
