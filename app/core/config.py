@@ -13,6 +13,10 @@ class Settings(BaseSettings):
     REFRESH_TOKEN_EXPIRE_DAYS: int = 30
     DATABASE_URL: str
 
+    # Server management configuration
+    SERVER_LOG_QUEUE_SIZE: int = 500
+    JAVA_CHECK_TIMEOUT: int = 5
+
     # CORS configuration
     CORS_ORIGINS: str = (
         "http://localhost:3000,http://127.0.0.1:3000,https://127.0.0.1:3000"

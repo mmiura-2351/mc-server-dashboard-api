@@ -6,6 +6,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, AsyncGenerator, Callable, Dict, List, Optional
 
+from app.core.config import settings
 from app.servers.models import Server, ServerStatus
 
 logger = logging.getLogger(__name__)
@@ -26,14 +27,15 @@ class ServerProcess:
 class MinecraftServerManager:
     """Manages Minecraft server processes using asyncio"""
 
-    def __init__(self, log_queue_size: int = 500):
+    def __init__(self, log_queue_size: Optional[int] = None):
         self.processes: Dict[int, ServerProcess] = {}
         self.base_directory = Path("servers")
         self.base_directory.mkdir(exist_ok=True)
         # Callback for database status updates
         self._status_update_callback: Optional[Callable[[int, ServerStatus], None]] = None
         # Configurable log queue size to prevent memory leaks
-        self.log_queue_size = log_queue_size
+        self.log_queue_size = log_queue_size or settings.SERVER_LOG_QUEUE_SIZE
+        self.java_check_timeout = settings.JAVA_CHECK_TIMEOUT
 
     def set_status_update_callback(self, callback: Callable[[int, ServerStatus], None]):
         """Set callback function to update database when server status changes"""
@@ -55,8 +57,9 @@ class MinecraftServerManager:
             if server_id in self.processes:
                 server_process = self.processes[server_id]
 
-                # Clear the log queue to free memory
-                while not server_process.log_queue.empty():
+                # Clear the log queue to free memory efficiently
+                queue_size = server_process.log_queue.qsize()
+                for _ in range(queue_size):
                     try:
                         server_process.log_queue.get_nowait()
                     except asyncio.QueueEmpty:
@@ -79,7 +82,9 @@ class MinecraftServerManager:
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
-            stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=10)
+            stdout, stderr = await asyncio.wait_for(
+                process.communicate(), timeout=self.java_check_timeout
+            )
 
             if process.returncode == 0:
                 stderr_text = stderr.decode("utf-8") if stderr else ""
@@ -95,7 +100,7 @@ class MinecraftServerManager:
             FileNotFoundError,
             OSError,
         ) as e:
-            logger.error(f"Java availability check failed: {e}")
+            logger.error(f"Java availability check failed: {type(e).__name__}: {e}")
             return False
 
     async def _ensure_eula_accepted(self, server_dir: Path) -> bool:

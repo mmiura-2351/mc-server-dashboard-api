@@ -11,6 +11,7 @@ from fastapi import (
 from sqlalchemy.orm import Session
 
 from app.auth.dependencies import get_current_user
+from app.core.config import settings
 from app.core.database import get_db
 from app.servers.models import ServerStatus
 from app.servers.schemas import (
@@ -67,7 +68,9 @@ async def start_server(
                     stdout=asyncio.subprocess.PIPE,
                     stderr=asyncio.subprocess.PIPE,
                 )
-                stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=5)
+                stdout, stderr = await asyncio.wait_for(
+                    process.communicate(), timeout=settings.JAVA_CHECK_TIMEOUT
+                )
 
                 if process.returncode != 0:
                     logger.error(
@@ -77,8 +80,8 @@ async def start_server(
                         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                         detail="Server start failed: Java runtime not available",
                     )
-            except (asyncio.TimeoutError, FileNotFoundError, OSError):
-                logger.error("Java executable not found or check timed out")
+            except (asyncio.TimeoutError, FileNotFoundError, OSError) as e:
+                logger.error(f"Java executable check failed: {type(e).__name__}: {e}")
                 raise HTTPException(
                     status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                     detail="Server start failed: Java executable not found",
