@@ -51,6 +51,17 @@ When reviewing source code and identifying areas for improvement:
 3. **Provide Context**: Include relevant code references, file paths, and line numbers
 4. **Document Impact**: Describe the potential impact and benefits of addressing the issue
 
+### Rule 4: Standard Issue Resolution Process
+**Follow systematic approach when fixing GitHub Issues.**
+
+When addressing GitHub Issues, follow this standard procedure:
+1. **Create Issue Branch**: Create a dedicated branch for the issue and attach it to the issue
+2. **Analyze Issue Details**: Thoroughly understand the issue requirements and perform necessary analysis
+3. **Create Sub-Issues**: If needed, create sub-issues to break down complex problems into manageable parts
+4. **Deep Implementation Planning**: Think deeply about all elements required for implementation based on your analysis
+5. **Implement Solution**: Perform the implementation and fixes following project standards
+6. **Verify and Create PR**: Confirm the issue has been properly addressed and create a pull request
+
 ## Project Overview
 
 This is a comprehensive FastAPI-based backend API for managing multiple Minecraft servers. The system provides user authentication, role-based access control, real-time monitoring, backup management, and complete server lifecycle management covering 46 specific use cases.
