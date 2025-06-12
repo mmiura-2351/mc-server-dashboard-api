@@ -17,6 +17,11 @@ class Settings(BaseSettings):
     SERVER_LOG_QUEUE_SIZE: int = 500
     JAVA_CHECK_TIMEOUT: int = 5
 
+    # Database configuration
+    DATABASE_MAX_RETRIES: int = 3
+    DATABASE_RETRY_BACKOFF: float = 0.1
+    DATABASE_BATCH_SIZE: int = 100
+
     # CORS configuration
     CORS_ORIGINS: str = (
         "http://localhost:3000,http://127.0.0.1:3000,https://127.0.0.1:3000"
@@ -62,6 +67,32 @@ class Settings(BaseSettings):
         """Validate JAVA_CHECK_TIMEOUT is within reasonable limits"""
         if v < 1 or v > 60:
             raise ValueError("JAVA_CHECK_TIMEOUT must be between 1 and 60 seconds")
+        return v
+
+    @field_validator("DATABASE_MAX_RETRIES")
+    @classmethod
+    def validate_db_retries(cls, v: int) -> int:
+        """Validate DATABASE_MAX_RETRIES is within reasonable limits"""
+        if v < 1 or v > 10:
+            raise ValueError("DATABASE_MAX_RETRIES must be between 1 and 10")
+        return v
+
+    @field_validator("DATABASE_RETRY_BACKOFF")
+    @classmethod
+    def validate_db_backoff(cls, v: float) -> float:
+        """Validate DATABASE_RETRY_BACKOFF is within reasonable limits"""
+        if v < 0.01 or v > 5.0:
+            raise ValueError(
+                "DATABASE_RETRY_BACKOFF must be between 0.01 and 5.0 seconds"
+            )
+        return v
+
+    @field_validator("DATABASE_BATCH_SIZE")
+    @classmethod
+    def validate_db_batch_size(cls, v: int) -> int:
+        """Validate DATABASE_BATCH_SIZE is within reasonable limits"""
+        if v < 10 or v > 1000:
+            raise ValueError("DATABASE_BATCH_SIZE must be between 10 and 1000")
         return v
 
     @property
