@@ -42,6 +42,15 @@ When creating test coverage for services or components:
    - Iterate on analysis and implementation until target coverage is achieved
    - Ensure all tests pass and maintain code quality standards
 
+### Rule 3: Code Review Issue Creation
+**Create GitHub Issues for improvements, bugs, and missing features found during code reviews.**
+
+When reviewing source code and identifying areas for improvement:
+1. **Create GitHub Issues**: For any bugs, improvement opportunities, or missing features discovered during code review
+2. **Categorize Issues**: Use appropriate labels (bug, enhancement, feature-request, etc.)
+3. **Provide Context**: Include relevant code references, file paths, and line numbers
+4. **Document Impact**: Describe the potential impact and benefits of addressing the issue
+
 ## Project Overview
 
 This is a comprehensive FastAPI-based backend API for managing multiple Minecraft servers. The system provides user authentication, role-based access control, real-time monitoring, backup management, and complete server lifecycle management covering 46 specific use cases.
