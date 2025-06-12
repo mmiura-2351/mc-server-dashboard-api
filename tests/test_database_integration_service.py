@@ -135,9 +135,9 @@ class TestDatabaseIntegrationService:
             
             assert result is True
     
-    def test_batch_update_server_statuses(self, service):
+    def test_batch_update_server_statuses(self, service, mock_session):
         """Test batch update of server statuses"""
-        mock_session = Mock(spec=Session)
+        service.SessionLocal.return_value = mock_session
         
         # Mock servers
         mock_servers = [
@@ -157,13 +157,19 @@ class TestDatabaseIntegrationService:
             3: ServerStatus.running,  # This server doesn't exist
         }
         
-        result = service.batch_update_server_statuses(mock_session, status_updates)
-        
-        assert result[1] is True
-        assert result[2] is True
-        assert result[3] is False
-        assert mock_servers[0].status == ServerStatus.running
-        assert mock_servers[1].status == ServerStatus.stopped
+        with patch('app.services.database_integration.with_transaction') as mock_with_tx:
+            # Mock with_transaction to actually call the function so state changes happen
+            def call_function(session, func, *args, **kwargs):
+                return func(session)
+            mock_with_tx.side_effect = call_function
+            
+            result = service.batch_update_server_statuses(status_updates)
+            
+            assert result[1] is True
+            assert result[2] is True
+            assert result[3] is False
+            assert mock_servers[0].status == ServerStatus.running
+            assert mock_servers[1].status == ServerStatus.stopped
     
     def test_get_servers_by_status(self, service, mock_session):
         """Test getting servers by status"""
@@ -179,13 +185,14 @@ class TestDatabaseIntegrationService:
         mock_session.query.return_value = query_mock
         query_mock.filter.return_value = filter_mock
         filter_mock.all.return_value = mock_servers
-        mock_session.expunge_all = Mock()
+        mock_session.expunge = Mock()
         
         result = service.get_servers_by_status(ServerStatus.running)
         
         assert len(result) == 2
         assert result == mock_servers
-        mock_session.expunge_all.assert_called_once()
+        # Verify that expunge was called for each server
+        assert mock_session.expunge.call_count == 2
     
     def test_get_servers_by_status_error(self, service, mock_session):
         """Test error handling in get_servers_by_status"""

@@ -128,6 +128,7 @@ def transactional(
     Decorator for methods that require transaction management with retry logic.
 
     The decorated method must accept a Session as its first argument after self.
+    The session should be passed explicitly to maintain clear session lifecycle.
 
     Args:
         max_retries: Maximum number of retry attempts
@@ -143,49 +144,21 @@ def transactional(
 
     def decorator(func: Callable[..., T]) -> Callable[..., Optional[T]]:
         @wraps(func)
-        def wrapper(self, *args, **kwargs) -> Optional[T]:
-            # Extract session from arguments
-            session = None
-            func_args = list(args)
+        def wrapper(self, session: Session, *args, **kwargs) -> Optional[T]:
+            """
+            Simplified wrapper that requires explicit session parameter.
+            This eliminates complex session detection logic and potential lifecycle issues.
+            """
+            if not isinstance(session, Session):
+                raise ValueError(
+                    f"{func.__name__} requires a Session as first argument, got {type(session)}"
+                )
 
-            # Check if first argument is a Session
-            if args and isinstance(args[0], Session):
-                session = args[0]
-                func_args = func_args[1:]
-            elif "session" in kwargs:
-                session = kwargs.pop("session")
-            else:
-                # Try to get session from self.SessionLocal if available
-                if hasattr(self, "SessionLocal"):
-                    session = self.SessionLocal()
-                    try:
-                        result = with_transaction(
-                            session,
-                            lambda s, *a, **k: func(self, s, *a, **k),
-                            *func_args,
-                            max_retries=max_retries,
-                            backoff_factor=backoff_factor,
-                            **kwargs,
-                        )
-                        return result
-                    except Exception as e:
-                        if propagate_errors:
-                            raise
-                        logger.error(f"Transaction failed in {func.__name__}: {e}")
-                        return None
-                    finally:
-                        session.close()
-                else:
-                    raise ValueError(
-                        f"{func.__name__} requires a database session but none was provided"
-                    )
-
-            # Session was provided, use it
             try:
                 result = with_transaction(
                     session,
                     lambda s, *a, **k: func(self, s, *a, **k),
-                    *func_args,
+                    *args,
                     max_retries=max_retries,
                     backoff_factor=backoff_factor,
                     **kwargs,

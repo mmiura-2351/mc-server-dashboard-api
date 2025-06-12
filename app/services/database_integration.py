@@ -8,7 +8,6 @@ from app.core.database import SessionLocal
 from app.core.database_utils import (
     RetryExhaustedException,
     TransactionException,
-    transactional,
     with_transaction,
 )
 from app.servers.models import Server, ServerStatus
@@ -175,44 +174,67 @@ class DatabaseIntegrationService:
         """Get list of all currently running server IDs"""
         return minecraft_server_manager.list_running_servers()
 
-    @transactional(max_retries=3, propagate_errors=False)
     def batch_update_server_statuses(
-        self, session: Session, status_updates: dict[int, ServerStatus]
+        self, status_updates: dict[int, ServerStatus]
     ) -> dict[int, bool]:
         """
         Update multiple server statuses in a single transaction.
 
         Args:
-            session: Database session (provided by decorator)
             status_updates: Dictionary mapping server_id to new status
 
         Returns:
             Dictionary mapping server_id to success status
         """
-        results = {}
+        try:
+            with self.SessionLocal() as session:
 
-        # Get all servers that need updates in a single query
-        server_ids = list(status_updates.keys())
-        servers = session.query(Server).filter(Server.id.in_(server_ids)).all()
+                def update_statuses(session: Session):
+                    results = {}
 
-        # Create a mapping for quick lookup
-        server_map = {server.id: server for server in servers}
+                    # Get all servers that need updates in a single query
+                    server_ids = list(status_updates.keys())
+                    servers = (
+                        session.query(Server).filter(Server.id.in_(server_ids)).all()
+                    )
 
-        # Update each server
-        for server_id, new_status in status_updates.items():
-            if server_id in server_map:
-                server = server_map[server_id]
-                old_status = server.status
-                server.status = new_status
-                results[server_id] = True
-                logger.info(
-                    f"Batch update: Server {server_id} status: {old_status} -> {new_status}"
+                    # Create a mapping for quick lookup
+                    server_map = {server.id: server for server in servers}
+
+                    # Update each server
+                    for server_id, new_status in status_updates.items():
+                        if server_id in server_map:
+                            server = server_map[server_id]
+                            old_status = server.status
+                            server.status = new_status
+                            results[server_id] = True
+                            logger.info(
+                                f"Batch update: Server {server_id} status: {old_status} -> {new_status}"
+                            )
+                        else:
+                            results[server_id] = False
+                            logger.warning(f"Batch update: Server {server_id} not found")
+
+                    return results
+
+                return with_transaction(
+                    session,
+                    update_statuses,
+                    max_retries=settings.DATABASE_MAX_RETRIES,
+                    backoff_factor=settings.DATABASE_RETRY_BACKOFF,
                 )
-            else:
-                results[server_id] = False
-                logger.warning(f"Batch update: Server {server_id} not found")
 
-        return results
+        except RetryExhaustedException:
+            logger.error(
+                "Failed to batch update server statuses after all retry attempts"
+            )
+            return {server_id: False for server_id in status_updates.keys()}
+        except TransactionException as e:
+            logger.error(f"Transaction error in batch update: {e}")
+            return {server_id: False for server_id in status_updates.keys()}
+        except Exception as e:
+            logger.error(f"Unexpected error in batch update: {e}", exc_info=True)
+            return {server_id: False for server_id in status_updates.keys()}
 
     def get_servers_by_status(self, status: ServerStatus) -> list[Server]:
         """
@@ -222,7 +244,7 @@ class DatabaseIntegrationService:
             status: Server status to filter by
 
         Returns:
-            List of Server objects
+            List of Server objects (detached from session)
         """
         try:
             with self.SessionLocal() as session:
@@ -232,8 +254,11 @@ class DatabaseIntegrationService:
                     .all()
                 )
 
-                # Detach from session to use outside of context
-                session.expunge_all()
+                # Detach all objects from session before closing to prevent
+                # "Session is closed" errors when accessing objects later
+                for server in servers:
+                    session.expunge(server)
+
                 return servers
 
         except Exception as e:

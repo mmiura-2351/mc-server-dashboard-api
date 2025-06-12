@@ -143,22 +143,13 @@ class TestTransactionalDecorator:
             assert result == 10
             mock_with_tx.assert_called_once()
             
-    def test_decorator_creates_session(self):
-        """Test decorator creates session when not provided"""
+    def test_decorator_validates_session_parameter(self):
+        """Test decorator validates session parameter type"""
         service = TestTransactionalDecorator.MockService()
-        mock_session = Mock(spec=Session)
-        service.SessionLocal.return_value = mock_session
-        mock_session.in_transaction.return_value = False
-        mock_session.close = Mock()
         
-        with patch('app.core.database_utils.with_transaction') as mock_with_tx:
-            mock_with_tx.return_value = 10
-            
-            result = service.update_with_session(5)
-            
-            assert result == 10
-            service.SessionLocal.assert_called_once()
-            mock_session.close.assert_called_once()
+        # Test with non-Session object should raise ValueError
+        with pytest.raises(ValueError, match="requires a Session as first argument"):
+            service.update_with_session(5)
             
     def test_decorator_error_not_propagated(self):
         """Test decorator with propagate_errors=False"""
