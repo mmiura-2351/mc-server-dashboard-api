@@ -182,6 +182,39 @@ async def list_all_backups(
         )
 
 
+# Statistics endpoints must come before {backup_id} to avoid path conflicts
+@router.get("/backups/statistics", response_model=BackupStatisticsResponse)
+async def get_global_backup_statistics(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Get global backup statistics (admin only)
+
+    Returns statistics about all backups in the system.
+    Only admins can access this endpoint.
+    """
+    try:
+        # Only admins can see global statistics
+        if current_user.role != Role.admin:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Only admins can view global backup statistics",
+            )
+
+        stats = backup_service.get_backup_statistics(db=db)
+
+        return BackupStatisticsResponse(**stats)
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get global backup statistics: {str(e)}",
+        )
+
+
 @router.get("/backups/{backup_id}", response_model=BackupResponse)
 async def get_backup(
     backup_id: int,
@@ -410,38 +443,6 @@ async def get_server_backup_statistics(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to get backup statistics: {str(e)}",
-        )
-
-
-@router.get("/backups/statistics", response_model=BackupStatisticsResponse)
-async def get_global_backup_statistics(
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
-    """
-    Get global backup statistics (admin only)
-
-    Returns statistics about all backups in the system.
-    Only admins can access this endpoint.
-    """
-    try:
-        # Only admins can see global statistics
-        if current_user.role != Role.admin:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Only admins can view global backup statistics",
-            )
-
-        stats = backup_service.get_backup_statistics(db=db)
-
-        return BackupStatisticsResponse(**stats)
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to get global backup statistics: {str(e)}",
         )
 
 
