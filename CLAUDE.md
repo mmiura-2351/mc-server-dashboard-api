@@ -114,6 +114,21 @@ When completing issue resolution:
 3. **Approval Criteria**: Only approve PRs that meet all quality standards and fully address the issue
 4. **Follow-up Actions**: Track that feedback is addressed before final approval and merge
 
+### Rule 10: Pull Request Merge Strategy
+**Use squash merge as the default merge strategy for pull requests.**
+
+When merging pull requests:
+1. **Default to Squash Merge**: Use `gh pr merge <number> --squash` to maintain a clean commit history
+2. **Clean Commit Message**: Ensure the squashed commit has a clear, descriptive message
+3. **Delete Merged Branches**: Always delete the feature branch after successful merge
+4. **Update Related Issues**: Ensure linked issues are properly closed with the merge
+
+Benefits of squash merge:
+- Maintains clean, linear commit history
+- Groups all PR changes into a single commit
+- Makes it easier to revert changes if needed
+- Keeps the main branch history readable
+
 ## Project Overview
 
 This is a comprehensive FastAPI-based backend API for managing multiple Minecraft servers. The system provides user authentication, role-based access control, real-time monitoring, backup management, and complete server lifecycle management covering 46 specific use cases.
