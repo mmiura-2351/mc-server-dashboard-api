@@ -2,6 +2,7 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
+from unittest.mock import Mock
 from app.main import app
 from app.core.database import get_db, Base
 from app.users.models import User, Role
@@ -150,3 +151,19 @@ def sample_server(db, admin_user):
     db.commit()
     db.refresh(server)
     return server
+
+
+@pytest.fixture
+def mock_request():
+    """Mock FastAPI Request object for testing audit functions"""
+    mock_req = Mock()
+    mock_req.url.path = "/test/endpoint"
+    mock_req.method = "POST"
+    mock_req.headers = {
+        "User-Agent": "TestClient/1.0",
+        "X-Forwarded-For": "192.168.1.100",
+    }
+    mock_req.query_params = {}
+    mock_req.client.host = "192.168.1.100"
+    mock_req.state = Mock()
+    return mock_req
