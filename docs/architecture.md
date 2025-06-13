@@ -40,6 +40,7 @@ The Minecraft Server Dashboard API is a production-ready FastAPI-based backend s
          │                        │   ├── FileManagementService (File Ops + History)
          │                        │   ├── GroupService (Player Management)
          │                        │   ├── TemplateService (Server Templates)
+         │                        │   ├── JavaCompatibilityService (Multi-Java Management)
          │                        │   └── AuthorizationService (RBAC)
          │                        │
          └── WebSocket ────────────┼── Infrastructure
@@ -63,6 +64,7 @@ The Minecraft Server Dashboard API is a production-ready FastAPI-based backend s
 - Process lifecycle management (start, stop, restart, force kill)
 - Real-time log streaming with configurable queue sizes
 - Java environment validation and EULA auto-acceptance
+- Multi-version Java compatibility management with automatic selection
 - Memory-efficient log handling with file rotation
 
 **DatabaseIntegrationService** (`app/services/database_integration.py`)
@@ -107,6 +109,12 @@ The Minecraft Server Dashboard API is a production-ready FastAPI-based backend s
 - Template creation from existing servers or custom configurations
 - Public/private template sharing system
 - Template validation and dependency management
+
+**JavaCompatibilityService** (`app/services/java_compatibility.py`)
+- Multi-version Java environment management and detection
+- Automatic Java version selection based on Minecraft compatibility
+- OpenJDK discovery and path configuration support
+- Java version validation and error handling
 
 **AuthorizationService** (`app/services/authorization_service.py`)
 - Three-tier role-based access control (User/Operator/Admin)

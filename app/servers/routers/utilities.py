@@ -11,6 +11,7 @@ from app.auth.dependencies import get_current_user
 from app.servers.models import ServerType
 from app.servers.schemas import SupportedVersionsResponse
 from app.services.jar_cache_manager import jar_cache_manager
+from app.services.java_compatibility import java_compatibility_service
 from app.services.version_manager import minecraft_version_manager
 from app.users.models import Role, User
 
@@ -154,4 +155,129 @@ async def cleanup_cache(current_user: User = Depends(get_current_user)):
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to cleanup cache: {str(e)}",
+        )
+
+
+@router.get("/java/compatibility")
+async def get_java_compatibility_info():
+    """
+    Get Java compatibility information
+
+    Returns current Java version, compatibility matrix, and supported Minecraft versions.
+    Useful for troubleshooting server creation issues and understanding Java requirements.
+    """
+    try:
+        # Discover all Java installations
+        java_installations = (
+            await java_compatibility_service.discover_java_installations()
+        )
+
+        # Get compatibility matrix
+        compatibility_matrix = java_compatibility_service.get_compatibility_matrix()
+
+        response = {
+            "java_installations_found": len(java_installations),
+            "compatibility_matrix": compatibility_matrix,
+            "installations": {},
+        }
+
+        for major_version, java_info in java_installations.items():
+            response["installations"][str(major_version)] = {
+                "major_version": java_info.major_version,
+                "version_string": java_info.version_string,
+                "vendor": java_info.vendor,
+                "executable_path": java_info.executable_path,
+                "full_version": java_info.full_version_string,
+                "supported_minecraft_versions": java_compatibility_service.get_supported_minecraft_versions(
+                    java_info
+                ),
+            }
+
+        if not java_installations:
+            response.update(
+                {
+                    "error": "No Java installations found",
+                    "installation_help": "Install OpenJDK or configure Java paths in .env file",
+                }
+            )
+
+        return response
+
+    except Exception as e:
+        logger.error(f"Failed to get Java compatibility info: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get Java compatibility information: {str(e)}",
+        )
+
+
+@router.get("/java/validate/{minecraft_version}")
+async def validate_java_for_minecraft_version(minecraft_version: str):
+    """
+    Validate Java compatibility for a specific Minecraft version
+
+    Args:
+        minecraft_version: Minecraft version to validate (e.g., "1.20.1")
+
+    Returns validation result with detailed compatibility information.
+    """
+    try:
+        # Basic version format validation
+        import re
+
+        if not re.match(r"^\d+\.\d+(\.\d+)?$", minecraft_version):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid Minecraft version format. Use format like 1.20.1",
+            )
+
+        # Get appropriate Java for Minecraft version
+        java_version = await java_compatibility_service.get_java_for_minecraft(
+            minecraft_version
+        )
+
+        if java_version is None:
+            # Get all available installations for detailed error
+            installations = await java_compatibility_service.discover_java_installations()
+            available_versions = list(installations.keys())
+            required_version = java_compatibility_service.get_required_java_version(
+                minecraft_version
+            )
+
+            return {
+                "compatible": False,
+                "minecraft_version": minecraft_version,
+                "required_java": required_version,
+                "available_java_versions": available_versions,
+                "error": f"No compatible Java installation found for Minecraft {minecraft_version}",
+                "installation_help": f"Install Java {required_version} or configure JAVA_{required_version}_PATH in .env",
+            }
+
+        # Validate compatibility
+        is_compatible, message = java_compatibility_service.validate_java_compatibility(
+            minecraft_version, java_version
+        )
+
+        return {
+            "compatible": is_compatible,
+            "minecraft_version": minecraft_version,
+            "required_java": java_compatibility_service.get_required_java_version(
+                minecraft_version
+            ),
+            "selected_java": {
+                "major_version": java_version.major_version,
+                "version_string": java_version.version_string,
+                "vendor": java_version.vendor,
+                "executable_path": java_version.executable_path,
+            },
+            "message": message,
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to validate Java for Minecraft {minecraft_version}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to validate Java compatibility: {str(e)}",
         )

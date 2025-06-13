@@ -36,44 +36,65 @@ class TestMinecraftServerManagerKeyMethods:
     # ==========================================
 
     @pytest.mark.asyncio
-    async def test_check_java_availability_success(self, manager):
-        """Test successful Java availability check"""
-        mock_process = AsyncMock()
-        mock_process.returncode = 0
-        mock_process.communicate.return_value = (b"", b"openjdk version 17.0.1")
+    async def test_check_java_compatibility_success(self, manager):
+        """Test successful Java compatibility check"""
+        from app.services.java_compatibility import JavaVersionInfo
+        from unittest.mock import AsyncMock
         
-        with patch('asyncio.create_subprocess_exec', return_value=mock_process):
-            result = await manager._check_java_availability()
-            assert result is True
+        mock_java_info = JavaVersionInfo(17, 0, 1, "OpenJDK", "", "/usr/bin/java")
+        
+        with patch('app.services.minecraft_server.java_compatibility_service') as mock_service:
+            mock_service.get_java_for_minecraft = AsyncMock(return_value=mock_java_info)
+            mock_service.validate_java_compatibility.return_value = (True, "Compatible")
+            
+            compatible, message, executable = await manager._check_java_compatibility("1.18.0")
+            
+            assert compatible is True
+            assert "Compatible" in message
+            assert executable == "/usr/bin/java"
 
     @pytest.mark.asyncio
-    async def test_check_java_availability_not_found(self, manager):
+    async def test_check_java_compatibility_not_found(self, manager):
         """Test Java not found"""
-        with patch('asyncio.create_subprocess_exec', side_effect=FileNotFoundError()):
-            result = await manager._check_java_availability()
-            assert result is False
+        from unittest.mock import AsyncMock
+        
+        with patch('app.services.minecraft_server.java_compatibility_service') as mock_service:
+            mock_service.get_java_for_minecraft = AsyncMock(return_value=None)
+            mock_service.discover_java_installations = AsyncMock(return_value={})
+            
+            compatible, message, executable = await manager._check_java_compatibility("1.18.0")
+            
+            assert compatible is False
+            assert "No Java installations found" in message
+            assert executable is None
 
     @pytest.mark.asyncio
-    async def test_check_java_availability_timeout(self, manager):
-        """Test Java check timeout"""
-        mock_process = AsyncMock()
-        mock_process.communicate.side_effect = asyncio.TimeoutError()
-        
-        with patch('asyncio.create_subprocess_exec', return_value=mock_process):
-            with patch('asyncio.wait_for', side_effect=asyncio.TimeoutError()):
-                result = await manager._check_java_availability()
-                assert result is False
+    async def test_check_java_compatibility_timeout(self, manager):
+        """Test Java compatibility check exception handling"""
+        with patch('app.services.minecraft_server.java_compatibility_service') as mock_service:
+            mock_service.get_java_for_minecraft.side_effect = Exception("Service error")
+            
+            compatible, message, executable = await manager._check_java_compatibility("1.18.0")
+            
+            assert compatible is False
+            assert "Java compatibility check failed" in message
+            assert executable is None
 
     @pytest.mark.asyncio
-    async def test_check_java_availability_error_code(self, manager):
-        """Test Java returns error code"""
-        mock_process = AsyncMock()
-        mock_process.returncode = 1
-        mock_process.communicate.return_value = (b"", b"")
+    async def test_check_java_compatibility_error_code(self, manager):
+        """Test Java incompatible version"""
+        from unittest.mock import AsyncMock
         
-        with patch('asyncio.create_subprocess_exec', return_value=mock_process):
-            result = await manager._check_java_availability()
-            assert result is False
+        with patch('app.services.minecraft_server.java_compatibility_service') as mock_service:
+            mock_service.get_java_for_minecraft = AsyncMock(return_value=None)
+            mock_service.discover_java_installations = AsyncMock(return_value={8: "java8_info"})
+            mock_service.get_required_java_version.return_value = 21
+            
+            compatible, message, executable = await manager._check_java_compatibility("1.21.0")
+            
+            assert compatible is False
+            assert "requires Java 21" in message
+            assert executable is None
 
     # ==========================================
     # EULA Tests (High Coverage Impact)
@@ -162,7 +183,7 @@ class TestMinecraftServerManagerKeyMethods:
     async def test_start_server_java_not_available(self, manager, mock_server):
         """Test starting server when Java is not available"""
         with patch('pathlib.Path.exists', return_value=True), \
-             patch.object(manager, '_check_java_availability', return_value=False):
+             patch.object(manager, '_check_java_compatibility', return_value=(False, "Java not found", None)):
             
             result = await manager.start_server(mock_server)
             assert result is False
@@ -171,7 +192,7 @@ class TestMinecraftServerManagerKeyMethods:
     async def test_start_server_invalid_files(self, manager, mock_server):
         """Test starting server with invalid files"""
         with patch('pathlib.Path.exists', return_value=True), \
-             patch.object(manager, '_check_java_availability', return_value=True), \
+             patch.object(manager, '_check_java_compatibility', return_value=(True, "Java compatible", "/usr/bin/java")), \
              patch.object(manager, '_validate_server_files', return_value=(False, "Invalid files")):
             
             result = await manager.start_server(mock_server)
@@ -181,7 +202,7 @@ class TestMinecraftServerManagerKeyMethods:
     async def test_start_server_eula_failure(self, manager, mock_server):
         """Test starting server when EULA acceptance fails"""
         with patch('pathlib.Path.exists', return_value=True), \
-             patch.object(manager, '_check_java_availability', return_value=True), \
+             patch.object(manager, '_check_java_compatibility', return_value=(True, "Java compatible", "/usr/bin/java")), \
              patch.object(manager, '_validate_server_files', return_value=(True, "")), \
              patch.object(manager, '_ensure_eula_accepted', return_value=False):
             

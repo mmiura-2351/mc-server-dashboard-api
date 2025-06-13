@@ -5,6 +5,7 @@ A comprehensive FastAPI-based backend system for managing multiple Minecraft ser
 ## Features
 
 - **Multi-Server Management** - Create and manage multiple Minecraft servers with process monitoring
+- **Java Version Compatibility** - Automatic Java version selection and validation for different Minecraft versions
 - **User Authentication & Authorization** - JWT-based authentication with three-tier role system (User/Operator/Admin)
 - **Real-time Monitoring** - WebSocket-based live server status, log streaming, and console interaction
 - **Dynamic Player Groups** - OP/whitelist groups with multi-server attachment and priority levels
@@ -20,6 +21,8 @@ A comprehensive FastAPI-based backend system for managing multiple Minecraft ser
 - Python 3.13+
 - uv package manager
 - Java Runtime Environment (for Minecraft servers)
+  - Supports multiple Java versions for different Minecraft versions
+  - OpenJDK 8, 16, 17, or 21 recommended
 
 ### Installation
 
@@ -33,6 +36,13 @@ A comprehensive FastAPI-based backend system for managing multiple Minecraft ser
    SECRET_KEY=your-secret-key
    DATABASE_URL=sqlite:///./app.db
    CORS_ORIGINS=["http://localhost:3000"]
+   
+   # Java Configuration (Optional - for specific Java paths)
+   JAVA_8_PATH=/usr/lib/jvm/java-8-openjdk/bin/java
+   JAVA_16_PATH=/usr/lib/jvm/java-16-openjdk/bin/java
+   JAVA_17_PATH=/usr/lib/jvm/java-17-openjdk/bin/java
+   JAVA_21_PATH=/usr/lib/jvm/java-21-openjdk/bin/java
+   JAVA_DISCOVERY_PATHS=/opt/java,/usr/local/java
    ```
 4. Start the application:
    ```bash
@@ -45,6 +55,7 @@ The API will be available at `http://localhost:8000` with interactive documentat
 
 - **Interactive API docs**: `http://localhost:8000/docs`
 - **[API Reference](docs/api-reference.md)** - Complete endpoint documentation
+- **[Java Compatibility Guide](docs/java-compatibility.md)** - Multi-version Java setup and configuration
 - **[Architecture](docs/architecture.md)** - System design and architecture
 - **[Database Schema](docs/database.md)** - Database models and relationships
 - **[Development Guide](docs/development.md)** - Testing, coding standards, and deployment
