@@ -131,7 +131,7 @@ class TestBackupSchedulerAPIPermissions:
         headers = self.get_auth_headers(operator_user)
         
         response = client.post(
-            f"/api/v1/backups/scheduler/servers/{owner_server.id}/schedule",
+            f"/api/v1/backup-scheduler/scheduler/servers/{owner_server.id}/schedule",
             headers=headers,
             json={
                 "interval_hours": 12,
@@ -154,7 +154,7 @@ class TestBackupSchedulerAPIPermissions:
         headers = self.get_auth_headers(admin_user)
         
         response = client.post(
-            f"/api/v1/backups/scheduler/servers/{owner_server.id}/schedule",
+            f"/api/v1/backup-scheduler/scheduler/servers/{owner_server.id}/schedule",
             headers=headers,
             json={
                 "interval_hours": 24,
@@ -171,7 +171,7 @@ class TestBackupSchedulerAPIPermissions:
         headers = self.get_auth_headers(other_user)
         
         response = client.post(
-            f"/api/v1/backups/scheduler/servers/{owner_server.id}/schedule",
+            f"/api/v1/backup-scheduler/scheduler/servers/{owner_server.id}/schedule",
             headers=headers,
             json={
                 "interval_hours": 12,
@@ -187,7 +187,7 @@ class TestBackupSchedulerAPIPermissions:
         headers = self.get_auth_headers(regular_user)
         
         response = client.post(
-            f"/api/v1/backups/scheduler/servers/{owner_server.id}/schedule",
+            f"/api/v1/backup-scheduler/scheduler/servers/{owner_server.id}/schedule",
             headers=headers,
             json={
                 "interval_hours": 12,
@@ -221,7 +221,7 @@ class TestBackupSchedulerAPIPermissions:
         headers = self.get_auth_headers(operator_user)
         
         response = client.get(
-            f"/api/v1/backups/scheduler/servers/{owner_server.id}/schedule",
+            f"/api/v1/backup-scheduler/scheduler/servers/{owner_server.id}/schedule",
             headers=headers
         )
         
@@ -251,7 +251,7 @@ class TestBackupSchedulerAPIPermissions:
         headers = self.get_auth_headers(admin_user)
         
         response = client.get(
-            f"/api/v1/backups/scheduler/servers/{owner_server.id}/schedule",
+            f"/api/v1/backup-scheduler/scheduler/servers/{owner_server.id}/schedule",
             headers=headers
         )
         
@@ -262,7 +262,7 @@ class TestBackupSchedulerAPIPermissions:
         headers = self.get_auth_headers(other_user)
         
         response = client.get(
-            f"/api/v1/backups/scheduler/servers/{owner_server.id}/schedule",
+            f"/api/v1/backup-scheduler/scheduler/servers/{owner_server.id}/schedule",
             headers=headers
         )
         
@@ -286,7 +286,7 @@ class TestBackupSchedulerAPIPermissions:
         headers = self.get_auth_headers(operator_user)
         
         response = client.put(
-            f"/api/v1/backups/scheduler/servers/{owner_server.id}/schedule",
+            f"/api/v1/backup-scheduler/scheduler/servers/{owner_server.id}/schedule",
             headers=headers,
             json={
                 "interval_hours": 6,
@@ -306,7 +306,7 @@ class TestBackupSchedulerAPIPermissions:
         headers = self.get_auth_headers(other_user)
         
         response = client.put(
-            f"/api/v1/backups/scheduler/servers/{owner_server.id}/schedule",
+            f"/api/v1/backup-scheduler/scheduler/servers/{owner_server.id}/schedule",
             headers=headers,
             json={
                 "interval_hours": 24,
@@ -334,7 +334,7 @@ class TestBackupSchedulerAPIPermissions:
         headers = self.get_auth_headers(operator_user)
         
         response = client.delete(
-            f"/api/v1/backups/scheduler/servers/{owner_server.id}/schedule",
+            f"/api/v1/backup-scheduler/scheduler/servers/{owner_server.id}/schedule",
             headers=headers
         )
         
@@ -364,7 +364,7 @@ class TestBackupSchedulerAPIPermissions:
         headers = self.get_auth_headers(admin_user)
         
         response = client.delete(
-            f"/api/v1/backups/scheduler/servers/{owner_server.id}/schedule",
+            f"/api/v1/backup-scheduler/scheduler/servers/{owner_server.id}/schedule",
             headers=headers
         )
         
@@ -375,7 +375,7 @@ class TestBackupSchedulerAPIPermissions:
         headers = self.get_auth_headers(other_user)
         
         response = client.delete(
-            f"/api/v1/backups/scheduler/servers/{owner_server.id}/schedule",
+            f"/api/v1/backup-scheduler/scheduler/servers/{owner_server.id}/schedule",
             headers=headers
         )
         
@@ -385,12 +385,12 @@ class TestBackupSchedulerAPIPermissions:
         """Only admin can access scheduler status"""
         # Admin access
         headers = self.get_auth_headers(admin_user)
-        response = client.get("/api/v1/backups/scheduler/status", headers=headers)
+        response = client.get("/api/v1/backup-scheduler/scheduler/status", headers=headers)
         assert response.status_code == 200
 
         # Non-admin access
         headers = self.get_auth_headers(operator_user)
-        response = client.get("/api/v1/backups/scheduler/status", headers=headers)
+        response = client.get("/api/v1/backup-scheduler/scheduler/status", headers=headers)
         assert response.status_code == 403
 
     def test_create_schedule_validation_errors(self, client: TestClient, db: Session, operator_user: User, owner_server: Server):
@@ -399,7 +399,7 @@ class TestBackupSchedulerAPIPermissions:
         
         # interval_hours out of range
         response = client.post(
-            f"/api/v1/backups/scheduler/servers/{owner_server.id}/schedule",
+            f"/api/v1/backup-scheduler/scheduler/servers/{owner_server.id}/schedule",
             headers=headers,
             json={
                 "interval_hours": 0,  # Invalid value
@@ -410,7 +410,7 @@ class TestBackupSchedulerAPIPermissions:
 
         # max_backups out of range
         response = client.post(
-            f"/api/v1/backups/scheduler/servers/{owner_server.id}/schedule",
+            f"/api/v1/backup-scheduler/scheduler/servers/{owner_server.id}/schedule",
             headers=headers,
             json={
                 "interval_hours": 12,
@@ -437,7 +437,7 @@ class TestBackupSchedulerAPIPermissions:
         headers = self.get_auth_headers(operator_user)
         
         response = client.post(
-            f"/api/v1/backups/scheduler/servers/{owner_server.id}/schedule",
+            f"/api/v1/backup-scheduler/scheduler/servers/{owner_server.id}/schedule",
             headers=headers,
             json={
                 "interval_hours": 24,
@@ -455,7 +455,7 @@ class TestBackupSchedulerAPIPermissions:
         
         # Create
         response = client.post(
-            f"/api/v1/backups/scheduler/servers/{nonexistent_server_id}/schedule",
+            f"/api/v1/backup-scheduler/scheduler/servers/{nonexistent_server_id}/schedule",
             headers=headers,
             json={
                 "interval_hours": 12,
@@ -466,14 +466,14 @@ class TestBackupSchedulerAPIPermissions:
 
         # Get
         response = client.get(
-            f"/api/v1/backups/scheduler/servers/{nonexistent_server_id}/schedule",
+            f"/api/v1/backup-scheduler/scheduler/servers/{nonexistent_server_id}/schedule",
             headers=headers
         )
         assert response.status_code == 404
 
         # Update
         response = client.put(
-            f"/api/v1/backups/scheduler/servers/{nonexistent_server_id}/schedule",
+            f"/api/v1/backup-scheduler/scheduler/servers/{nonexistent_server_id}/schedule",
             headers=headers,
             json={
                 "interval_hours": 24
@@ -483,7 +483,7 @@ class TestBackupSchedulerAPIPermissions:
 
         # Delete
         response = client.delete(
-            f"/api/v1/backups/scheduler/servers/{nonexistent_server_id}/schedule",
+            f"/api/v1/backup-scheduler/scheduler/servers/{nonexistent_server_id}/schedule",
             headers=headers
         )
         assert response.status_code == 404
