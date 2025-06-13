@@ -23,6 +23,7 @@ from app.servers.models import (
 from app.servers.schemas import ServerCreateRequest, ServerResponse, ServerUpdateRequest
 from app.services.group_service import GroupService
 from app.services.jar_cache_manager import jar_cache_manager
+from app.services.java_compatibility import java_compatibility_service
 from app.services.minecraft_server import minecraft_server_manager
 from app.services.server_properties_generator import server_properties_generator
 from app.services.version_manager import minecraft_version_manager
@@ -369,6 +370,9 @@ class ServerService:
                 f"Minimum supported version: 1.8"
             )
 
+        # Validate Java compatibility before creating server resources
+        await self._validate_java_compatibility(request.minecraft_version)
+
         # Create server directory
         server_dir = await self.filesystem_service.create_server_directory(request.name)
 
@@ -537,6 +541,44 @@ class ServerService:
         except Exception as e:
             logger.error(f"Failed to get supported versions: {e}")
             raise
+
+    async def _validate_java_compatibility(self, minecraft_version: str) -> None:
+        """Validate Java compatibility for Minecraft version"""
+        try:
+            # Detect installed Java version
+            java_version = await java_compatibility_service.detect_java_version()
+
+            if java_version is None:
+                raise InvalidRequestException(
+                    "Java is not installed or not accessible. "
+                    "Please install Java and ensure it's available in your system PATH. "
+                    "Visit https://adoptium.net/temurin/releases/ for Java installation."
+                )
+
+            # Validate compatibility with Minecraft version
+            is_compatible, compatibility_message = (
+                java_compatibility_service.validate_java_compatibility(
+                    minecraft_version, java_version
+                )
+            )
+
+            if not is_compatible:
+                logger.warning(
+                    f"Java compatibility validation failed for Minecraft {minecraft_version}: {compatibility_message}"
+                )
+                raise InvalidRequestException(compatibility_message)
+
+            logger.info(
+                f"Java compatibility validated for Minecraft {minecraft_version}: {compatibility_message}"
+            )
+
+        except InvalidRequestException:
+            # Re-raise validation errors as-is
+            raise
+        except Exception as e:
+            error_message = f"Java compatibility validation failed: {e}"
+            logger.error(error_message, exc_info=True)
+            raise InvalidRequestException(error_message)
 
 
 # Global server service instance

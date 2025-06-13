@@ -8,6 +8,7 @@ from typing import Any, AsyncGenerator, Callable, Dict, List, Optional
 
 from app.core.config import settings
 from app.servers.models import Server, ServerStatus
+from app.services.java_compatibility import java_compatibility_service
 
 logger = logging.getLogger(__name__)
 
@@ -85,37 +86,37 @@ class MinecraftServerManager:
                 f"Error during cleanup for server {server_id}: {type(e).__name__}: {e}"
             )
 
-    async def _check_java_availability(self) -> bool:
-        """Check if Java is available in the system"""
+    async def _check_java_compatibility(self, minecraft_version: str) -> tuple[bool, str]:
+        """Check Java availability and compatibility with Minecraft version"""
         try:
-            process = await asyncio.create_subprocess_exec(
-                "java",
-                "-version",
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-            )
-            stdout, stderr = await asyncio.wait_for(
-                process.communicate(), timeout=self.java_check_timeout
+            # Detect installed Java version
+            java_version = await java_compatibility_service.detect_java_version()
+
+            if java_version is None:
+                return False, (
+                    "Java is not installed or not accessible. "
+                    "Please install Java and ensure it's available in your system PATH."
+                )
+
+            logger.info(
+                f"Detected Java {java_version.major_version} "
+                f"({java_version.version_string})"
+                + (f" [{java_version.vendor}]" if java_version.vendor else "")
             )
 
-            if process.returncode == 0:
-                stderr_text = stderr.decode("utf-8") if stderr else ""
-                logger.debug(
-                    f"Java version detected: {stderr_text.split()[2] if stderr_text else 'unknown'}"
+            # Validate compatibility with Minecraft version
+            is_compatible, compatibility_message = (
+                java_compatibility_service.validate_java_compatibility(
+                    minecraft_version, java_version
                 )
-                return True
-            else:
-                logger.error("Java is not available or not working properly")
-                return False
-        except (
-            asyncio.TimeoutError,
-            FileNotFoundError,
-            OSError,
-        ) as e:
-            logger.error(
-                f"Java availability check failed: {type(e).__name__}: {e}", exc_info=True
             )
-            return False
+
+            return is_compatible, compatibility_message
+
+        except Exception as e:
+            error_message = f"Java compatibility check failed: {type(e).__name__}: {e}"
+            logger.error(error_message, exc_info=True)
+            return False, error_message
 
     async def _ensure_eula_accepted(self, server_dir: Path) -> bool:
         """Ensure EULA is accepted by creating eula.txt"""
@@ -173,10 +174,18 @@ class MinecraftServerManager:
             # Pre-flight checks
             logger.info(f"Starting pre-flight checks for server {server.id}")
 
-            # Check Java availability
-            if not await self._check_java_availability():
-                logger.error(f"Java is not available for server {server.id}")
+            # Check Java compatibility with Minecraft version
+            java_compatible, java_message = await self._check_java_compatibility(
+                server.minecraft_version
+            )
+            if not java_compatible:
+                logger.error(
+                    f"Java compatibility check failed for server {server.id}: {java_message}"
+                )
                 return False
+            logger.info(
+                f"Java compatibility verified for server {server.id}: {java_message}"
+            )
 
             # Validate server files
             files_valid, validation_message = await self._validate_server_files(
