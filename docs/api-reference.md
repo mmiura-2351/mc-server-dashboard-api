@@ -263,6 +263,19 @@ POST /servers/
 }
 ```
 
+**Java Compatibility**: The system automatically validates and selects the appropriate Java version based on the Minecraft version:
+- Minecraft 1.8-1.16.5 requires Java 8
+- Minecraft 1.17 requires Java 16
+- Minecraft 1.18-1.20.x requires Java 17
+- Minecraft 1.21+ requires Java 21
+
+**Error Response** (Java compatibility issues):
+```json
+{
+  "detail": "Minecraft 1.21.0 requires Java 21, but only Java [8, 17] are available. Please install Java 21 or configure JAVA_21_PATH in .env."
+}
+```
+
 #### List Servers
 ```http
 GET /servers/
