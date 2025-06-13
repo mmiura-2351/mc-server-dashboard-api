@@ -41,11 +41,13 @@ A comprehensive FastAPI-based backend system for managing multiple Minecraft ser
 
 The API will be available at `http://localhost:8000` with interactive documentation at `/docs`.
 
-## API Documentation
+## Documentation
 
-- Interactive API docs: `http://localhost:8000/docs`
-- [API Reference](docs/api-reference.md) - Complete endpoint documentation
-- [System Overview](docs/system-overview.md) - Architecture and concepts
+- **Interactive API docs**: `http://localhost:8000/docs`
+- **[API Reference](docs/api-reference.md)** - Complete endpoint documentation
+- **[Architecture](docs/architecture.md)** - System design and architecture
+- **[Database Schema](docs/database.md)** - Database models and relationships
+- **[Development Guide](docs/development.md)** - Testing, coding standards, and deployment
 
 ## Development
 
