@@ -143,8 +143,6 @@ This is a comprehensive FastAPI-based backend API for managing multiple Minecraf
 | Run tests         | `uv run pytest`               |
 | Run single test   | `uv run pytest tests/test_filename.py::test_function_name` |
 | Check code coverage | `uv run coverage run -m pytest && uv run coverage report` |
-| Start browser test environment | `./testing/scripts/test_server.sh start` |
-| Stop browser test environment | `./testing/scripts/test_server.sh stop` |
 
 ## System Architecture
 
@@ -231,30 +229,12 @@ async def endpoint(db: Session = Depends(get_db)):
 - Database overrides pattern: `app.dependency_overrides[get_db]`
 - Isolated test database for each test session
 
-### Browser-based API Testing
-Complete visual verification system using Playwright:
+**Test Coverage**: Comprehensive unit tests covering all API endpoints across 7 feature areas.
 
-```bash
-# Start isolated test environment
-./testing/scripts/test_server.sh start
-
-# Test environment features:
-# - API server on port 8001 with test database (test_app.db)
-# - Web interface on port 8002 for manual testing
-# - First user auto-becomes admin
-# - Automatic cleanup on stop
-```
-
-**Test Coverage**: All 30+ API endpoints across 7 feature areas with automated screenshot capture for visual evidence.
-
-**Screenshot Evidence Collection**:
-- Screenshots saved to `./screenshots/{timestamp}/` with numbered filenames  
+**Screenshot Evidence Collection** (for development debugging):
+- Screenshots can be saved to `./screenshots/{timestamp}/` with numbered filenames when debugging
 - File naming format: `{number}_{api_name}_{action}.png` (e.g., `01_user_registration.png`, `05_server_create.png`)
-- Full-page screenshots capture both request forms and response panels
-- Test areas include: Authentication, Server Management, Group Management, Backup Management, Template Management, File Management, and System Administration
-- Each test session creates a timestamped directory with README.md documenting the test sequence
-- Use `savePng: true` and specify custom `downloadsDir: "./screenshots/{timestamp}/"` for Playwright screenshot calls
-- Screenshot directory is gitignored for development testing purposes
+- Screenshot directory is gitignored for development purposes
 
 ## Development Flow
 

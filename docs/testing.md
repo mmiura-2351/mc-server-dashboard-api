@@ -1,156 +1,119 @@
-# API Testing Environment
+# Testing Strategy
 
-The `/testing` directory contains tools for testing the Minecraft Server Dashboard API in a client-like environment.
+The Minecraft Server Dashboard API uses a comprehensive testing approach based on pytest with asyncio support and comprehensive fixtures.
 
-## Testing Tools
+## Unit Testing
 
-### 1. Command Line Testing (`testing/scripts/test_api.sh`)
-
-A comprehensive bash script that tests all major API endpoints:
+### Running Tests
 
 ```bash
-cd testing/scripts
-./test_api.sh
+# Run all tests
+uv run pytest
+
+# Run with extended timeout for full suite
+uv run pytest --timeout=300000
+
+# Run specific test file
+uv run pytest tests/test_filename.py
+
+# Run specific test function
+uv run pytest tests/test_filename.py::test_function_name
+
+# Run with coverage
+uv run coverage run -m pytest && uv run coverage report
+
+# Generate HTML coverage report
+uv run coverage html
 ```
 
-**Features:**
-- Automatically starts a dedicated test server on port 8001
-- Tests user registration, authentication, and approval flow
-- Tests all major API endpoints
-- Provides colored output with clear test results
-- Automatically cleans up test server and database
-- Provides tokens for manual testing
+### Test Structure
 
-**What it tests:**
-- User registration (first user becomes admin)
-- User authentication flow
-- Admin approval of new users
-- Protected endpoints with authentication
-- All major API routes (users, servers, groups, templates, backups)
+**Test Organization:**
+- All tests located in `/tests/` directory
+- Comprehensive fixtures in `conftest.py` with different user roles
+- Database overrides pattern: `app.dependency_overrides[get_db]`
+- Isolated test database for each test session
 
-### 2. Browser-based Testing (`testing/web/index.html`)
+**Key Test Categories:**
+1. **Router Tests** - API endpoint testing with authentication and authorization
+2. **Service Tests** - Business logic testing with mocking
+3. **Integration Tests** - Database integration and service interaction
+4. **Security Tests** - Authentication, authorization, and input validation
+5. **Performance Tests** - Middleware and monitoring functionality
 
-A web interface for interactive API testing:
+### Test Fixtures
 
-```bash
-# Open in browser
-open testing/web/index.html
-# or
-firefox testing/web/index.html
+**User Fixtures:**
+- `test_user` - Standard user for basic testing
+- `operator_user` - Operator role for server management testing  
+- `admin_user` - Admin role for system-wide testing
+- `unapproved_user` - User without approval for testing approval flow
+
+**Database Fixtures:**
+- `test_db` - Isolated test database session
+- `client` - FastAPI test client with dependency overrides
+
+**Server Fixtures:**
+- `test_server` - Basic Minecraft server for testing
+- `running_server` - Server in running state for status testing
+
+## Testing Guidelines
+
+### Test Coverage Standards
+- Aim for >90% coverage on critical business logic
+- Focus on error paths and edge cases
+- Test role-based access control thoroughly
+- Validate input sanitization and security
+
+### Mock Strategy
+- Mock external APIs (Minecraft API, Mojang API)
+- Mock file system operations when testing logic
+- Use real database operations in integration tests
+- Mock subprocess calls for server process testing
+
+### Performance Testing
+- Test request/response times for critical endpoints
+- Validate database query performance
+- Test WebSocket connection handling
+- Monitor memory usage in long-running tests
+
+## Configuration
+
+**pytest.ini Configuration:**
+```ini
+[tool:pytest]
+asyncio_mode = auto
+testpaths = tests
+python_files = test_*.py
+python_classes = Test*
+python_functions = test_*
 ```
 
-**Features:**
-- User-friendly web interface
-- Real-time API testing
-- Authentication token management
-- Pre-filled test data
-- Custom request builder
-- JSON response formatting
+**Coverage Configuration:**
+- Source: `app/` directory
+- Excludes: tests, __init__.py files, virtual environments
+- Branch coverage enabled
+- HTML reports generated in `htmlcov/`
 
-### 3. Test Server Management (`testing/scripts/test_server.sh`)
+## Best Practices
 
-Utility script for managing both API and web servers:
+1. **Test Independence**: Each test should be able to run independently
+2. **Database Isolation**: Use test database with cleanup between tests
+3. **Authentication Testing**: Test all permission levels for protected endpoints
+4. **Error Scenarios**: Test error handling and edge cases
+5. **Real-world Data**: Use realistic test data that mirrors production scenarios
 
-```bash
-cd testing/scripts
-# Main commands (both servers)
-./test_server.sh start        # Start both API and web servers
-./test_server.sh stop         # Stop both servers and cleanup
-./test_server.sh restart      # Restart both servers
-./test_server.sh status       # Check status of both servers
+## Debugging Tests
 
-# Individual server controls
-./test_server.sh start-api    # Start only API server (port 8001)
-./test_server.sh start-web    # Start only web server (port 8002)
-./test_server.sh stop-api     # Stop only API server
-./test_server.sh stop-web     # Stop only web server
+**Common Debugging Techniques:**
+- Use `-v` flag for verbose output
+- Use `-s` flag to see print statements
+- Use `pytest.set_trace()` for debugging breakpoints
+- Check test database state manually when tests fail
+- Review logs in test output for service errors
 
-# Alternative commands (same functionality)
-./test_server.sh start-both   # Start both servers (alias for start)
-./test_server.sh stop-both    # Stop both servers (alias for stop)
-./test_server.sh restart-both # Restart both servers (alias for restart)
-./test_server.sh restart-api  # Restart only API server
-./test_server.sh restart-web  # Restart only web server
-```
-
-**Features:**
-- **API Server**: Runs on port 8001 (separate from main server on 8000)
-- **Web Server**: Python HTTP server on port 8002 for browser testing
-- Uses separate test database (`test_app.db`)
-- Automatic cleanup on stop
-- Process management with PID tracking for both servers
-
-## Server URLs
-
-When servers are running:
-
-- **API Server**: http://localhost:8001/
-  - **Swagger UI**: http://localhost:8001/docs
-  - **ReDoc**: http://localhost:8001/redoc
-- **Web Interface**: http://localhost:8002/
-
-## Example Usage
-
-### Quick API Test
-```bash
-# Run full test suite
-cd testing/scripts
-./test_api.sh
-```
-
-### Manual Testing
-```bash
-# Start test server
-cd testing/scripts
-./test_server.sh start
-
-# Get admin token (from test output)
-export ADMIN_TOKEN="your-admin-token-here"
-
-# Test authenticated endpoint
-curl -H "Authorization: Bearer $ADMIN_TOKEN" \
-     http://localhost:8001/api/v1/users/
-
-# Stop test server
-./test_server.sh stop
-```
-
-### Browser Testing
-1. Start both servers: `cd testing/scripts && ./test_server.sh start`
-2. Open web interface: http://localhost:8002/
-3. Test API endpoints interactively
-4. Stop both servers when done: `cd testing/scripts && ./test_server.sh stop`
-
-## Test Flow
-
-1. **Clean Environment**: Test server starts with fresh database
-2. **Admin Creation**: First user automatically gets admin privileges
-3. **User Registration**: Regular users require admin approval
-4. **Authentication**: JWT tokens for API access
-5. **Endpoint Testing**: All major API routes tested
-6. **Cleanup**: Automatic cleanup of test environment
-
-## Environment
-
-- **API Test Server**: http://localhost:8001 (auto-created/cleaned database)
-- **Web Test Server**: http://localhost:8002 (Python HTTP server)
-- **Test Database**: `test_app.db` (auto-created/cleaned)
-- **Main Server**: http://localhost:8000 (unaffected)
-- **Main Database**: `app.db` (unaffected)
-
-## Security Testing
-
-The test environment safely tests:
-- Authentication and authorization
-- Role-based access control
-- User approval workflow
-- Protected endpoint access
-- Invalid credential handling
-
-## Notes
-
-- Test environment is completely isolated from production data
-- All test data is automatically cleaned up
-- No impact on main server or database
-- Safe to run repeatedly
-- Includes both automated and manual testing options
+**Test Database:**
+- Test database is isolated and cleaned between runs
+- Located at `test.db` (gitignored)
+- Schema auto-created from SQLAlchemy models
+- Populated with test fixtures as needed

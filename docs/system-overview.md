@@ -2,7 +2,7 @@
 
 ## Introduction
 
-The Minecraft Server Dashboard API is a comprehensive FastAPI-based backend system for managing multiple Minecraft servers. It provides user authentication, role-based access control, real-time monitoring, automated backups, and complete server lifecycle management.
+The Minecraft Server Dashboard API is a production-ready FastAPI-based backend system for managing multiple Minecraft servers with enterprise-grade features. It provides JWT authentication, three-tier role-based access control, real-time WebSocket monitoring, automated backup scheduling, comprehensive file management with version history, and complete server lifecycle management with graceful degradation capabilities.
 
 ## Key Features
 
@@ -47,32 +47,47 @@ The Minecraft Server Dashboard API is a comprehensive FastAPI-based backend syst
 ## Architecture
 
 ### Technology Stack
-- **Framework**: FastAPI (Python 3.13+)
-- **Database**: SQLite with SQLAlchemy ORM
-- **Authentication**: JWT tokens with PyJWT
-- **Real-time**: WebSockets
-- **Process Management**: Python subprocess
-- **File Operations**: aiofiles for async I/O
-- **Package Management**: uv
+- **Framework**: FastAPI (Python 3.13+) with uvicorn ASGI server
+- **Database**: SQLite with SQLAlchemy 2.0 ORM and transaction management
+- **Authentication**: JWT tokens with refresh token support and bcrypt password hashing
+- **Real-time**: WebSockets with connection lifecycle management
+- **Process Management**: Async subprocess management with comprehensive monitoring
+- **File Operations**: aiofiles with encoding detection and security validation
+- **Package Management**: uv with dependency groups and workspace support
+- **Testing**: pytest with asyncio support and comprehensive fixtures
+- **Code Quality**: Black formatter, Ruff linter, and coverage reporting
+- **Monitoring**: Performance middleware with metrics collection and audit logging
 
 ### System Architecture
 
 ```
 ┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
 │   Web Client    │────▶│   FastAPI App   │────▶│    Database     │
-│   (Frontend)    │◀────│    (Backend)    │◀────│    (SQLite)     │
-└─────────────────┘     └─────────────────┘     └─────────────────┘
-                               │
-                               ├── Services Layer
-                               │   ├── MinecraftServer
-                               │   ├── BackupService
-                               │   ├── GroupService
-                               │   └── FileService
-                               │
-                               └── Infrastructure
-                                   ├── File System
-                                   ├── Process Manager
-                                   └── WebSocket Manager
+│   (Frontend)    │◀────│  (with lifespan  │◀────│    (SQLite)     │
+└─────────────────┘     │   management)   │     └─────────────────┘
+         │               └─────────────────┘              │
+         │                        │                       │
+         │                        ├── Core Services ──────┤
+         │                        │   ├── MinecraftServerManager (Process Management)
+         │                        │   ├── DatabaseIntegrationService (State Sync)
+         │                        │   ├── BackupSchedulerService (Automated Backups)
+         │                        │   └── WebSocketService (Real-time Communication)
+         │                        │
+         │                        ├── Business Services
+         │                        │   ├── FileManagementService (File Ops + History)
+         │                        │   ├── GroupService (Player Management)
+         │                        │   ├── TemplateService (Server Templates)
+         │                        │   └── AuthorizationService (RBAC)
+         │                        │
+         └── WebSocket ────────────┼── Infrastructure
+            Connection            │   ├── File System (servers/, backups/, templates/)
+                                  │   ├── JAR Cache Manager (Minecraft versions)
+                                  │   ├── Performance Monitoring Middleware
+                                  │   └── Audit Middleware
+                                  │
+                                  └── External APIs
+                                      ├── Minecraft Official API
+                                      └── Mojang API (Player UUIDs)
 ```
 
 ### Core Components
@@ -83,12 +98,16 @@ The Minecraft Server Dashboard API is a comprehensive FastAPI-based backend syst
 - **Dependencies**: Dependency injection setup
 
 #### 2. Business Logic Layer (`app/services/`)
-- **MinecraftServer**: Server process management
-- **BackupService**: Backup operations
-- **BackupScheduler**: Automated backup scheduling
-- **GroupService**: Player group management
-- **FileManagementService**: File operations
-- **WebSocketService**: Real-time communication
+- **MinecraftServerManager**: Async subprocess management, server lifecycle, status monitoring
+- **DatabaseIntegrationService**: State synchronization between processes and database
+- **BackupSchedulerService**: Database-persistent scheduling with caching and session management
+- **WebSocketService**: Real-time monitoring, log streaming, command execution
+- **FileManagementService**: Secure file operations, encoding detection, history tracking
+- **GroupService**: Dynamic player groups with automatic server file synchronization
+- **TemplateService**: Reusable server configurations and cloning
+- **AuthorizationService**: Role-based access control and resource ownership validation
+- **VersionManager**: Minecraft version management and JAR caching
+- **MinecraftAPIService**: External API integration for player data
 
 #### 3. Data Layer
 - **Models**: SQLAlchemy ORM models
@@ -103,13 +122,16 @@ The Minecraft Server Dashboard API is a comprehensive FastAPI-based backend syst
 ## Data Model
 
 ### Core Entities
-1. **Users**: User accounts with roles and permissions
-2. **Servers**: Minecraft server instances
-3. **Groups**: Player permission groups (OP/whitelist)
-4. **Backups**: Server backup records
-5. **Templates**: Reusable server configurations
-6. **FileEditHistory**: File version tracking
-7. **AuditLogs**: System activity logging
+1. **Users**: User accounts with approval system, three-tier roles (User/Operator/Admin)
+2. **Servers**: Minecraft server instances with process state, configuration, and metadata
+3. **Groups**: Player permission groups (OP/whitelist) with multi-server attachment priorities
+4. **Backups**: Server backup records with metadata, statistics, and restoration capabilities
+5. **Templates**: Reusable server configurations with cloning and customization
+6. **FileEditHistory**: Complete file version tracking with rollback capabilities
+7. **AuditLogs**: Comprehensive system activity logging for security and compliance
+8. **BackupSchedules**: Database-persistent backup scheduling with execution tracking
+9. **GroupServerAttachments**: Many-to-many relationships with priority levels
+10. **PlayerGroupAssignments**: Player-to-group associations with UUID tracking
 
 ### Relationships
 - Users own Servers, Groups, and Templates
@@ -142,16 +164,20 @@ The Minecraft Server Dashboard API is a comprehensive FastAPI-based backend syst
 ## Security Model
 
 ### Authentication Flow
-1. User registers and awaits admin approval
-2. Admin approves user account
-3. User logs in and receives JWT tokens
-4. Tokens used for API authentication
-5. Refresh token for token renewal
+1. User registers with username/email and awaits admin approval
+2. First registered user automatically becomes admin with approval
+3. Admin approves subsequent user accounts (sets is_approved=True)
+4. User logs in and receives access token + refresh token
+5. Access tokens used for API authentication with role-based permissions
+6. Refresh tokens for secure token renewal without re-authentication
+7. Logout invalidates refresh tokens for security
 
 ### Authorization Levels
-- **User**: Basic access to assigned resources
-- **Operator**: Can create and manage servers
-- **Admin**: Full system access
+- **User**: View own resources, basic file read access
+- **Operator**: Create/manage servers, groups, templates, backups; full file operations
+- **Admin**: Full system access including user management, all resources, system operations
+
+**Resource Ownership Model**: Users can only access resources they own, except Admins who can access all resources. Some operations require specific roles regardless of ownership.
 
 ### Security Features
 - Password hashing with bcrypt
@@ -173,9 +199,16 @@ uv run fastapi dev
 # Run tests
 uv run pytest
 
+# Run tests with extended timeout for full suite
+uv run pytest --timeout=300000
+
 # Code quality checks
 uv run ruff check app/
 uv run black app/
+
+# Coverage reporting
+uv run coverage run -m pytest && uv run coverage report
+
 ```
 
 ### Configuration
