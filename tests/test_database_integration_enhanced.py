@@ -63,8 +63,11 @@ class TestDatabaseIntegrationServiceEnhanced:
         
         with patch('app.services.database_integration.with_transaction') as mock_with_tx:
             # Mock transaction to actually execute the update function
+            # with_transaction(session, func, *args, max_retries=X, backoff_factor=Y)
+            # The func should receive (session, *args) but not the retry params
             def execute_update(session, update_func, *args, **kwargs):
-                return update_func(session, *args, **kwargs)
+                # Extract only the function args, not the retry configuration
+                return update_func(session, *args)
             mock_with_tx.side_effect = execute_update
             
             result = service.update_server_status(1, ServerStatus.running)
@@ -92,7 +95,7 @@ class TestDatabaseIntegrationServiceEnhanced:
              patch('app.services.database_integration.logger') as mock_logger:
             
             def execute_update(session, update_func, *args, **kwargs):
-                return update_func(session, *args, **kwargs)
+                return update_func(session, *args)
             mock_with_tx.side_effect = execute_update
             
             result = service.update_server_status(1, ServerStatus.running)
@@ -100,7 +103,7 @@ class TestDatabaseIntegrationServiceEnhanced:
             # Verify logging occurred
             assert result is True
             mock_logger.info.assert_called_with(
-                "Updated server 1 status: stopped -> running"
+                "Updated server 1 status: ServerStatus.stopped -> ServerStatus.running"
             )
 
     def test_sync_server_states_comprehensive(self, service, mock_session):
@@ -231,7 +234,7 @@ class TestDatabaseIntegrationServiceEnhanced:
             
             # Verify logging of batch updates
             mock_logger.info.assert_any_call(
-                "Batch update: Server 1 status: stopped -> running"
+                "Batch update: Server 1 status: ServerStatus.stopped -> ServerStatus.running"
             )
 
     def test_get_servers_by_status_functionality(self, service, mock_session):
@@ -338,6 +341,17 @@ class TestDatabaseIntegrationServiceEnhanced:
         """Test database transaction configuration and retry logic"""
         service.SessionLocal.return_value = mock_session
         
+        # Setup server query chain for update_server_status
+        mock_server = Mock(spec=Server)
+        mock_server.id = 1
+        mock_server.status = ServerStatus.stopped
+        
+        query_mock = Mock()
+        filter_mock = Mock()
+        mock_session.query.return_value = query_mock
+        query_mock.filter.return_value = filter_mock
+        filter_mock.first.return_value = mock_server
+        
         with patch('app.services.database_integration.with_transaction') as mock_with_tx, \
              patch('app.services.database_integration.settings') as mock_settings:
             
@@ -345,7 +359,10 @@ class TestDatabaseIntegrationServiceEnhanced:
             mock_settings.DATABASE_MAX_RETRIES = 3
             mock_settings.DATABASE_RETRY_BACKOFF = 0.1
             
-            mock_with_tx.return_value = True
+            # Mock with_transaction to execute the function and return True
+            def execute_with_config(session, update_func, *args, **kwargs):
+                return update_func(session, *args)
+            mock_with_tx.side_effect = execute_with_config
             
             result = service.update_server_status(1, ServerStatus.running)
             

@@ -310,7 +310,9 @@ app.include_router(auth_router, prefix="/api/v1/auth", tags=["auth"])
 app.include_router(users_router, prefix="/api/v1/users", tags=["users"])
 app.include_router(servers_router, prefix="/api/v1/servers", tags=["servers"])
 app.include_router(groups_router, prefix="/api/v1/groups", tags=["groups"])
-app.include_router(scheduler_router, prefix="/api/v1/backups", tags=["backup-scheduler"])
+app.include_router(
+    scheduler_router, prefix="/api/v1/backup-scheduler", tags=["backup-scheduler"]
+)
 app.include_router(backups_router, prefix="/api/v1/backups", tags=["backups"])
 app.include_router(templates_router, prefix="/api/v1/templates", tags=["templates"])
 app.include_router(files_router, prefix="/api/v1/files", tags=["files"])

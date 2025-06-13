@@ -278,6 +278,10 @@ class TestApplicationStartupShutdown:
             
             from app.main import _initialize_database
             
+            # Setup mock service status
+            mock_status.database_ready = False
+            mock_status.failed_services = []
+            
             # Mock database creation failure
             mock_create_tables.side_effect = Exception("Database connection failed")
             
@@ -318,6 +322,10 @@ class TestApplicationStartupShutdown:
              patch('app.main.logger') as mock_logger:
             
             from app.main import _initialize_database_integration
+            
+            # Setup mock service status
+            mock_status.database_integration_ready = False
+            mock_status.failed_services = []
             
             # Mock initialization failure
             mock_service.initialize.side_effect = Exception("Integration failed")
