@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Optional
 
 from pydantic import ConfigDict, field_validator, model_validator
 from pydantic_settings import BaseSettings
@@ -16,6 +16,15 @@ class Settings(BaseSettings):
     # Server management configuration
     SERVER_LOG_QUEUE_SIZE: int = 500
     JAVA_CHECK_TIMEOUT: int = 5
+
+    # Java configuration for multi-version support
+    JAVA_DISCOVERY_PATHS: str = (
+        ""  # Comma-separated paths to search for Java installations
+    )
+    JAVA_8_PATH: str = ""  # Direct path to Java 8 executable
+    JAVA_16_PATH: str = ""  # Direct path to Java 16 executable
+    JAVA_17_PATH: str = ""  # Direct path to Java 17 executable
+    JAVA_21_PATH: str = ""  # Direct path to Java 21 executable
 
     # Database configuration
     DATABASE_MAX_RETRIES: int = 3
@@ -113,6 +122,26 @@ class Settings(BaseSettings):
     def is_production(self) -> bool:
         """Check if running in production environment"""
         return self.ENVIRONMENT.lower() == "production"
+
+    @property
+    def java_discovery_paths_list(self) -> List[str]:
+        """Parse Java discovery paths from comma-separated string"""
+        if not self.JAVA_DISCOVERY_PATHS:
+            return []
+        return [
+            path.strip() for path in self.JAVA_DISCOVERY_PATHS.split(",") if path.strip()
+        ]
+
+    def get_java_path(self, major_version: int) -> Optional[str]:
+        """Get configured Java path for specific major version"""
+        java_paths = {
+            8: self.JAVA_8_PATH,
+            16: self.JAVA_16_PATH,
+            17: self.JAVA_17_PATH,
+            21: self.JAVA_21_PATH,
+        }
+        path = java_paths.get(major_version, "")
+        return path if path else None
 
 
 settings = Settings()

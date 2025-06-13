@@ -1,10 +1,14 @@
 import asyncio
 import logging
+import os
 import re
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 from packaging import version
+
+from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -18,6 +22,7 @@ class JavaVersionInfo:
     patch_version: int
     vendor: Optional[str] = None
     full_version_string: str = ""
+    executable_path: str = "java"  # Path to Java executable
 
     @property
     def version_string(self) -> str:
@@ -62,11 +67,67 @@ class JavaCompatibilityService:
             (version.Version("1.21.0"), version.Version("9999.99.99")): 21,
         }
 
+    async def discover_java_installations(self) -> Dict[int, JavaVersionInfo]:
+        """Discover available Java installations by major version"""
+        java_installations = {}
+
+        # Check configured paths first
+        for major_version in [8, 16, 17, 21]:
+            configured_path = settings.get_java_path(major_version)
+            if configured_path:
+                java_info = await self._detect_java_at_path(configured_path)
+                if java_info and java_info.major_version == major_version:
+                    java_installations[major_version] = java_info
+                    logger.info(
+                        f"Found configured Java {major_version} at {configured_path}"
+                    )
+
+        # Discover OpenJDK installations in common paths
+        discovered = await self._discover_openjdk_installations()
+        for java_info in discovered:
+            major = java_info.major_version
+            if major not in java_installations:  # Don't override configured paths
+                java_installations[major] = java_info
+                logger.info(f"Discovered OpenJDK {major} at {java_info.executable_path}")
+
+        # Fallback to system PATH java
+        if not java_installations:
+            system_java = await self._detect_java_at_path("java")
+            if system_java:
+                java_installations[system_java.major_version] = system_java
+                logger.info(f"Using system Java {system_java.major_version}")
+
+        return java_installations
+
     async def detect_java_version(self) -> Optional[JavaVersionInfo]:
-        """Detect installed Java version with comprehensive parsing"""
+        """Detect default Java version (for backward compatibility)"""
+        return await self._detect_java_at_path("java")
+
+    async def get_java_for_minecraft(
+        self, minecraft_version: str
+    ) -> Optional[JavaVersionInfo]:
+        """Get appropriate Java installation for Minecraft version"""
+        required_java = self.get_required_java_version(minecraft_version)
+        installations = await self.discover_java_installations()
+
+        # Try exact match first
+        if required_java in installations:
+            return installations[required_java]
+
+        # Try compatible higher versions
+        compatible_versions = sorted(
+            [v for v in installations.keys() if v >= required_java]
+        )
+        if compatible_versions:
+            return installations[compatible_versions[0]]
+
+        return None
+
+    async def _detect_java_at_path(self, java_path: str) -> Optional[JavaVersionInfo]:
+        """Detect Java version at specific path"""
         try:
             process = await asyncio.create_subprocess_exec(
-                "java",
+                java_path,
                 "-version",
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
@@ -76,7 +137,7 @@ class JavaCompatibilityService:
             )
 
             if process.returncode != 0:
-                logger.error("Java version command failed")
+                logger.debug(f"Java version command failed for {java_path}")
                 return None
 
             # Java version info is typically in stderr
@@ -84,11 +145,85 @@ class JavaCompatibilityService:
             if not version_output and stdout:
                 version_output = stdout.decode("utf-8")
 
-            return self._parse_java_version(version_output)
+            java_info = self._parse_java_version(version_output)
+            if java_info:
+                java_info.executable_path = java_path
+            return java_info
 
         except (asyncio.TimeoutError, FileNotFoundError, OSError) as e:
-            logger.error(f"Java version detection failed: {type(e).__name__}: {e}")
+            logger.debug(
+                f"Java detection failed for {java_path}: {type(e).__name__}: {e}"
+            )
             return None
+
+    async def _discover_openjdk_installations(self) -> List[JavaVersionInfo]:
+        """Discover OpenJDK installations in common locations"""
+        installations = []
+
+        # Common OpenJDK installation paths
+        search_paths = [
+            "/usr/lib/jvm",  # Linux
+            "/usr/java",  # Linux alternative
+            "/opt/java",  # Linux alternative
+            "/Library/Java/JavaVirtualMachines",  # macOS
+            "C:\\Program Files\\Java",  # Windows
+            "C:\\Program Files (x86)\\Java",  # Windows 32-bit
+        ]
+
+        # Add configured discovery paths
+        search_paths.extend(settings.java_discovery_paths_list)
+
+        for search_path in search_paths:
+            if not os.path.exists(search_path):
+                continue
+
+            try:
+                for item in os.listdir(search_path):
+                    item_path = Path(search_path) / item
+                    if not item_path.is_dir():
+                        continue
+
+                    # Look for OpenJDK directories
+                    if "openjdk" not in item.lower() and "jdk" not in item.lower():
+                        continue
+
+                    # Try to find java executable
+                    java_executable = self._find_java_executable(item_path)
+                    if java_executable:
+                        java_info = await self._detect_java_at_path(str(java_executable))
+                        if java_info and self._is_openjdk(java_info):
+                            installations.append(java_info)
+
+            except (OSError, PermissionError) as e:
+                logger.debug(f"Cannot access {search_path}: {e}")
+                continue
+
+        return installations
+
+    def _find_java_executable(self, jdk_path: Path) -> Optional[Path]:
+        """Find java executable in JDK directory"""
+        # Common locations for java executable within JDK
+        possible_paths = [
+            jdk_path / "bin" / "java",
+            jdk_path / "bin" / "java.exe",  # Windows
+            jdk_path / "Contents" / "Home" / "bin" / "java",  # macOS bundle
+        ]
+
+        for java_path in possible_paths:
+            if java_path.exists() and java_path.is_file():
+                return java_path
+
+        return None
+
+    def _is_openjdk(self, java_info: JavaVersionInfo) -> bool:
+        """Check if Java installation is OpenJDK-based"""
+        if not java_info.full_version_string:
+            return False
+
+        version_text = java_info.full_version_string.lower()
+        openjdk_indicators = ["openjdk", "temurin", "adoptopenjdk", "liberica", "zulu"]
+
+        return any(indicator in version_text for indicator in openjdk_indicators)
 
     def _parse_java_version(self, version_output: str) -> Optional[JavaVersionInfo]:
         """Parse Java version output into structured information"""

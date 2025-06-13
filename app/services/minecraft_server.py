@@ -86,21 +86,50 @@ class MinecraftServerManager:
                 f"Error during cleanup for server {server_id}: {type(e).__name__}: {e}"
             )
 
-    async def _check_java_compatibility(self, minecraft_version: str) -> tuple[bool, str]:
+    async def _check_java_compatibility(
+        self, minecraft_version: str
+    ) -> tuple[bool, str, Optional[str]]:
         """Check Java availability and compatibility with Minecraft version"""
         try:
-            # Detect installed Java version
-            java_version = await java_compatibility_service.detect_java_version()
+            # Get appropriate Java installation for Minecraft version
+            java_version = await java_compatibility_service.get_java_for_minecraft(
+                minecraft_version
+            )
 
             if java_version is None:
-                return False, (
-                    "Java is not installed or not accessible. "
-                    "Please install Java and ensure it's available in your system PATH."
+                # Try to provide helpful error message
+                installations = (
+                    await java_compatibility_service.discover_java_installations()
                 )
+                if not installations:
+                    return (
+                        False,
+                        (
+                            "No Java installations found. "
+                            "Please install OpenJDK and ensure it's accessible."
+                        ),
+                        None,
+                    )
+                else:
+                    available_versions = list(installations.keys())
+                    required_version = (
+                        java_compatibility_service.get_required_java_version(
+                            minecraft_version
+                        )
+                    )
+                    return (
+                        False,
+                        (
+                            f"Minecraft {minecraft_version} requires Java {required_version}, "
+                            f"but only Java {available_versions} are available. "
+                            f"Please install Java {required_version} or configure it in .env."
+                        ),
+                        None,
+                    )
 
             logger.info(
-                f"Detected Java {java_version.major_version} "
-                f"({java_version.version_string})"
+                f"Selected Java {java_version.major_version} "
+                f"({java_version.version_string}) at {java_version.executable_path}"
                 + (f" [{java_version.vendor}]" if java_version.vendor else "")
             )
 
@@ -111,12 +140,12 @@ class MinecraftServerManager:
                 )
             )
 
-            return is_compatible, compatibility_message
+            return is_compatible, compatibility_message, java_version.executable_path
 
         except Exception as e:
             error_message = f"Java compatibility check failed: {type(e).__name__}: {e}"
             logger.error(error_message, exc_info=True)
-            return False, error_message
+            return False, error_message, None
 
     async def _ensure_eula_accepted(self, server_dir: Path) -> bool:
         """Ensure EULA is accepted by creating eula.txt"""
@@ -175,8 +204,8 @@ class MinecraftServerManager:
             logger.info(f"Starting pre-flight checks for server {server.id}")
 
             # Check Java compatibility with Minecraft version
-            java_compatible, java_message = await self._check_java_compatibility(
-                server.minecraft_version
+            java_compatible, java_message, java_executable = (
+                await self._check_java_compatibility(server.minecraft_version)
             )
             if not java_compatible:
                 logger.error(
@@ -208,9 +237,9 @@ class MinecraftServerManager:
             abs_server_dir = server_dir.absolute()
             abs_jar_path = jar_path.absolute()
 
-            # Ensure we're using absolute paths
+            # Use the selected Java executable for this Minecraft version
             cmd = [
-                "java",
+                java_executable or "java",  # Fallback to system java if needed
                 f"-Xmx{server.max_memory}M",
                 f"-Xms{min(server.max_memory, 512)}M",
                 "-jar",

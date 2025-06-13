@@ -545,15 +545,34 @@ class ServerService:
     async def _validate_java_compatibility(self, minecraft_version: str) -> None:
         """Validate Java compatibility for Minecraft version"""
         try:
-            # Detect installed Java version
-            java_version = await java_compatibility_service.detect_java_version()
+            # Get appropriate Java installation for Minecraft version
+            java_version = await java_compatibility_service.get_java_for_minecraft(
+                minecraft_version
+            )
 
             if java_version is None:
-                raise InvalidRequestException(
-                    "Java is not installed or not accessible. "
-                    "Please install Java and ensure it's available in your system PATH. "
-                    "Visit https://adoptium.net/temurin/releases/ for Java installation."
+                # Provide helpful error message with available Java installations
+                installations = (
+                    await java_compatibility_service.discover_java_installations()
                 )
+                if not installations:
+                    raise InvalidRequestException(
+                        "No Java installations found. "
+                        "Please install OpenJDK and ensure it's accessible. "
+                        "You can also configure specific Java paths in .env file."
+                    )
+                else:
+                    available_versions = list(installations.keys())
+                    required_version = (
+                        java_compatibility_service.get_required_java_version(
+                            minecraft_version
+                        )
+                    )
+                    raise InvalidRequestException(
+                        f"Minecraft {minecraft_version} requires Java {required_version}, "
+                        f"but only Java {available_versions} are available. "
+                        f"Please install Java {required_version} or configure JAVA_{required_version}_PATH in .env."
+                    )
 
             # Validate compatibility with Minecraft version
             is_compatible, compatibility_message = (
@@ -569,7 +588,8 @@ class ServerService:
                 raise InvalidRequestException(compatibility_message)
 
             logger.info(
-                f"Java compatibility validated for Minecraft {minecraft_version}: {compatibility_message}"
+                f"Java compatibility validated for Minecraft {minecraft_version}: "
+                f"Using Java {java_version.major_version} at {java_version.executable_path}"
             )
 
         except InvalidRequestException:

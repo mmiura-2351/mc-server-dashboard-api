@@ -266,6 +266,106 @@ class TestJavaCompatibilityService:
             result = await service.detect_java_version()
             assert result is None
 
+    @pytest.mark.asyncio
+    async def test_discover_java_installations(self, service):
+        """Test discovering multiple Java installations"""
+        with patch.object(service, '_detect_java_at_path') as mock_detect, \
+             patch.object(service, '_discover_openjdk_installations') as mock_discover_openjdk:
+            
+            # Mock configured Java paths
+            java8 = JavaVersionInfo(8, 0, 292, "OpenJDK", "", "/usr/lib/jvm/java-8/bin/java")
+            java17 = JavaVersionInfo(17, 0, 1, "OpenJDK", "", "/usr/lib/jvm/java-17/bin/java")
+            
+            # Mock detection results
+            mock_detect.side_effect = lambda path: {
+                "/path/to/java8": java8,
+                "/path/to/java17": java17,
+            }.get(path)
+            
+            mock_discover_openjdk.return_value = []
+            
+            # Mock settings
+            with patch('app.services.java_compatibility.settings') as mock_settings:
+                mock_settings.get_java_path.side_effect = lambda v: {
+                    8: "/path/to/java8", 
+                    17: "/path/to/java17"
+                }.get(v, "")
+                
+                installations = await service.discover_java_installations()
+                
+                assert len(installations) == 2
+                assert 8 in installations
+                assert 17 in installations
+                assert installations[8].executable_path == "/usr/lib/jvm/java-8/bin/java"
+                assert installations[17].executable_path == "/usr/lib/jvm/java-17/bin/java"
+
+    @pytest.mark.asyncio
+    async def test_get_java_for_minecraft(self, service):
+        """Test getting appropriate Java for Minecraft version"""
+        with patch.object(service, 'discover_java_installations') as mock_discover:
+            java8 = JavaVersionInfo(8, 0, 292, "OpenJDK", "", "/usr/lib/jvm/java-8/bin/java")
+            java17 = JavaVersionInfo(17, 0, 1, "OpenJDK", "", "/usr/lib/jvm/java-17/bin/java")
+            java21 = JavaVersionInfo(21, 0, 1, "OpenJDK", "", "/usr/lib/jvm/java-21/bin/java")
+            
+            mock_discover.return_value = {8: java8, 17: java17, 21: java21}
+            
+            # Test exact match
+            result = await service.get_java_for_minecraft("1.8.9")
+            assert result == java8
+            
+            # Test compatible higher version
+            result = await service.get_java_for_minecraft("1.17.1")
+            assert result.major_version >= 16
+            
+            # Test latest requirements
+            result = await service.get_java_for_minecraft("1.21.0")
+            assert result == java21
+
+    @pytest.mark.asyncio
+    async def test_get_java_for_minecraft_no_compatible(self, service):
+        """Test getting Java when no compatible version is available"""
+        with patch.object(service, 'discover_java_installations') as mock_discover:
+            java8 = JavaVersionInfo(8, 0, 292, "OpenJDK", "", "/usr/lib/jvm/java-8/bin/java")
+            mock_discover.return_value = {8: java8}
+            
+            # Test requiring newer Java than available
+            result = await service.get_java_for_minecraft("1.21.0")
+            assert result is None
+
+    def test_find_java_executable(self, service):
+        """Test finding Java executable in JDK directory"""
+        with patch('pathlib.Path.exists') as mock_exists, \
+             patch('pathlib.Path.is_file') as mock_is_file:
+            
+            # Mock successful finding
+            mock_exists.return_value = True
+            mock_is_file.return_value = True
+            
+            from pathlib import Path
+            jdk_path = Path("/usr/lib/jvm/java-17-openjdk")
+            result = service._find_java_executable(jdk_path)
+            
+            assert result is not None
+            assert str(result).endswith("bin/java")
+
+    def test_is_openjdk(self, service):
+        """Test OpenJDK detection"""
+        # Test OpenJDK
+        openjdk_info = JavaVersionInfo(17, 0, 1, "OpenJDK", "openjdk version \"17.0.1\"")
+        assert service._is_openjdk(openjdk_info) is True
+        
+        # Test Temurin (Eclipse)
+        temurin_info = JavaVersionInfo(17, 0, 1, "Temurin", "Eclipse Temurin Runtime Environment")
+        assert service._is_openjdk(temurin_info) is True
+        
+        # Test Oracle (not OpenJDK)
+        oracle_info = JavaVersionInfo(17, 0, 1, "Oracle", "Java(TM) SE Runtime Environment")
+        assert service._is_openjdk(oracle_info) is False
+        
+        # Test empty version string
+        empty_info = JavaVersionInfo(17, 0, 1, None, "")
+        assert service._is_openjdk(empty_info) is False
+
 
 class TestJavaCompatibilityServiceIntegration:
     """Integration tests for Java compatibility service"""

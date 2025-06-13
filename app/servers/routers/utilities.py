@@ -167,36 +167,37 @@ async def get_java_compatibility_info():
     Useful for troubleshooting server creation issues and understanding Java requirements.
     """
     try:
-        # Detect current Java version
-        java_version = await java_compatibility_service.detect_java_version()
+        # Discover all Java installations
+        java_installations = (
+            await java_compatibility_service.discover_java_installations()
+        )
 
         # Get compatibility matrix
         compatibility_matrix = java_compatibility_service.get_compatibility_matrix()
 
         response = {
-            "java_detected": java_version is not None,
+            "java_installations_found": len(java_installations),
             "compatibility_matrix": compatibility_matrix,
+            "installations": {},
         }
 
-        if java_version:
+        for major_version, java_info in java_installations.items():
+            response["installations"][str(major_version)] = {
+                "major_version": java_info.major_version,
+                "version_string": java_info.version_string,
+                "vendor": java_info.vendor,
+                "executable_path": java_info.executable_path,
+                "full_version": java_info.full_version_string,
+                "supported_minecraft_versions": java_compatibility_service.get_supported_minecraft_versions(
+                    java_info
+                ),
+            }
+
+        if not java_installations:
             response.update(
                 {
-                    "current_java": {
-                        "major_version": java_version.major_version,
-                        "version_string": java_version.version_string,
-                        "vendor": java_version.vendor,
-                        "full_version": java_version.full_version_string,
-                    },
-                    "supported_minecraft_versions": java_compatibility_service.get_supported_minecraft_versions(
-                        java_version
-                    ),
-                }
-            )
-        else:
-            response.update(
-                {
-                    "error": "Java is not installed or not accessible",
-                    "installation_help": "Visit https://adoptium.net/temurin/releases/ for Java installation",
+                    "error": "No Java installations found",
+                    "installation_help": "Install OpenJDK or configure Java paths in .env file",
                 }
             )
 
@@ -230,18 +231,26 @@ async def validate_java_for_minecraft_version(minecraft_version: str):
                 detail="Invalid Minecraft version format. Use format like 1.20.1",
             )
 
-        # Detect Java version
-        java_version = await java_compatibility_service.detect_java_version()
+        # Get appropriate Java for Minecraft version
+        java_version = await java_compatibility_service.get_java_for_minecraft(
+            minecraft_version
+        )
 
         if java_version is None:
+            # Get all available installations for detailed error
+            installations = await java_compatibility_service.discover_java_installations()
+            available_versions = list(installations.keys())
+            required_version = java_compatibility_service.get_required_java_version(
+                minecraft_version
+            )
+
             return {
                 "compatible": False,
                 "minecraft_version": minecraft_version,
-                "required_java": java_compatibility_service.get_required_java_version(
-                    minecraft_version
-                ),
-                "error": "Java is not installed or not accessible",
-                "installation_help": "Visit https://adoptium.net/temurin/releases/ for Java installation",
+                "required_java": required_version,
+                "available_java_versions": available_versions,
+                "error": f"No compatible Java installation found for Minecraft {minecraft_version}",
+                "installation_help": f"Install Java {required_version} or configure JAVA_{required_version}_PATH in .env",
             }
 
         # Validate compatibility
@@ -255,10 +264,11 @@ async def validate_java_for_minecraft_version(minecraft_version: str):
             "required_java": java_compatibility_service.get_required_java_version(
                 minecraft_version
             ),
-            "current_java": {
+            "selected_java": {
                 "major_version": java_version.major_version,
                 "version_string": java_version.version_string,
                 "vendor": java_version.vendor,
+                "executable_path": java_version.executable_path,
             },
             "message": message,
         }
