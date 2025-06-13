@@ -4,7 +4,7 @@ File edit history management service.
 
 import hashlib
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import List, Optional, Tuple
 
@@ -303,7 +303,7 @@ class FileHistoryService:
         if days is None:
             days = self.auto_cleanup_days
 
-        cutoff_date = datetime.utcnow() - timedelta(days=days)
+        cutoff_date = datetime.now(timezone.utc) - timedelta(days=days)
 
         query = db.query(FileEditHistory).filter(FileEditHistory.created_at < cutoff_date)
         if server_id:
