@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
@@ -281,7 +281,7 @@ async def get_audit_statistics(
     )
 
     # Get various statistics
-    from datetime import datetime, timedelta
+    from datetime import timedelta
 
     from sqlalchemy import func
 
@@ -289,11 +289,11 @@ async def get_audit_statistics(
     total_logs = db.query(AuditLog).count()
 
     # Logs in last 24 hours
-    yesterday = datetime.utcnow() - timedelta(days=1)
+    yesterday = datetime.now(timezone.utc) - timedelta(days=1)
     recent_logs = db.query(AuditLog).filter(AuditLog.created_at >= yesterday).count()
 
     # Most active users (last 30 days)
-    thirty_days_ago = datetime.utcnow() - timedelta(days=30)
+    thirty_days_ago = datetime.now(timezone.utc) - timedelta(days=30)
     active_users = (
         db.query(AuditLog.user_id, func.count(AuditLog.id).label("activity_count"))
         .filter(AuditLog.created_at >= thirty_days_ago)
@@ -324,7 +324,7 @@ async def get_audit_statistics(
     )
 
     # Security events count (last 7 days)
-    week_ago = datetime.utcnow() - timedelta(days=7)
+    week_ago = datetime.now(timezone.utc) - timedelta(days=7)
     security_events = (
         db.query(AuditLog)
         .filter(AuditLog.created_at >= week_ago)
@@ -347,5 +347,5 @@ async def get_audit_statistics(
             {"resource_type": resource_type, "count": count}
             for resource_type, count in resource_distribution
         ],
-        "statistics_generated_at": datetime.utcnow(),
+        "statistics_generated_at": datetime.now(timezone.utc),
     }
