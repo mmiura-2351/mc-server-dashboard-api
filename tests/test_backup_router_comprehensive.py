@@ -582,3 +582,175 @@ class TestBackupRouterFixed:
             headers=get_auth_headers(test_user.username),
         )
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+
+    def test_download_backup_success(self, client, test_user, db):
+        """Test successful backup download"""
+        # Create a test server in database
+        server = Server(
+            id=1,
+            name="Test Server",
+            description="Test server description",
+            minecraft_version="1.20.4",
+            server_type=ServerType.vanilla,
+            directory_path="/servers/test-server",
+            port=25565,
+            owner_id=test_user.id,
+            is_deleted=False,
+        )
+        db.add(server)
+        db.commit()
+
+        # Create a test backup in database
+        backup = Backup(
+            id=1,
+            server_id=server.id,
+            name="Test Backup",
+            backup_type=BackupType.manual,
+            status=BackupStatus.completed,
+            file_path="/tmp/test_backup.tar.gz",
+            file_size=1024,
+            created_at=datetime.now(),
+        )
+        backup.server = server  # Set the relationship
+        db.add(backup)
+        db.commit()
+
+        # Mock file existence check and FileResponse
+        with patch("os.path.exists") as mock_exists, \
+             patch("app.backups.router.FileResponse") as mock_file_response:
+            
+            mock_exists.return_value = True
+            mock_file_response.return_value = Mock()
+
+            response = client.get(
+                f"/api/v1/backups/backups/{backup.id}/download",
+                headers=get_auth_headers(test_user.username),
+            )
+
+            assert response.status_code == status.HTTP_200_OK
+            mock_exists.assert_called_once_with("/tmp/test_backup.tar.gz")
+            mock_file_response.assert_called_once()
+
+    def test_download_backup_not_completed(self, client, test_user, db):
+        """Test download of backup that is not completed"""
+        # Create a test server in database
+        server = Server(
+            id=1,
+            name="Test Server",
+            description="Test server description",
+            minecraft_version="1.20.4",
+            server_type=ServerType.vanilla,
+            directory_path="/servers/test-server",
+            port=25565,
+            owner_id=test_user.id,
+            is_deleted=False,
+        )
+        db.add(server)
+        db.commit()
+
+        # Create a test backup in database with creating status
+        backup = Backup(
+            id=1,
+            server_id=server.id,
+            name="Test Backup",
+            backup_type=BackupType.manual,
+            status=BackupStatus.creating,  # Not completed
+            file_path="/tmp/test_backup.tar.gz",
+            file_size=1024,
+            created_at=datetime.now(),
+        )
+        backup.server = server  # Set the relationship
+        db.add(backup)
+        db.commit()
+
+        response = client.get(
+            f"/api/v1/backups/backups/{backup.id}/download",
+            headers=get_auth_headers(test_user.username),
+        )
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert "Backup is not completed" in response.json()["detail"]
+
+    def test_download_backup_file_not_found(self, client, test_user, db):
+        """Test download when backup file doesn't exist on disk"""
+        # Create a test server in database
+        server = Server(
+            id=1,
+            name="Test Server",
+            description="Test server description",
+            minecraft_version="1.20.4",
+            server_type=ServerType.vanilla,
+            directory_path="/servers/test-server",
+            port=25565,
+            owner_id=test_user.id,
+            is_deleted=False,
+        )
+        db.add(server)
+        db.commit()
+
+        # Create a test backup in database
+        backup = Backup(
+            id=1,
+            server_id=server.id,
+            name="Test Backup",
+            backup_type=BackupType.manual,
+            status=BackupStatus.completed,
+            file_path="/tmp/nonexistent_backup.tar.gz",
+            file_size=1024,
+            created_at=datetime.now(),
+        )
+        backup.server = server  # Set the relationship
+        db.add(backup)
+        db.commit()
+
+        # Mock file existence check to return False
+        with patch("os.path.exists") as mock_exists:
+            mock_exists.return_value = False
+
+            response = client.get(
+                f"/api/v1/backups/backups/{backup.id}/download",
+                headers=get_auth_headers(test_user.username),
+            )
+
+            assert response.status_code == status.HTTP_404_NOT_FOUND
+            assert "Backup file not found on disk" in response.json()["detail"]
+
+    def test_download_backup_unauthorized(self, client, test_user, other_user, db):
+        """Test download backup that user doesn't have access to"""
+        # Create a server owned by other_user
+        server = Server(
+            id=1,
+            name="Other User's Server",
+            description="Test server description",
+            minecraft_version="1.20.4",
+            server_type=ServerType.vanilla,
+            directory_path="/servers/other-server",
+            port=25565,
+            owner_id=other_user.id,  # Owned by other_user
+            is_deleted=False,
+        )
+        db.add(server)
+        db.commit()
+
+        # Create a backup for other_user's server
+        backup = Backup(
+            id=1,
+            server_id=server.id,
+            name="Other User's Backup",
+            backup_type=BackupType.manual,
+            status=BackupStatus.completed,
+            file_path="/tmp/other_backup.tar.gz",
+            file_size=1024,
+            created_at=datetime.now(),
+        )
+        backup.server = server
+        db.add(backup)
+        db.commit()
+
+        # Try to download as test_user (should fail)
+        response = client.get(
+            f"/api/v1/backups/backups/{backup.id}/download",
+            headers=get_auth_headers(test_user.username),
+        )
+
+        assert response.status_code == status.HTTP_403_FORBIDDEN
