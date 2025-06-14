@@ -585,6 +585,9 @@ class TestBackupRouterFixed:
 
     def test_download_backup_success(self, client, test_user, db):
         """Test successful backup download"""
+        import tempfile
+        import os
+        
         # Create a test server in database
         server = Server(
             id=1,
@@ -600,36 +603,40 @@ class TestBackupRouterFixed:
         db.add(server)
         db.commit()
 
-        # Create a test backup in database
-        backup = Backup(
-            id=1,
-            server_id=server.id,
-            name="Test Backup",
-            backup_type=BackupType.manual,
-            status=BackupStatus.completed,
-            file_path="/tmp/test_backup.tar.gz",
-            file_size=1024,
-            created_at=datetime.now(),
-        )
-        backup.server = server  # Set the relationship
-        db.add(backup)
-        db.commit()
+        # Create a temporary test file
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.tar.gz') as tmp_file:
+            tmp_file.write(b"test backup content")
+            tmp_path = tmp_file.name
 
-        # Mock file existence check and FileResponse
-        with patch("os.path.exists") as mock_exists, \
-             patch("app.backups.router.FileResponse") as mock_file_response:
-            
-            mock_exists.return_value = True
-            mock_file_response.return_value = Mock()
+        try:
+            # Create a test backup in database
+            backup = Backup(
+                id=1,
+                server_id=server.id,
+                name="Test Backup",
+                backup_type=BackupType.manual,
+                status=BackupStatus.completed,
+                file_path=tmp_path,
+                file_size=19,
+                created_at=datetime.now(),
+            )
+            backup.server = server  # Set the relationship
+            db.add(backup)
+            db.commit()
 
             response = client.get(
                 f"/api/v1/backups/backups/{backup.id}/download",
                 headers=get_auth_headers(test_user.username),
             )
 
-            assert response.status_code == status.HTTP_200_OK
-            mock_exists.assert_called_once_with("/tmp/test_backup.tar.gz")
-            mock_file_response.assert_called_once()
+            assert response.status_code == 200
+            assert 'attachment' in response.headers.get('content-disposition', '')
+            assert 'Test Server_Test Backup_1.tar.gz' in response.headers.get('content-disposition', '')
+            
+        finally:
+            # Clean up the temporary file
+            if os.path.exists(tmp_path):
+                os.unlink(tmp_path)
 
     def test_download_backup_not_completed(self, client, test_user, db):
         """Test download of backup that is not completed"""
@@ -715,8 +722,22 @@ class TestBackupRouterFixed:
             assert response.status_code == status.HTTP_404_NOT_FOUND
             assert "Backup file not found on disk" in response.json()["detail"]
 
-    def test_download_backup_unauthorized(self, client, test_user, other_user, db):
+    def test_download_backup_unauthorized(self, client, test_user, db):
         """Test download backup that user doesn't have access to"""
+        # Create another user's server
+        from passlib.context import CryptContext
+        pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+        
+        other_user = User(
+            username="otheruser",
+            email="other@example.com",
+            hashed_password=pwd_context.hash("otherpass"),
+            role=Role.user,
+            is_approved=True,
+        )
+        db.add(other_user)
+        db.commit()
+        
         # Create a server owned by other_user
         server = Server(
             id=1,
