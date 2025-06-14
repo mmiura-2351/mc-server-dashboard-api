@@ -775,3 +775,173 @@ class TestBackupRouterFixed:
         )
 
         assert response.status_code == status.HTTP_403_FORBIDDEN
+
+    def test_upload_backup_success(self, client, test_user, db):
+        """Test successful backup upload"""
+        import tempfile
+        import tarfile
+        import io
+        
+        # Set test_user as operator to allow backup upload
+        test_user.role = Role.operator
+        db.commit()
+        
+        # Create a test server in database
+        server = Server(
+            id=1,
+            name="Test Server",
+            description="Test server description",
+            minecraft_version="1.20.4",
+            server_type=ServerType.vanilla,
+            directory_path="/servers/test-server",
+            port=25565,
+            owner_id=test_user.id,
+            is_deleted=False,
+        )
+        db.add(server)
+        db.commit()
+
+        # Create a temporary tar.gz file
+        with tempfile.NamedTemporaryFile(suffix='.tar.gz', delete=False) as tmp_file:
+            # Create a minimal tar.gz content
+            tar_buffer = io.BytesIO()
+            with tarfile.open(fileobj=tar_buffer, mode='w:gz') as tar:
+                # Add a simple text file to the tar
+                text_info = tarfile.TarInfo(name="test.txt")
+                text_content = b"test content"
+                text_info.size = len(text_content)
+                tar.addfile(text_info, io.BytesIO(text_content))
+            
+            tar_content = tar_buffer.getvalue()
+            tmp_file.write(tar_content)
+            tmp_file.flush()
+
+        try:
+            # Test upload
+            with open(tmp_file.name, 'rb') as f:
+                response = client.post(
+                    f"/api/v1/backups/servers/{server.id}/backups/upload",
+                    files={"file": ("test_backup.tar.gz", f, "application/gzip")},
+                    data={"name": "Test Upload", "description": "Test upload description"},
+                    headers=get_auth_headers(test_user.username),
+                )
+
+            assert response.status_code == status.HTTP_201_CREATED
+            data = response.json()
+            assert data["success"] is True
+            assert data["message"] == "Backup uploaded successfully"
+            assert data["backup"]["name"] == "Test Upload"
+            assert data["backup"]["description"] == "Test upload description"
+            assert data["original_filename"] == "test_backup.tar.gz"
+            assert data["file_size"] > 0
+            
+        finally:
+            # Clean up
+            import os
+            if os.path.exists(tmp_file.name):
+                os.unlink(tmp_file.name)
+
+    def test_upload_backup_invalid_file_type(self, client, test_user, db):
+        """Test upload with invalid file type"""
+        # Set test_user as operator to allow backup upload
+        test_user.role = Role.operator
+        db.commit()
+        
+        # Create a test server in database
+        server = Server(
+            id=1,
+            name="Test Server",
+            description="Test server description",
+            minecraft_version="1.20.4",
+            server_type=ServerType.vanilla,
+            directory_path="/servers/test-server",
+            port=25565,
+            owner_id=test_user.id,
+            is_deleted=False,
+        )
+        db.add(server)
+        db.commit()
+
+        # Create a text file instead of tar.gz
+        import tempfile
+        with tempfile.NamedTemporaryFile(suffix='.txt', delete=False) as tmp_file:
+            tmp_file.write(b"not a tar.gz file")
+            tmp_file.flush()
+
+        try:
+            with open(tmp_file.name, 'rb') as f:
+                response = client.post(
+                    f"/api/v1/backups/servers/{server.id}/backups/upload",
+                    files={"file": ("test.txt", f, "text/plain")},
+                    headers=get_auth_headers(test_user.username),
+                )
+
+            assert response.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
+            assert "Only .tar.gz and .tgz files are supported" in response.json()["detail"]
+            
+        finally:
+            # Clean up
+            import os
+            if os.path.exists(tmp_file.name):
+                os.unlink(tmp_file.name)
+
+    def test_upload_backup_forbidden_for_regular_user(self, client, test_user, db):
+        """Test that regular users cannot upload backups"""
+        # Create a test server in database
+        server = Server(
+            id=1,
+            name="Test Server",
+            description="Test server description",
+            minecraft_version="1.20.4",
+            server_type=ServerType.vanilla,
+            directory_path="/servers/test-server",
+            port=25565,
+            owner_id=test_user.id,
+            is_deleted=False,
+        )
+        db.add(server)
+        db.commit()
+
+        # Create a dummy file
+        import tempfile
+        with tempfile.NamedTemporaryFile(suffix='.tar.gz') as tmp_file:
+            tmp_file.write(b"dummy content")
+            tmp_file.flush()
+
+            with open(tmp_file.name, 'rb') as f:
+                response = client.post(
+                    f"/api/v1/backups/servers/{server.id}/backups/upload",
+                    files={"file": ("test.tar.gz", f, "application/gzip")},
+                    headers=get_auth_headers(test_user.username),
+                )
+
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+        assert "Only operators and admins can upload backups" in response.json()["detail"]
+
+    def test_upload_backup_no_file(self, client, test_user, db):
+        """Test upload without providing a file"""
+        # Set test_user as operator to allow backup upload
+        test_user.role = Role.operator
+        db.commit()
+        
+        # Create a test server in database
+        server = Server(
+            id=1,
+            name="Test Server",
+            description="Test server description",
+            minecraft_version="1.20.4",
+            server_type=ServerType.vanilla,
+            directory_path="/servers/test-server",
+            port=25565,
+            owner_id=test_user.id,
+            is_deleted=False,
+        )
+        db.add(server)
+        db.commit()
+
+        response = client.post(
+            f"/api/v1/backups/servers/{server.id}/backups/upload",
+            headers=get_auth_headers(test_user.username),
+        )
+
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY

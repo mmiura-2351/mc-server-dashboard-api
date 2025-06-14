@@ -1,6 +1,15 @@
 import os
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import (
+    APIRouter,
+    Depends,
+    File,
+    Form,
+    HTTPException,
+    Query,
+    UploadFile,
+    status,
+)
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
@@ -14,6 +23,7 @@ from app.backups.schemas import (
     BackupRestoreWithTemplateRequest,
     BackupRestoreWithTemplateResponse,
     BackupStatisticsResponse,
+    BackupUploadResponse,
     ScheduledBackupRequest,
 )
 from app.core.database import get_db
@@ -86,6 +96,78 @@ async def create_backup(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to create backup: {str(e)}",
+        )
+
+
+@router.post(
+    "/servers/{server_id}/backups/upload",
+    response_model=BackupUploadResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def upload_backup(
+    server_id: int,
+    file: UploadFile = File(...),
+    name: str = Form(None),
+    description: str = Form(None),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Upload a backup file for a server
+
+    Upload a .tar.gz backup file and create a backup record.
+    The file will be validated and stored securely.
+
+    - **file**: Backup file (.tar.gz or .tgz)
+    - **name**: Optional backup name (auto-generated if not provided)
+    - **description**: Optional backup description
+    """
+    try:
+        # Check server access
+        authorization_service.check_server_access(server_id, current_user, db)
+
+        # Only operators and admins can upload backups
+        if current_user.role == Role.user:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Only operators and admins can upload backups",
+            )
+
+        # Validate file is provided
+        if not file.filename:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="No file provided",
+            )
+
+        backup = await backup_service.upload_backup(
+            server_id=server_id,
+            file=file,
+            name=name,
+            description=description,
+            db=db,
+        )
+
+        backup_response = BackupResponse.from_orm(backup)
+
+        return BackupUploadResponse(
+            success=True,
+            message="Backup uploaded successfully",
+            backup=backup_response,
+            file_size=backup.file_size,
+            original_filename=file.filename,
+        )
+
+    except HTTPException:
+        raise
+    except (ServerNotFoundException, BackupNotFoundException) as e:
+        raise e  # These already have proper HTTP status codes
+    except (FileOperationException, DatabaseOperationException) as e:
+        raise e  # These already have proper HTTP status codes
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to upload backup: {str(e)}",
         )
 
 
