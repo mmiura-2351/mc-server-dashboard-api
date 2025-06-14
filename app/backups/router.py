@@ -1,4 +1,7 @@
+import os
+
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
 from app.auth.dependencies import get_current_user
@@ -20,7 +23,7 @@ from app.core.exceptions import (
     FileOperationException,
     ServerNotFoundException,
 )
-from app.servers.models import BackupType
+from app.servers.models import BackupStatus, BackupType
 from app.services.authorization_service import authorization_service
 from app.services.backup_service import backup_service
 from app.users.models import Role, User
@@ -374,6 +377,56 @@ async def restore_backup_and_create_template(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to restore backup and create template: {str(e)}",
+        )
+
+
+@router.get("/backups/{backup_id}/download")
+async def download_backup(
+    backup_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Download a backup file
+
+    Downloads the backup file as a binary stream.
+    Users can only download backups for servers they have access to.
+    """
+    try:
+        # Check backup access
+        backup = authorization_service.check_backup_access(backup_id, current_user, db)
+
+        # Verify backup is completed
+        if backup.status != BackupStatus.completed:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Backup is not completed and cannot be downloaded",
+            )
+
+        # Check if file exists
+        if not os.path.exists(backup.file_path):
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Backup file not found on disk",
+            )
+
+        # Generate filename for download
+        backup_filename = f"{backup.server.name}_{backup.name}_{backup.id}.tar.gz"
+
+        # Return file response with proper headers
+        return FileResponse(
+            path=backup.file_path,
+            filename=backup_filename,
+            media_type="application/gzip",
+            headers={"Content-Disposition": f'attachment; filename="{backup_filename}"'},
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to download backup: {str(e)}",
         )
 
 
