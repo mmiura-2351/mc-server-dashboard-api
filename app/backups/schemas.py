@@ -276,3 +276,42 @@ class SchedulerStatusResponse(BaseModel):
     enabled_schedules: int
     cache_size: int
     next_execution: Optional[datetime] = None
+
+
+class BackupUploadRequest(BaseModel):
+    """Request schema for uploading a backup"""
+
+    name: Optional[str] = Field(
+        None, min_length=1, max_length=100, description="Backup name (optional)"
+    )
+    description: Optional[str] = Field(
+        None, max_length=500, description="Optional backup description"
+    )
+
+    @field_validator("name")
+    @classmethod
+    def validate_name(cls, v: Optional[str]) -> Optional[str]:
+        """Validate backup name"""
+        if v is None:
+            return v
+
+        v = v.strip()
+        if not v:
+            return None
+
+        # Check for invalid characters
+        invalid_chars = ["/", "\\", ":", "*", "?", '"', "<", ">", "|"]
+        if any(char in v for char in invalid_chars):
+            raise ValueError("Backup name contains invalid characters")
+
+        return v
+
+
+class BackupUploadResponse(BaseModel):
+    """Response schema for backup upload"""
+
+    success: bool
+    message: str
+    backup: Optional[BackupResponse] = None
+    file_size: int
+    original_filename: str

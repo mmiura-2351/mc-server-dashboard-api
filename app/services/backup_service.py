@@ -3,10 +3,13 @@ import shutil
 import tarfile
 from datetime import datetime
 from pathlib import Path
-from typing import Annotated, Optional
+from typing import TYPE_CHECKING, Annotated, Optional
 
 from sqlalchemy import and_
 from sqlalchemy.orm import Session
+
+if TYPE_CHECKING:
+    from fastapi import UploadFile
 
 from app.core.exceptions import (
     BackupNotFoundException,
@@ -786,6 +789,101 @@ class BackupService:
         except Exception as e:
             logger.error(f"Failed to get backup statistics: {e}")
             raise DatabaseOperationException("get statistics", "backups", str(e))
+
+    async def upload_backup(
+        self,
+        server_id: int,
+        file: "UploadFile",
+        name: Optional[str] = None,
+        description: Optional[str] = None,
+        db: Session = None,
+    ) -> Backup:
+        """Upload a backup file and create backup record"""
+        try:
+            # Validate server exists
+            server = BackupValidationService.validate_server_for_backup(server_id, db)
+
+            # Validate file is a valid tar.gz file
+            if not file.filename.endswith((".tar.gz", ".tgz")):
+                raise FileOperationException(
+                    "upload", file.filename, "Only .tar.gz and .tgz files are supported"
+                )
+
+            # Generate backup name if not provided
+            if not name:
+                timestamp = datetime.now().strftime("%Y-%m-%d %H:%M")
+                name = f"Uploaded backup - {timestamp}"
+
+            # Generate unique filename
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            backup_filename = f"server_{server_id}_{timestamp}.tar.gz"
+            backup_path = self.backups_directory / backup_filename
+
+            # Read file content
+            content = await file.read()
+            file_size = len(content)
+
+            # Validate file size (max 500MB)
+            max_size = 500 * 1024 * 1024  # 500MB
+            if file_size > max_size:
+                raise FileOperationException(
+                    "upload",
+                    file.filename,
+                    f"File size ({file_size / (1024*1024):.1f}MB) exceeds maximum allowed size (500MB)",
+                )
+
+            # Validate content is a valid tar.gz file
+            import io
+            import tarfile
+
+            try:
+                with tarfile.open(fileobj=io.BytesIO(content), mode="r:gz") as tar:
+                    # Just check if we can open it as a tar.gz file
+                    tar.getnames()
+            except Exception as e:
+                raise FileOperationException(
+                    "upload", file.filename, f"Invalid tar.gz file: {str(e)}"
+                )
+
+            # Create backup directory if it doesn't exist
+            self.backups_directory.mkdir(exist_ok=True)
+
+            # Write file to backup directory
+            with open(backup_path, "wb") as f:
+                f.write(content)
+
+            logger.info(f"Uploaded backup file: {backup_path} ({file_size} bytes)")
+
+            # Create backup record in database
+            backup = Backup(
+                server_id=server_id,
+                name=name,
+                description=description,
+                file_path=str(backup_path),
+                file_size=file_size,
+                backup_type=BackupType.manual,
+                status=BackupStatus.completed,  # Uploaded backups are immediately completed
+                created_at=datetime.now(),
+            )
+
+            db.add(backup)
+            db.commit()
+            db.refresh(backup)
+
+            logger.info(f"Created backup record: ID {backup.id}")
+
+            return backup
+
+        except Exception as e:
+            logger.error(f"Failed to upload backup for server {server_id}: {e}")
+            # Clean up file if it was created
+            if "backup_path" in locals() and backup_path.exists():
+                backup_path.unlink()
+
+            if isinstance(e, (FileOperationException, DatabaseOperationException)):
+                raise e
+            else:
+                raise DatabaseOperationException("upload", "backup", str(e))
 
 
 # Global backup service instance
