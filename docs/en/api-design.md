@@ -71,10 +71,6 @@ class Permissions:
     BACKUP_WRITE = "backup:write"
     BACKUP_DELETE = "backup:delete"
     
-    # Template permissions
-    TEMPLATE_READ = "template:read"
-    TEMPLATE_WRITE = "template:write"
-    TEMPLATE_PUBLIC = "template:public"
     
     # File permissions
     FILE_READ = "file:read"
@@ -811,77 +807,7 @@ Create backup schedule.
 }
 ```
 
-### 6. Template Management Endpoints
-
-#### GET /templates
-List templates.
-
-**Query Parameters:**
-- `category` (string): Filter by category
-- `minecraft_version` (string): Filter by Minecraft version
-- `server_type` (string): Filter by server type
-- `is_public` (boolean): Show only public templates
-- `tags` (array): Filter by tags
-- `sort` (string): Sort by (rating, downloads, created_at)
-
-**Response (200 OK):**
-```json
-{
-  "templates": [
-    {
-      "id": "550e8400-e29b-41d4-a716-446655440000",
-      "name": "Survival Plus",
-      "description": "Enhanced survival experience with quality-of-life plugins",
-      "category": "survival",
-      "minecraft_version": "1.21.5",
-      "server_type": "paper",
-      "memory_mb": 2048,
-      "tags": ["survival", "plugins", "economy"],
-      "is_public": true,
-      "rating": 4.7,
-      "download_count": 156,
-      "created_at": "2024-01-10T10:00:00Z",
-      "created_by": {
-        "id": "440e8400-e29b-41d4-a716-446655440000",
-        "username": "template_creator"
-      },
-      "preview": {
-        "plugin_count": 12,
-        "configuration_files": 8,
-        "estimated_setup_time": "5 minutes"
-      },
-      "_links": {
-        "self": "/api/v2/templates/550e8400-e29b-41d4-a716-446655440000",
-        "clone": "/api/v2/templates/550e8400-e29b-41d4-a716-446655440000/clone"
-      }
-    }
-  ]
-}
-```
-
-#### POST /templates
-Create template.
-
-#### GET /templates/{template_id}
-Get template details.
-
-#### POST /templates/{template_id}/clone
-Clone template to create new server.
-
-**Request Body:**
-```json
-{
-  "server_name": "my-survival-server",
-  "port": 25565,
-  "memory_mb": 4096,
-  "configuration_overrides": {
-    "max_players": 15,
-    "difficulty": "hard"
-  }
-}
-```
-
-### 7. File Management Endpoints
+### 6. File Management Endpoints
 
 #### GET /servers/{server_id}/files
 Browse server files.
@@ -1022,7 +948,7 @@ Get file edit history.
 }
 ```
 
-### 8. Administrative Endpoints
+### 7. Administrative Endpoints
 
 #### GET /admin/users
 List all users (Admin only).
@@ -1079,7 +1005,7 @@ Get audit logs.
 #### GET /admin/metrics
 Get system metrics.
 
-### 9. Job Status Endpoints
+### 8. Job Status Endpoints
 
 #### GET /jobs/{job_id}
 Get job status.

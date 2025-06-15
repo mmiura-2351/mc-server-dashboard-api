@@ -10,7 +10,7 @@ This document provides a comprehensive development roadmap for rebuilding the Mi
 |-------|----------|------------|------------------|
 | Phase 1 | Weeks 1-2 | Foundation | Core architecture, authentication, basic CRUD |
 | Phase 2 | Weeks 3-6 | Core Domains | Server, User, Group management with full functionality |
-| Phase 3 | Weeks 7-10 | Advanced Features | Backups, Templates, Files, Background processing |
+| Phase 3 | Weeks 7-10 | Advanced Features | Backups, Files, Background processing |
 | Phase 4 | Weeks 11-12 | Real-time & Monitoring | WebSockets, metrics, performance optimization |
 | Phase 5 | Weeks 13-14 | Migration & Deployment | Data migration, production deployment, go-live |
 
@@ -254,14 +254,12 @@ This document provides a comprehensive development roadmap for rebuilding the Mi
 #### Sprint 5.1: Java Version Management and Templates (Days 21-23)
 **Objectives:**
 - Implement Java version compatibility system
-- Add server template foundation
 - Create server import/export functionality
 
 **Tasks:**
 - [ ] Create Java version compatibility matrix
 - [ ] Implement automatic Java version selection
 - [ ] Add server JAR download and caching system
-- [ ] Create basic template system for server creation
 - [ ] Implement server configuration export
 - [ ] Add server cloning functionality
 - [ ] Create server import validation
@@ -275,7 +273,6 @@ This document provides a comprehensive development roadmap for rebuilding the Mi
 **Acceptance Criteria:**
 - [ ] Correct Java versions are automatically selected
 - [ ] Server JARs are cached efficiently
-- [ ] Server templates can be created and used
 - [ ] Server configurations can be exported/imported
 
 #### Sprint 5.2: File Management Foundation (Days 24-25)
@@ -419,96 +416,95 @@ This document provides a comprehensive development roadmap for rebuilding the Mi
 - [ ] Backup API supports all management operations
 - [ ] Backup performance meets requirements
 
-### Week 8: Template Management System
+### Week 8: Enhanced File Management System
 
-#### Sprint 8.1: Template Engine (Days 36-38)
+#### Sprint 8.1: Enhanced File Management (Days 36-38)
 **Objectives:**
-- Implement comprehensive template system
-- Add template creation from servers
-- Create template customization features
+- Implement comprehensive file management system
+- Add file synchronization features
+- Create file collaboration tools
 
 **Tasks:**
-- [ ] Create Template domain with business logic
-- [ ] Implement template creation from existing servers
-- [ ] Add template configuration management
-- [ ] Create template file and plugin handling
-- [ ] Implement template categorization and tagging
-- [ ] Add template validation and testing
-- [ ] Create template version management
-- [ ] Implement template sharing system
-
-**Deliverables:**
-- Complete template system
-- Template creation and management
-- Template sharing features
-
-**Acceptance Criteria:**
-- [ ] Templates capture all server configurations
-- [ ] Templates can be created from any server
-- [ ] Template sharing works with proper permissions
-- [ ] Template versions are managed correctly
-
-#### Sprint 8.2: Template Marketplace and Cloning (Days 39-40)
-**Objectives:**
-- Create template marketplace features
-- Implement template cloning to servers
-- Add template rating and review system
-
-**Tasks:**
-- [ ] Create public template marketplace
-- [ ] Implement template search and discovery
-- [ ] Add template rating and review system
-- [ ] Create template cloning to new servers
-- [ ] Implement template update notifications
-- [ ] Add template usage analytics
-- [ ] Create template API endpoints
-- [ ] Implement template performance optimization
-
-**Deliverables:**
-- Template marketplace
-- Template cloning system
-- Template rating system
-
-**Acceptance Criteria:**
-- [ ] Public templates are discoverable
-- [ ] Template cloning creates functional servers
-- [ ] Rating system provides useful feedback
-- [ ] Template API supports all operations
-
-### Week 9: Enhanced File Management
-
-#### Sprint 9.1: Advanced File Operations (Days 41-43)
-**Objectives:**
-- Enhance file management with advanced features
-- Implement file synchronization
-- Add file collaboration features
-
-**Tasks:**
+- [ ] Create File domain with business logic
 - [ ] Implement file versioning and comparison
 - [ ] Add file synchronization between servers
 - [ ] Create file editing with syntax highlighting
-- [ ] Implement file templates and snippets
 - [ ] Add file search with content indexing
 - [ ] Create file collaboration features
-- [ ] Implement file backup and recovery
-- [ ] Add file access control and permissions
+- [ ] Implement file backup integration
+- [ ] Add file permission management
+
+**Deliverables:**
+- Complete file management system
+- File versioning and collaboration
+- File synchronization features
+
+**Acceptance Criteria:**
+- [ ] Files can be edited with proper syntax highlighting
+- [ ] File versions are tracked and comparable
+- [ ] File collaboration works with proper permissions
+- [ ] File search indexes content effectively
+
+#### Sprint 8.2: Advanced File Operations (Days 39-40)
+**Objectives:**
+- Create advanced file operations
+- Implement file automation
+- Add bulk file management
+
+**Tasks:**
+- [ ] Create bulk file operations
+- [ ] Implement file automation and scripts
+- [ ] Add file compression and archiving
+- [ ] Create file deployment pipelines
+- [ ] Implement file monitoring and alerts
+- [ ] Add file analytics and reporting
+- [ ] Create file API endpoints
+- [ ] Implement file performance optimization
 
 **Deliverables:**
 - Advanced file operations
-- File versioning system
-- File collaboration features
+- File automation system
+- Bulk file management
 
 **Acceptance Criteria:**
-- [ ] File versions can be compared and restored
-- [ ] File synchronization works reliably
-- [ ] File editing provides good developer experience
-- [ ] File permissions are granular and secure
+- [ ] Bulk operations work efficiently
+- [ ] File automation reduces manual tasks
+- [ ] File monitoring provides useful alerts
+- [ ] File API supports all operations
 
-#### Sprint 9.2: File API and Integration (Days 44-45)
+### Week 9: Background Processing and Jobs
+
+#### Sprint 9.1: Job System Implementation (Days 41-43)
 **Objectives:**
-- Complete file management API
-- Integrate with server operations
-- Add file monitoring and alerts
+- Implement comprehensive background job system
+- Add job queue management
+- Create job monitoring and reporting
+
+**Tasks:**
+- [ ] Create Job domain with business logic
+- [ ] Implement RQ (Redis Queue) integration
+- [ ] Add job status tracking and updates
+- [ ] Create job progress reporting
+- [ ] Implement job retry and failure handling
+- [ ] Add job prioritization system
+- [ ] Create job cleanup and archiving
+
+**Deliverables:**
+- Background job system
+- Job queue management
+- Job monitoring features
+
+**Acceptance Criteria:**
+- [ ] Jobs execute reliably in background
+- [ ] Job status is tracked accurately
+- [ ] Failed jobs are retried appropriately
+- [ ] Job performance is monitored
+
+#### Sprint 9.2: Job Integration and Optimization (Days 44-45)
+**Objectives:**
+- Integrate job system with all operations
+- Optimize job performance
+- Add job analytics and monitoring
 
 **Tasks:**
 - [ ] Create comprehensive file management API
@@ -569,7 +565,6 @@ This document provides a comprehensive development roadmap for rebuilding the Mi
 **Tasks:**
 - [ ] Integrate jobs with server operations
 - [ ] Add backup jobs with progress tracking
-- [ ] Create template generation jobs
 - [ ] Implement file operation jobs
 - [ ] Add job performance optimization
 - [ ] Create job analytics and reporting

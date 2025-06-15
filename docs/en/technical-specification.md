@@ -27,7 +27,6 @@ mc-server-dashboard-api-v2/
 │   ├── servers/
 │   ├── groups/
 │   ├── backups/
-│   ├── templates/
 │   ├── files/
 │   ├── monitoring/
 │   └── migrations/
@@ -1196,7 +1195,6 @@ class Settings(BaseSettings):
     # Server Management
     servers_directory: str = Field("./servers", env="SERVERS_DIRECTORY")
     backups_directory: str = Field("./backups", env="BACKUPS_DIRECTORY")
-    templates_directory: str = Field("./templates", env="TEMPLATES_DIRECTORY")
     cache_directory: str = Field("./cache", env="CACHE_DIRECTORY")
     
     # Java
@@ -1459,7 +1457,6 @@ from app.users.api.router import router as users_router
 from app.servers.api.router import router as servers_router
 from app.groups.api.router import router as groups_router
 from app.backups.api.router import router as backups_router
-from app.templates.api.router import router as templates_router
 from app.files.api.router import router as files_router
 from app.monitoring.api.router import router as monitoring_router
 
@@ -1519,7 +1516,6 @@ def create_app() -> FastAPI:
     app.include_router(servers_router)
     app.include_router(groups_router)
     app.include_router(backups_router)
-    app.include_router(templates_router)
     app.include_router(files_router)
     app.include_router(monitoring_router)
     
@@ -1567,7 +1563,7 @@ uv init
 uv add fastapi[all] sqlalchemy[asyncio] asyncpg redis rq celery pydantic-settings structlog pytest pytest-asyncio httpx
 
 # Create basic structure
-mkdir -p app/{shared,users,servers,groups,backups,templates,files,monitoring}
+mkdir -p app/{shared,users,servers,groups,backups,files,monitoring}
 mkdir -p tests/{unit,integration,e2e}
 mkdir -p docs
 mkdir -p scripts
@@ -1611,7 +1607,6 @@ mkdir -p scripts
 #### Phase 3: Advanced Features (4 weeks)
 1. Background job processing (server start/stop)
 2. Backup Management domain
-3. Template Management domain
 4. File Management domain
 5. Event-driven architecture completion
 

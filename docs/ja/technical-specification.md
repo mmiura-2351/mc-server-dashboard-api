@@ -27,7 +27,6 @@ mc-server-dashboard-api-v2/
 │   ├── servers/
 │   ├── groups/
 │   ├── backups/
-│   ├── templates/
 │   ├── files/
 │   ├── monitoring/
 │   └── migrations/
@@ -1611,7 +1610,6 @@ mkdir -p scripts
 #### フェーズ 3: 高度な機能（4週間）
 1. バックグラウンドジョブ処理（サーバー起動/停止）
 2. バックアップ管理ドメイン
-3. テンプレート管理ドメイン
 4. ファイル管理ドメイン
 5. イベント駆動アーキテクチャの完成
 

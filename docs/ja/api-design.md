@@ -71,10 +71,6 @@ class Permissions:
     BACKUP_WRITE = "backup:write"
     BACKUP_DELETE = "backup:delete"
     
-    # テンプレート権限
-    TEMPLATE_READ = "template:read"
-    TEMPLATE_WRITE = "template:write"
-    TEMPLATE_PUBLIC = "template:public"
     
     # ファイル権限
     FILE_READ = "file:read"
@@ -811,77 +807,7 @@ Authorization: Bearer eyJhbGciOiJIUzI1NiIs...
 }
 ```
 
-### 6. テンプレート管理エンドポイント
-
-#### GET /templates
-テンプレートをリストする。
-
-**クエリパラメータ:**
-- `category` (string): カテゴリでフィルタ
-- `minecraft_version` (string): Minecraftバージョンでフィルタ
-- `server_type` (string): サーバータイプでフィルタ
-- `is_public` (boolean): パブリックテンプレートのみ表示
-- `tags` (array): タグでフィルタ
-- `sort` (string): ソート (rating, downloads, created_at)
-
-**レスポンス (200 OK):**
-```json
-{
-  "templates": [
-    {
-      "id": "550e8400-e29b-41d4-a716-446655440000",
-      "name": "Survival Plus",
-      "description": "QOLプラグイン付きサバイバル体験",
-      "category": "survival",
-      "minecraft_version": "1.21.5",
-      "server_type": "paper",
-      "memory_mb": 2048,
-      "tags": ["survival", "plugins", "economy"],
-      "is_public": true,
-      "rating": 4.7,
-      "download_count": 156,
-      "created_at": "2024-01-10T10:00:00Z",
-      "created_by": {
-        "id": "440e8400-e29b-41d4-a716-446655440000",
-        "username": "template_creator"
-      },
-      "preview": {
-        "plugin_count": 12,
-        "configuration_files": 8,
-        "estimated_setup_time": "5分"
-      },
-      "_links": {
-        "self": "/api/v2/templates/550e8400-e29b-41d4-a716-446655440000",
-        "clone": "/api/v2/templates/550e8400-e29b-41d4-a716-446655440000/clone"
-      }
-    }
-  ]
-}
-```
-
-#### POST /templates
-テンプレートを作成する。
-
-#### GET /templates/{template_id}
-テンプレートの詳細を取得する。
-
-#### POST /templates/{template_id}/clone
-テンプレートをクローンして新しいサーバーを作成する。
-
-**リクエストボディ:**
-```json
-{
-  "server_name": "my-survival-server",
-  "port": 25565,
-  "memory_mb": 4096,
-  "configuration_overrides": {
-    "max_players": 15,
-    "difficulty": "hard"
-  }
-}
-```
-
-### 7. ファイル管理エンドポイント
+### 6. ファイル管理エンドポイント
 
 #### GET /servers/{server_id}/files
 サーバーファイルを参照する。
@@ -1022,7 +948,7 @@ Authorization: Bearer eyJhbGciOiJIUzI1NiIs...
 }
 ```
 
-### 8. 管理エンドポイント
+### 7. 管理エンドポイント
 
 #### GET /admin/users
 すべてのユーザーをリストする（管理者のみ）。
@@ -1079,7 +1005,7 @@ Authorization: Bearer eyJhbGciOiJIUzI1NiIs...
 #### GET /admin/metrics
 システムメトリクスを取得する。
 
-### 9. ジョブステータスエンドポイント
+### 8. ジョブステータスエンドポイント
 
 #### GET /jobs/{job_id}
 ジョブステータスを取得する。

@@ -2,7 +2,7 @@
 
 ## Overview
 
-This document outlines the complete architecture design for rebuilding the Minecraft Server Dashboard API from scratch, addressing the complexity issues identified in the current system while maintaining all 46 use cases (UC1-46).
+This document outlines the complete architecture design for rebuilding the Minecraft Server Dashboard API from scratch, addressing the complexity issues identified in the current system while maintaining core functionality across 6 bounded contexts.
 
 ## Architecture Philosophy
 
@@ -220,26 +220,7 @@ backups/
 └── api/
 ```
 
-#### 5. Template Management Context
-```
-templates/
-├── domain/
-│   ├── entities/
-│   │   └── server_template.py
-│   ├── value_objects/
-│   │   └── template_id.py
-│   ├── repositories/
-│   │   └── template_repository.py
-│   ├── events/
-│   │   └── template_created.py
-│   └── services/
-│       └── template_service.py
-├── application/
-├── infrastructure/
-└── api/
-```
-
-#### 6. File Management Context
+#### 5. File Management Context
 ```
 files/
 ├── domain/
@@ -262,7 +243,7 @@ files/
 └── api/
 ```
 
-#### 7. Monitoring Context
+#### 6. Monitoring Context
 ```
 monitoring/
 ├── domain/
@@ -498,16 +479,6 @@ CREATE TABLE backup_schedules (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
--- Templates table
-CREATE TABLE templates (
-    id UUID PRIMARY KEY,
-    name VARCHAR(100) NOT NULL,
-    description TEXT,
-    configuration JSONB NOT NULL,
-    is_public BOOLEAN DEFAULT false,
-    created_by UUID REFERENCES users(id),
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
 ```
 
 ### Read Models (Denormalized)
@@ -592,13 +563,6 @@ GROUP BY g.id, g.name, g.group_type, g.created_at, u.username;
 │   ├── GET /servers/{server_id}/schedules
 │   ├── POST /servers/{server_id}/schedules
 │   └── DELETE /schedules/{schedule_id}
-├── templates/
-│   ├── GET /
-│   ├── POST /
-│   ├── GET /{template_id}
-│   ├── PUT /{template_id}
-│   ├── DELETE /{template_id}
-│   └── POST /{template_id}/clone
 ├── files/
 │   ├── GET /servers/{server_id}/files
 │   ├── GET /servers/{server_id}/files/{file_path}
@@ -674,8 +638,6 @@ class Permission:
     GROUP_WRITE = "group:write"
     BACKUP_READ = "backup:read"
     BACKUP_WRITE = "backup:write"
-    TEMPLATE_READ = "template:read"
-    TEMPLATE_WRITE = "template:write"
     FILE_READ = "file:read"
     FILE_WRITE = "file:write"
 ```
@@ -927,9 +889,8 @@ spec:
 
 ### Phase 3: Advanced Features (Weeks 7-10)
 1. Backup Management domain
-2. Template Management domain
-3. File Management domain
-4. Background job processing
+2. File Management domain
+3. Background job processing
 
 ### Phase 4: Real-time & Monitoring (Weeks 11-12)
 1. WebSocket implementation

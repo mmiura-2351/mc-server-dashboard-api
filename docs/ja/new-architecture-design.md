@@ -2,7 +2,7 @@
 
 ## 概要
 
-この文書は、Minecraft Server Dashboard APIをゼロから再構築するための完全なアーキテクチャ設計を概説しています。現在のシステムで特定された複雑性の問題に対処しながら、46のユースケース（UC1-46）すべてを維持します。
+この文書は、Minecraft Server Dashboard APIをゼロから再構築するための完全なアーキテクチャ設計を概説しています。現在のシステムで特定された複雑性の問題に対処しながら、6つの境界付きコンテキストを通じてコア機能を維持します。
 
 ## アーキテクチャの理念
 
@@ -220,26 +220,7 @@ backups/
 └── api/
 ```
 
-#### 5. テンプレート管理コンテキスト
-```
-templates/
-├── domain/
-│   ├── entities/
-│   │   └── server_template.py
-│   ├── value_objects/
-│   │   └── template_id.py
-│   ├── repositories/
-│   │   └── template_repository.py
-│   ├── events/
-│   │   └── template_created.py
-│   └── services/
-│       └── template_service.py
-├── application/
-├── infrastructure/
-└── api/
-```
-
-#### 6. ファイル管理コンテキスト
+#### 5. ファイル管理コンテキスト
 ```
 files/
 ├── domain/
@@ -262,7 +243,7 @@ files/
 └── api/
 ```
 
-#### 7. 監視コンテキスト
+#### 6. 監視コンテキスト
 ```
 monitoring/
 ├── domain/
@@ -498,16 +479,6 @@ CREATE TABLE backup_schedules (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
--- テンプレートテーブル
-CREATE TABLE templates (
-    id UUID PRIMARY KEY,
-    name VARCHAR(100) NOT NULL,
-    description TEXT,
-    configuration JSONB NOT NULL,
-    is_public BOOLEAN DEFAULT false,
-    created_by UUID REFERENCES users(id),
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
 ```
 
 ### 読み取りモデル（非正規化）
@@ -592,13 +563,6 @@ GROUP BY g.id, g.name, g.group_type, g.created_at, u.username;
 │   ├── GET /servers/{server_id}/schedules
 │   ├── POST /servers/{server_id}/schedules
 │   └── DELETE /schedules/{schedule_id}
-├── templates/
-│   ├── GET /
-│   ├── POST /
-│   ├── GET /{template_id}
-│   ├── PUT /{template_id}
-│   ├── DELETE /{template_id}
-│   └── POST /{template_id}/clone
 ├── files/
 │   ├── GET /servers/{server_id}/files
 │   ├── GET /servers/{server_id}/files/{file_path}
@@ -674,8 +638,6 @@ class Permission:
     GROUP_WRITE = "group:write"
     BACKUP_READ = "backup:read"
     BACKUP_WRITE = "backup:write"
-    TEMPLATE_READ = "template:read"
-    TEMPLATE_WRITE = "template:write"
     FILE_READ = "file:read"
     FILE_WRITE = "file:write"
 ```
@@ -927,9 +889,8 @@ spec:
 
 ### フェーズ 3: 高度な機能（第7-10週）
 1. バックアップ管理ドメイン
-2. テンプレート管理ドメイン
-3. ファイル管理ドメイン
-4. バックグラウンドジョブ処理
+2. ファイル管理ドメイン
+3. バックグラウンドジョブ処理
 
 ### フェーズ 4: リアルタイム＆監視（第11-12週）
 1. WebSocket実装

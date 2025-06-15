@@ -291,68 +291,7 @@ CREATE INDEX idx_backup_schedules_active ON backup_schedules(is_active, next_run
 CREATE INDEX idx_backup_schedules_next_run ON backup_schedules(next_run_at);
 ```
 
-### 5. Templates Domain
-
-#### Templates Table
-```sql
-CREATE TABLE templates (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    name VARCHAR(100) NOT NULL,
-    description TEXT,
-    category VARCHAR(50) DEFAULT 'general',
-    minecraft_version VARCHAR(20) NOT NULL,
-    server_type VARCHAR(20) DEFAULT 'vanilla',
-    memory_mb INTEGER NOT NULL,
-    java_args TEXT,
-    configuration JSONB NOT NULL DEFAULT '{}',
-    files JSONB DEFAULT '{}',
-    tags TEXT[] DEFAULT ARRAY[]::TEXT[],
-    is_public BOOLEAN DEFAULT false,
-    download_count INTEGER DEFAULT 0,
-    rating DECIMAL(3,2) DEFAULT 0.0,
-    created_by UUID REFERENCES users(id),
-    created_from_server UUID REFERENCES servers(id),
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    updated_at TIMESTAMP WITH TIME ZONE,
-    version INTEGER DEFAULT 1,
-    
-    CONSTRAINT templates_memory_range CHECK (memory_mb BETWEEN 512 AND 32768),
-    CONSTRAINT templates_rating_range CHECK (rating BETWEEN 0.0 AND 5.0),
-    CONSTRAINT templates_name_owner_unique UNIQUE (name, created_by)
-);
-
--- Indexes
-CREATE INDEX idx_templates_public ON templates(is_public, category) WHERE is_public = true;
-CREATE INDEX idx_templates_creator ON templates(created_by);
-CREATE INDEX idx_templates_version ON templates(minecraft_version);
-CREATE INDEX idx_templates_type ON templates(server_type);
-CREATE INDEX idx_templates_rating ON templates(rating DESC);
-CREATE INDEX idx_templates_downloads ON templates(download_count DESC);
-CREATE INDEX idx_templates_tags ON templates USING GIN(tags);
-```
-
-#### Template Reviews Table
-```sql
-CREATE TABLE template_reviews (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    template_id UUID NOT NULL REFERENCES templates(id) ON DELETE CASCADE,
-    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    rating INTEGER NOT NULL,
-    review_text TEXT,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    updated_at TIMESTAMP WITH TIME ZONE,
-    
-    CONSTRAINT reviews_rating_range CHECK (rating BETWEEN 1 AND 5),
-    CONSTRAINT reviews_template_user_unique UNIQUE (template_id, user_id)
-);
-
--- Indexes
-CREATE INDEX idx_template_reviews_template ON template_reviews(template_id);
-CREATE INDEX idx_template_reviews_user ON template_reviews(user_id);
-CREATE INDEX idx_template_reviews_rating ON template_reviews(rating);
-```
-
-### 6. Files Domain
+### 5. Files Domain
 
 #### File History Table
 ```sql
@@ -382,7 +321,7 @@ CREATE INDEX idx_file_history_hash ON file_history(content_hash);
 CREATE INDEX idx_file_history_type ON file_history(change_type);
 ```
 
-### 7. Monitoring Domain
+### 6. Monitoring Domain
 
 #### Server Metrics Table
 ```sql
@@ -438,7 +377,7 @@ CREATE INDEX idx_audit_logs_correlation ON audit_logs(correlation_id);
 CREATE INDEX idx_audit_logs_time ON audit_logs(occurred_at DESC);
 ```
 
-### 8. Event Sourcing
+### 7. Event Sourcing
 
 #### Domain Events Table
 ```sql
@@ -591,27 +530,6 @@ CREATE TRIGGER trigger_servers_updated_at
 -- Continue for other tables...
 ```
 
-### Template Rating Calculation
-```sql
-CREATE OR REPLACE FUNCTION update_template_rating()
-RETURNS TRIGGER AS $$
-BEGIN
-    UPDATE templates 
-    SET rating = (
-        SELECT COALESCE(AVG(rating), 0.0)
-        FROM template_reviews 
-        WHERE template_id = COALESCE(NEW.template_id, OLD.template_id)
-    )
-    WHERE id = COALESCE(NEW.template_id, OLD.template_id);
-    
-    RETURN COALESCE(NEW, OLD);
-END;
-$$ LANGUAGE plpgsql;
-
-CREATE TRIGGER trigger_template_rating_update
-    AFTER INSERT OR UPDATE OR DELETE ON template_reviews
-    FOR EACH ROW EXECUTE FUNCTION update_template_rating();
-```
 
 ### Server Status Validation
 ```sql
