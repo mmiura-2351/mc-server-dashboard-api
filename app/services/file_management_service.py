@@ -801,6 +801,7 @@ class FileManagementService:
         file: UploadFile,
         destination_path: str = "",
         extract_if_archive: bool = False,
+        user: User = None,
         db: Session = None,
     ) -> Dict[str, Any]:
         """Upload file to server directory"""
