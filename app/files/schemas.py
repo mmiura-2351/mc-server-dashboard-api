@@ -102,6 +102,7 @@ class FileHistoryRecord(BaseModel):
     server_id: int
     file_path: str
     version_number: int
+    backup_file_path: str
     file_size: int
     content_hash: Optional[str]
     editor_user_id: Optional[int]

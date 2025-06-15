@@ -103,6 +103,7 @@ class TestFileHistoryServiceEnhancedCoverage:
                                     server_id=1,
                                     file_path="normalized/path.txt",
                                     version_number=1,
+                                    backup_file_path="/tmp/backup/file.txt",
                                     file_size=12,
                                     content_hash=expected_hash,
                                     editor_user_id=1,
@@ -185,7 +186,7 @@ class TestFileHistoryServiceEnhancedCoverage:
             with patch.object(service, '_to_record_schema') as mock_to_schema:
                 mock_to_schema.return_value = FileHistoryRecord(
                     id=1, server_id=1, file_path="server.properties", version_number=1,
-                    file_size=1024, content_hash="abcd1234", editor_user_id=1,
+                    backup_file_path="/tmp/backup/file.txt", file_size=1024, content_hash="abcd1234", editor_user_id=1,
                     editor_username="testuser", created_at=datetime.now(), description="Test"
                 )
                 
@@ -761,6 +762,7 @@ class TestFileHistoryServiceEnhancedCoverage:
         record.server_id = 1
         record.file_path = "test.txt"
         record.version_number = 1
+        record.backup_file_path = "/tmp/backup/file.txt"
         record.file_size = 1024
         record.content_hash = "abcd1234"
         record.editor_user_id = 1
@@ -784,6 +786,7 @@ class TestFileHistoryServiceEnhancedCoverage:
         record.server_id = 1
         record.file_path = "test.txt"
         record.version_number = 1
+        record.backup_file_path = "/tmp/backup/file.txt"
         record.file_size = 1024
         record.content_hash = "abcd1234"
         record.editor_user_id = None
@@ -892,7 +895,7 @@ class TestFileHistoryServiceIntegration:
                 with patch.object(service, '_to_record_schema') as mock_schema:
                     mock_schema.return_value = FileHistoryRecord(
                         id=1, server_id=1, file_path="test.txt", version_number=1,
-                        file_size=12, content_hash="hash", editor_user_id=1,
+                        backup_file_path="/tmp/backup/file.txt", file_size=12, content_hash="hash", editor_user_id=1,
                         editor_username="test", created_at=datetime.now(), description="test"
                     )
                     
@@ -933,13 +936,13 @@ class TestFileHistoryServiceIntegration:
                         with patch.object(service, '_to_record_schema') as mock_schema:
                             mock_schema.side_effect = [
                                 FileHistoryRecord(id=1, server_id=1, file_path="test.txt", version_number=1,
-                                                file_size=10, content_hash="hash1", editor_user_id=1,
+                                                backup_file_path="/tmp/backup/file.txt", file_size=10, content_hash="hash1", editor_user_id=1,
                                                 editor_username="test", created_at=datetime.now(), description="v1"),
                                 FileHistoryRecord(id=2, server_id=1, file_path="test.txt", version_number=2,
-                                                file_size=10, content_hash="hash2", editor_user_id=1,
+                                                backup_file_path="/tmp/backup/file.txt", file_size=10, content_hash="hash2", editor_user_id=1,
                                                 editor_username="test", created_at=datetime.now(), description="v2"),
                                 FileHistoryRecord(id=3, server_id=1, file_path="test.txt", version_number=3,
-                                                file_size=10, content_hash="hash3", editor_user_id=1,
+                                                backup_file_path="/tmp/backup/file.txt", file_size=10, content_hash="hash3", editor_user_id=1,
                                                 editor_username="test", created_at=datetime.now(), description="v3")
                             ]
                             

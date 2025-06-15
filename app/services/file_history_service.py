@@ -416,6 +416,7 @@ class FileHistoryService:
             server_id=record.server_id,
             file_path=record.file_path,
             version_number=record.version_number,
+            backup_file_path=record.backup_file_path,
             file_size=record.file_size,
             content_hash=record.content_hash,
             editor_user_id=record.editor_user_id,
