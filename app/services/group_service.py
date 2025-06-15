@@ -11,6 +11,7 @@ from app.audit.models import AuditLog
 from app.core.exceptions import FileOperationException
 from app.groups.models import Group, GroupType, ServerGroup
 from app.servers.models import Server
+from app.services.real_time_server_commands import real_time_server_commands
 from app.users.models import Role, User
 
 logger = logging.getLogger(__name__)
@@ -161,6 +162,18 @@ class GroupFileService:
                 logger.info(
                     f"Successfully synchronized server files for server {server_id}"
                 )
+
+                # Send real-time commands to running server if needed
+                # Note: This method is called for batch updates, so we need to handle both types
+                try:
+                    # Always reload whitelist and sync OPs since this is a batch update
+                    # that could affect both types of groups
+                    await real_time_server_commands.reload_whitelist_if_running(server_id)
+                    await real_time_server_commands.sync_op_changes_if_running(server_id, server_path)
+
+                except Exception as cmd_error:
+                    logger.warning(f"Failed to send real-time commands to server {server_id}: {cmd_error}")
+                    # Don't fail the entire operation if real-time commands fail
             else:
                 logger.error(
                     f"Server directory {server_path} does not exist - cannot sync files for server {server_id}"
@@ -500,6 +513,23 @@ class GroupService:
                     f"Manual file sync may be required. Error: {sync_error}"
                 )
 
+            # Send real-time commands for player addition
+            try:
+                # Get all servers this group is attached to and send commands
+                attached_servers = (
+                    self.db.query(ServerGroup.server_id, Server.directory_path)
+                    .join(Server, ServerGroup.server_id == Server.id)
+                    .filter(ServerGroup.group_id == group_id)
+                    .all()
+                )
+                
+                for server_id, directory_path in attached_servers:
+                    await real_time_server_commands.handle_group_change_commands(
+                        server_id, Path(directory_path), group.type, "player_add"
+                    )
+            except Exception as cmd_error:
+                logger.warning(f"Failed to send real-time commands after adding player {username} to group {group_id}: {cmd_error}")
+
             # Create audit log after successful sync
             audit_log = AuditLog.create_log(
                 action="player_added_to_group",
@@ -561,6 +591,23 @@ class GroupService:
                     f"Player {uuid} was successfully removed from group {group_id} but server file sync failed. "
                     f"Manual file sync may be required. Error: {sync_error}"
                 )
+
+            # Send real-time commands for player removal
+            try:
+                # Get all servers this group is attached to and send commands
+                attached_servers = (
+                    self.db.query(ServerGroup.server_id, Server.directory_path)
+                    .join(Server, ServerGroup.server_id == Server.id)
+                    .filter(ServerGroup.group_id == group_id)
+                    .all()
+                )
+                
+                for server_id, directory_path in attached_servers:
+                    await real_time_server_commands.handle_group_change_commands(
+                        server_id, Path(directory_path), group.type, "player_remove"
+                    )
+            except Exception as cmd_error:
+                logger.warning(f"Failed to send real-time commands after removing player {uuid} from group {group_id}: {cmd_error}")
 
             # Create audit log after successful sync
             audit_log = AuditLog.create_log(
@@ -658,6 +705,14 @@ class GroupService:
                     f"Manual file sync may be required. Error: {sync_error}"
                 )
 
+            # Send real-time commands for attachment
+            try:
+                await real_time_server_commands.handle_group_change_commands(
+                    server_id, Path(server.directory_path), group.type, "attach"
+                )
+            except Exception as cmd_error:
+                logger.warning(f"Failed to send real-time commands after attaching group {group_id} to server {server_id}: {cmd_error}")
+
             # Create audit log after successful sync
             audit_log = AuditLog.create_log(
                 action="group_attached_to_server",
@@ -735,6 +790,14 @@ class GroupService:
 
         # Update server files after detachment
         await self.file_service.update_server_files(server_id)
+
+        # Send real-time commands for detachment
+        try:
+            await real_time_server_commands.handle_group_change_commands(
+                server_id, Path(server.directory_path), group.type, "detach"
+            )
+        except Exception as cmd_error:
+            logger.warning(f"Failed to send real-time commands after detaching group {group_id} from server {server_id}: {cmd_error}")
 
     def get_server_groups(self, user: User, server_id: int) -> List[Dict[str, Any]]:
         """Get all groups attached to a server"""
