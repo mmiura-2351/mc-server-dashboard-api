@@ -115,9 +115,6 @@ class GroupFileService:
 
             for group in server_groups:
                 players = group.get_players()
-                logger.info(
-                    f"Processing group '{group.name}' (type: {group.type.value}) with {len(players)} players"
-                )
 
                 for player in players:
                     player_entry = {
@@ -143,9 +140,6 @@ class GroupFileService:
 
             # Write to server files using the actual server directory path
             server_path = Path(server.directory_path)
-            logger.info(
-                f"Generated data for server {server_id}: ops={len(ops_data)} entries, whitelist={len(whitelist_data)} entries"
-            )
 
             if server_path.exists():
                 # Update ops.json
@@ -188,7 +182,7 @@ class GroupFileService:
             # Get all servers in a single query using the existing db session
             servers = (
                 self.db.query(Server)
-                .filter(Server.id.in_(server_ids), not Server.is_deleted)
+                .filter(Server.id.in_(server_ids), ~Server.is_deleted)
                 .all()
             )
 
