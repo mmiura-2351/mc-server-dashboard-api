@@ -69,8 +69,10 @@ class Group(Base):
                 return
 
         # Add new player
+        from datetime import datetime
+
         players.append(
-            {"uuid": uuid, "username": username, "added_at": func.now().description}
+            {"uuid": uuid, "username": username, "added_at": datetime.now().isoformat()}
         )
         self.set_players(players)
 
