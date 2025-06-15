@@ -54,7 +54,11 @@ class Group(Base):
 
     def set_players(self, players: List[Dict[str, Any]]) -> None:
         """Set players from Python list"""
+        # Force SQLAlchemy to detect the change
+        from sqlalchemy.orm.attributes import flag_modified
+
         self.players = players
+        flag_modified(self, "players")
 
     def add_player(self, uuid: str, username: str) -> None:
         """Add a player to the group"""
@@ -69,8 +73,10 @@ class Group(Base):
                 return
 
         # Add new player
+        from datetime import datetime
+
         players.append(
-            {"uuid": uuid, "username": username, "added_at": func.now().description}
+            {"uuid": uuid, "username": username, "added_at": datetime.now().isoformat()}
         )
         self.set_players(players)
 

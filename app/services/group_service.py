@@ -1,4 +1,6 @@
+import asyncio
 import json
+import logging
 from pathlib import Path
 from typing import Annotated, Any, Dict, List, Optional
 
@@ -6,9 +8,13 @@ from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.audit.models import AuditLog
+from app.core.exceptions import FileOperationException
 from app.groups.models import Group, GroupType, ServerGroup
 from app.servers.models import Server
+from app.services.real_time_server_commands import real_time_server_commands
 from app.users.models import Role, User
+
+logger = logging.getLogger(__name__)
 
 
 class GroupAccessService:
@@ -84,7 +90,12 @@ class GroupFileService:
             # Get server info
             server = self.db.query(Server).filter(Server.id == server_id).first()
             if not server:
+                logger.warning(f"Server {server_id} not found during file sync")
                 return
+
+            logger.info(
+                f"Starting file sync for server {server_id} (name: {server.name}, path: {server.directory_path})"
+            )
 
             # Get all groups attached to this server
             server_groups = (
@@ -93,6 +104,10 @@ class GroupFileService:
                 .filter(ServerGroup.server_id == server_id)
                 .order_by(ServerGroup.priority.desc())
                 .all()
+            )
+
+            logger.info(
+                f"Found {len(server_groups)} groups attached to server {server_id}: {[g.name for g in server_groups]}"
             )
 
             # Build ops and whitelist data
@@ -124,23 +139,64 @@ class GroupFileService:
                         if not any(wl["uuid"] == player["uuid"] for wl in whitelist_data):
                             whitelist_data.append(whitelist_entry)
 
-            # Write to server files
-            server_path = Path(f"servers/{server.name}")
+            # Write to server files using the actual server directory path
+            server_path = Path(server.directory_path)
 
             if server_path.exists():
                 # Update ops.json
                 ops_file = server_path / "ops.json"
                 with open(ops_file, "w", encoding="utf-8") as f:
                     json.dump(ops_data, f, indent=2)
+                logger.info(
+                    f"Updated ops.json at {ops_file} with {len(ops_data)} entries"
+                )
 
                 # Update whitelist.json
                 whitelist_file = server_path / "whitelist.json"
                 with open(whitelist_file, "w", encoding="utf-8") as f:
                     json.dump(whitelist_data, f, indent=2)
+                logger.info(
+                    f"Updated whitelist.json at {whitelist_file} with {len(whitelist_data)} entries"
+                )
+
+                logger.info(
+                    f"Successfully synchronized server files for server {server_id}"
+                )
+
+                # Send real-time commands to running server if needed
+                try:
+                    # Reload whitelist for running servers (if any whitelist groups are attached)
+                    has_whitelist_groups = any(
+                        group.type == GroupType.whitelist for group in server_groups
+                    )
+                    if has_whitelist_groups:
+                        await real_time_server_commands.reload_whitelist_if_running(
+                            server_id
+                        )
+                    # Sync OP changes for running servers (if any OP groups are attached)
+                    # Don't fail the entire operation if real-time commands fail
+                    has_op_groups = any(
+                        group.type == GroupType.op for group in server_groups
+                    )
+                    if has_op_groups:
+                        await real_time_server_commands.sync_op_changes_if_running(
+                            server_id, server_path
+                        )
+                except Exception as cmd_error:
+                    logger.warning(
+                        f"Failed to send real-time commands to server {server_id}: {cmd_error}"
+                    )
+            else:
+                logger.error(
+                    f"Server directory {server_path} does not exist - cannot sync files for server {server_id}"
+                )
 
         except Exception as e:
-            # Log error but don't fail the main operation
-            print(f"Error updating server files for server {server_id}: {e}")
+            # Log error with proper logging and re-raise for better error handling
+            logger.error(f"Failed to update server files for server {server_id}: {e}")
+            raise FileOperationException(
+                "update", f"server {server_id} files", str(e)
+            ) from e
 
     async def batch_update_server_files(self, server_ids: List[int]):
         """Batch update server files for multiple servers to reduce N+1 queries"""
@@ -148,31 +204,73 @@ class GroupFileService:
             return
 
         try:
-            # Get all servers in a single query instead of individual lookups
-            from app.core.database import get_db
-            from app.servers.models import Server
+            # Get all servers in a single query using the existing db session
+            servers = (
+                self.db.query(Server)
+                .filter(Server.id.in_(server_ids), ~Server.is_deleted)
+                .all()
+            )
 
-            db = next(get_db())
-            try:
-                servers = (
-                    db.query(Server)
-                    .filter(Server.id.in_(server_ids), not Server.is_deleted)
-                    .all()
+            # Track failed updates for better error reporting
+            failed_updates = []
+
+            # Use the existing file service update logic for each server
+            for server in servers:
+                try:
+                    # Call the original update method directly on the instance
+                    await self.update_server_files(server.id)
+                except Exception as e:
+                    logger.error(
+                        f"Failed to update server files for server {server.id}: {e}"
+                    )
+                    failed_updates.append((server.id, str(e)))
+
+            # Report any failures
+            if failed_updates:
+                error_details = "; ".join(
+                    [f"Server {sid}: {err}" for sid, err in failed_updates]
+                )
+                raise FileOperationException(
+                    "update", "multiple server files", error_details
                 )
 
-                # Use the existing file service update logic for each server
-                for server in servers:
-                    try:
-                        # Call the original update method directly on the instance
-                        await self.update_server_files(server.id)
-                    except Exception as e:
-                        print(f"Error updating server files for server {server.id}: {e}")
-
-            finally:
-                db.close()
-
         except Exception as e:
-            print(f"Error in batch server file update: {e}")
+            logger.error(f"Critical error in batch server file update: {e}")
+            raise FileOperationException("batch update", "server files", str(e)) from e
+
+    async def update_all_affected_servers_with_retry(
+        self, group_id: int, max_retries: int = 3, retry_delay: float = 1.0
+    ) -> None:
+        """Update all affected servers with retry logic for reliability"""
+        last_exception = None
+
+        for attempt in range(max_retries):
+            try:
+                await self.update_all_affected_servers(group_id)
+                if attempt > 0:
+                    logger.info(
+                        f"Server file sync succeeded on attempt {attempt + 1} for group {group_id}"
+                    )
+                return  # Success
+            except Exception as e:
+                last_exception = e
+                logger.warning(
+                    f"Server file sync attempt {attempt + 1} failed for group {group_id}: {e}"
+                )
+
+                if attempt < max_retries - 1:
+                    # Wait before retrying
+                    await asyncio.sleep(
+                        retry_delay * (attempt + 1)
+                    )  # Exponential backoff
+
+        # All retries failed
+        logger.error(
+            f"All {max_retries} attempts to sync server files failed for group {group_id}"
+        )
+        raise FileOperationException(
+            "sync", f"server files (after {max_retries} attempts)", str(last_exception)
+        ) from last_exception
 
     async def update_all_affected_servers(
         self, group_id: Annotated[int, "ID of group that was modified"]
@@ -401,27 +499,75 @@ class GroupService:
                 detail="Either uuid or username must be provided",
             )
 
-        # Add player using model method
-        group.add_player(uuid, username)
+        try:
+            # Add player using model method
+            group.add_player(uuid, username)
 
-        self.db.commit()
-        self.db.refresh(group)
+            # Commit the player addition first
+            self.db.commit()
+            self.db.refresh(group)
 
-        # Update server files for all servers using this group
-        await self.file_service.update_all_affected_servers(group_id)
+            # Update server files for all servers using this group with retry logic
+            # This is critical - if this fails, we need to know about it
+            try:
+                await self.file_service.update_all_affected_servers_with_retry(group_id)
+                logger.info(
+                    f"Successfully synchronized server files after adding player {username} to group {group_id}"
+                )
+            except Exception as sync_error:
+                logger.error(
+                    f"Failed to synchronize server files after adding player {username} to group {group_id}: {sync_error}"
+                )
+                # Log the sync failure but don't rollback the player addition
+                # This allows manual recovery while preserving the database state
+                logger.warning(
+                    f"Player {username} was successfully added to group {group_id} but server file sync failed. "
+                    f"Manual file sync may be required. Error: {sync_error}"
+                )
 
-        # Create audit log
-        audit_log = AuditLog.create_log(
-            action="player_added_to_group",
-            resource_type="group",
-            user_id=user.id,
-            resource_id=group.id,
-            details={"player_uuid": uuid, "player_username": username},
-        )
-        self.db.add(audit_log)
-        self.db.commit()
+            # Send real-time commands for player addition
+            try:
+                # Get all servers this group is attached to and send commands
+                attached_servers = (
+                    self.db.query(ServerGroup.server_id, Server.directory_path)
+                    .join(Server, ServerGroup.server_id == Server.id)
+                    .filter(ServerGroup.group_id == group_id)
+                    .all()
+                )
 
-        return group
+                for server_id, directory_path in attached_servers:
+                    await real_time_server_commands.handle_group_change_commands(
+                        server_id, Path(directory_path), group.type, "player_add"
+                    )
+            except Exception as cmd_error:
+                logger.warning(
+                    f"Failed to send real-time commands after adding player {username} to group {group_id}: {cmd_error}"
+                )
+
+            # Create audit log after successful sync
+            audit_log = AuditLog.create_log(
+                action="player_added_to_group",
+                resource_type="group",
+                user_id=user.id,
+                resource_id=group.id,
+                details={"player_uuid": uuid, "player_username": username},
+            )
+            self.db.add(audit_log)
+            self.db.commit()
+
+            return group
+
+        except HTTPException:
+            # Re-raise HTTP exceptions (like sync failures)
+            raise
+        except Exception as e:
+            # Rollback any database changes on unexpected errors
+            self.db.rollback()
+            logger.error(f"Failed to add player {username} to group {group_id}: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to add player to group: {e}",
+            ) from e
 
     async def remove_player_from_group(
         self, user: User, group_id: int, uuid: str
@@ -429,30 +575,89 @@ class GroupService:
         """Remove a player from a group"""
         group = self.get_group_by_id(user, group_id)
 
-        # Remove player using model method
-        removed = group.remove_player(uuid)
+        try:
+            # Get player info before removal for real-time commands
+            removed_player_info = None
+            for player in group.get_players():
+                if player.get("uuid") == uuid:
+                    removed_player_info = player.copy()
+                    break
 
-        if not removed:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, detail="Player not found in group"
+            # Remove player using model method
+            removed = group.remove_player(uuid)
+
+            if not removed:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Player not found in group",
+                )
+
+            # Commit the player removal first
+            self.db.commit()
+            self.db.refresh(group)
+
+            # Update server files for all servers using this group with retry logic
+            # This is critical - if this fails, we need to know about it
+            try:
+                await self.file_service.update_all_affected_servers_with_retry(group_id)
+                logger.info(
+                    f"Successfully synchronized server files after removing player {uuid} from group {group_id}"
+                )
+            except Exception as sync_error:
+                logger.error(
+                    f"Failed to synchronize server files after removing player {uuid} from group {group_id}: {sync_error}"
+                )
+                # Log the sync failure but don't rollback the player removal
+                logger.warning(
+                    f"Player {uuid} was successfully removed from group {group_id} but server file sync failed. "
+                    f"Manual file sync may be required. Error: {sync_error}"
+                )
+
+            # Send real-time commands for player removal
+            try:
+                # Get all servers this group is attached to and send commands
+                attached_servers = (
+                    self.db.query(ServerGroup.server_id, Server.directory_path)
+                    .join(Server, ServerGroup.server_id == Server.id)
+                    .filter(ServerGroup.group_id == group_id)
+                    .all()
+                )
+
+                for server_id, directory_path in attached_servers:
+                    await real_time_server_commands.handle_group_change_commands(
+                        server_id,
+                        Path(directory_path),
+                        group.type,
+                        "player_remove",
+                        removed_player=removed_player_info,
+                    )
+            except Exception as cmd_error:
+                logger.warning(
+                    f"Failed to send real-time commands after removing player {uuid} from group {group_id}: {cmd_error}"
+                )
+
+            # Create audit log after successful sync
+            audit_log = AuditLog.create_log(
+                action="player_removed_from_group",
+                resource_type="group",
+                user_id=user.id,
+                resource_id=group.id,
+                details={"player_uuid": uuid},
             )
+            self.db.add(audit_log)
+            self.db.commit()
 
-        self.db.commit()
-        self.db.refresh(group)
-
-        # Update server files for all servers using this group
-        await self.file_service.update_all_affected_servers(group_id)
-
-        # Create audit log
-        audit_log = AuditLog.create_log(
-            action="player_removed_from_group",
-            resource_type="group",
-            user_id=user.id,
-            resource_id=group.id,
-            details={"player_uuid": uuid},
-        )
-        self.db.add(audit_log)
-        self.db.commit()
+        except HTTPException:
+            # Re-raise HTTP exceptions (like sync failures)
+            raise
+        except Exception as e:
+            # Rollback any database changes on unexpected errors
+            self.db.rollback()
+            logger.error(f"Failed to remove player {uuid} from group {group_id}: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to remove player from group: {e}",
+            ) from e
 
         return group
 
@@ -490,27 +695,80 @@ class GroupService:
             server_id=server_id, group_id=group_id, priority=priority
         )
 
-        self.db.add(server_group)
-        self.db.commit()
+        try:
+            self.db.add(server_group)
+            self.db.commit()
 
-        # Update server files immediately after attachment
-        await self.file_service.update_server_files(server_id)
+            # Update server files immediately after attachment with retry logic
+            try:
+                # Use single server update with retry wrapper
+                for attempt in range(3):
+                    try:
+                        await self.file_service.update_server_files(server_id)
+                        if attempt > 0:
+                            logger.info(
+                                f"Server file sync succeeded on attempt {attempt + 1} for server {server_id}"
+                            )
+                        break
+                    except Exception as e:
+                        if attempt < 2:
+                            logger.warning(
+                                f"Server file sync attempt {attempt + 1} failed for server {server_id}: {e}"
+                            )
+                            await asyncio.sleep((attempt + 1) * 1.0)
+                        else:
+                            raise e
 
-        # Create audit log
-        audit_log = AuditLog.create_log(
-            action="group_attached_to_server",
-            resource_type="server_group",
-            user_id=user.id,
-            details={
-                "server_id": server_id,
-                "group_id": group_id,
-                "group_name": group.name,
-                "group_type": group.type.value,
-                "priority": priority,
-            },
-        )
-        self.db.add(audit_log)
-        self.db.commit()
+                logger.info(
+                    f"Successfully synchronized server files after attaching group {group_id} to server {server_id}"
+                )
+            except Exception as sync_error:
+                logger.error(
+                    f"Failed to synchronize server files after attaching group {group_id} to server {server_id}: {sync_error}"
+                )
+                # Log the sync failure but don't rollback the attachment
+                logger.warning(
+                    f"Group {group_id} was successfully attached to server {server_id} but server file sync failed. "
+                    f"Manual file sync may be required. Error: {sync_error}"
+                )
+
+            # Send real-time commands for attachment
+            try:
+                await real_time_server_commands.handle_group_change_commands(
+                    server_id, Path(server.directory_path), group.type, "attach"
+                )
+            except Exception as cmd_error:
+                logger.warning(
+                    f"Failed to send real-time commands after attaching group {group_id} to server {server_id}: {cmd_error}"
+                )
+
+            # Create audit log after successful sync
+            audit_log = AuditLog.create_log(
+                action="group_attached_to_server",
+                resource_type="server_group",
+                user_id=user.id,
+                details={
+                    "server_id": server_id,
+                    "group_id": group_id,
+                    "group_name": group.name,
+                    "group_type": group.type.value,
+                    "priority": priority,
+                },
+            )
+            self.db.add(audit_log)
+            self.db.commit()
+
+        except HTTPException:
+            # Re-raise HTTP exceptions (like sync failures)
+            raise
+        except Exception as e:
+            # Rollback any database changes on unexpected errors
+            self.db.rollback()
+            logger.error(f"Failed to attach group {group_id} to server {server_id}: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to attach group to server: {e}",
+            ) from e
 
     async def detach_group_from_server(
         self, user: User, server_id: int, group_id: int
@@ -561,6 +819,16 @@ class GroupService:
 
         # Update server files after detachment
         await self.file_service.update_server_files(server_id)
+
+        # Send real-time commands for detachment
+        try:
+            await real_time_server_commands.handle_group_change_commands(
+                server_id, Path(server.directory_path), group.type, "detach"
+            )
+        except Exception as cmd_error:
+            logger.warning(
+                f"Failed to send real-time commands after detaching group {group_id} from server {server_id}: {cmd_error}"
+            )
 
     def get_server_groups(self, user: User, server_id: int) -> List[Dict[str, Any]]:
         """Get all groups attached to a server"""
