@@ -1,3 +1,4 @@
+import logging
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -21,6 +22,7 @@ from app.services.authorization_service import authorization_service
 from app.services.group_service import GroupService
 from app.users.models import User
 
+logger = logging.getLogger(__name__)
 router = APIRouter(tags=["groups"])
 
 
@@ -205,6 +207,10 @@ async def add_player_to_group(
     except HTTPException:
         raise
     except Exception as e:
+        import traceback
+
+        logger.error(f"Failed to add player to group: {str(e)}")
+        logger.error(f"Traceback: {traceback.format_exc()}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to add player to group: {str(e)}",

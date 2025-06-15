@@ -499,12 +499,12 @@ class GroupService:
                 logger.error(
                     f"Failed to synchronize server files after adding player {username} to group {group_id}: {sync_error}"
                 )
-                # Don't rollback the player addition, but log the sync failure
+                # Log the sync failure but don't rollback the player addition
                 # This allows manual recovery while preserving the database state
-                raise HTTPException(
-                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    detail=f"Player added to group but server file synchronization failed: {sync_error}",
-                ) from sync_error
+                logger.warning(
+                    f"Player {username} was successfully added to group {group_id} but server file sync failed. "
+                    f"Manual file sync may be required. Error: {sync_error}"
+                )
 
             # Create audit log after successful sync
             audit_log = AuditLog.create_log(
@@ -562,11 +562,11 @@ class GroupService:
                 logger.error(
                     f"Failed to synchronize server files after removing player {uuid} from group {group_id}: {sync_error}"
                 )
-                # Don't rollback the player removal, but log the sync failure
-                raise HTTPException(
-                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    detail=f"Player removed from group but server file synchronization failed: {sync_error}",
-                ) from sync_error
+                # Log the sync failure but don't rollback the player removal
+                logger.warning(
+                    f"Player {uuid} was successfully removed from group {group_id} but server file sync failed. "
+                    f"Manual file sync may be required. Error: {sync_error}"
+                )
 
             # Create audit log after successful sync
             audit_log = AuditLog.create_log(
@@ -658,11 +658,11 @@ class GroupService:
                 logger.error(
                     f"Failed to synchronize server files after attaching group {group_id} to server {server_id}: {sync_error}"
                 )
-                # Don't rollback the attachment, but report the sync failure
-                raise HTTPException(
-                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    detail=f"Group attached to server but file synchronization failed: {sync_error}",
-                ) from sync_error
+                # Log the sync failure but don't rollback the attachment
+                logger.warning(
+                    f"Group {group_id} was successfully attached to server {server_id} but server file sync failed. "
+                    f"Manual file sync may be required. Error: {sync_error}"
+                )
 
             # Create audit log after successful sync
             audit_log = AuditLog.create_log(
