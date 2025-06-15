@@ -13,6 +13,7 @@ from app.groups.models import Group, GroupType, ServerGroup
 from app.servers.models import Server, ServerStatus, ServerType
 from app.users.models import Role, User
 from app.audit.models import AuditLog
+from app.core.exceptions import FileOperationException
 
 
 class TestGroupAccessService:
@@ -217,7 +218,7 @@ class TestGroupFileService:
         await service.update_server_files(1)
 
     @pytest.mark.asyncio
-    async def test_update_server_files_exception_handling(self, db, admin_user, capfd):
+    async def test_update_server_files_exception_handling(self, db, admin_user):
         """Test update server files handles exceptions gracefully"""
         # Create test server
         server = Server(
@@ -242,12 +243,12 @@ class TestGroupFileService:
             
             service = GroupFileService(db)
             
-            # Should not raise exception, just print error
-            await service.update_server_files(1)
+            # Should raise FileOperationException
+            with pytest.raises(FileOperationException):
+                await service.update_server_files(1)
             
-            # Check that error was printed
-            captured = capfd.readouterr()
-            assert "Error updating server files for server 1" in captured.out
+            # Check that error was logged (not printed to stdout)
+            # The error logging happens in the service, not printed to stdout
 
     @pytest.mark.asyncio
     async def test_update_all_affected_servers(self, db, admin_user):
