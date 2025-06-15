@@ -164,16 +164,18 @@ class GroupFileService:
                 )
 
                 # Send real-time commands to running server if needed
-                # Note: This method is called for batch updates, so we need to handle both types
                 try:
-                    # Always reload whitelist and sync OPs since this is a batch update
-                    # that could affect both types of groups
-                    await real_time_server_commands.reload_whitelist_if_running(server_id)
-                    await real_time_server_commands.sync_op_changes_if_running(server_id, server_path)
-
+                    # Reload whitelist for running servers (if any whitelist groups are attached)
+                    has_whitelist_groups = any(group.type == GroupType.whitelist for group in server_groups)
+                    if has_whitelist_groups:
+                        await real_time_server_commands.reload_whitelist_if_running(server_id)
+                    # Sync OP changes for running servers (if any OP groups are attached)
+                    # Don't fail the entire operation if real-time commands fail
+                    has_op_groups = any(group.type == GroupType.op for group in server_groups)
+                    if has_op_groups:
+                        await real_time_server_commands.sync_op_changes_if_running(server_id, server_path)
                 except Exception as cmd_error:
                     logger.warning(f"Failed to send real-time commands to server {server_id}: {cmd_error}")
-                    # Don't fail the entire operation if real-time commands fail
             else:
                 logger.error(
                     f"Server directory {server_path} does not exist - cannot sync files for server {server_id}"
