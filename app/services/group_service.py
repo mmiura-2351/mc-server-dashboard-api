@@ -89,7 +89,12 @@ class GroupFileService:
             # Get server info
             server = self.db.query(Server).filter(Server.id == server_id).first()
             if not server:
+                logger.warning(f"Server {server_id} not found during file sync")
                 return
+
+            logger.info(
+                f"Starting file sync for server {server_id} (name: {server.name}, path: {server.directory_path})"
+            )
 
             # Get all groups attached to this server
             server_groups = (
@@ -100,12 +105,19 @@ class GroupFileService:
                 .all()
             )
 
+            logger.info(
+                f"Found {len(server_groups)} groups attached to server {server_id}: {[g.name for g in server_groups]}"
+            )
+
             # Build ops and whitelist data
             ops_data = []
             whitelist_data = []
 
             for group in server_groups:
                 players = group.get_players()
+                logger.info(
+                    f"Processing group '{group.name}' (type: {group.type.value}) with {len(players)} players"
+                )
 
                 for player in players:
                     player_entry = {
@@ -129,24 +141,43 @@ class GroupFileService:
                         if not any(wl["uuid"] == player["uuid"] for wl in whitelist_data):
                             whitelist_data.append(whitelist_entry)
 
-            # Write to server files
-            server_path = Path(f"servers/{server.name}")
+            # Write to server files using the actual server directory path
+            server_path = Path(server.directory_path)
+            logger.info(
+                f"Generated data for server {server_id}: ops={len(ops_data)} entries, whitelist={len(whitelist_data)} entries"
+            )
 
             if server_path.exists():
                 # Update ops.json
                 ops_file = server_path / "ops.json"
                 with open(ops_file, "w", encoding="utf-8") as f:
                     json.dump(ops_data, f, indent=2)
+                logger.info(
+                    f"Updated ops.json at {ops_file} with {len(ops_data)} entries"
+                )
 
                 # Update whitelist.json
                 whitelist_file = server_path / "whitelist.json"
                 with open(whitelist_file, "w", encoding="utf-8") as f:
                     json.dump(whitelist_data, f, indent=2)
+                logger.info(
+                    f"Updated whitelist.json at {whitelist_file} with {len(whitelist_data)} entries"
+                )
+
+                logger.info(
+                    f"Successfully synchronized server files for server {server_id}"
+                )
+            else:
+                logger.error(
+                    f"Server directory {server_path} does not exist - cannot sync files for server {server_id}"
+                )
 
         except Exception as e:
             # Log error with proper logging and re-raise for better error handling
             logger.error(f"Failed to update server files for server {server_id}: {e}")
-            raise FileOperationException("update", f"server {server_id} files", str(e)) from e
+            raise FileOperationException(
+                "update", f"server {server_id} files", str(e)
+            ) from e
 
     async def batch_update_server_files(self, server_ids: List[int]):
         """Batch update server files for multiple servers to reduce N+1 queries"""
