@@ -455,6 +455,8 @@ class TestServerControlRouter:
         """Test command send when server not running"""
         mock_auth.check_server_access.return_value = mock_server
         mock_manager.get_server_status.return_value = ServerStatus.stopped
+        mock_audit.log_server_command_event = Mock()
+        mock_audit.log_server_event = Mock()
 
         command_request = ServerCommandRequest(command="say Hello World")
         with pytest.raises(HTTPException) as exc_info:
@@ -478,6 +480,7 @@ class TestServerControlRouter:
         mock_auth.check_server_access.return_value = mock_server
         mock_manager.get_server_status.return_value = ServerStatus.running
         mock_manager.send_command = AsyncMock(return_value=False)
+        mock_audit.log_server_command_event = Mock()
 
         command_request = ServerCommandRequest(command="invalid_command")
         with pytest.raises(HTTPException) as exc_info:
@@ -705,7 +708,8 @@ class TestServerControlRouter:
     @pytest.mark.asyncio
     @patch('app.servers.routers.control.authorization_service')
     @patch('app.servers.routers.control.minecraft_server_manager')
-    async def test_get_server_status_unexpected_error(self, mock_manager, mock_auth, admin_user, mock_server, mock_db_session):
+    @patch('app.services.database_integration.database_integration_service')
+    async def test_get_server_status_unexpected_error(self, mock_db_integration, mock_manager, mock_auth, admin_user, mock_server, mock_db_session):
         """Test get server status with unexpected error"""
         mock_auth.check_server_access.side_effect = Exception("Unexpected error")
 
@@ -726,6 +730,7 @@ class TestServerControlRouter:
     async def test_send_server_command_unexpected_error(self, mock_audit, mock_manager, mock_auth, mock_request, admin_user, mock_server, mock_db_session):
         """Test send server command with unexpected error"""
         mock_auth.check_server_access.side_effect = Exception("Unexpected error")
+        mock_audit.log_server_command_event = Mock()
 
         command_request = ServerCommandRequest(command="test")
         with pytest.raises(HTTPException) as exc_info:
