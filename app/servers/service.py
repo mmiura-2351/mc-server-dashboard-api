@@ -1,5 +1,7 @@
 import asyncio
 import logging
+import re
+import shlex
 from pathlib import Path
 from typing import Any, Dict, Optional
 
@@ -31,6 +33,89 @@ from app.services.version_manager import minecraft_version_manager
 from app.users.models import User
 
 logger = logging.getLogger(__name__)
+
+
+class ServerSecurityValidator:
+    """Security validation for server configurations to prevent command injection"""
+
+    @staticmethod
+    def validate_memory_value(memory: int) -> bool:
+        """Validate memory value is a positive integer within reasonable bounds"""
+        if not isinstance(memory, int):
+            raise InvalidRequestException("Memory value must be an integer")
+        if memory <= 0:
+            raise InvalidRequestException("Memory value must be positive")
+        if memory > 32768:  # 32GB max reasonable limit
+            raise InvalidRequestException(
+                "Memory value exceeds maximum allowed (32768MB)"
+            )
+        return True
+
+    @staticmethod
+    def validate_jar_filename(jar_file: str) -> bool:
+        """Validate jar filename to prevent path traversal and command injection"""
+        if not jar_file:
+            raise InvalidRequestException("JAR filename cannot be empty")
+
+        # Only allow alphanumeric, dots, hyphens, underscores
+        if not re.match(r"^[a-zA-Z0-9._-]+\.jar$", jar_file):
+            raise InvalidRequestException("Invalid JAR filename format")
+
+        # Prevent path traversal
+        if ".." in jar_file or "/" in jar_file or "\\" in jar_file:
+            raise InvalidRequestException("JAR filename cannot contain path separators")
+
+        # Prevent excessively long filenames
+        if len(jar_file) > 255:
+            raise InvalidRequestException("JAR filename too long")
+
+        return True
+
+    @staticmethod
+    def validate_server_name(name: str) -> bool:
+        """Validate server name to prevent injection attacks"""
+        if not name or not name.strip():
+            raise InvalidRequestException("Server name cannot be empty")
+
+        # Allow alphanumeric, spaces, dots, hyphens, underscores
+        if not re.match(r"^[a-zA-Z0-9\s._-]+$", name):
+            raise InvalidRequestException("Server name contains invalid characters")
+
+        # Prevent excessively long names
+        if len(name.strip()) > 100:
+            raise InvalidRequestException("Server name too long")
+
+        return True
+
+    @staticmethod
+    def validate_java_path(java_path: str) -> bool:
+        """Validate Java executable path to prevent command injection"""
+        if not java_path or not java_path.strip():
+            raise InvalidRequestException("Java path cannot be empty")
+
+        # Prevent path traversal and command injection
+        if ".." in java_path or ";" in java_path or "|" in java_path or "&" in java_path:
+            raise InvalidRequestException("Java path contains invalid characters")
+
+        # Only allow reasonable path characters
+        if not re.match(r"^[a-zA-Z0-9\s/._-]+$", java_path):
+            raise InvalidRequestException("Java path contains invalid characters")
+
+        # Prevent excessively long paths
+        if len(java_path) > 500:
+            raise InvalidRequestException("Java path too long")
+
+        # Must be an absolute path for security
+        if not java_path.startswith("/"):
+            raise InvalidRequestException("Java path must be absolute")
+
+        return True
+
+    @staticmethod
+    def sanitize_for_shell(value: str) -> str:
+        """Sanitize string for safe shell usage"""
+        # Use shlex.quote for proper shell escaping
+        return shlex.quote(str(value))
 
 
 class ServerValidationService:
@@ -261,17 +346,62 @@ eula=true"""
             f.write(eula_content)
 
     async def _generate_startup_script(self, server: Server, server_dir: Path) -> None:
-        """Generate startup script"""
-        script_content = f"""#!/bin/bash
-cd "{server_dir}"
-java -Xmx{server.max_memory}M -Xms{server.max_memory}M -jar server.jar nogui"""
+        """Generate secure startup script with proper input validation and escaping"""
+        try:
+            # Validate inputs to prevent command injection
+            ServerSecurityValidator.validate_memory_value(server.max_memory)
+            ServerSecurityValidator.validate_jar_filename("server.jar")  # Fixed jar name
 
-        script_file = server_dir / "start.sh"
-        with open(script_file, "w") as f:
-            f.write(script_content)
+            # Sanitize all values for shell usage
+            safe_server_dir = ServerSecurityValidator.sanitize_for_shell(str(server_dir))
+            safe_memory = str(server.max_memory)  # Already validated as int
+            safe_jar = ServerSecurityValidator.sanitize_for_shell("server.jar")
 
-        # Make script executable
-        script_file.chmod(0o755)
+            # Generate secure script with proper escaping
+            script_content = f"""#!/bin/bash
+# Auto-generated startup script for Minecraft server
+# WARNING: Do not modify this file manually
+set -e  # Exit on error
+set -u  # Exit on undefined variable
+
+SERVER_DIR={safe_server_dir}
+MAX_MEMORY={safe_memory}
+MIN_MEMORY=${{MIN_MEMORY:-512}}
+JAR_FILE={safe_jar}
+
+# Validate server directory exists
+if [ ! -d "$SERVER_DIR" ]; then
+    echo "Error: Server directory does not exist: $SERVER_DIR"
+    exit 1
+fi
+
+# Validate jar file exists
+if [ ! -f "$SERVER_DIR/$JAR_FILE" ]; then
+    echo "Error: Server JAR file does not exist: $SERVER_DIR/$JAR_FILE"
+    exit 1
+fi
+
+# Change to server directory
+cd "$SERVER_DIR"
+
+# Start server with validated parameters
+exec java -Xmx"${{MAX_MEMORY}}"M -Xms"${{MIN_MEMORY}}"M -jar "$JAR_FILE" nogui
+"""
+
+            script_file = server_dir / "start.sh"
+            with open(script_file, "w") as f:
+                f.write(script_content)
+
+            # Make script executable
+            script_file.chmod(0o755)
+
+            logger.info(f"Generated secure startup script for server {server.id}")
+
+        except Exception as e:
+            logger.error(f"Failed to generate startup script for server {server.id}: {e}")
+            raise InvalidRequestException(
+                f"Failed to generate secure startup script: {e}"
+            )
 
     async def cleanup_server_directory(self, server_dir: Path) -> None:
         """Cleanup server directory on failure"""
@@ -407,6 +537,10 @@ class ServerService:
         # Validate server uniqueness
         await self.validation_service.validate_server_uniqueness(request, db)
 
+        # Security validation to prevent command injection
+        ServerSecurityValidator.validate_server_name(request.name)
+        ServerSecurityValidator.validate_memory_value(request.max_memory)
+
         # Validate version support using dynamic version manager
         if not minecraft_version_manager.is_version_supported(
             request.server_type, request.minecraft_version
@@ -475,6 +609,13 @@ class ServerService:
     ) -> ServerResponse:
         """Update server configuration"""
         server = self.validation_service.validate_server_exists(server_id, db)
+
+        # Security validation to prevent command injection
+        if request.name is not None:
+            ServerSecurityValidator.validate_server_name(request.name)
+        if request.max_memory is not None:
+            ServerSecurityValidator.validate_memory_value(request.max_memory)
+
         updated_server = self.database_service.update_server_record(server, request, db)
         return ServerResponse.model_validate(updated_server)
 
