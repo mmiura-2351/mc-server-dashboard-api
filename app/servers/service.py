@@ -41,7 +41,13 @@ class ServerValidationService:
     async def validate_server_uniqueness(
         self, request: ServerCreateRequest, db: Session
     ) -> None:
-        """Validate server name and port uniqueness"""
+        """Validate server name and port uniqueness
+        
+        Port validation logic:
+        - Ports can only be used by one running/starting server at a time
+        - Ports from stopped servers can be reused for new servers
+        - This allows efficient port management without manual cleanup
+        """
         # Check for existing server with same name
         existing_name = (
             db.query(Server)
@@ -51,7 +57,8 @@ class ServerValidationService:
         if existing_name:
             raise ConflictException(f"Server with name '{request.name}' already exists")
 
-        # Check for existing server with same port that is currently running
+        # Check for existing server with same port that is currently running or starting
+        # Note: Stopped servers' ports can be reused, only active servers block port usage
         existing_port = (
             db.query(Server)
             .filter(
@@ -64,7 +71,10 @@ class ServerValidationService:
             .first()
         )
         if existing_port:
-            raise ConflictException(f"Server with port {request.port} is already running")
+            raise ConflictException(
+                f"Port {request.port} is already in use by {existing_port.status.value} server '{existing_port.name}'. "
+                f"Stop the server to free up the port."
+            )
 
     def validate_server_exists(self, server_id: int, db: Session) -> Server:
         """Validate server exists and return it"""
