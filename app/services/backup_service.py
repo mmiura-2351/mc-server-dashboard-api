@@ -396,7 +396,7 @@ class BackupDatabaseService:
         backup_type: BackupType,
         db: Session,
     ) -> Backup:
-        """Create initial backup record in database"""
+        """Create initial backup record in database (without committing)"""
         try:
             backup = Backup(
                 server_id=server_id,
@@ -409,7 +409,7 @@ class BackupDatabaseService:
             )
 
             db.add(backup)
-            db.flush()
+            db.flush()  # Get ID but don't commit yet
             return backup
 
         except Exception as e:
@@ -418,14 +418,12 @@ class BackupDatabaseService:
     def update_backup_with_file_info(
         self, backup: Backup, file_path: str, file_size: int, db: Session
     ) -> None:
-        """Update backup record with file information"""
+        """Update backup record with file information (without committing)"""
         try:
             backup.file_path = file_path
             backup.file_size = file_size
             backup.status = BackupStatus.completed
-
-            db.commit()
-            db.refresh(backup)
+            # Don't commit here - let caller handle transaction
 
         except Exception as e:
             handle_database_error("update", "backup", e)
@@ -497,22 +495,29 @@ class BackupService:
         # Log warning if server is running
         self._log_running_server_warning(server_id)
 
-        # Create backup record
-        backup = self.db_service.create_backup_record(
-            server_id, name, description, backup_type, db
-        )
+        # Start database transaction for atomic operation
+        backup = None
+        backup_path = None
 
         try:
+            # Create backup record (but don't commit yet)
+            backup = self.db_service.create_backup_record(
+                server_id, name, description, backup_type, db
+            )
+
             # Create backup file
             backup_filename = await self.file_service.create_backup_file(
                 server, backup.id, backup_type
             )
             backup_path = self.backups_directory / backup_filename
 
-            # Update backup record with file information
+            # Update backup record with file information in same transaction
             self.db_service.update_backup_with_file_info(
                 backup, str(backup_path), backup_path.stat().st_size, db
             )
+
+            # Commit transaction only after both file and database operations succeed
+            db.commit()
 
             logger.info(
                 f"Successfully created backup {backup.id} for server {server_id}: {backup_filename}"
@@ -520,7 +525,25 @@ class BackupService:
             return backup
 
         except Exception as e:
-            self.db_service.mark_backup_failed(backup, db)
+            # Rollback database transaction
+            if backup:
+                try:
+                    db.rollback()
+                except Exception as rollback_error:
+                    logger.error(
+                        f"Failed to rollback backup transaction: {rollback_error}"
+                    )
+
+            # Clean up backup file if it was created
+            if backup_path and backup_path.exists():
+                try:
+                    backup_path.unlink()
+                    logger.info(f"Cleaned up orphaned backup file: {backup_path}")
+                except Exception as cleanup_error:
+                    logger.error(
+                        f"Failed to cleanup backup file {backup_path}: {cleanup_error}"
+                    )
+
             logger.error(f"Failed to create backup for server {server_id}: {e}")
             raise
 
