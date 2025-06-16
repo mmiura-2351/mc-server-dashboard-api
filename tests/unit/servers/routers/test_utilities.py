@@ -51,6 +51,33 @@ class TestUtilitiesRouterSimple:
         assert result.versions is not None
 
     @pytest.mark.asyncio
+    @patch('app.servers.routers.utilities.minecraft_version_manager')
+    @patch('app.servers.routers.utilities.SupportedVersionsResponse')
+    async def test_get_supported_versions_response_creation_error(self, mock_response_class, mock_version_manager):
+        """Test error during response object creation to trigger outer exception handler"""
+        from app.servers.routers.utilities import get_supported_versions
+        
+        # Mock version manager to return valid data
+        mock_version_info = Mock()
+        mock_version_info.version = "1.20.1"
+        mock_version_info.server_type = ServerType.vanilla
+        mock_version_info.download_url = "https://example.com/server.jar"
+        mock_version_info.release_date = "2023-06-07"
+        mock_version_info.is_stable = True
+        mock_version_info.build_number = None
+        
+        mock_version_manager.get_supported_versions = AsyncMock(return_value=[mock_version_info])
+        
+        # Make the response creation fail to trigger the outer exception handler
+        mock_response_class.side_effect = Exception("Response creation failed")
+
+        with pytest.raises(HTTPException) as exc_info:
+            await get_supported_versions()
+        
+        assert exc_info.value.status_code == 500
+        assert "Failed to get supported versions" in str(exc_info.value.detail)
+
+    @pytest.mark.asyncio
     async def test_sync_server_states_non_admin(self, test_user):
         """Test server state sync with non-admin user"""
         from app.servers.routers.utilities import sync_server_states
