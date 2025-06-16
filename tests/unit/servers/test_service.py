@@ -271,3 +271,192 @@ class TestServerService:
         assert result is True
         server_service.validation_service.validate_server_exists.assert_called_once_with(1, mock_db)
         server_service.database_service.soft_delete_server.assert_called_once_with(mock_server, mock_db)
+
+
+class TestServerValidationServiceExtended:
+    """Additional tests for ServerValidationService methods"""
+
+    @pytest.fixture
+    def validation_service(self):
+        return ServerValidationService()
+
+    def test_validate_server_directory_success(self, validation_service):
+        """Test successful server directory validation (lines 157-172)"""
+        with patch('app.servers.service.PathValidator') as mock_path_validator:
+            mock_server_dir = Mock()
+            mock_server_dir.exists.return_value = False
+            mock_path_validator.create_safe_server_directory.return_value = mock_server_dir
+            
+            result = validation_service.validate_server_directory("test-server")
+            
+            assert result == mock_server_dir
+            mock_path_validator.create_safe_server_directory.assert_called_once()
+
+    def test_validate_server_directory_exists(self, validation_service):
+        """Test server directory already exists (lines 168-171)"""
+        with patch('app.servers.service.PathValidator') as mock_path_validator:
+            mock_server_dir = Mock()
+            mock_server_dir.exists.return_value = True
+            mock_path_validator.create_safe_server_directory.return_value = mock_server_dir
+            
+            with pytest.raises(ConflictException) as exc_info:
+                validation_service.validate_server_directory("existing-server")
+            
+            assert "Server directory for 'existing-server' already exists" in str(exc_info.value)
+
+    def test_validate_server_name_basic_empty(self, validation_service):
+        """Test basic server name validation with empty string (lines 178-179)"""
+        from app.core.security import SecurityError
+        
+        with pytest.raises(SecurityError) as exc_info:
+            validation_service._validate_server_name_basic("")
+        
+        assert "Server name must be a non-empty string" in str(exc_info.value)
+
+    def test_validate_server_name_basic_none(self, validation_service):
+        """Test basic server name validation with None (lines 178-179)"""
+        from app.core.security import SecurityError
+        
+        with pytest.raises(SecurityError) as exc_info:
+            validation_service._validate_server_name_basic(None)
+        
+        assert "Server name must be a non-empty string" in str(exc_info.value)
+
+
+class TestServerJarServiceExtended:
+    """Additional tests for ServerJarService methods"""
+
+    @pytest.fixture
+    def jar_service(self):
+        return ServerJarService()
+
+    @pytest.mark.asyncio
+    async def test_get_server_jar_unsupported_version(self, jar_service):
+        """Test JAR service with unsupported version (lines 212-218)"""
+        with patch.object(jar_service.version_manager, 'is_version_supported', return_value=False):
+            with patch('app.servers.service.handle_file_error') as mock_handle_error:
+                await jar_service.get_server_jar(ServerType.vanilla, "1.7.10", Path("/tmp"))
+                
+                # Should call handle_file_error due to InvalidRequestException
+                mock_handle_error.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_get_server_jar_exception_handling(self, jar_service):
+        """Test JAR service exception handling (lines 240-241)"""
+        with patch.object(jar_service.version_manager, 'is_version_supported', return_value=True):
+            with patch.object(jar_service.version_manager, 'get_download_url', side_effect=Exception("Download error")):
+                with patch('app.servers.service.handle_file_error') as mock_handle_error:
+                    await jar_service.get_server_jar(ServerType.vanilla, "1.20.1", Path("/tmp"))
+                    
+                    mock_handle_error.assert_called_once()
+
+
+class TestServerFileSystemServiceExtended:
+    """Additional tests for ServerFileSystemService methods"""
+
+    @pytest.fixture
+    def filesystem_service(self):
+        return ServerFileSystemService()
+
+    @pytest.mark.asyncio 
+    async def test_generate_server_files_success(self, filesystem_service):
+        """Test server files generation (lines 335-352)"""
+        mock_server = Mock()
+        mock_server.id = 1
+        mock_server.name = "test-server"
+        mock_request = Mock()
+        mock_server_dir = Path("/tmp/test")
+        
+        filesystem_service._generate_server_properties = AsyncMock()
+        filesystem_service._generate_eula_file = AsyncMock()
+        filesystem_service._generate_startup_script = AsyncMock()
+        
+        await filesystem_service.generate_server_files(mock_server, mock_request, mock_server_dir)
+        
+        filesystem_service._generate_server_properties.assert_called_once()
+        filesystem_service._generate_eula_file.assert_called_once()
+        filesystem_service._generate_startup_script.assert_called_once()
+
+
+class TestServerDatabaseService:
+    """Tests for ServerDatabaseService methods"""
+
+    @pytest.fixture
+    def database_service(self):
+        return ServerDatabaseService()
+
+    def test_create_server_record_success(self, database_service):
+        """Test server record creation (lines 456-488)"""
+        mock_request = Mock()
+        mock_request.name = "test-server"
+        mock_request.description = "Test description"
+        mock_request.minecraft_version = "1.20.1"
+        mock_request.server_type = ServerType.vanilla
+        mock_request.port = 25565
+        mock_request.max_memory = 1024
+        mock_request.max_players = 20
+        mock_request.server_properties = {}
+        
+        mock_owner = Mock()
+        mock_owner.id = 1
+        
+        server_dir = "/tmp/test-server"
+        mock_db = Mock()
+        
+        with patch('app.servers.service.Server') as mock_server_class:
+            mock_server = Mock()
+            mock_server_class.return_value = mock_server
+            
+            result = database_service.create_server_record(mock_request, mock_owner, server_dir, mock_db)
+            
+            assert result == mock_server
+            mock_db.add.assert_called_once_with(mock_server)
+            mock_db.commit.assert_called_once()
+            mock_db.refresh.assert_called_once_with(mock_server)
+
+
+    def test_soft_delete_server_success(self, database_service):
+        """Test server soft deletion (lines 531-545)"""
+        mock_server = Mock()
+        mock_server.is_deleted = False
+        mock_db = Mock()
+        
+        database_service.soft_delete_server(mock_server, mock_db)
+        
+        assert mock_server.is_deleted is True
+        mock_db.commit.assert_called_once()
+
+
+class TestServerTemplateService:
+    """Tests for ServerTemplateService methods"""
+
+    @pytest.fixture
+    def template_service(self):
+        filesystem_service = Mock()
+        return ServerTemplateService(filesystem_service)
+
+    @pytest.mark.asyncio
+    async def test_apply_template_success(self, template_service):
+        """Test template application (lines 529-557)"""
+        mock_server = Mock()
+        mock_server.id = 1
+        mock_server.directory_path = "/tmp/server"
+        
+        mock_template = Mock()
+        mock_template.id = 1
+        mock_template.name = "test-template"
+        mock_template.file_path = "/tmp/template.tar.gz"
+        
+        mock_db = Mock()
+        mock_db.query.return_value.filter.return_value.first.return_value = mock_template
+        
+        template_service._extract_template_files = AsyncMock()
+        
+        with patch('app.servers.service.Path') as mock_path:
+            mock_template_path = Mock()
+            mock_template_path.exists.return_value = True
+            mock_path.return_value = mock_template_path
+            
+            await template_service.apply_template(mock_server, 1, mock_db)
+            
+            template_service._extract_template_files.assert_called_once()

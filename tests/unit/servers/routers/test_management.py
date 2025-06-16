@@ -274,6 +274,32 @@ class TestServerManagementRouter:
     @pytest.mark.asyncio
     @patch('app.servers.routers.management.authorization_service')
     @patch('app.servers.routers.management.server_service')
+    @patch('app.servers.routers.management.minecraft_server_manager')
+    async def test_update_server_running_non_restricted_change(self, mock_minecraft_manager, mock_server_service, mock_auth_service, admin_user):
+        """Test update server while running with non-restricted changes (lines 158-165)"""
+        from app.servers.routers.management import update_server
+        from app.servers.schemas import ServerUpdateRequest
+        from app.servers.models import ServerStatus
+        
+        # Mock authorization to pass
+        mock_auth_service.check_server_access.return_value = None
+        # Mock server as running
+        mock_minecraft_manager.get_server_status.return_value = ServerStatus.running
+        # Mock server service to return updated server
+        mock_server = {"id": 1, "name": "updated-server"}
+        mock_server_service.update_server = AsyncMock(return_value=mock_server)
+
+        # Request only changes name/description (no memory or server_properties)
+        request = ServerUpdateRequest(name="updated-server", description="Updated description")
+        
+        result = await update_server(server_id=1, request=request, current_user=admin_user, db=Mock())
+        
+        assert result == mock_server
+        mock_server_service.update_server.assert_called_once()
+
+    @pytest.mark.asyncio
+    @patch('app.servers.routers.management.authorization_service')
+    @patch('app.servers.routers.management.server_service')
     async def test_update_server_not_found(self, mock_server_service, mock_auth_service, admin_user):
         """Test update server not found (lines 166-169)"""
         from app.servers.routers.management import update_server
