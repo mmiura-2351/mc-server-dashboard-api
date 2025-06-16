@@ -185,6 +185,82 @@ class PathValidator:
 class TarExtractor:
     """Secure tar file extraction utility."""
 
+    # Security limits for archive extraction
+    MAX_ARCHIVE_SIZE = 1024 * 1024 * 1024  # 1GB max archive size
+    MAX_EXTRACTED_SIZE = 2 * 1024 * 1024 * 1024  # 2GB max extracted size
+    MAX_MEMBER_COUNT = 10000  # Maximum number of files in archive
+    MAX_COMPRESSION_RATIO = 100  # Maximum compression ratio to prevent zip bombs
+    MAX_MEMBER_SIZE = 100 * 1024 * 1024  # 100MB max individual file size
+
+    @staticmethod
+    def validate_archive_safety(tar_path: Path) -> None:
+        """Validate archive safety before extraction.
+
+        Args:
+            tar_path: Path to the tar archive
+
+        Raises:
+            SecurityError: If the archive is unsafe
+        """
+        if not tar_path.exists():
+            raise SecurityError(f"Archive not found: {tar_path}")
+
+        # Check archive size
+        archive_size = tar_path.stat().st_size
+        if archive_size > TarExtractor.MAX_ARCHIVE_SIZE:
+            raise SecurityError(
+                f"Archive too large: {archive_size} bytes (max {TarExtractor.MAX_ARCHIVE_SIZE})"
+            )
+
+        # Validate archive contents
+        try:
+            with tarfile.open(tar_path, "r:gz") as tar:
+                members = tar.getmembers()
+
+                # Check member count
+                if len(members) > TarExtractor.MAX_MEMBER_COUNT:
+                    raise SecurityError(
+                        f"Too many files in archive: {len(members)} (max {TarExtractor.MAX_MEMBER_COUNT})"
+                    )
+
+                total_extracted_size = 0
+
+                for member in members:
+                    # Validate member for path traversal and other security issues
+                    # Use a dummy target directory for validation (we're not extracting here)
+                    dummy_target = Path("/tmp/dummy")
+                    TarExtractor.validate_tar_member(member, dummy_target)
+
+                    # Check individual member size
+                    if member.size > TarExtractor.MAX_MEMBER_SIZE:
+                        raise SecurityError(
+                            f"File too large in archive: {member.name} - {member.size} bytes"
+                        )
+
+                    total_extracted_size += member.size
+
+                    # Check compression ratio for each member
+                    if member.size > 0:
+                        # Approximate compressed size (this is a rough estimate)
+                        compressed_size = max(
+                            1, archive_size // len(members)
+                        )  # Simple heuristic
+                        compression_ratio = member.size / compressed_size
+
+                        if compression_ratio > TarExtractor.MAX_COMPRESSION_RATIO:
+                            raise SecurityError(
+                                f"Suspicious compression ratio for {member.name}: {compression_ratio:.1f}"
+                            )
+
+                # Check total extracted size
+                if total_extracted_size > TarExtractor.MAX_EXTRACTED_SIZE:
+                    raise SecurityError(
+                        f"Total extracted size too large: {total_extracted_size} bytes"
+                    )
+
+        except tarfile.TarError as e:
+            raise SecurityError(f"Invalid or corrupted archive: {e}")
+
     @staticmethod
     def validate_tar_member(member: tarfile.TarInfo, target_dir: Path) -> None:
         """Validate a tar member for safe extraction.
@@ -235,18 +311,21 @@ class TarExtractor:
 
     @staticmethod
     def safe_extract_tar(tar_path: Path, target_dir: Path) -> None:
-        """Safely extract a tar file with security validation.
+        """Safely extract a tar file with comprehensive security validation.
 
         Args:
             tar_path: Path to the tar file to extract
             target_dir: Directory to extract to
 
         Raises:
-            SecurityError: If any tar member is unsafe
+            SecurityError: If any tar member is unsafe or archive is malicious
             FileNotFoundError: If tar file doesn't exist
         """
         if not tar_path.exists():
             raise FileNotFoundError(f"Tar file not found: {tar_path}")
+
+        # First, validate archive safety (size, member count, compression ratio)
+        TarExtractor.validate_archive_safety(tar_path)
 
         # Ensure target directory exists
         target_dir.mkdir(parents=True, exist_ok=True)
@@ -258,9 +337,14 @@ class TarExtractor:
             for member in members:
                 TarExtractor.validate_tar_member(member, target_dir)
 
-            # If all members are safe, extract them
-            for member in members:
-                tar.extract(member, path=target_dir)
+            # If all members are safe, extract them with future-compatible filter
+            try:
+                # Use the safer extract method for Python 3.14+ compatibility
+                tar.extractall(path=target_dir, members=members, filter="data")
+            except (TypeError, ValueError):
+                # Fallback for older Python versions without filter support
+                for member in members:
+                    tar.extract(member, path=target_dir)
 
     @staticmethod
     def safe_extract_tar_member(
@@ -277,7 +361,13 @@ class TarExtractor:
             SecurityError: If the member is unsafe for extraction
         """
         TarExtractor.validate_tar_member(member, target_dir)
-        tar.extract(member, path=target_dir)
+
+        try:
+            # Use safer extraction method for Python 3.14+ compatibility
+            tar.extractall(path=target_dir, members=[member], filter="data")
+        except (TypeError, ValueError):
+            # Fallback for older Python versions without filter support
+            tar.extract(member, path=target_dir)
 
 
 class FileOperationValidator:

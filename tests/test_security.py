@@ -293,6 +293,76 @@ class TestTarExtractor:
             assert extracted_file.exists()
             assert extracted_file.read_text() == "safe content"
 
+    def test_validate_archive_safety_oversized_archive(self):
+        """Test that oversized archives are rejected."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            
+            # Create a mock large archive by creating a file and checking if validation would catch it
+            large_archive = temp_path / "large.tar.gz"
+            
+            # Create a file larger than the limit (simulate by patching the size check)
+            with patch.object(Path, 'stat') as mock_stat:
+                mock_stat.return_value.st_size = TarExtractor.MAX_ARCHIVE_SIZE + 1
+                
+                with pytest.raises(SecurityError, match="Archive too large"):
+                    TarExtractor.validate_archive_safety(large_archive)
+
+    def test_validate_archive_safety_too_many_members(self):
+        """Test that archives with too many members are rejected."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            many_members_tar = temp_path / "many_members.tar.gz"
+            
+            # Create archive with many members (use a smaller number for testing)
+            test_limit = 5  # Use smaller limit for testing
+            with patch.object(TarExtractor, 'MAX_MEMBER_COUNT', test_limit):
+                with tarfile.open(many_members_tar, "w:gz") as tar:
+                    # Add more members than the limit
+                    for i in range(test_limit + 1):
+                        member = tarfile.TarInfo(f"file_{i}.txt")
+                        member.size = 5
+                        tar.addfile(member, io.BytesIO(b"test\n"))
+                
+                with pytest.raises(SecurityError, match="Too many files"):
+                    TarExtractor.validate_archive_safety(many_members_tar)
+
+    def test_validate_archive_safety_oversized_member(self):
+        """Test that archives with oversized individual members are rejected."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            large_member_tar = temp_path / "large_member.tar.gz"
+            
+            # Create archive with a large member
+            test_limit = 1000  # Use smaller limit for testing
+            with patch.object(TarExtractor, 'MAX_MEMBER_SIZE', test_limit):
+                with tarfile.open(large_member_tar, "w:gz") as tar:
+                    member = tarfile.TarInfo("large_file.txt")
+                    member.size = test_limit + 1
+                    tar.addfile(member, io.BytesIO(b"x" * (test_limit + 1)))
+                
+                with pytest.raises(SecurityError, match="File too large"):
+                    TarExtractor.validate_archive_safety(large_member_tar)
+
+    def test_validate_archive_safety_total_size_too_large(self):
+        """Test that archives with total extracted size too large are rejected."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            large_total_tar = temp_path / "large_total.tar.gz"
+            
+            # Create archive where total extracted size exceeds limit
+            test_limit = 2000  # Use smaller limit for testing
+            with patch.object(TarExtractor, 'MAX_EXTRACTED_SIZE', test_limit):
+                with tarfile.open(large_total_tar, "w:gz") as tar:
+                    # Add multiple files that together exceed the limit
+                    for i in range(3):
+                        member = tarfile.TarInfo(f"file_{i}.txt")
+                        member.size = 800  # 3 * 800 = 2400 > 2000
+                        tar.addfile(member, io.BytesIO(b"x" * 800))
+                
+                with pytest.raises(SecurityError, match="Total extracted size too large"):
+                    TarExtractor.validate_archive_safety(large_total_tar)
+
 
 class TestFileOperationValidator:
     """Test file operation validation utilities."""
@@ -432,6 +502,61 @@ class TestBackupServiceSecurity:
                 backup_service._extract_backup_to_directory(
                     malicious_backup, Path(mock_server.directory_path)
                 )
+
+    @pytest.mark.asyncio
+    async def test_backup_upload_security_validation(self):
+        """Test that backup upload validates security correctly."""
+        from app.services.backup_service import BackupService
+        from app.core.exceptions import FileOperationException
+        from unittest.mock import AsyncMock, Mock
+        
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            
+            # Create BackupService and set custom backup directory for testing
+            backup_service = BackupService()
+            backup_service.backups_directory = temp_path / "backups"
+            backup_service.backups_directory.mkdir()
+            
+            # Create malicious backup file content
+            malicious_content = io.BytesIO()
+            with tarfile.open(fileobj=malicious_content, mode="w:gz") as tar:
+                # Add malicious file
+                malicious_info = tarfile.TarInfo("../../../etc/passwd")
+                malicious_info.size = 7
+                tar.addfile(malicious_info, io.BytesIO(b"hacked\n"))
+            
+            malicious_bytes = malicious_content.getvalue()
+            
+            # Create mock upload file
+            mock_upload_file = AsyncMock()
+            mock_upload_file.filename = "malicious.tar.gz"
+            mock_upload_file.read.return_value = malicious_bytes
+            
+            # Create mock database session
+            mock_db = Mock()
+            
+            # Mock the validation service
+            with patch('app.services.backup_service.BackupValidationService.validate_server_for_backup') as mock_validate:
+                mock_server = Mock()
+                mock_server.id = 1
+                mock_validate.return_value = mock_server
+                
+                # Should raise FileOperationException due to security validation failure
+                try:
+                    result = await backup_service.upload_backup(
+                        server_id=1,
+                        file=mock_upload_file,
+                        db=mock_db
+                    )
+                    # If we get here, the test failed - security validation should have caught the malicious file
+                    pytest.fail(f"Expected security validation to fail, but upload succeeded: {result}")
+                except FileOperationException as e:
+                    # This is what we expect - verify it's a security validation failure
+                    assert "Security validation failed" in str(e), f"Expected security validation error, got: {e}"
+                except Exception as e:
+                    # Log any other exceptions for debugging
+                    pytest.fail(f"Unexpected exception type: {type(e).__name__}: {e}")
 
 
 class TestIntegrationSecurity:

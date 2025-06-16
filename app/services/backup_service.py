@@ -843,10 +843,12 @@ class BackupService:
                     f"File size ({file_size / (1024*1024):.1f}MB) exceeds maximum allowed size (500MB)",
                 )
 
-            # Validate content is a valid tar.gz file
+            # Validate content is a safe and valid tar.gz file
             import io
             import tarfile
+            import tempfile
 
+            # First, basic tar.gz format validation
             try:
                 with tarfile.open(fileobj=io.BytesIO(content), mode="r:gz") as tar:
                     # Just check if we can open it as a tar.gz file
@@ -855,6 +857,32 @@ class BackupService:
                 raise FileOperationException(
                     "upload", file.filename, f"Invalid tar.gz file: {str(e)}"
                 )
+
+            # Create temporary file for comprehensive security validation
+            with tempfile.NamedTemporaryFile(suffix=".tar.gz", delete=False) as temp_file:
+                temp_file.write(content)
+                temp_file.flush()
+                temp_path = Path(temp_file.name)
+
+            try:
+                # Use comprehensive security validation
+                TarExtractor.validate_archive_safety(temp_path)
+                logger.info(f"Upload validation passed for {file.filename}")
+            except SecurityError as e:
+                # Clean up temp file
+                temp_path.unlink(missing_ok=True)
+                raise FileOperationException(
+                    "upload", file.filename, f"Security validation failed: {str(e)}"
+                )
+            except Exception as e:
+                # Clean up temp file
+                temp_path.unlink(missing_ok=True)
+                raise FileOperationException(
+                    "upload", file.filename, f"Validation error: {str(e)}"
+                )
+            finally:
+                # Always clean up temp file
+                temp_path.unlink(missing_ok=True)
 
             # Create backup directory if it doesn't exist
             self.backups_directory.mkdir(exist_ok=True)
