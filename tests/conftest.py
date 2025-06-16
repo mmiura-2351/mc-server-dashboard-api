@@ -10,9 +10,14 @@ from app.services.user import UserService
 from passlib.context import CryptContext
 
 # テスト用のインメモリSQLiteデータベース
-SQLALCHEMY_DATABASE_URL = "sqlite:///./test.db"
+SQLALCHEMY_DATABASE_URL = "sqlite:///:memory:"
 
-engine = create_engine(SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False})
+engine = create_engine(
+    SQLALCHEMY_DATABASE_URL, 
+    connect_args={"check_same_thread": False},
+    pool_pre_ping=True,
+    echo=False
+)
 TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
