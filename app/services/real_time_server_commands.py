@@ -3,6 +3,7 @@ import logging
 from pathlib import Path
 from typing import Set
 
+from app.core.security import FileOperationValidator, SecurityError
 from app.groups.models import GroupType
 from app.servers.models import ServerStatus
 from app.services.minecraft_server import minecraft_server_manager
@@ -14,7 +15,27 @@ class RealTimeServerCommandService:
     """Service for sending real-time commands to running Minecraft servers"""
 
     def __init__(self):
-        pass
+        self.base_directory = Path("servers")
+
+    def _validate_server_path(self, server_name: str) -> Path:
+        """Validate and return safe server path.
+
+        Args:
+            server_name: Name of the server
+
+        Returns:
+            Validated server directory path
+
+        Raises:
+            SecurityError: If server name or path is unsafe
+        """
+        try:
+            return FileOperationValidator.validate_server_file_path(
+                server_name, ".", self.base_directory
+            ).parent
+        except SecurityError as e:
+            logger.error(f"Invalid server name for path operations: {server_name}: {e}")
+            raise
 
     async def reload_whitelist_if_running(self, server_id: int) -> bool:
         """
@@ -60,7 +81,7 @@ class RealTimeServerCommandService:
 
         Args:
             server_id: The ID of the server to sync OP changes for
-            server_path: Path to the server directory
+            server_path: Path to the server directory (must be validated by caller)
 
         Returns:
             bool: True if all commands were sent successfully
@@ -74,8 +95,18 @@ class RealTimeServerCommandService:
                 )
                 return False
 
-            # Read current ops.json
-            ops_file = server_path / "ops.json"
+            # Validate server path is within expected directory structure
+            try:
+                # Assume server_path is already validated by the caller
+                # But add an extra check for the ops.json file specifically
+                ops_file = server_path / "ops.json"
+                # Verify the ops file path is within the server directory
+                ops_file.resolve().relative_to(server_path.resolve())
+            except (ValueError, OSError) as e:
+                logger.error(
+                    f"Invalid server path or ops.json path for server {server_id}: {e}"
+                )
+                return False
             if not ops_file.exists():
                 logger.warning(
                     f"ops.json not found for server {server_id}, creating empty list"

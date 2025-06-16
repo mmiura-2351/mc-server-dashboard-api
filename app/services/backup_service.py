@@ -20,6 +20,7 @@ from app.core.exceptions import (
     handle_database_error,
     handle_file_error,
 )
+from app.core.security import SecurityError, TarExtractor
 from app.servers.models import Backup, BackupStatus, BackupType, Server
 from app.services.minecraft_server import minecraft_server_manager
 
@@ -335,20 +336,23 @@ class BackupFileService:
             logger.info(f"Created temporary backup of current state: {temp_backup_dir}")
 
     def _extract_backup_to_directory(self, backup_path: Path, target_dir: Path) -> None:
-        """Extract backup archive to target directory with memory optimization"""
+        """Extract backup archive to target directory with security validation and memory optimization"""
         target_dir.mkdir(parents=True, exist_ok=True)
 
         with tarfile.open(backup_path, "r:gz") as tar:
-            # Extract files one by one to reduce memory usage
+            # Extract files one by one with security validation
             members = tar.getmembers()
             total_members = len(members)
             processed = 0
 
-            logger.info(f"Starting extraction of {total_members} files to {target_dir}")
+            logger.info(
+                f"Starting secure extraction of {total_members} files to {target_dir}"
+            )
 
             for member in members:
                 try:
-                    tar.extract(member, path=target_dir)
+                    # Use secure extraction with validation
+                    TarExtractor.safe_extract_tar_member(tar, member, target_dir)
                     processed += 1
 
                     # Log progress every 100 files
@@ -358,12 +362,19 @@ class BackupFileService:
                             f"Extraction progress: {processed}/{total_members} files ({progress:.1f}%)"
                         )
 
+                except SecurityError as e:
+                    logger.error(
+                        f"Security violation during extraction of {member.name}: {e}"
+                    )
+                    raise FileOperationException(
+                        "extract_backup", str(backup_path), f"Security violation: {e}"
+                    )
                 except Exception as e:
                     logger.warning(f"Failed to extract {member.name}: {e}")
                     continue
 
             logger.info(
-                f"Extraction completed: {processed}/{total_members} files extracted"
+                f"Secure extraction completed: {processed}/{total_members} files extracted"
             )
 
     def delete_backup_file(self, backup_path: str) -> None:
