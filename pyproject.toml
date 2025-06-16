@@ -43,6 +43,7 @@ dependencies = [
     "packaging>=24.0",
     "chardet>=5.2.0",
     "psutil>=6.1.0",
+    "pytest-xdist>=3.7.0",
 ]
 
 [tool.uv.workspace]

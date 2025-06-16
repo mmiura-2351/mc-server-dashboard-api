@@ -2,6 +2,7 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
 from unittest.mock import Mock
 from app.main import app
 from app.core.database import get_db, Base
@@ -10,12 +11,35 @@ from app.services.user import UserService
 from passlib.context import CryptContext
 
 # テスト用のインメモリSQLiteデータベース
-SQLALCHEMY_DATABASE_URL = "sqlite:///./test.db"
+import os
+import tempfile
 
-engine = create_engine(SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False})
+# Worker固有のデータベースファイルを使用して並列実行時の分離を確保
+def get_worker_db_path():
+    """Get worker-specific database path for parallel execution isolation"""
+    try:
+        # pytest-xdistのworker IDを取得
+        import pytest
+        worker_id = getattr(pytest.current_pytest_config, 'workerinput', {}).get('workerid', 'master')
+    except (AttributeError, ImportError):
+        # フォールバック: 環境変数またはデフォルト
+        worker_id = os.environ.get('PYTEST_XDIST_WORKER', 'master')
+    
+    return os.path.join(tempfile.gettempdir(), f"test_mc_server_{worker_id}.db")
+
+test_db_path = get_worker_db_path()
+SQLALCHEMY_DATABASE_URL = f"sqlite:///{test_db_path}"
+
+engine = create_engine(
+    SQLALCHEMY_DATABASE_URL, 
+    connect_args={"check_same_thread": False},
+    pool_pre_ping=True,
+    echo=False
+)
 TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+# テスト用の軽量なパスワードハッシュ化（高速化のため）
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto", bcrypt__rounds=4)
 
 
 def override_get_db():
@@ -29,20 +53,44 @@ def override_get_db():
 app.dependency_overrides[get_db] = override_get_db
 
 
+def pytest_sessionfinish(session, exitstatus):
+    """
+    テストセッション終了時にworker固有のテストデータベースファイルを削除
+    Race conditionを避けるため、各workerが自分のファイルのみを削除
+    """
+    try:
+        current_worker_db = get_worker_db_path()
+        if os.path.exists(current_worker_db):
+            os.remove(current_worker_db)
+    except Exception as e:
+        # エラーをログに記録するが、テスト結果には影響させない
+        import warnings
+        warnings.warn(f"Failed to cleanup test database {current_worker_db}: {e}")
+
+
 @pytest.fixture(scope="function")
 def db():
+    # テーブルを作成
     Base.metadata.create_all(bind=engine)
     db = TestingSessionLocal()
     try:
         yield db
     finally:
+        # セッションをクローズ
         db.close()
-        Base.metadata.drop_all(bind=engine)
+        # 全テーブルをクリア（より軽量）
+        with engine.connect() as conn:
+            for table in reversed(Base.metadata.sorted_tables):
+                conn.execute(table.delete())
+            conn.commit()
 
 
 @pytest.fixture(scope="function")
 def client(db):
-    # dbフィクスチャを依存関係に追加してテーブルが作成されるようにする
+    """
+    Function-scoped TestClient to ensure proper isolation between tests
+    in parallel execution. Each test gets a fresh client instance.
+    """
     with TestClient(app) as c:
         yield c
 
