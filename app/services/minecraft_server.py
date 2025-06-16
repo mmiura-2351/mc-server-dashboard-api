@@ -188,6 +188,47 @@ class MinecraftServerManager:
         except Exception as e:
             return False, f"File validation failed: {e}"
 
+    async def _validate_port_availability(self, server: Server) -> tuple[bool, str]:
+        """Validate that the server's port is not already in use by another running server
+
+        This method checks both:
+        1. Other running servers in our process manager
+        2. System-level port availability
+        """
+        try:
+            # Check if port is available at system level first
+            import socket
+
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            try:
+                result = sock.connect_ex(("localhost", server.port))
+                if result == 0:
+                    # Port is in use - check if it's by one of our managed servers
+                    for process_id, server_process in self.processes.items():
+                        if process_id != server.id and server_process.status in [
+                            ServerStatus.running,
+                            ServerStatus.starting,
+                        ]:
+                            # This is a running server - we need to check its port
+                            # For now, we'll return a generic message since we don't store port in ServerProcess
+                            return (
+                                False,
+                                f"Port {server.port} is already in use. Please use a different port or stop the conflicting server.",
+                            )
+
+                    # Port is in use by some other process (not our servers)
+                    return (
+                        False,
+                        f"Port {server.port} is already in use by another process",
+                    )
+
+                return True, f"Port {server.port} is available"
+            finally:
+                sock.close()
+
+        except Exception as e:
+            return False, f"Port validation failed: {e}"
+
     async def start_server(self, server: Server) -> bool:
         """Start a Minecraft server with comprehensive pre-checks"""
         try:
@@ -202,6 +243,15 @@ class MinecraftServerManager:
 
             # Pre-flight checks
             logger.info(f"Starting pre-flight checks for server {server.id}")
+
+            # Check port availability
+            port_available, port_message = await self._validate_port_availability(server)
+            if not port_available:
+                logger.error(
+                    f"Port validation failed for server {server.id}: {port_message}"
+                )
+                return False
+            logger.info(f"Port validation passed for server {server.id}: {port_message}")
 
             # Check Java compatibility with Minecraft version
             java_compatible, java_message, java_executable = (
