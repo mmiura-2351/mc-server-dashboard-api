@@ -7,6 +7,7 @@ from fastapi import (
     Form,
     HTTPException,
     Query,
+    Request,
     UploadFile,
     status,
 )
@@ -39,6 +40,37 @@ from app.services.backup_service import backup_service
 from app.users.models import Role, User
 
 router = APIRouter(tags=["backups"])
+
+
+async def validate_upload_size(request: Request) -> None:
+    """Validate request size before processing to prevent memory exhaustion"""
+    content_length = request.headers.get("content-length")
+    max_size = 500 * 1024 * 1024  # 500MB
+
+    if not content_length:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Content-Length header required for file uploads",
+        )
+
+    try:
+        size = int(content_length)
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid Content-Length header",
+        )
+
+    if size > max_size:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail=f"Request size ({size / (1024*1024):.1f}MB) exceeds maximum allowed size (500MB)",
+        )
+
+    if size <= 0:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid request size"
+        )
 
 
 # Helper functions moved to authorization_service
@@ -111,6 +143,7 @@ async def upload_backup(
     description: str = Form(None),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
+    _: None = Depends(validate_upload_size),
 ):
     """
     Upload a backup file for a server

@@ -944,4 +944,4 @@ class TestBackupRouterFixed:
             headers=get_auth_headers(test_user.username),
         )
 
-        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
