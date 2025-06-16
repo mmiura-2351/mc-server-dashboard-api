@@ -87,7 +87,7 @@ async def start_server(
             )
 
         # Start the server
-        success = await minecraft_server_manager.start_server(server)
+        success = await minecraft_server_manager.start_server(server, db)
         if not success:
             # Get more detailed error information
             logger.error(f"Server {server_id} failed to start - checking system state")
@@ -321,7 +321,7 @@ async def restart_server(
                     break
 
         # Start the server
-        success = await minecraft_server_manager.start_server(server)
+        success = await minecraft_server_manager.start_server(server, db)
         if not success:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

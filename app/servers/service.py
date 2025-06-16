@@ -41,7 +41,12 @@ class ServerValidationService:
     async def validate_server_uniqueness(
         self, request: ServerCreateRequest, db: Session
     ) -> None:
-        """Validate server name and port uniqueness"""
+        """Validate server name uniqueness
+
+        Note: Port conflict validation is performed at server startup time,
+        not during server creation. This allows users to create servers
+        with duplicate ports and handle conflicts when starting servers.
+        """
         # Check for existing server with same name
         existing_name = (
             db.query(Server)
@@ -50,21 +55,6 @@ class ServerValidationService:
         )
         if existing_name:
             raise ConflictException(f"Server with name '{request.name}' already exists")
-
-        # Check for existing server with same port that is currently running
-        existing_port = (
-            db.query(Server)
-            .filter(
-                and_(
-                    Server.port == request.port,
-                    Server.is_deleted.is_(False),
-                    Server.status.in_([ServerStatus.running, ServerStatus.starting]),
-                )
-            )
-            .first()
-        )
-        if existing_port:
-            raise ConflictException(f"Server with port {request.port} is already running")
 
     def validate_server_exists(self, server_id: int, db: Session) -> Server:
         """Validate server exists and return it"""
@@ -443,7 +433,7 @@ class ServerService:
         server = self.validation_service.validate_server_exists(server_id, db)
 
         # Start the server using minecraft_server_manager
-        await minecraft_server_manager.start_server(server)
+        await minecraft_server_manager.start_server(server, db)
 
         return {"message": f"Server '{server.name}' started successfully"}
 
@@ -467,7 +457,7 @@ class ServerService:
         await asyncio.sleep(5)
 
         # Start the server
-        await minecraft_server_manager.start_server(server)
+        await minecraft_server_manager.start_server(server, db)
 
         return {"message": f"Server '{server.name}' restarted successfully"}
 
