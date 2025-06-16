@@ -188,38 +188,55 @@ class MinecraftServerManager:
         except Exception as e:
             return False, f"File validation failed: {e}"
 
-    async def _validate_port_availability(self, server: Server) -> tuple[bool, str]:
+    async def _validate_port_availability(
+        self, server: Server, db_session=None
+    ) -> tuple[bool, str]:
         """Validate that the server's port is not already in use by another running server
 
         This method checks both:
-        1. Other running servers in our process manager
-        2. System-level port availability
+        1. Database for servers using the same port and currently running/starting
+        2. System-level port availability for external processes
         """
         try:
-            # Check if port is available at system level first
+            # First check database for servers using the same port
+            if db_session:
+                from sqlalchemy import and_
+                from app.servers.models import Server as ServerModel
+
+                conflicting_server = (
+                    db_session.query(ServerModel)
+                    .filter(
+                        and_(
+                            ServerModel.port == server.port,
+                            ServerModel.id != server.id,
+                            ServerModel.is_deleted.is_(False),
+                            ServerModel.status.in_(
+                                [ServerStatus.running, ServerStatus.starting]
+                            ),
+                        )
+                    )
+                    .first()
+                )
+
+                if conflicting_server:
+                    return (
+                        False,
+                        f"Port {server.port} is already in use by {conflicting_server.status.value} server '{conflicting_server.name}'. "
+                        f"Stop the server to free up the port.",
+                    )
+
+            # Check if port is available at system level
             import socket
 
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             try:
                 result = sock.connect_ex(("localhost", server.port))
                 if result == 0:
-                    # Port is in use - check if it's by one of our managed servers
-                    for process_id, server_process in self.processes.items():
-                        if process_id != server.id and server_process.status in [
-                            ServerStatus.running,
-                            ServerStatus.starting,
-                        ]:
-                            # This is a running server - we need to check its port
-                            # For now, we'll return a generic message since we don't store port in ServerProcess
-                            return (
-                                False,
-                                f"Port {server.port} is already in use. Please use a different port or stop the conflicting server.",
-                            )
-
-                    # Port is in use by some other process (not our servers)
+                    # Port is in use by some external process
                     return (
                         False,
-                        f"Port {server.port} is already in use by another process",
+                        f"Port {server.port} is already in use by another process. "
+                        f"Please use a different port or stop the conflicting process.",
                     )
 
                 return True, f"Port {server.port} is available"
@@ -229,7 +246,7 @@ class MinecraftServerManager:
         except Exception as e:
             return False, f"Port validation failed: {e}"
 
-    async def start_server(self, server: Server) -> bool:
+    async def start_server(self, server: Server, db_session=None) -> bool:
         """Start a Minecraft server with comprehensive pre-checks"""
         try:
             if server.id in self.processes:
@@ -245,7 +262,9 @@ class MinecraftServerManager:
             logger.info(f"Starting pre-flight checks for server {server.id}")
 
             # Check port availability
-            port_available, port_message = await self._validate_port_availability(server)
+            port_available, port_message = await self._validate_port_availability(
+                server, db_session
+            )
             if not port_available:
                 logger.error(
                     f"Port validation failed for server {server.id}: {port_message}"

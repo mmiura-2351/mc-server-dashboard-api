@@ -433,7 +433,7 @@ class ServerService:
         server = self.validation_service.validate_server_exists(server_id, db)
 
         # Start the server using minecraft_server_manager
-        await minecraft_server_manager.start_server(server)
+        await minecraft_server_manager.start_server(server, db)
 
         return {"message": f"Server '{server.name}' started successfully"}
 
@@ -457,7 +457,7 @@ class ServerService:
         await asyncio.sleep(5)
 
         # Start the server
-        await minecraft_server_manager.start_server(server)
+        await minecraft_server_manager.start_server(server, db)
 
         return {"message": f"Server '{server.name}' restarted successfully"}
 
