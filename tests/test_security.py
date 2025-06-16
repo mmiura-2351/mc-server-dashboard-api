@@ -442,32 +442,20 @@ class TestServerServiceSecurity:
     async def test_filesystem_service_allows_safe_names(self):
         """Test that filesystem service allows safe server names."""
         with tempfile.TemporaryDirectory() as temp_dir:
-            # Create a custom validation service with temp directory
-            from unittest.mock import patch
+            # Create a custom filesystem service with temp directory
+            filesystem_service = ServerFileSystemService()
+            filesystem_service.base_directory = Path(temp_dir)
             
-            with patch('app.servers.service.ServerValidationService') as mock_validation_service:
-                # Create a validation service instance that uses our temp directory
-                validation_instance = mock_validation_service.return_value
-                validation_instance.base_directory = Path(temp_dir)
-                validation_instance._validate_server_name_basic = lambda name: None  # Allow all names for test
-                
-                def mock_validate_directory(server_name):
-                    safe_name = PathValidator.sanitize_directory_name(server_name)
-                    server_dir = Path(temp_dir) / safe_name
-                    return server_dir
-                
-                validation_instance.validate_server_directory = mock_validate_directory
-                
-                filesystem_service = ServerFileSystemService()
-                
-                # Test safe names
-                safe_names = ["test-server", "my_server", "server123"]
-                
-                for name in safe_names:
-                    server_dir = await filesystem_service.create_server_directory(name)
-                    assert server_dir.exists()
-                    assert server_dir.name == name
-                    assert str(server_dir).startswith(str(Path(temp_dir)))
+            # Test safe names
+            safe_names = ["test-server", "my_server", "server123"]
+            
+            for name in safe_names:
+                server_dir = await filesystem_service.create_server_directory(name)
+                assert server_dir.exists()
+                # The directory name may be sanitized (e.g., test-server -> test_server)
+                expected_name = PathValidator.sanitize_directory_name(name)
+                assert server_dir.name == expected_name
+                assert str(server_dir).startswith(str(Path(temp_dir)))
 
 
 class TestBackupServiceSecurity:

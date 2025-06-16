@@ -1,4 +1,5 @@
 import asyncio
+import fcntl
 import logging
 import re
 import shlex
@@ -249,17 +250,53 @@ class ServerFileSystemService:
         self.properties_generator = server_properties_generator
 
     async def create_server_directory(self, server_name: str) -> Path:
-        """Create server directory with security validation"""
+        """Create server directory with atomic security validation to prevent race conditions"""
         try:
             # Use the validation service method that allows spaces
             validation_service = ServerValidationService()
-            server_dir = validation_service.validate_server_directory(server_name)
 
-            # Create the directory
-            server_dir.mkdir(parents=True, exist_ok=False)
+            # Create safe server directory path (this validates but doesn't check existence)
+            try:
+                validation_service._validate_server_name_basic(server_name)
+                server_dir = PathValidator.create_safe_server_directory(
+                    server_name, self.base_directory
+                )
+            except SecurityError as e:
+                raise InvalidRequestException(f"Invalid server name: {e}")
 
-            logger.info(f"Created server directory: {server_dir}")
-            return server_dir
+            # Use file locking for atomic directory creation
+            lock_file_path = self.base_directory / f".{server_dir.name}.lock"
+
+            # Ensure base directory exists
+            self.base_directory.mkdir(exist_ok=True)
+
+            try:
+                # Use file lock for atomic operation
+                with open(lock_file_path, "w") as lock_file:
+                    # Acquire exclusive lock (blocks until available)
+                    fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+
+                    # Now atomically check and create directory
+                    if server_dir.exists():
+                        raise ConflictException(
+                            f"Server directory for '{server_name}' already exists"
+                        )
+
+                    # Create the directory - use exist_ok=False to ensure atomicity
+                    server_dir.mkdir(parents=True, exist_ok=False)
+
+                    logger.info(f"Atomically created server directory: {server_dir}")
+                    return server_dir
+
+            finally:
+                # Clean up lock file
+                try:
+                    if lock_file_path.exists():
+                        lock_file_path.unlink()
+                except Exception as cleanup_error:
+                    logger.warning(
+                        f"Failed to cleanup lock file {lock_file_path}: {cleanup_error}"
+                    )
 
         except (SecurityError, ConflictException, InvalidRequestException):
             # Re-raise these as they are already properly formatted
@@ -644,16 +681,49 @@ class ServerService:
         return {"message": f"Server '{server.name}' stopped successfully"}
 
     async def restart_server(self, server_id: int, db: Session) -> Dict[str, str]:
-        """Restart server"""
+        """Restart server with proper status verification to prevent race conditions"""
         server = self.validation_service.validate_server_exists(server_id, db)
 
         # Stop the server
         await minecraft_server_manager.stop_server(server.id)
 
-        # Wait for server to stop
-        await asyncio.sleep(5)
+        # Wait for proper shutdown with exponential backoff and timeout
+        max_wait_seconds = 60  # Maximum wait time
+        wait_interval = 1  # Start with 1 second
+        total_waited = 0
 
-        # Start the server
+        logger.info(f"Waiting for server {server.id} to stop properly...")
+
+        while total_waited < max_wait_seconds:
+            # Check server status
+            current_status = minecraft_server_manager.get_server_status(server.id)
+
+            if current_status == ServerStatus.stopped:
+                logger.info(f"Server {server.id} stopped after {total_waited} seconds")
+                break
+
+            # Wait with exponential backoff (capped at 5 seconds)
+            await asyncio.sleep(wait_interval)
+            total_waited += wait_interval
+            wait_interval = min(wait_interval * 1.5, 5)  # Cap at 5 seconds
+
+            logger.debug(
+                f"Server {server.id} still running, waited {total_waited}s, status: {current_status}"
+            )
+
+        # Verify server has stopped
+        final_status = minecraft_server_manager.get_server_status(server.id)
+        if final_status != ServerStatus.stopped:
+            logger.error(
+                f"Server {server.id} failed to stop within {max_wait_seconds}s, status: {final_status}"
+            )
+            raise RuntimeError(
+                f"Server '{server.name}' failed to stop within {max_wait_seconds} seconds. "
+                f"Current status: {final_status}. Cannot safely restart."
+            )
+
+        # Now safely start the server
+        logger.info(f"Starting server {server.id} after confirmed stop")
         await minecraft_server_manager.start_server(server, db)
 
         return {"message": f"Server '{server.name}' restarted successfully"}

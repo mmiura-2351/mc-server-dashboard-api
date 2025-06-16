@@ -300,15 +300,17 @@ class TestBackupServiceAdditionalExceptions:
             )
 
     def test_update_backup_with_file_info_commit_failure(self, backup_db_service, mock_db_session, mock_backup):
-        """Test updating backup when database commit fails."""
-        mock_db_session.commit.side_effect = DatabaseError("Commit failed", None, None)
+        """Test updating backup when database operation fails."""
+        # Since update_backup_with_file_info no longer commits, we test by making the attribute access fail
+        # Create a property that raises an exception when set
+        type(mock_backup).file_path = property(lambda self: "", lambda self, value: (_ for _ in ()).throw(DatabaseError("Attribute set failed", None, None)))
         
         with pytest.raises(DatabaseOperationException):
             backup_db_service.update_backup_with_file_info(
                 mock_backup,
-                mock_db_session,
                 "/path/to/backup.tar.gz",
-                1024
+                1024,
+                mock_db_session
             )
 
     def test_mark_backup_failed_database_error(self, backup_db_service, mock_db_session, mock_backup):
