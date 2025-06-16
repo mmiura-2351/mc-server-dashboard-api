@@ -1,3 +1,9 @@
+"""
+Infrastructure test for Templates Router
+Tests router configuration, imports, and basic endpoint existence
+Does not test actual API functionality - use integration tests for that
+"""
+
 import pytest
 from unittest.mock import Mock, patch
 from fastapi.testclient import TestClient

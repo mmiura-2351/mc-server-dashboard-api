@@ -8,7 +8,7 @@ import tempfile
 
 from app.services.jar_cache_manager import JarCacheManager
 from app.servers.models import ServerType
-from tests.test_aiohttp_mocks import MockAiohttpResponse, MockAiohttpSession
+from tests.infrastructure.test_aiohttp_mocks import MockAiohttpResponse, MockAiohttpSession
 
 
 class TestJarCacheManager:

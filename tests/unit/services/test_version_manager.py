@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 
 from app.services.version_manager import MinecraftVersionManager, VersionInfo
 from app.servers.models import ServerType
-from tests.test_aiohttp_mocks import MockAiohttpResponse, MockAiohttpSession
+from tests.infrastructure.test_aiohttp_mocks import MockAiohttpResponse, MockAiohttpSession
 
 
 class TestMinecraftVersionManager:
