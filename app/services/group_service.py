@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.audit.models import AuditLog
 from app.core.exceptions import FileOperationException
+from app.core.security import PathValidator, SecurityError
 from app.groups.models import Group, GroupType, ServerGroup
 from app.servers.models import Server
 from app.services.real_time_server_commands import real_time_server_commands
@@ -140,7 +141,19 @@ class GroupFileService:
                             whitelist_data.append(whitelist_entry)
 
             # Write to server files using the actual server directory path
-            server_path = Path(server.directory_path)
+            # Validate server directory path for security
+            try:
+                server_path = Path(server.directory_path)
+                base_directory = Path("servers")
+                # Validate that server path is within expected directory structure
+                PathValidator.validate_safe_path(server_path, base_directory)
+            except SecurityError as e:
+                logger.error(f"Invalid server directory path for server {server.id}: {e}")
+                raise FileOperationException(
+                    "validate_path",
+                    str(server.directory_path),
+                    f"Security validation failed: {e}",
+                )
 
             if server_path.exists():
                 # Update ops.json

@@ -14,6 +14,7 @@ from app.core.exceptions import (
     handle_database_error,
     handle_file_error,
 )
+from app.core.security import PathValidator, SecurityError, TarExtractor
 from app.servers.models import (
     Server,
     ServerStatus,
@@ -69,10 +70,22 @@ class ServerValidationService:
 
     def validate_server_directory(self, server_name: str) -> Path:
         """Validate and return server directory path"""
-        server_dir = self.base_directory / server_name
-        if server_dir.exists():
-            raise ConflictException(f"Server directory '{server_name}' already exists")
-        return server_dir
+        try:
+            # Validate server name for security
+            PathValidator.validate_safe_name(server_name)
+
+            # Create safe server directory path
+            server_dir = PathValidator.create_safe_server_directory(
+                server_name, self.base_directory
+            )
+
+            if server_dir.exists():
+                raise ConflictException(
+                    f"Server directory '{server_name}' already exists"
+                )
+            return server_dir
+        except SecurityError as e:
+            raise InvalidRequestException(f"Invalid server name: {e}")
 
 
 class ServerJarService:
@@ -129,14 +142,24 @@ class ServerFileSystemService:
         self.properties_generator = server_properties_generator
 
     async def create_server_directory(self, server_name: str) -> Path:
-        """Create server directory"""
+        """Create server directory with security validation"""
         try:
-            server_dir = self.base_directory / server_name
+            # Validate server name for security
+            PathValidator.validate_safe_name(server_name)
+
+            # Create safe server directory path
+            server_dir = PathValidator.create_safe_server_directory(
+                server_name, self.base_directory
+            )
+
+            # Create the directory
             server_dir.mkdir(parents=True, exist_ok=False)
 
             logger.info(f"Created server directory: {server_dir}")
             return server_dir
 
+        except SecurityError as e:
+            raise InvalidRequestException(f"Invalid server name: {e}")
         except FileExistsError:
             raise ConflictException(f"Server directory '{server_name}' already exists")
         except Exception as e:
@@ -147,11 +170,20 @@ class ServerFileSystemService:
     async def ensure_server_directory_exists(self, server_id: int) -> Path:
         """Ensure server directory exists, create if it doesn't"""
         try:
-            server_dir = self.base_directory / str(server_id)
+            # Validate server ID as string for directory name
+            server_id_str = str(server_id)
+            PathValidator.validate_safe_name(server_id_str)
+
+            # Create safe server directory path
+            server_dir = PathValidator.create_safe_server_directory(
+                server_id_str, self.base_directory
+            )
             server_dir.mkdir(parents=True, exist_ok=True)
 
             logger.info(f"Ensured server directory exists: {server_dir}")
             return server_dir
+        except SecurityError as e:
+            raise InvalidRequestException(f"Invalid server ID for directory: {e}")
         except Exception as e:
             handle_file_error(
                 "ensure directory", str(self.base_directory / str(server_id)), e
@@ -327,11 +359,14 @@ class ServerTemplateService:
     async def _extract_template_files(
         self, template_path: Path, server_dir: Path
     ) -> None:
-        """Extract template files to server directory"""
-        import tarfile
-
-        with tarfile.open(template_path, "r:gz") as tar:
-            tar.extractall(path=server_dir)
+        """Extract template files to server directory with security validation"""
+        try:
+            # Use secure tar extraction
+            TarExtractor.safe_extract_tar(template_path, server_dir)
+        except SecurityError as e:
+            raise InvalidRequestException(f"Template extraction failed: {e}")
+        except Exception as e:
+            raise InvalidRequestException(f"Failed to extract template: {e}")
 
 
 class ServerService:
