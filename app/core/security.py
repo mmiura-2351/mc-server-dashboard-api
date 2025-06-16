@@ -19,8 +19,8 @@ class SecurityError(Exception):
 class PathValidator:
     """Utility class for validating and sanitizing file paths."""
 
-    # Allow only alphanumeric, hyphens, underscores, and dots (but not .. sequences)
-    SAFE_NAME_PATTERN = re.compile(r"^[a-zA-Z0-9_.-]+$")
+    # Allow alphanumeric, hyphens, underscores, dots, and spaces (but not .. sequences)
+    SAFE_NAME_PATTERN = re.compile(r"^[a-zA-Z0-9_. -]+$")
 
     # Reserved names that should not be allowed
     RESERVED_NAMES = {
@@ -74,7 +74,7 @@ class PathValidator:
         # Check for invalid characters
         if not PathValidator.SAFE_NAME_PATTERN.match(name):
             raise SecurityError(
-                "Name contains invalid characters. Only alphanumeric, hyphens, underscores, and dots are allowed"
+                "Name contains invalid characters. Only alphanumeric, hyphens, underscores, dots, and spaces are allowed"
             )
 
         # Check for reserved names
@@ -84,16 +84,17 @@ class PathValidator:
         # Check for path traversal patterns
         if ".." in name:
             raise SecurityError("Path traversal patterns (..) are not allowed")
-        
+
         # Check for backslashes (can be used for path traversal on Windows)
         if "\\" in name:
             raise SecurityError("Backslashes are not allowed in names")
 
-        # Check for starting/ending with dots or spaces (problematic on some systems)
+        # Check for starting/ending with dots (problematic on some systems)
         if name.startswith(".") or name.endswith("."):
             if name not in {".gitkeep", ".gitignore"}:  # Allow some common exceptions
                 raise SecurityError("Names cannot start or end with dots")
 
+        # Check for starting/ending with spaces (can cause issues)
         if name.startswith(" ") or name.endswith(" "):
             raise SecurityError("Names cannot start or end with spaces")
 
@@ -146,8 +147,8 @@ class PathValidator:
             SecurityError: If server_name is unsafe
             FileExistsError: If directory already exists
         """
-        # Validate server name
-        safe_name = PathValidator.validate_safe_name(server_name)
+        # Convert server name to safe directory name
+        safe_name = PathValidator.sanitize_directory_name(server_name)
 
         # Construct path
         server_dir = base_directory / safe_name
@@ -156,6 +157,29 @@ class PathValidator:
         validated_path = PathValidator.validate_safe_path(server_dir, base_directory)
 
         return validated_path
+
+    @staticmethod
+    def sanitize_directory_name(name: str) -> str:
+        """Convert a server name to a safe directory name.
+
+        Args:
+            name: The original server name
+
+        Returns:
+            A safe directory name
+        """
+        # Replace spaces and other problematic characters with underscores
+        safe_name = re.sub(r"[^\w\-.]", "_", name)
+        # Remove multiple consecutive underscores
+        safe_name = re.sub(r"_+", "_", safe_name)
+        # Remove leading/trailing underscores and dots
+        safe_name = safe_name.strip("_.")
+
+        # Ensure it's not empty
+        if not safe_name:
+            safe_name = "server"
+
+        return safe_name
 
 
 class TarExtractor:
@@ -281,7 +305,9 @@ class FileOperationValidator:
 
         # Validate file path for common path traversal patterns
         if ".." in file_path:
-            raise SecurityError(f"File path contains path traversal patterns: {file_path}")
+            raise SecurityError(
+                f"File path contains path traversal patterns: {file_path}"
+            )
         if "\\" in file_path:
             raise SecurityError(f"File path contains backslashes: {file_path}")
         if file_path.startswith("/"):

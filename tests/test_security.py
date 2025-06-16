@@ -36,6 +36,8 @@ class TestPathValidator:
             "server123",
             "My-Server_123",
             "simple",
+            "My Server",  # Spaces are now allowed
+            "Server with spaces",
         ]
         
         for name in valid_names:
@@ -48,7 +50,6 @@ class TestPathValidator:
             "../../../etc/passwd",
             "server/with/slashes",
             "server\\with\\backslashes", 
-            "server with spaces",
             "server@domain",
             "server#hash",
             "server$dollar",
@@ -149,13 +150,34 @@ class TestPathValidator:
             server_dir = PathValidator.create_safe_server_directory("test-server", base_dir)
             assert server_dir == base_dir / "test-server"
 
-    def test_create_safe_server_directory_invalid_name(self):
-        """Test that invalid server names are rejected."""
+    def test_create_safe_server_directory_with_sanitization(self):
+        """Test that server names are sanitized for directory creation."""
         with tempfile.TemporaryDirectory() as temp_dir:
             base_dir = Path(temp_dir)
             
-            with pytest.raises(SecurityError):
-                PathValidator.create_safe_server_directory("../../../etc", base_dir)
+            # Test that problematic names are sanitized
+            server_dir = PathValidator.create_safe_server_directory("My Server!", base_dir)
+            assert server_dir.name == "My_Server"
+            assert str(server_dir).startswith(str(base_dir))
+
+    def test_sanitize_directory_name(self):
+        """Test directory name sanitization."""
+        test_cases = [
+            ("My Server", "My_Server"),
+            ("Server@Domain", "Server_Domain"),
+            ("Server/With/Slashes", "Server_With_Slashes"),
+            ("Server\\With\\Backslashes", "Server_With_Backslashes"),
+            ("Server-With_Dots.txt", "Server-With_Dots.txt"),
+            ("   Server   ", "Server"),
+            ("Multiple___Underscores", "Multiple_Underscores"),
+            ("", "server"),  # Empty string fallback
+            ("Server!@#$%^&*()", "Server"),  # Trailing underscores are stripped
+            ("Server!Middle@Characters", "Server_Middle_Characters"),
+        ]
+        
+        for input_name, expected in test_cases:
+            result = PathValidator.sanitize_directory_name(input_name)
+            assert result == expected, f"Input: {input_name}, Expected: {expected}, Got: {result}"
 
 
 class TestTarExtractor:
@@ -350,12 +372,24 @@ class TestServerServiceSecurity:
     async def test_filesystem_service_allows_safe_names(self):
         """Test that filesystem service allows safe server names."""
         with tempfile.TemporaryDirectory() as temp_dir:
-            # Mock the base directory
-            filesystem_service = ServerFileSystemService()
-            original_base = filesystem_service.base_directory
-            filesystem_service.base_directory = Path(temp_dir)
+            # Create a custom validation service with temp directory
+            from unittest.mock import patch
             
-            try:
+            with patch('app.servers.service.ServerValidationService') as mock_validation_service:
+                # Create a validation service instance that uses our temp directory
+                validation_instance = mock_validation_service.return_value
+                validation_instance.base_directory = Path(temp_dir)
+                validation_instance._validate_server_name_basic = lambda name: None  # Allow all names for test
+                
+                def mock_validate_directory(server_name):
+                    safe_name = PathValidator.sanitize_directory_name(server_name)
+                    server_dir = Path(temp_dir) / safe_name
+                    return server_dir
+                
+                validation_instance.validate_server_directory = mock_validate_directory
+                
+                filesystem_service = ServerFileSystemService()
+                
                 # Test safe names
                 safe_names = ["test-server", "my_server", "server123"]
                 
@@ -364,8 +398,6 @@ class TestServerServiceSecurity:
                     assert server_dir.exists()
                     assert server_dir.name == name
                     assert str(server_dir).startswith(str(Path(temp_dir)))
-            finally:
-                filesystem_service.base_directory = original_base
 
 
 class TestBackupServiceSecurity:

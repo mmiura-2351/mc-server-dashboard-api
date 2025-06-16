@@ -71,21 +71,43 @@ class ServerValidationService:
     def validate_server_directory(self, server_name: str) -> Path:
         """Validate and return server directory path"""
         try:
-            # Validate server name for security
-            PathValidator.validate_safe_name(server_name)
+            # Validate server name has basic safety (allow spaces for display)
+            self._validate_server_name_basic(server_name)
 
-            # Create safe server directory path
+            # Create safe server directory path (converts spaces to underscores)
             server_dir = PathValidator.create_safe_server_directory(
                 server_name, self.base_directory
             )
 
             if server_dir.exists():
                 raise ConflictException(
-                    f"Server directory '{server_name}' already exists"
+                    f"Server directory for '{server_name}' already exists"
                 )
             return server_dir
         except SecurityError as e:
             raise InvalidRequestException(f"Invalid server name: {e}")
+
+    def _validate_server_name_basic(self, server_name: str) -> None:
+        """Basic validation for server names (allows spaces)"""
+        if not server_name or not isinstance(server_name, str):
+            raise SecurityError("Server name must be a non-empty string")
+
+        if len(server_name) > 255:
+            raise SecurityError("Server name too long (max 255 characters)")
+
+        # Check for path traversal patterns
+        if ".." in server_name:
+            raise SecurityError("Server name cannot contain path traversal patterns (..)")
+
+        if "\\" in server_name:
+            raise SecurityError("Server name cannot contain backslashes")
+
+        if server_name.startswith("/") or server_name.endswith("/"):
+            raise SecurityError("Server name cannot start or end with slashes")
+
+        # Check for starting/ending with spaces
+        if server_name.startswith(" ") or server_name.endswith(" "):
+            raise SecurityError("Server name cannot start or end with spaces")
 
 
 class ServerJarService:
@@ -144,13 +166,9 @@ class ServerFileSystemService:
     async def create_server_directory(self, server_name: str) -> Path:
         """Create server directory with security validation"""
         try:
-            # Validate server name for security
-            PathValidator.validate_safe_name(server_name)
-
-            # Create safe server directory path
-            server_dir = PathValidator.create_safe_server_directory(
-                server_name, self.base_directory
-            )
+            # Use the validation service method that allows spaces
+            validation_service = ServerValidationService()
+            server_dir = validation_service.validate_server_directory(server_name)
 
             # Create the directory
             server_dir.mkdir(parents=True, exist_ok=False)
@@ -158,10 +176,13 @@ class ServerFileSystemService:
             logger.info(f"Created server directory: {server_dir}")
             return server_dir
 
-        except SecurityError as e:
-            raise InvalidRequestException(f"Invalid server name: {e}")
+        except (SecurityError, ConflictException, InvalidRequestException):
+            # Re-raise these as they are already properly formatted
+            raise
         except FileExistsError:
-            raise ConflictException(f"Server directory '{server_name}' already exists")
+            raise ConflictException(
+                f"Server directory for '{server_name}' already exists"
+            )
         except Exception as e:
             handle_file_error(
                 "create directory", str(self.base_directory / server_name), e
