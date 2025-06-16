@@ -42,7 +42,7 @@ class ServerValidationService:
         self, request: ServerCreateRequest, db: Session
     ) -> None:
         """Validate server name and port uniqueness
-        
+
         Port validation logic:
         - Ports can only be used by one running/starting server at a time
         - Ports from stopped servers can be reused for new servers

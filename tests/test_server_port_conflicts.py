@@ -40,7 +40,8 @@ class TestServerPortConflicts:
         response = client.post("/api/v1/servers/", headers=admin_headers, json=server_data)
         
         assert response.status_code == status.HTTP_409_CONFLICT
-        assert "already running" in response.json()["detail"]
+        assert "is already in use by" in response.json()["detail"]
+        assert "Stop the server to free up the port" in response.json()["detail"]
     
     def test_create_server_port_conflict_with_stopped_server_allowed(self, client: TestClient, admin_headers, db, admin_user):
         """Test that creating a server succeeds when port conflicts with stopped server"""
@@ -117,4 +118,5 @@ class TestServerPortConflicts:
         response = client.post("/api/v1/servers/", headers=admin_headers, json=server_data)
         
         assert response.status_code == status.HTTP_409_CONFLICT
-        assert "already running" in response.json()["detail"]
+        assert "is already in use by" in response.json()["detail"]
+        assert "Stop the server to free up the port" in response.json()["detail"]
