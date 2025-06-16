@@ -14,8 +14,20 @@ from passlib.context import CryptContext
 import os
 import tempfile
 
-# 一時ファイルを使用してプロセス間での共有を可能にする
-test_db_path = os.path.join(tempfile.gettempdir(), "test_mc_server.db")
+# Worker固有のデータベースファイルを使用して並列実行時の分離を確保
+def get_worker_db_path():
+    """Get worker-specific database path for parallel execution isolation"""
+    try:
+        # pytest-xdistのworker IDを取得
+        import pytest
+        worker_id = getattr(pytest.current_pytest_config, 'workerinput', {}).get('workerid', 'master')
+    except (AttributeError, ImportError):
+        # フォールバック: 環境変数またはデフォルト
+        worker_id = os.environ.get('PYTEST_XDIST_WORKER', 'master')
+    
+    return os.path.join(tempfile.gettempdir(), f"test_mc_server_{worker_id}.db")
+
+test_db_path = get_worker_db_path()
 SQLALCHEMY_DATABASE_URL = f"sqlite:///{test_db_path}"
 
 engine = create_engine(
@@ -42,12 +54,18 @@ app.dependency_overrides[get_db] = override_get_db
 
 
 def pytest_sessionfinish(session, exitstatus):
-    """テストセッション終了時にテストデータベースファイルを削除"""
+    """
+    テストセッション終了時にworker固有のテストデータベースファイルを削除
+    Race conditionを避けるため、各workerが自分のファイルのみを削除
+    """
     try:
-        if os.path.exists(test_db_path):
-            os.remove(test_db_path)
-    except Exception:
-        pass
+        current_worker_db = get_worker_db_path()
+        if os.path.exists(current_worker_db):
+            os.remove(current_worker_db)
+    except Exception as e:
+        # エラーをログに記録するが、テスト結果には影響させない
+        import warnings
+        warnings.warn(f"Failed to cleanup test database {current_worker_db}: {e}")
 
 
 @pytest.fixture(scope="function")
@@ -67,17 +85,14 @@ def db():
             conn.commit()
 
 
-@pytest.fixture(scope="session")
-def base_client():
-    """Base TestClient for session scope"""
+@pytest.fixture(scope="function")
+def client(db):
+    """
+    Function-scoped TestClient to ensure proper isolation between tests
+    in parallel execution. Each test gets a fresh client instance.
+    """
     with TestClient(app) as c:
         yield c
-
-
-@pytest.fixture(scope="function")
-def client(db, base_client):
-    # dbフィクスチャを依存関係に追加してテーブルが作成されるようにする
-    yield base_client
 
 
 @pytest.fixture
