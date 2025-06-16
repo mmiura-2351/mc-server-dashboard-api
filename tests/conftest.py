@@ -147,6 +147,23 @@ def unapproved_user(db):
 
 
 @pytest.fixture
+def operator_user(db):
+    """テスト用オペレーターユーザーを作成"""
+    hashed_password = pwd_context.hash("operatorpassword")
+    user = User(
+        username="operator",
+        email="operator@example.com",
+        hashed_password=hashed_password,
+        role=Role.operator,
+        is_approved=True,
+    )
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    return user
+
+
+@pytest.fixture
 def user_service(db):
     """UserServiceのインスタンスを提供"""
     return UserService(db)
