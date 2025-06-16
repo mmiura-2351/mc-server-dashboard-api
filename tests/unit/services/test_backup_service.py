@@ -557,3 +557,248 @@ def test_global_backup_service_instance():
     """Test that global backup_service instance exists"""
     assert backup_service is not None
     assert isinstance(backup_service, BackupService)
+
+
+class TestMemoryExhaustionPrevention:
+    """Test memory exhaustion prevention features in backup service"""
+    
+    @pytest.fixture
+    def backup_service(self):
+        return BackupService()
+    
+    @pytest.fixture
+    def mock_upload_file(self):
+        """Create a mock UploadFile for testing"""
+        mock_file = Mock()
+        mock_file.filename = "test_backup.tar.gz"
+        mock_file.headers = {"content-length": "1048576"}  # 1MB
+        mock_file.read = AsyncMock()
+        return mock_file
+    
+    @pytest.fixture
+    def mock_db_session(self):
+        session = Mock()
+        session.commit = Mock()
+        session.rollback = Mock()
+        session.query = Mock()
+        session.add = Mock()
+        session.flush = Mock()
+        session.refresh = Mock()
+        return session
+    
+    @pytest.fixture
+    def mock_server(self):
+        server = Mock(spec=Server)
+        server.id = 1
+        server.name = "test-server"
+        server.owner_id = 1
+        server.directory_path = "/path/to/server"
+        return server
+    
+    @pytest.mark.asyncio
+    async def test_upload_backup_content_length_validation(self, backup_service, mock_upload_file, mock_db_session, mock_server):
+        """Test that upload_backup validates Content-Length header early"""
+        # Test with file size exceeding limit
+        mock_upload_file.headers = {"content-length": str(600 * 1024 * 1024)}  # 600MB
+        
+        with patch('app.services.backup_service.BackupValidationService.validate_server_for_backup', return_value=mock_server):
+            with pytest.raises(FileOperationException) as exc_info:
+                await backup_service.upload_backup(
+                    server_id=1,
+                    file=mock_upload_file,
+                    name="test_backup",
+                    db=mock_db_session
+                )
+            assert "exceeds maximum allowed size" in str(exc_info.value)
+    
+    @pytest.mark.asyncio
+    async def test_upload_backup_streaming_size_check(self, backup_service, mock_upload_file, mock_db_session, mock_server):
+        """Test that streaming upload monitors file size during processing"""
+        # Mock file that reports smaller size in header but streams more data
+        mock_upload_file.headers = {"content-length": "1048576"}  # 1MB in header
+        
+        # Mock chunks that exceed the actual limit when accumulated
+        large_chunk = b"x" * (100 * 1024 * 1024)  # 100MB chunks
+        mock_upload_file.read = AsyncMock(side_effect=[large_chunk] * 6 + [b""])  # 600MB total
+        
+        with patch('app.services.backup_service.BackupValidationService.validate_server_for_backup', return_value=mock_server):
+            with pytest.raises(FileOperationException) as exc_info:
+                await backup_service.upload_backup(
+                    server_id=1,
+                    file=mock_upload_file,
+                    name="test_backup",
+                    db=mock_db_session
+                )
+            assert "exceeds maximum allowed size" in str(exc_info.value)
+    
+    @pytest.mark.asyncio
+    @patch('app.services.backup_service.psutil')
+    async def test_resource_monitor_memory_limit(self, mock_psutil, backup_service, mock_upload_file, mock_db_session, mock_server):
+        """Test that ResourceMonitor detects memory limit violations"""
+        # Mock psutil to simulate increasing memory usage
+        mock_process = Mock()
+        initial_memory = 1024 * 1024 * 1024  # 1GB
+        excessive_memory = initial_memory + (300 * 1024 * 1024)  # +300MB (exceeds 256MB limit)
+        
+        mock_process.memory_info.return_value.rss = initial_memory
+        mock_psutil.Process.return_value = mock_process
+        
+        # Mock file chunks
+        mock_upload_file.read = AsyncMock(side_effect=[b"x" * 8192] * 100 + [b""])
+        
+        with patch('app.services.backup_service.BackupValidationService.validate_server_for_backup', return_value=mock_server):
+            with patch('tempfile.NamedTemporaryFile') as mock_temp:
+                mock_temp_file = Mock()
+                mock_temp_file.name = "/tmp/test_backup.tar.gz"
+                mock_temp_file.write = Mock()
+                mock_temp_file.flush = Mock()
+                mock_temp.return_value.__enter__.return_value = mock_temp_file
+                
+                # Simulate memory increase after some chunks
+                def memory_side_effect():
+                    if mock_temp_file.write.call_count > 50:  # After processing some chunks
+                        mock_process.memory_info.return_value.rss = excessive_memory
+                    return mock_process.memory_info.return_value
+                
+                mock_process.memory_info.side_effect = memory_side_effect
+                
+                with pytest.raises((FileOperationException, MemoryError)) as exc_info:
+                    await backup_service.upload_backup(
+                        server_id=1,
+                        file=mock_upload_file,
+                        name="test_backup",
+                        db=mock_db_session
+                    )
+                assert ("Memory limit exceeded" in str(exc_info.value) or 
+                        "Memory usage exceeded limit" in str(exc_info.value))
+    
+    @pytest.mark.asyncio
+    async def test_resource_monitor_without_psutil(self, backup_service, mock_upload_file, mock_db_session, mock_server):
+        """Test that ResourceMonitor works gracefully when psutil is not available"""
+        with patch('app.services.backup_service.psutil', None):
+            # Should still work but without memory monitoring
+            mock_upload_file.read = AsyncMock(side_effect=[b"x" * 1024] * 10 + [b""])
+            
+            with patch('app.services.backup_service.BackupValidationService.validate_server_for_backup', return_value=mock_server):
+                with patch('tempfile.NamedTemporaryFile') as mock_temp:
+                    mock_temp_file = Mock()
+                    mock_temp_file.name = "/tmp/test_backup.tar.gz"
+                    mock_temp_file.write = Mock()
+                    mock_temp_file.flush = Mock()
+                    mock_temp.return_value.__enter__.return_value = mock_temp_file
+                    
+                    with patch('tarfile.open') as mock_tarfile:
+                        mock_tar = Mock()
+                        mock_tar.getnames.return_value = ["test.txt"]
+                        mock_tarfile.return_value.__enter__.return_value = mock_tar
+                        
+                        with patch('app.core.security.TarExtractor.validate_archive_safety'):
+                            with patch('shutil.move'):
+                                # Should complete without memory monitoring
+                                result = await backup_service.upload_backup(
+                                    server_id=1,
+                                    file=mock_upload_file,
+                                    name="test_backup",
+                                    db=mock_db_session
+                                )
+                                assert result is not None
+    
+    @pytest.mark.asyncio
+    async def test_chunked_file_processing_memory_efficiency(self, backup_service):
+        """Test that file chunks are processed efficiently without excessive memory usage"""
+        # Test the _read_file_chunks method specifically
+        mock_file = Mock()
+        chunks = [b"x" * 8192] * 1000 + [b""]  # 1000 chunks of 8KB each
+        mock_file.read = AsyncMock(side_effect=chunks)
+        
+        total_bytes = 0
+        chunk_count = 0
+        
+        async for chunk in backup_service._read_file_chunks(mock_file, chunk_size=8192):
+            total_bytes += len(chunk)
+            chunk_count += 1
+            # Verify chunks are reasonable size
+            assert len(chunk) <= 8192
+        
+        assert chunk_count == 1000
+        assert total_bytes == 8192 * 1000
+        
+        # Verify file.read was called with correct chunk size
+        mock_file.read.assert_called_with(8192)
+    
+    @pytest.mark.asyncio 
+    async def test_async_directory_size_calculation_memory_efficiency(self):
+        """Test that async directory size calculation doesn't block event loop"""
+        from app.services.backup_service import BackupFileService
+        import tempfile
+        import asyncio
+        
+        # Create temporary directory with files
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            
+            # Create test files
+            for i in range(100):
+                (temp_path / f"file_{i}.txt").write_text(f"content {i}")
+            
+            service = BackupFileService(temp_path)
+            
+            # Measure time to ensure it doesn't block
+            start_time = asyncio.get_event_loop().time()
+            file_count, total_size = await service._calculate_directory_size_async(temp_path)
+            end_time = asyncio.get_event_loop().time()
+            
+            # Should complete reasonably quickly
+            assert end_time - start_time < 5.0  # Should take less than 5 seconds
+            assert file_count == 100
+            assert total_size > 0
+    
+    def test_resource_monitor_context_manager(self):
+        """Test ResourceMonitor as async context manager"""
+        from app.services.backup_service import ResourceMonitor
+        
+        # Test initialization
+        monitor = ResourceMonitor(max_memory_mb=128)
+        assert monitor.max_memory_bytes == 128 * 1024 * 1024
+    
+    @pytest.mark.asyncio
+    @patch('app.services.backup_service.psutil')
+    async def test_resource_monitor_memory_check_normal_usage(self, mock_psutil):
+        """Test ResourceMonitor with normal memory usage"""
+        from app.services.backup_service import ResourceMonitor
+        
+        mock_process = Mock()
+        initial_memory = 1024 * 1024 * 1024  # 1GB
+        normal_increase = initial_memory + (50 * 1024 * 1024)  # +50MB (within 256MB limit)
+        
+        mock_process.memory_info.return_value.rss = initial_memory
+        mock_psutil.Process.return_value = mock_process
+        
+        async with ResourceMonitor(max_memory_mb=256) as monitor:
+            # Simulate normal memory increase
+            mock_process.memory_info.return_value.rss = normal_increase
+            
+            # Should not raise exception
+            await monitor.check_memory_usage()
+    
+    @pytest.mark.asyncio
+    @patch('app.services.backup_service.psutil')
+    async def test_resource_monitor_memory_check_excessive_usage(self, mock_psutil):
+        """Test ResourceMonitor with excessive memory usage"""
+        from app.services.backup_service import ResourceMonitor
+        
+        mock_process = Mock()
+        initial_memory = 1024 * 1024 * 1024  # 1GB
+        excessive_memory = initial_memory + (300 * 1024 * 1024)  # +300MB (exceeds 256MB limit)
+        
+        mock_process.memory_info.return_value.rss = initial_memory
+        mock_psutil.Process.return_value = mock_process
+        
+        async with ResourceMonitor(max_memory_mb=256) as monitor:
+            # Simulate excessive memory increase
+            mock_process.memory_info.return_value.rss = excessive_memory
+            
+            # Should raise MemoryError
+            with pytest.raises(MemoryError) as exc_info:
+                await monitor.check_memory_usage()
+            assert "Memory usage exceeded limit" in str(exc_info.value)

@@ -1,9 +1,16 @@
+import asyncio
 import logging
 import shutil
 import tarfile
+import tempfile
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Annotated, Optional
+from typing import TYPE_CHECKING, Annotated, AsyncIterator, Optional
+
+try:
+    import psutil
+except ImportError:
+    psutil = None
 
 from sqlalchemy import and_
 from sqlalchemy.orm import Session
@@ -25,6 +32,51 @@ from app.servers.models import Backup, BackupStatus, BackupType, Server
 from app.services.minecraft_server import minecraft_server_manager
 
 logger = logging.getLogger(__name__)
+
+
+class ResourceMonitor:
+    """Monitor and limit resource usage during file operations"""
+
+    def __init__(self, max_memory_mb: int = 256):
+        self.max_memory_bytes = max_memory_mb * 1024 * 1024
+        self.initial_memory = None
+        self.enabled = psutil is not None
+
+        if not self.enabled:
+            logger.warning("psutil not available, memory monitoring disabled")
+
+    async def __aenter__(self):
+        """Enter resource monitoring context"""
+        if self.enabled:
+            process = psutil.Process()
+            self.initial_memory = process.memory_info().rss
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        """Exit resource monitoring context"""
+        if self.enabled and exc_type is None:
+            # Log final memory usage if no exception occurred
+            process = psutil.Process()
+            current_memory = process.memory_info().rss
+            memory_increase = current_memory - self.initial_memory
+            logger.debug(
+                f"Operation completed with memory increase: {memory_increase / 1024 / 1024:.1f}MB"
+            )
+
+    async def check_memory_usage(self) -> None:
+        """Check if memory usage exceeds limits"""
+        if not self.enabled or self.initial_memory is None:
+            return
+
+        process = psutil.Process()
+        current_memory = process.memory_info().rss
+        memory_increase = current_memory - self.initial_memory
+
+        if memory_increase > self.max_memory_bytes:
+            raise MemoryError(
+                f"Memory usage exceeded limit: {memory_increase / 1024 / 1024:.1f}MB "
+                f"(max: {self.max_memory_bytes / 1024 / 1024:.1f}MB)"
+            )
 
 
 class BackupValidationService:
@@ -146,32 +198,54 @@ class BackupFileService:
         self, server_dir: Path, backup_path: Path, progress_callback=None
     ) -> None:
         """Create tar.gz backup asynchronously with chunked processing"""
-        import asyncio
+        # Run the async tar creation directly
+        await self._create_tar_backup_chunked(server_dir, backup_path, progress_callback)
 
-        # Run the blocking tar creation in a thread pool to avoid blocking the event loop
-        loop = asyncio.get_event_loop()
-        await loop.run_in_executor(
-            None,
-            self._create_tar_backup_chunked,
-            server_dir,
-            backup_path,
-            progress_callback,
-        )
+    async def _calculate_directory_size_async(self, directory: Path) -> tuple[int, int]:
+        """Calculate directory size and file count without blocking event loop"""
+        total_files = 0
+        total_size = 0
 
-    def _create_tar_backup_chunked(
+        def get_file_info(path: Path) -> tuple[int, int]:
+            """Get file count and size for a single file or directory"""
+            try:
+                if path.is_file():
+                    return 1, path.stat().st_size
+                return 0, 0
+            except OSError:
+                return 0, 0
+
+        # Get all paths first
+        paths = list(directory.rglob("*"))
+
+        # Process files in batches to prevent overwhelming the system
+        batch_size = 100
+
+        for i in range(0, len(paths), batch_size):
+            batch = paths[i : i + batch_size]
+
+            # Execute file stat checks in thread pool
+            loop = asyncio.get_event_loop()
+            tasks = [loop.run_in_executor(None, get_file_info, path) for path in batch]
+
+            results = await asyncio.gather(*tasks)
+
+            # Aggregate results
+            for file_count, file_size in results:
+                total_files += file_count
+                total_size += file_size
+
+            # Yield control to allow other operations
+            await asyncio.sleep(0)
+
+        return total_files, total_size
+
+    async def _create_tar_backup_chunked(
         self, server_dir: Path, backup_path: Path, progress_callback=None
     ) -> None:
         """Create tar.gz backup with chunked processing for large files"""
-        total_files = 0
-        processed_files = 0
-        total_size = 0
-        processed_size = 0
-
-        # Count total files and calculate total size for progress tracking
-        for item in server_dir.rglob("*"):
-            if item.is_file():
-                total_files += 1
-                total_size += item.stat().st_size
+        # Count total files and calculate total size for progress tracking using async approach
+        total_files, total_size = await self._calculate_directory_size_async(server_dir)
 
         logger.info(
             f"Starting backup of {total_files} files ({total_size / (1024*1024):.1f}MB) from {server_dir}"
@@ -179,6 +253,34 @@ class BackupFileService:
 
         if progress_callback:
             progress_callback(0, total_files, 0, total_size)
+
+        # Run the blocking tar creation in a thread pool
+        loop = asyncio.get_event_loop()
+        await loop.run_in_executor(
+            None,
+            self._create_tar_archive_sync,
+            server_dir,
+            backup_path,
+            total_files,
+            total_size,
+            progress_callback,
+        )
+
+        logger.info(
+            f"Backup creation completed for {total_files} files ({total_size / (1024*1024):.1f}MB)"
+        )
+
+    def _create_tar_archive_sync(
+        self,
+        server_dir: Path,
+        backup_path: Path,
+        total_files: int,
+        total_size: int,
+        progress_callback=None,
+    ) -> None:
+        """Create tar.gz archive synchronously in thread pool"""
+        processed_files = 0
+        processed_size = 0
 
         with tarfile.open(backup_path, "w:gz") as tar:
             for item in server_dir.rglob("*"):
@@ -201,8 +303,16 @@ class BackupFileService:
 
                         # Report progress every 100 files or for large files
                         if processed_files % 100 == 0 or file_size > 50 * 1024 * 1024:
-                            progress = (processed_files / total_files) * 100
-                            size_progress = (processed_size / total_size) * 100
+                            progress = (
+                                (processed_files / total_files) * 100
+                                if total_files > 0
+                                else 0
+                            )
+                            size_progress = (
+                                (processed_size / total_size) * 100
+                                if total_size > 0
+                                else 0
+                            )
                             logger.info(
                                 f"Backup progress: {processed_files}/{total_files} files ({progress:.1f}%), {processed_size / (1024*1024):.1f}/{total_size / (1024*1024):.1f}MB ({size_progress:.1f}%)"
                             )
@@ -219,12 +329,13 @@ class BackupFileService:
                         logger.warning(f"Failed to add file {item} to backup: {e}")
                         continue
 
+        # Final progress callback
+        if progress_callback:
+            progress_callback(processed_files, total_files, processed_size, total_size)
+
         logger.info(
             f"Backup completed: {processed_files}/{total_files} files processed ({processed_size / (1024*1024):.1f}MB)"
         )
-
-        if progress_callback:
-            progress_callback(processed_files, total_files, processed_size, total_size)
 
     def _create_tar_backup(self, server_dir: Path, backup_path: Path) -> None:
         """Create tar.gz backup of server directory with streaming for large files"""
@@ -832,120 +943,160 @@ class BackupService:
         description: Optional[str] = None,
         db: Session = None,
     ) -> Backup:
-        """Upload a backup file and create backup record"""
-        try:
-            # Validate server exists
-            server = BackupValidationService.validate_server_for_backup(server_id, db)
+        """Upload a backup file and create backup record with streaming processing"""
+        temp_path = None
+        backup_path = None
 
-            # Validate file is a valid tar.gz file
-            if not file.filename.endswith((".tar.gz", ".tgz")):
-                raise FileOperationException(
-                    "upload", file.filename, "Only .tar.gz and .tgz files are supported"
-                )
-
-            # Generate backup name if not provided
-            if not name:
-                timestamp = datetime.now().strftime("%Y-%m-%d %H:%M")
-                name = f"Uploaded backup - {timestamp}"
-
-            # Generate unique filename
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            backup_filename = f"server_{server_id}_{timestamp}.tar.gz"
-            backup_path = self.backups_directory / backup_filename
-
-            # Read file content
-            content = await file.read()
-            file_size = len(content)
-
-            # Validate file size (max 500MB)
-            max_size = 500 * 1024 * 1024  # 500MB
-            if file_size > max_size:
-                raise FileOperationException(
-                    "upload",
-                    file.filename,
-                    f"File size ({file_size / (1024*1024):.1f}MB) exceeds maximum allowed size (500MB)",
-                )
-
-            # Validate content is a safe and valid tar.gz file
-            import io
-            import tarfile
-            import tempfile
-
-            # First, basic tar.gz format validation
+        # Start resource monitoring
+        async with ResourceMonitor(max_memory_mb=256) as monitor:
             try:
-                with tarfile.open(fileobj=io.BytesIO(content), mode="r:gz") as tar:
-                    # Just check if we can open it as a tar.gz file
-                    tar.getnames()
+                # Validate server exists
+                BackupValidationService.validate_server_for_backup(server_id, db)
+
+                # Validate file is a valid tar.gz file
+                if not file.filename.endswith((".tar.gz", ".tgz")):
+                    raise FileOperationException(
+                        "upload",
+                        file.filename,
+                        "Only .tar.gz and .tgz files are supported",
+                    )
+
+                # Check Content-Length header first for early validation
+                content_length = file.headers.get("content-length")
+                max_size = 500 * 1024 * 1024  # 500MB
+
+                if content_length and int(content_length) > max_size:
+                    raise FileOperationException(
+                        "upload",
+                        file.filename,
+                        f"File size ({int(content_length) / (1024*1024):.1f}MB) exceeds maximum allowed size (500MB)",
+                    )
+
+                # Generate backup name if not provided
+                if not name:
+                    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M")
+                    name = f"Uploaded backup - {timestamp}"
+
+                # Generate unique filename
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                backup_filename = f"server_{server_id}_{timestamp}.tar.gz"
+                backup_path = self.backups_directory / backup_filename
+
+                # Create temporary file for streaming upload with size monitoring
+                with tempfile.NamedTemporaryFile(
+                    suffix=".tar.gz", delete=False
+                ) as temp_file:
+                    temp_path = Path(temp_file.name)
+                    total_size = 0
+                    chunk_count = 0
+
+                    # Stream file to temporary location with size and memory monitoring
+                    async for chunk in self._read_file_chunks(file):
+                        total_size += len(chunk)
+                        chunk_count += 1
+
+                        # Check size limit during streaming
+                        if total_size > max_size:
+                            raise FileOperationException(
+                                "upload",
+                                file.filename,
+                                f"File size ({total_size / (1024*1024):.1f}MB) exceeds maximum allowed size (500MB)",
+                            )
+
+                        temp_file.write(chunk)
+
+                        # Check memory usage every 100 chunks to avoid overhead
+                        if chunk_count % 100 == 0:
+                            await monitor.check_memory_usage()
+
+                    temp_file.flush()
+                    file_size = total_size
+
+                # Validate the uploaded file's safety and format
+                try:
+                    # Basic tar.gz format validation using file path
+                    with tarfile.open(temp_path, mode="r:gz") as tar:
+                        # Just check if we can open it as a tar.gz file
+                        tar.getnames()
+
+                    # Final memory check before validation
+                    await monitor.check_memory_usage()
+
+                    # Use comprehensive security validation
+                    TarExtractor.validate_archive_safety(temp_path)
+                    logger.info(f"Upload validation passed for {file.filename}")
+
+                except SecurityError as e:
+                    raise FileOperationException(
+                        "upload", file.filename, f"Security validation failed: {str(e)}"
+                    )
+                except MemoryError as e:
+                    raise FileOperationException(
+                        "upload",
+                        file.filename,
+                        f"Memory limit exceeded during validation: {str(e)}",
+                    )
+                except Exception as e:
+                    raise FileOperationException(
+                        "upload", file.filename, f"Invalid tar.gz file: {str(e)}"
+                    )
+
+                # Create backup directory if it doesn't exist
+                self.backups_directory.mkdir(exist_ok=True)
+
+                # Move validated temp file to final location
+                shutil.move(str(temp_path), str(backup_path))
+                temp_path = None  # Mark as moved so we don't delete it in cleanup
+
+                logger.info(f"Uploaded backup file: {backup_path} ({file_size} bytes)")
+
+                # Create backup record in database
+                backup = Backup(
+                    server_id=server_id,
+                    name=name,
+                    description=description,
+                    file_path=str(backup_path),
+                    file_size=file_size,
+                    backup_type=BackupType.manual,
+                    status=BackupStatus.completed,  # Uploaded backups are immediately completed
+                    created_at=datetime.now(),
+                )
+
+                db.add(backup)
+                db.commit()
+                db.refresh(backup)
+
+                logger.info(f"Created backup record: ID {backup.id}")
+
+                return backup
+
             except Exception as e:
-                raise FileOperationException(
-                    "upload", file.filename, f"Invalid tar.gz file: {str(e)}"
-                )
+                logger.error(f"Failed to upload backup for server {server_id}: {e}")
 
-            # Create temporary file for comprehensive security validation
-            with tempfile.NamedTemporaryFile(suffix=".tar.gz", delete=False) as temp_file:
-                temp_file.write(content)
-                temp_file.flush()
-                temp_path = Path(temp_file.name)
+                # Clean up temporary file if it exists
+                if temp_path and temp_path.exists():
+                    temp_path.unlink(missing_ok=True)
 
-            try:
-                # Use comprehensive security validation
-                TarExtractor.validate_archive_safety(temp_path)
-                logger.info(f"Upload validation passed for {file.filename}")
-            except SecurityError as e:
-                # Clean up temp file
-                temp_path.unlink(missing_ok=True)
-                raise FileOperationException(
-                    "upload", file.filename, f"Security validation failed: {str(e)}"
-                )
-            except Exception as e:
-                # Clean up temp file
-                temp_path.unlink(missing_ok=True)
-                raise FileOperationException(
-                    "upload", file.filename, f"Validation error: {str(e)}"
-                )
-            finally:
-                # Always clean up temp file
-                temp_path.unlink(missing_ok=True)
+                # Clean up backup file if it was created
+                if backup_path and backup_path.exists():
+                    backup_path.unlink(missing_ok=True)
 
-            # Create backup directory if it doesn't exist
-            self.backups_directory.mkdir(exist_ok=True)
+                if isinstance(
+                    e, (FileOperationException, DatabaseOperationException, MemoryError)
+                ):
+                    raise e
+                else:
+                    raise DatabaseOperationException("upload", "backup", str(e))
 
-            # Write file to backup directory
-            with open(backup_path, "wb") as f:
-                f.write(content)
-
-            logger.info(f"Uploaded backup file: {backup_path} ({file_size} bytes)")
-
-            # Create backup record in database
-            backup = Backup(
-                server_id=server_id,
-                name=name,
-                description=description,
-                file_path=str(backup_path),
-                file_size=file_size,
-                backup_type=BackupType.manual,
-                status=BackupStatus.completed,  # Uploaded backups are immediately completed
-                created_at=datetime.now(),
-            )
-
-            db.add(backup)
-            db.commit()
-            db.refresh(backup)
-
-            logger.info(f"Created backup record: ID {backup.id}")
-
-            return backup
-
-        except Exception as e:
-            logger.error(f"Failed to upload backup for server {server_id}: {e}")
-            # Clean up file if it was created
-            if "backup_path" in locals() and backup_path.exists():
-                backup_path.unlink()
-
-            if isinstance(e, (FileOperationException, DatabaseOperationException)):
-                raise e
-            else:
-                raise DatabaseOperationException("upload", "backup", str(e))
+    async def _read_file_chunks(
+        self, file: "UploadFile", chunk_size: int = 8192
+    ) -> AsyncIterator[bytes]:
+        """Read uploaded file in chunks to prevent memory exhaustion"""
+        while True:
+            chunk = await file.read(chunk_size)
+            if not chunk:
+                break
+            yield chunk
 
 
 # Global backup service instance
