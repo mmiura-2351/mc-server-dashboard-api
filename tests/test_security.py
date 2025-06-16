@@ -519,7 +519,13 @@ class TestBackupServiceSecurity:
             # Create mock upload file
             mock_upload_file = AsyncMock()
             mock_upload_file.filename = "malicious.tar.gz"
-            mock_upload_file.read.return_value = malicious_bytes
+            mock_upload_file.headers = {"content-length": str(len(malicious_bytes))}
+            
+            # Mock the chunked reading behavior for streaming
+            chunk_size = 8192
+            chunks = [malicious_bytes[i:i+chunk_size] for i in range(0, len(malicious_bytes), chunk_size)]
+            chunks.append(b"")  # End of file marker
+            mock_upload_file.read = AsyncMock(side_effect=chunks)
             
             # Create mock database session
             mock_db = Mock()
