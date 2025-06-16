@@ -2,6 +2,7 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
 from unittest.mock import Mock
 from app.main import app
 from app.core.database import get_db, Base
@@ -10,7 +11,12 @@ from app.services.user import UserService
 from passlib.context import CryptContext
 
 # テスト用のインメモリSQLiteデータベース
-SQLALCHEMY_DATABASE_URL = "sqlite:///:memory:"
+import os
+import tempfile
+
+# 一時ファイルを使用してプロセス間での共有を可能にする
+test_db_path = os.path.join(tempfile.gettempdir(), "test_mc_server.db")
+SQLALCHEMY_DATABASE_URL = f"sqlite:///{test_db_path}"
 
 engine = create_engine(
     SQLALCHEMY_DATABASE_URL, 
@@ -20,7 +26,8 @@ engine = create_engine(
 )
 TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+# テスト用の軽量なパスワードハッシュ化（高速化のため）
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto", bcrypt__rounds=4)
 
 
 def override_get_db():
@@ -34,22 +41,43 @@ def override_get_db():
 app.dependency_overrides[get_db] = override_get_db
 
 
+def pytest_sessionfinish(session, exitstatus):
+    """テストセッション終了時にテストデータベースファイルを削除"""
+    try:
+        if os.path.exists(test_db_path):
+            os.remove(test_db_path)
+    except Exception:
+        pass
+
+
 @pytest.fixture(scope="function")
 def db():
+    # テーブルを作成
     Base.metadata.create_all(bind=engine)
     db = TestingSessionLocal()
     try:
         yield db
     finally:
+        # セッションをクローズ
         db.close()
-        Base.metadata.drop_all(bind=engine)
+        # 全テーブルをクリア（より軽量）
+        with engine.connect() as conn:
+            for table in reversed(Base.metadata.sorted_tables):
+                conn.execute(table.delete())
+            conn.commit()
+
+
+@pytest.fixture(scope="session")
+def base_client():
+    """Base TestClient for session scope"""
+    with TestClient(app) as c:
+        yield c
 
 
 @pytest.fixture(scope="function")
-def client(db):
+def client(db, base_client):
     # dbフィクスチャを依存関係に追加してテーブルが作成されるようにする
-    with TestClient(app) as c:
-        yield c
+    yield base_client
 
 
 @pytest.fixture
