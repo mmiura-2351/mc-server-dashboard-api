@@ -29,6 +29,8 @@ class ServerProcess:
     status: ServerStatus
     started_at: datetime
     pid: Optional[int] = None
+    # Directory path for the server (needed for log monitoring)
+    server_directory: Optional[Path] = None
     # Track background tasks for proper cleanup
     log_task: Optional[asyncio.Task] = None
     monitor_task: Optional[asyncio.Task] = None
@@ -508,6 +510,7 @@ class MinecraftServerManager:
                 status=ServerStatus.running,  # Assume running since process exists
                 started_at=started_at,
                 pid=pid,
+                server_directory=server_dir,  # Store correct directory path for monitoring
             )
 
             self.processes[server_id] = server_process
@@ -704,12 +707,13 @@ class MinecraftServerManager:
                     )
                     server_process.status = ServerStatus.error
                     self._notify_status_change(server_id, ServerStatus.error)
-                    await self._cleanup_server_process(server_id)
+                    # Schedule cleanup without awaiting to avoid self-await issue
+                    asyncio.create_task(self._cleanup_server_process(server_id))
                     return
 
                 # Check log file for startup completion
                 try:
-                    server_dir = self.base_directory / str(server_id)
+                    server_dir = server_process.server_directory or (self.base_directory / str(server_id))
                     log_file_path = server_dir / "server.log"
 
                     if i % 10 == 0:  # Log every 5 seconds (10 iterations at 0.5s)
@@ -718,7 +722,7 @@ class MinecraftServerManager:
                         elapsed_seconds = (i + 1) * 0.5
                         logger.info(
                             f"Checking startup for server {server_id}, {elapsed_seconds:.1f}s/{startup_timeout_seconds}s elapsed, "
-                            f"log file exists: {file_exists}, size: {file_size} bytes"
+                            f"log file: {log_file_path}, exists: {file_exists}, size: {file_size} bytes"
                         )
 
                     if log_file_path.exists() and log_file_path.stat().st_size > 0:
@@ -759,15 +763,27 @@ class MinecraftServerManager:
                             startup_detected_local = False
                             detected_pattern = None
 
+                            # Debug: check each pattern individually
+                            pattern_results = []
                             for pattern1, pattern2 in startup_patterns:
-                                if pattern1 in content and (
-                                    not pattern2 or pattern2 in content
-                                ):
+                                p1_found = pattern1 in content
+                                p2_found = not pattern2 or pattern2 in content
+                                pattern_results.append(
+                                    f"{pattern1}:{p1_found}, {pattern2 or 'N/A'}:{p2_found}"
+                                )
+
+                                if p1_found and p2_found:
                                     startup_detected_local = True
                                     detected_pattern = (
                                         f"{pattern1}+{pattern2}" if pattern2 else pattern1
                                     )
                                     break
+
+                            # Debug logging for pattern matching
+                            if i % 10 == 0 and content:  # Every 5 seconds
+                                logger.info(
+                                    f"Server {server_id} pattern check at {(i+1)*0.5:.1f}s: {pattern_results[:2]}"
+                                )
 
                             if startup_detected_local:
                                 elapsed_seconds = (i + 1) * 0.5
@@ -832,7 +848,7 @@ class MinecraftServerManager:
             if not startup_detected:
                 if await self._is_process_running(pid):
                     # Get diagnostic information about log files
-                    server_dir = self.base_directory / str(server_id)
+                    server_dir = server_process.server_directory or (self.base_directory / str(server_id))
                     diagnostic_info = await self._diagnose_log_issues(
                         server_id, server_dir
                     )
@@ -849,7 +865,8 @@ class MinecraftServerManager:
                     )
                     server_process.status = ServerStatus.error
                     self._notify_status_change(server_id, ServerStatus.error)
-                    await self._cleanup_server_process(server_id)
+                    # Schedule cleanup without awaiting to avoid self-await issue
+                    asyncio.create_task(self._cleanup_server_process(server_id))
                     return
 
             # Continue monitoring for process termination
@@ -858,7 +875,8 @@ class MinecraftServerManager:
                     logger.info(f"Daemon server {server_id} process {pid} has stopped")
                     server_process.status = ServerStatus.stopped
                     self._notify_status_change(server_id, ServerStatus.stopped)
-                    await self._cleanup_server_process(server_id)
+                    # Schedule cleanup without awaiting to avoid self-await issue
+                    asyncio.create_task(self._cleanup_server_process(server_id))
                     break
 
                 # Check every 5 seconds
@@ -873,7 +891,8 @@ class MinecraftServerManager:
             )
             server_process.status = ServerStatus.error
             self._notify_status_change(server_id, ServerStatus.error)
-            await self._cleanup_server_process(server_id)
+            # Schedule cleanup without awaiting to avoid self-await issue
+            asyncio.create_task(self._cleanup_server_process(server_id))
 
     async def _cleanup_server_process(self, server_id: int):
         """Clean up server process and associated resources"""
@@ -938,7 +957,7 @@ class MinecraftServerManager:
 
                 # Remove PID file
                 try:
-                    server_dir = self.base_directory / str(server_id)
+                    server_dir = server_process.server_directory or (self.base_directory / str(server_id))
                     await self._remove_pid_file(server_id, server_dir)
                 except Exception as pid_error:
                     logger.warning(
@@ -1286,6 +1305,7 @@ class MinecraftServerManager:
                 status=ServerStatus.starting,
                 started_at=datetime.now(),
                 pid=daemon_pid,
+                server_directory=server_dir,  # Store correct directory path for monitoring
             )
 
             self.processes[server.id] = server_process
@@ -1493,7 +1513,7 @@ class MinecraftServerManager:
     async def _read_server_logs(self, server_process: ServerProcess):
         """Read server logs from file and put them in the queue"""
         try:
-            server_dir = self.base_directory / str(server_process.server_id)
+            server_dir = server_process.server_directory or (self.base_directory / str(server_process.server_id))
             log_file_path = server_dir / "server.log"
 
             # Track last read position to avoid re-reading
