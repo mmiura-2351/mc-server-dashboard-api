@@ -1,0 +1,634 @@
+"""
+Integration tests for MinecraftServerManager monitoring and logging
+Tests log reading, streaming, process monitoring, and status detection
+"""
+
+import asyncio
+import time
+from datetime import datetime
+from pathlib import Path
+from unittest.mock import Mock, patch, AsyncMock
+from typing import List
+
+import pytest
+import pytest_asyncio
+
+from app.servers.models import ServerStatus
+from app.services.minecraft_server import MinecraftServerManager, ServerProcess
+
+
+class TestMinecraftServerMonitoringIntegration:
+    """Integration tests for server monitoring and log management"""
+    
+    @pytest.fixture
+    def manager(self):
+        return MinecraftServerManager(log_queue_size=20)
+    
+    @pytest_asyncio.fixture
+    async def server_with_log_output(self, tmp_path):
+        """Create a server that produces realistic log output"""
+        log_server_script = tmp_path / "log_server.py"
+        log_server_script.write_text("""
+import sys
+import time
+import signal
+import threading
+
+running = True
+
+def signal_handler(signum, frame):
+    global running
+    running = False
+
+signal.signal(signal.SIGTERM, signal_handler)
+
+# Simulate realistic Minecraft server log sequence
+logs = [
+    "[12:34:56] [main/INFO]: Environment: authHost='https://authserver.mojang.com', accountsHost='https://api.mojang.com'",
+    "[12:34:56] [main/INFO]: Setting user: TestUser",
+    "[12:34:56] [main/INFO]: Reloading ResourceManager: Default",
+    "[12:34:57] [Server thread/INFO]: Starting minecraft server version 1.20.1",
+    "[12:34:57] [Server thread/INFO]: Loading properties",
+    "[12:34:57] [Server thread/INFO]: Default game type: SURVIVAL",
+    "[12:34:58] [Server thread/INFO]: Generating keypair",
+    "[12:34:58] [Server thread/INFO]: Starting Minecraft server on *:25565",
+    "[12:34:58] [Server thread/INFO]: Using epoll channel type",
+    "[12:34:59] [Server thread/INFO]: Preparing level \\"world\\"",
+    "[12:34:59] [Server thread/INFO]: Preparing start region for dimension minecraft:overworld",
+    "[12:35:00] [Worker-Main-1/INFO]: Preparing spawn area: 0%",
+    "[12:35:00] [Worker-Main-1/INFO]: Preparing spawn area: 47%",
+    "[12:35:01] [Worker-Main-1/INFO]: Preparing spawn area: 100%",
+    "[12:35:01] [Server thread/INFO]: Time elapsed: 2345 ms",
+    "[12:35:01] [Server thread/INFO]: Done (2.345s)! For help, type \\"help\\"",
+    "[12:35:02] [Server thread/INFO]: Starting remote control listener",
+    "[12:35:02] [Server thread/INFO]: Thread RCON Listener started",
+    "[12:35:03] [Server thread/INFO]: Server startup complete"
+]
+
+# Output logs with timing
+for i, log in enumerate(logs):
+    print(log, flush=True)
+    time.sleep(0.1)
+    if not running:
+        break
+
+# Handle commands
+def handle_commands():
+    global running
+    try:
+        while running:
+            line = input()
+            if line.strip() == "stop":
+                print("[12:35:10] [Server thread/INFO]: Stopping the server")
+                print("[12:35:10] [Server thread/INFO]: Stopping server")
+                print("[12:35:10] [Server thread/INFO]: Saving players")
+                print("[12:35:10] [Server thread/INFO]: Saving worlds")
+                print("[12:35:11] [Server thread/INFO]: Saving chunks for level 'ServerLevel[world]'/minecraft:overworld")
+                print("[12:35:11] [Server thread/INFO]: ThreadedAnvilChunkStorage: All chunks saved")
+                running = False
+                break
+            else:
+                print(f"[12:35:15] [Server thread/INFO]: Unknown command. Type \\"help\\" for help.")
+    except EOFError:
+        pass
+
+command_thread = threading.Thread(target=handle_commands)
+command_thread.daemon = True
+command_thread.start()
+
+# Keep running
+while running:
+    time.sleep(0.1)
+
+print("[12:35:12] [Server thread/INFO]: Closing Server")
+""")
+        
+        return ["python", str(log_server_script)]
+
+    # ===== Log Reading Integration Tests =====
+
+    @pytest.mark.asyncio
+    async def test_read_server_logs_complete_workflow(self, manager, server_with_log_output):
+        """Test lines 581-605: Complete log reading and processing workflow"""
+        
+        # Start the log-producing process
+        process = await asyncio.create_subprocess_exec(
+            *server_with_log_output,
+            stdin=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.STDOUT
+        )
+        
+        log_queue = asyncio.Queue(maxsize=50)
+        server_process = ServerProcess(
+            server_id=1,
+            process=process,
+            log_queue=log_queue,
+            status=ServerStatus.starting,
+            started_at=datetime.now(),
+            pid=process.pid
+        )
+        
+        # Record status changes
+        status_changes = []
+        def record_status_change(server_id, status):
+            status_changes.append((server_id, status))
+        
+        manager.set_status_update_callback(record_status_change)
+        manager.processes[1] = server_process
+        
+        with patch("app.services.minecraft_server.logger") as mock_logger:
+            # Start log reading task
+            log_task = asyncio.create_task(manager._read_server_logs(server_process))
+            
+            # Wait for logs to be processed
+            await asyncio.sleep(2.0)
+            
+            # Verify server ready detection (lines 599-605)
+            # The "Done" + "For help" message should trigger status change to running
+            running_status_changes = [(sid, status) for sid, status in status_changes if status == ServerStatus.running]
+            assert len(running_status_changes) >= 1
+            
+            # Verify status update logging
+            info_calls = [call[0][0] for call in mock_logger.info.call_args_list]
+            ready_logs = [log for log in info_calls if "Server 1 is now running" in log]
+            assert len(ready_logs) >= 1
+            
+            # Verify logs were queued with timestamps (lines 583-589)
+            queued_logs = []
+            while not log_queue.empty():
+                try:
+                    log = log_queue.get_nowait()
+                    queued_logs.append(log)
+                except asyncio.QueueEmpty:
+                    break
+            
+            assert len(queued_logs) > 10  # Should have many logs
+            
+            # Verify timestamp formatting
+            timestamped_logs = [log for log in queued_logs if log.startswith("[20")]  # Year 20XX
+            assert len(timestamped_logs) > 5
+            
+            # Verify specific server messages were captured
+            server_logs_content = " ".join(queued_logs)
+            assert "Starting minecraft server version 1.20.1" in server_logs_content
+            assert "Done (2.345s)! For help" in server_logs_content
+            assert "Server startup complete" in server_logs_content
+            
+            # Stop the server and task
+            if process.returncode is None:
+                process.terminate()
+                await process.wait()
+            
+            log_task.cancel()
+            try:
+                await log_task
+            except asyncio.CancelledError:
+                pass
+
+    @pytest.mark.asyncio
+    async def test_read_server_logs_queue_overflow_handling(self, manager, server_with_log_output):
+        """Test lines 590-596: Queue overflow protection"""
+        
+        process = await asyncio.create_subprocess_exec(
+            *server_with_log_output,
+            stdin=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.STDOUT
+        )
+        
+        # Create a small queue to trigger overflow
+        log_queue = asyncio.Queue(maxsize=3)
+        server_process = ServerProcess(
+            server_id=1,
+            process=process,
+            log_queue=log_queue,
+            status=ServerStatus.starting,
+            started_at=datetime.now(),
+            pid=process.pid
+        )
+        
+        # Start log reading
+        log_task = asyncio.create_task(manager._read_server_logs(server_process))
+        
+        # Wait for overflow to occur
+        await asyncio.sleep(1.0)
+        
+        # Verify queue management - queue should not exceed maxsize
+        # The overflow protection should remove old logs and add new ones
+        assert log_queue.qsize() <= 3
+        
+        # Stop
+        if process.returncode is None:
+            process.terminate()
+            await process.wait()
+        
+        log_task.cancel()
+        try:
+            await log_task
+        except asyncio.CancelledError:
+            pass
+
+    @pytest.mark.asyncio
+    async def test_read_server_logs_exception_handling(self, manager):
+        """Test lines 607-608: Log reading exception handling"""
+        
+        # Create a mock process that will cause an exception
+        mock_process = Mock()
+        mock_process.stdout = Mock()
+        
+        # Make stdout iteration raise an exception
+        async def failing_stdout():
+            yield b"[12:34:56] Initial log\n"
+            raise Exception("Stdout read failed")
+        
+        mock_process.stdout.__aiter__ = Mock(return_value=failing_stdout())
+        
+        server_process = ServerProcess(
+            server_id=1,
+            process=mock_process,
+            log_queue=asyncio.Queue(),
+            status=ServerStatus.running,
+            started_at=datetime.now(),
+            pid=12345
+        )
+        
+        with patch("app.services.minecraft_server.logger") as mock_logger:
+            await manager._read_server_logs(server_process)
+            
+            # Verify error logging
+            mock_logger.error.assert_called()
+            error_calls = [call[0][0] for call in mock_logger.error.call_args_list]
+            log_error_logs = [log for log in error_calls if "Error reading logs for server 1" in log]
+            assert len(log_error_logs) >= 1
+
+    # ===== Process Monitoring Integration Tests =====
+
+    @pytest.mark.asyncio
+    async def test_monitor_server_immediate_failure(self, manager):
+        """Test lines 614-628: Process monitoring immediate failure detection"""
+        
+        # Create a process that exits immediately
+        process = await asyncio.create_subprocess_exec(
+            "python", "-c", "import sys; print('Starting...'); sys.exit(1)",
+            stdin=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.STDOUT
+        )
+        
+        server_process = ServerProcess(
+            server_id=1,
+            process=process,
+            log_queue=asyncio.Queue(),
+            status=ServerStatus.starting,
+            started_at=datetime.now(),
+            pid=process.pid
+        )
+        
+        # Record status changes
+        status_changes = []
+        def record_status_change(server_id, status):
+            status_changes.append((server_id, status))
+        
+        manager.set_status_update_callback(record_status_change)
+        
+        with patch.object(manager, '_cleanup_server_process') as mock_cleanup:
+            with patch("app.services.minecraft_server.logger") as mock_logger:
+                
+                await manager._monitor_server(server_process)
+                
+                # Verify error status was set
+                assert server_process.status == ServerStatus.error
+                
+                # Verify status change notification
+                assert (1, ServerStatus.error) in status_changes
+                
+                # Verify cleanup was called
+                mock_cleanup.assert_called_with(1)
+                
+                # Verify error logging
+                error_calls = [call[0][0] for call in mock_logger.error.call_args_list]
+                failure_logs = [log for log in error_calls if "failed to start" in log and "exited immediately" in log]
+                assert len(failure_logs) >= 1
+
+    @pytest.mark.asyncio
+    async def test_monitor_server_stable_process(self, manager, server_with_log_output):
+        """Test lines 630-637: Process monitoring for stable process"""
+        
+        process = await asyncio.create_subprocess_exec(
+            *server_with_log_output,
+            stdin=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.STDOUT
+        )
+        
+        server_process = ServerProcess(
+            server_id=1,
+            process=process,
+            log_queue=asyncio.Queue(),
+            status=ServerStatus.starting,
+            started_at=datetime.now(),
+            pid=process.pid
+        )
+        
+        # Record status changes
+        status_changes = []
+        def record_status_change(server_id, status):
+            status_changes.append((server_id, status))
+        
+        manager.set_status_update_callback(record_status_change)
+        
+        with patch("app.services.minecraft_server.logger") as mock_logger:
+            # Start monitoring in background
+            monitor_task = asyncio.create_task(manager._monitor_server(server_process))
+            
+            # Wait for stability period (5+ seconds)
+            await asyncio.sleep(6.0)
+            
+            # Verify stable process status
+            assert server_process.status == ServerStatus.running
+            
+            # Verify status change notification
+            assert (1, ServerStatus.running) in status_changes
+            
+            # Verify stability logging
+            info_calls = [call[0][0] for call in mock_logger.info.call_args_list]
+            stable_logs = [log for log in info_calls if "process is stable after 5 seconds" in log]
+            assert len(stable_logs) >= 1
+            
+            # Stop the process and monitoring
+            process.terminate()
+            await process.wait()
+            
+            # Wait for monitoring to complete
+            try:
+                await asyncio.wait_for(monitor_task, timeout=2.0)
+            except asyncio.TimeoutError:
+                monitor_task.cancel()
+
+    @pytest.mark.asyncio
+    async def test_monitor_server_normal_termination(self, manager):
+        """Test lines 641-648: Normal process termination monitoring"""
+        
+        # Create a process that runs briefly then exits normally
+        process = await asyncio.create_subprocess_exec(
+            "python", "-c", "import time; print('Running...'); time.sleep(0.5); print('Done')",
+            stdin=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.STDOUT
+        )
+        
+        server_process = ServerProcess(
+            server_id=1,
+            process=process,
+            log_queue=asyncio.Queue(),
+            status=ServerStatus.running,  # Already running
+            started_at=datetime.now(),
+            pid=process.pid
+        )
+        
+        # Record status changes
+        status_changes = []
+        def record_status_change(server_id, status):
+            status_changes.append((server_id, status))
+        
+        manager.set_status_update_callback(record_status_change)
+        
+        with patch.object(manager, '_cleanup_server_process') as mock_cleanup:
+            with patch("app.services.minecraft_server.logger") as mock_logger:
+                
+                # Wait for process to complete normally
+                await manager._monitor_server(server_process)
+                
+                # Verify status change to stopped (normal termination)
+                assert (1, ServerStatus.stopped) in status_changes
+                
+                # Verify cleanup was called
+                mock_cleanup.assert_called_with(1)
+                
+                # Verify normal termination logging
+                info_calls = [call[0][0] for call in mock_logger.info.call_args_list]
+                normal_logs = [log for log in info_calls if "stopped normally" in log]
+                assert len(normal_logs) >= 1
+
+    @pytest.mark.asyncio
+    async def test_monitor_server_crash_detection(self, manager):
+        """Test lines 649-654: Process crash detection"""
+        
+        # Create a process that will crash (non-zero exit)
+        process = await asyncio.create_subprocess_exec(
+            "python", "-c", "import time; time.sleep(0.5); raise Exception('Server crashed')",
+            stdin=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.STDOUT
+        )
+        
+        server_process = ServerProcess(
+            server_id=1,
+            process=process,
+            log_queue=asyncio.Queue(),
+            status=ServerStatus.running,
+            started_at=datetime.now(),
+            pid=process.pid
+        )
+        
+        # Record status changes
+        status_changes = []
+        def record_status_change(server_id, status):
+            status_changes.append((server_id, status))
+        
+        manager.set_status_update_callback(record_status_change)
+        
+        with patch.object(manager, '_cleanup_server_process') as mock_cleanup:
+            with patch("app.services.minecraft_server.logger") as mock_logger:
+                
+                await manager._monitor_server(server_process)
+                
+                # Verify error status was set
+                assert server_process.status == ServerStatus.error
+                
+                # Verify status change notification
+                assert (1, ServerStatus.error) in status_changes
+                
+                # Verify cleanup was called
+                mock_cleanup.assert_called_with(1)
+                
+                # Verify crash logging
+                warning_calls = [call[0][0] for call in mock_logger.warning.call_args_list]
+                crash_logs = [log for log in warning_calls if "crashed with code" in log]
+                assert len(crash_logs) >= 1
+
+    @pytest.mark.asyncio
+    async def test_monitor_server_exception_handling(self, manager):
+        """Test lines 659-666: Monitor exception handling"""
+        
+        mock_process = Mock()
+        mock_process.wait = AsyncMock(side_effect=Exception("Process monitoring failed"))
+        
+        server_process = ServerProcess(
+            server_id=1,
+            process=mock_process,
+            log_queue=asyncio.Queue(),
+            status=ServerStatus.starting,
+            started_at=datetime.now(),
+            pid=12345
+        )
+        
+        # Record status changes
+        status_changes = []
+        def record_status_change(server_id, status):
+            status_changes.append((server_id, status))
+        
+        manager.set_status_update_callback(record_status_change)
+        
+        with patch.object(manager, '_cleanup_server_process') as mock_cleanup:
+            with patch("app.services.minecraft_server.logger") as mock_logger:
+                
+                await manager._monitor_server(server_process)
+                
+                # Verify error status was set
+                assert server_process.status == ServerStatus.error
+                
+                # Verify status change notification
+                assert (1, ServerStatus.error) in status_changes
+                
+                # Verify cleanup was called
+                mock_cleanup.assert_called_with(1)
+                
+                # Verify exception logging
+                error_calls = [call[0][0] for call in mock_logger.error.call_args_list]
+                monitor_error_logs = [log for log in error_calls if "Error monitoring server 1" in log]
+                assert len(monitor_error_logs) >= 1
+
+    # ===== Log Retrieval Integration Tests =====
+
+    @pytest.mark.asyncio
+    async def test_get_server_logs_with_real_queue(self, manager):
+        """Test lines 545-556: Log retrieval from real queue"""
+        
+        log_queue = asyncio.Queue()
+        
+        # Add logs with timestamps (simulating real log format)
+        test_logs = [
+            "[2024-01-01 12:34:56] Server starting...",
+            "[2024-01-01 12:34:57] Loading world...",
+            "[2024-01-01 12:34:58] Server ready!",
+            "[2024-01-01 12:34:59] Player joined",
+            "[2024-01-01 12:35:00] Player left"
+        ]
+        
+        for log in test_logs:
+            await log_queue.put(log)
+        
+        server_process = ServerProcess(
+            server_id=1,
+            process=Mock(),
+            log_queue=log_queue,
+            status=ServerStatus.running,
+            started_at=datetime.now(),
+            pid=12345
+        )
+        manager.processes[1] = server_process
+        
+        # Test retrieving limited logs
+        logs = await manager.get_server_logs(1, lines=3)
+        
+        assert len(logs) == 3
+        assert logs[0] == "[2024-01-01 12:34:56] Server starting..."
+        assert logs[1] == "[2024-01-01 12:34:57] Loading world..."
+        assert logs[2] == "[2024-01-01 12:34:58] Server ready!"
+        
+        # Verify remaining logs are still in queue
+        assert log_queue.qsize() == 2
+
+    @pytest.mark.asyncio
+    async def test_stream_server_logs_real_streaming(self, manager):
+        """Test lines 565-576: Real-time log streaming"""
+        
+        log_queue = asyncio.Queue()
+        
+        server_process = ServerProcess(
+            server_id=1,
+            process=Mock(),
+            log_queue=log_queue,
+            status=ServerStatus.running,
+            started_at=datetime.now(),
+            pid=12345
+        )
+        manager.processes[1] = server_process
+        
+        # Add logs asynchronously while streaming
+        async def add_logs():
+            logs = [
+                "Stream log 1",
+                "Stream log 2", 
+                "Stream log 3"
+            ]
+            for i, log in enumerate(logs):
+                await asyncio.sleep(0.1)
+                await log_queue.put(log)
+                if i == 1:  # Remove server after 2 logs to test exit condition
+                    await asyncio.sleep(0.1)
+                    del manager.processes[1]
+        
+        # Start adding logs
+        log_task = asyncio.create_task(add_logs())
+        
+        # Stream logs
+        streamed_logs = []
+        async for log in manager.stream_server_logs(1):
+            streamed_logs.append(log)
+            if len(streamed_logs) >= 3:  # Safety limit
+                break
+        
+        await log_task
+        
+        # Verify we got the expected logs before stream ended
+        assert len(streamed_logs) >= 2
+        assert "Stream log 1" in streamed_logs
+        assert "Stream log 2" in streamed_logs
+
+    @pytest.mark.asyncio
+    async def test_stream_server_logs_timeout_handling(self, manager):
+        """Test lines 571-572: Stream timeout handling"""
+        
+        log_queue = asyncio.Queue()
+        
+        server_process = ServerProcess(
+            server_id=1,
+            process=Mock(),
+            log_queue=log_queue,
+            status=ServerStatus.running,
+            started_at=datetime.now(),
+            pid=12345
+        )
+        manager.processes[1] = server_process
+        
+        # Mock queue.get to timeout then provide log
+        original_get = log_queue.get
+        call_count = 0
+        
+        async def mock_get_with_timeout():
+            nonlocal call_count
+            call_count += 1
+            if call_count <= 2:
+                # First two calls timeout
+                raise asyncio.TimeoutError()
+            elif call_count == 3:
+                # Third call returns a log
+                return "Delayed log"
+            else:
+                # Remove server to end stream
+                del manager.processes[1]
+                raise asyncio.TimeoutError()
+        
+        log_queue.get = mock_get_with_timeout
+        
+        # Stream logs with timeout handling
+        streamed_logs = []
+        async for log in manager.stream_server_logs(1):
+            streamed_logs.append(log)
+        
+        # Verify timeout was handled and log was eventually received
+        assert len(streamed_logs) == 1
+        assert streamed_logs[0] == "Delayed log"
