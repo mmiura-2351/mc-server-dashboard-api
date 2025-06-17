@@ -120,7 +120,7 @@ class TestDaemonConfig:
             with pytest.raises(ValidationError) as exc_info:
                 DaemonConfig(pid_file_directory=temp_file.name)
             
-            assert "not a directory" in str(exc_info.value)
+            assert "Cannot access PID directory" in str(exc_info.value)
 
     def test_monitoring_interval_validation(self):
         """Test monitoring interval validation"""
@@ -282,14 +282,14 @@ class TestDaemonConfig:
         assert len(errors) >= 1
         assert any("Startup timeout should be longer" in error for error in errors)
         
-        # Test RCON configuration inconsistency
+        # Test resource timeout vs startup timeout relationship
         config = DaemonConfig(
-            enable_rcon_integration=True,
-            rcon_timeout_seconds=0
+            process_startup_timeout_seconds=60,
+            resource_limits=DaemonProcessLimits(timeout_seconds=30)
         )
         errors = config.validate_configuration()
         assert len(errors) >= 1
-        assert any("RCON timeout must be positive" in error for error in errors)
+        assert any("Resource timeout should be longer" in error for error in errors)
 
 
 class TestDaemonConfigGlobal:
@@ -348,11 +348,11 @@ class TestDaemonConfigGlobal:
     def test_reset_daemon_config(self):
         """Test resetting daemon configuration"""
         # Set custom configuration
-        custom_config = DaemonConfig(monitoring_interval_seconds=99)
+        custom_config = DaemonConfig(monitoring_interval_seconds=30)
         set_daemon_config(custom_config)
         
         # Verify it's set
-        assert get_daemon_config().monitoring_interval_seconds == 99
+        assert get_daemon_config().monitoring_interval_seconds == 30
         
         # Reset and verify default
         reset_daemon_config()
