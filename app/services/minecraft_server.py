@@ -2,6 +2,7 @@ import asyncio
 import json
 import logging
 import os
+import signal
 import sys
 import threading
 from dataclasses import dataclass
@@ -247,6 +248,114 @@ class MinecraftServerManager:
             logger.error(f"Failed to get daemon PID for server {server_id}")
             return None
 
+    async def _stop_daemon_process(
+        self, server_id: int, server_process: ServerProcess, force: bool = False
+    ) -> bool:
+        """Stop a daemon process by PID"""
+        try:
+            if not server_process.pid:
+                logger.error(f"No PID available for daemon server {server_id}")
+                return False
+
+            # Check if process is still running
+            if not await self._is_process_running(server_process.pid):
+                logger.info(
+                    f"Daemon server {server_id} (PID: {server_process.pid}) is already stopped"
+                )
+                await self._cleanup_server_process(server_id)
+                self._notify_status_change(server_id, ServerStatus.stopped)
+                return True
+
+            if not force:
+                # Try graceful shutdown first by sending 'stop' command via file
+                try:
+                    server_dir = self.base_directory / str(server_id)
+                    stdin_file = server_dir / "server_input.txt"
+
+                    # Write stop command to input file
+                    with open(stdin_file, "w") as f:
+                        f.write("stop\n")
+                        f.flush()
+
+                    logger.info(
+                        f"Sent graceful stop command to daemon server {server_id}"
+                    )
+
+                    # Wait up to 30 seconds for graceful shutdown
+                    for i in range(30):
+                        await asyncio.sleep(1)
+                        if not await self._is_process_running(server_process.pid):
+                            logger.info(f"Daemon server {server_id} stopped gracefully")
+                            await self._cleanup_server_process(server_id)
+                            self._notify_status_change(server_id, ServerStatus.stopped)
+                            return True
+
+                    logger.warning(
+                        f"Daemon server {server_id} did not stop gracefully, using SIGTERM"
+                    )
+
+                except Exception as e:
+                    logger.warning(
+                        f"Failed to send graceful stop to daemon server {server_id}: {e}"
+                    )
+
+            # Force stop with SIGTERM
+            try:
+                os.kill(server_process.pid, signal.SIGTERM)
+                logger.info(
+                    f"Sent SIGTERM to daemon server {server_id} (PID: {server_process.pid})"
+                )
+
+                # Wait up to 10 seconds for SIGTERM
+                for i in range(10):
+                    await asyncio.sleep(1)
+                    if not await self._is_process_running(server_process.pid):
+                        logger.info(f"Daemon server {server_id} stopped with SIGTERM")
+                        await self._cleanup_server_process(server_id)
+                        self._notify_status_change(server_id, ServerStatus.stopped)
+                        return True
+
+                # If SIGTERM doesn't work, use SIGKILL
+                logger.warning(
+                    f"SIGTERM failed for daemon server {server_id}, using SIGKILL"
+                )
+                os.kill(server_process.pid, signal.SIGKILL)
+
+                # Wait up to 5 seconds for SIGKILL
+                for i in range(5):
+                    await asyncio.sleep(1)
+                    if not await self._is_process_running(server_process.pid):
+                        logger.info(f"Daemon server {server_id} stopped with SIGKILL")
+                        await self._cleanup_server_process(server_id)
+                        self._notify_status_change(server_id, ServerStatus.stopped)
+                        return True
+
+                logger.error(
+                    f"Failed to stop daemon server {server_id} even with SIGKILL"
+                )
+                return False
+
+            except ProcessLookupError:
+                # Process already dead
+                logger.info(f"Daemon server {server_id} process already terminated")
+                await self._cleanup_server_process(server_id)
+                self._notify_status_change(server_id, ServerStatus.stopped)
+                return True
+            except PermissionError:
+                logger.error(
+                    f"Permission denied when trying to stop daemon server {server_id}"
+                )
+                return False
+            except Exception as e:
+                logger.error(f"Error stopping daemon server {server_id}: {e}")
+                return False
+
+        except Exception as e:
+            logger.error(
+                f"Critical error stopping daemon server {server_id}: {e}", exc_info=True
+            )
+            return False
+
     async def _write_pid_file(
         self,
         server_id: int,
@@ -491,6 +600,96 @@ class MinecraftServerManager:
                 logger.error(
                     f"Failed to update database status for server {server_id}: {e}"
                 )
+
+    async def _monitor_daemon_process(self, server_process: ServerProcess):
+        """Monitor a daemon process for status updates"""
+        try:
+            server_id = server_process.server_id
+            pid = server_process.pid
+
+            logger.info(f"Starting daemon monitoring for server {server_id} (PID: {pid})")
+
+            # Wait for initial startup (check for 30 seconds)
+            startup_timeout = 30
+            startup_detected = False
+
+            for i in range(startup_timeout):
+                # Check if process is still running
+                if not await self._is_process_running(pid):
+                    logger.error(
+                        f"Daemon server {server_id} process {pid} died during startup"
+                    )
+                    server_process.status = ServerStatus.error
+                    self._notify_status_change(server_id, ServerStatus.error)
+                    await self._cleanup_server_process(server_id)
+                    return
+
+                # Check log file for startup completion
+                try:
+                    server_dir = self.base_directory / str(server_id)
+                    log_file_path = server_dir / "server.log"
+
+                    if log_file_path.exists():
+                        # Read last few lines to check for startup completion
+                        with open(
+                            log_file_path, "r", encoding="utf-8", errors="ignore"
+                        ) as f:
+                            lines = f.readlines()
+                            # Check last 10 lines for Done message
+                            recent_lines = lines[-10:] if len(lines) >= 10 else lines
+
+                            for line in recent_lines:
+                                if "Done" in line and "For help" in line:
+                                    logger.info(
+                                        f"Daemon server {server_id} startup completed"
+                                    )
+                                    server_process.status = ServerStatus.running
+                                    self._notify_status_change(
+                                        server_id, ServerStatus.running
+                                    )
+                                    startup_detected = True
+                                    break
+
+                            if startup_detected:
+                                break
+
+                except Exception as e:
+                    logger.warning(
+                        f"Error checking startup status for daemon server {server_id}: {e}"
+                    )
+
+                await asyncio.sleep(1)
+
+            # If startup not detected after timeout, assume running anyway
+            if not startup_detected:
+                logger.warning(
+                    f"Daemon server {server_id} startup completion not detected after {startup_timeout}s, assuming running"
+                )
+                server_process.status = ServerStatus.running
+                self._notify_status_change(server_id, ServerStatus.running)
+
+            # Continue monitoring for process termination
+            while server_id in self.processes:
+                if not await self._is_process_running(pid):
+                    logger.info(f"Daemon server {server_id} process {pid} has stopped")
+                    server_process.status = ServerStatus.stopped
+                    self._notify_status_change(server_id, ServerStatus.stopped)
+                    await self._cleanup_server_process(server_id)
+                    break
+
+                # Check every 5 seconds
+                await asyncio.sleep(5)
+
+        except asyncio.CancelledError:
+            logger.debug(f"Daemon process monitor cancelled for server {server_id}")
+            raise  # Re-raise to properly handle cancellation
+        except Exception as e:
+            logger.error(
+                f"Error monitoring daemon server {server_id}: {e}", exc_info=True
+            )
+            server_process.status = ServerStatus.error
+            self._notify_status_change(server_id, ServerStatus.error)
+            await self._cleanup_server_process(server_id)
 
     async def _cleanup_server_process(self, server_id: int):
         """Clean up server process and associated resources"""
@@ -888,9 +1087,16 @@ class MinecraftServerManager:
             server_process.log_task = asyncio.create_task(
                 self._read_server_logs(server_process)
             )
-            server_process.monitor_task = asyncio.create_task(
-                self._monitor_server(server_process)
-            )
+
+            # For daemon processes, use direct monitoring instead of subprocess waiting
+            if server_process.process is None:
+                server_process.monitor_task = asyncio.create_task(
+                    self._monitor_daemon_process(server_process)
+                )
+            else:
+                server_process.monitor_task = asyncio.create_task(
+                    self._monitor_server(server_process)
+                )
 
             # Notify database of status change
             self._notify_status_change(server.id, ServerStatus.starting)
@@ -910,7 +1116,7 @@ class MinecraftServerManager:
             return False
 
     async def stop_server(self, server_id: int, force: bool = False) -> bool:
-        """Stop a Minecraft server"""
+        """Stop a Minecraft server (daemon or regular process)"""
         try:
             if server_id not in self.processes:
                 logger.warning(f"Server {server_id} is not running")
@@ -922,6 +1128,11 @@ class MinecraftServerManager:
             # Notify database of status change
             self._notify_status_change(server_id, ServerStatus.stopping)
 
+            # Handle daemon processes (no process object)
+            if server_process.process is None:
+                return await self._stop_daemon_process(server_id, server_process, force)
+
+            # Handle regular processes (with process object)
             # Check if process is already terminated
             if server_process.process.returncode is not None:
                 logger.info(f"Server {server_id} process already terminated")
