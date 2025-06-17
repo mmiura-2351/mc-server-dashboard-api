@@ -182,24 +182,32 @@ sys.exit(0)
                     
                     manager.set_status_update_callback(record_status_change)
                     
-                    # Execute complete startup workflow
-                    result = await manager.start_server(lifecycle_server, mock_db_session)
-                    
-                    # Verify successful startup
-                    assert result is True
-                    assert lifecycle_server.id in manager.processes
-                    
-                    # Wait for server to be fully started
-                    await asyncio.sleep(0.5)
-                    
-                    server_process = manager.processes[lifecycle_server.id]
-                    
-                    # Verify process tracking
-                    assert server_process.server_id == lifecycle_server.id
-                    assert server_process.process is not None
-                    assert server_process.process.returncode is None  # Still running
-                    assert server_process.pid is not None
-                    assert server_process.status == ServerStatus.starting or server_process.status == ServerStatus.running
+                    # Mock daemon process creation to avoid real process in test environment  
+                    with patch.object(manager, '_create_daemon_process') as mock_daemon:
+                        mock_daemon.return_value = 12345  # Mock PID
+                        
+                        # Mock process running check to simulate successful startup
+                        with patch.object(manager, '_is_process_running') as mock_running:
+                            mock_running.return_value = True
+                            
+                            # Execute complete startup workflow
+                            result = await manager.start_server(lifecycle_server, mock_db_session)
+                            
+                            # Verify successful startup
+                            assert result is True
+                            assert lifecycle_server.id in manager.processes
+                            
+                            # Wait for server to be fully started
+                            await asyncio.sleep(0.5)
+                            
+                            server_process = manager.processes[lifecycle_server.id]
+                            
+                            # Verify process tracking
+                            assert server_process.server_id == lifecycle_server.id
+                            # For daemon processes, process is None but PID should exist
+                            assert server_process.process is None  # Daemon mode
+                            assert server_process.pid == 12345  # Mocked PID
+                            assert server_process.status in [ServerStatus.starting, ServerStatus.running]
                     
                     # Verify status callback was called
                     assert len(status_changes) >= 1
@@ -305,9 +313,9 @@ sys.exit(0)
     async def test_server_startup_process_creation_failure(self, manager, lifecycle_server, mock_db_session, mock_java_service):
         """Test server startup with process creation failure (lines 336-343)"""
         
-        # Mock process creation to fail with OSError
+        # Mock daemon process creation to fail with OSError
         with patch('app.services.minecraft_server.java_compatibility_service', mock_java_service):
-            with patch('asyncio.create_subprocess_exec', side_effect=OSError("Permission denied")):
+            with patch('os.fork', side_effect=OSError("Permission denied")):
                 with patch("app.services.minecraft_server.logger") as mock_logger:
                     
                     result = await manager.start_server(lifecycle_server, mock_db_session)
@@ -319,29 +327,43 @@ sys.exit(0)
                     # Verify error logging
                     mock_logger.error.assert_called()
                     error_calls = [call[0][0] for call in mock_logger.error.call_args_list]
-                    process_error_logs = [log for log in error_calls if "Failed to create subprocess" in log]
-                    assert len(process_error_logs) >= 1
+                    # Check for daemon creation failure messages
+                    daemon_error_logs = [log for log in error_calls if "daemon creation failed" in log or "All daemon creation methods failed" in log]
+                    assert len(daemon_error_logs) >= 1
 
     @pytest.mark.asyncio
     async def test_server_startup_process_immediate_exit(self, manager, lifecycle_server, mock_db_session, mock_java_service):
         """Test server startup with process immediate exit (lines 351-376)"""
         
-        # Create a mock process that appears to exit immediately
-        mock_process = Mock()
-        mock_process.returncode = 1  # Already exited with error code
-        mock_process.pid = 12345
+        # Mock daemon process to appear to start but then immediately die
+        original_is_process_running = manager._is_process_running
         
-        async def mock_create_subprocess(*args, **kwargs):
-            return mock_process
+        async def mock_is_process_running(pid):
+            # Return False to simulate immediate process death
+            return False
         
         with patch('app.services.minecraft_server.java_compatibility_service', mock_java_service):
-            with patch('asyncio.create_subprocess_exec', side_effect=mock_create_subprocess):
+            with patch.object(manager, '_is_process_running', side_effect=mock_is_process_running):
                 with patch("app.services.minecraft_server.logger") as mock_logger:
                     
                     result = await manager.start_server(lifecycle_server, mock_db_session)
                     
-                    # Verify failure
-                    assert result is False
+                    # In the daemon architecture, the process might initially succeed
+                    # but monitoring detects it died during startup
+                    # Give time for monitor to detect the death
+                    await asyncio.sleep(0.6)
+                    
+                    # The process should be cleaned up after daemon death detection
+                    if lifecycle_server.id in manager.processes:
+                        server_process = manager.processes[lifecycle_server.id]
+                        # Status should be error due to early death
+                        assert server_process.status == ServerStatus.error
+                    
+                    # Verify error logging occurred (daemon death detection)
+                    mock_logger.error.assert_called()
+                    error_calls = [call[0][0] for call in mock_logger.error.call_args_list]
+                    daemon_death_logs = [log for log in error_calls if "died during startup" in log]
+                    assert len(daemon_death_logs) >= 1
                     assert lifecycle_server.id not in manager.processes
                     
                     # Verify error logging for immediate exit

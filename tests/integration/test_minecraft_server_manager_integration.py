@@ -361,8 +361,11 @@ print("[12:35:01] [Server thread/INFO]: Server stopped")
             with patch("app.services.minecraft_server.logger") as mock_logger:
                 await manager._cleanup_server_process(1)
                 
-                mock_logger.error.assert_called()
-                assert "Error during cleanup for server 1" in str(mock_logger.error.call_args)
+                # In new implementation, cleanup errors are logged as warnings, not errors
+                mock_logger.warning.assert_called()
+                # Check that the warning message contains the expected text
+                warning_calls = [str(call) for call in mock_logger.warning.call_args_list]
+                assert any("Error during cleanup for server 1" in call for call in warning_calls)
 
     # ===== Server Process Integration Tests =====
 
@@ -439,7 +442,8 @@ print("[12:35:01] [Server thread/INFO]: Server stopped")
         # Mock the stop_server method to avoid complex shutdown logic
         with patch.object(manager, 'stop_server', new_callable=AsyncMock) as mock_stop:
             mock_stop.return_value = True
-            await manager.shutdown_all()
+            # Force shutdown all servers regardless of settings
+            await manager.shutdown_all(force_stop=True)
             
             # Verify stop_server was called for all servers
             assert mock_stop.call_count == 3
