@@ -375,21 +375,31 @@ sys.exit(0)
     async def test_monitor_server_normal_termination(self, manager):
         """Test lines 641-648: Normal process termination monitoring"""
         
-        # Create a process that runs briefly then exits normally
-        process = await asyncio.create_subprocess_exec(
-            "python", "-c", "import time; print('Running...'); time.sleep(0.5); print('Done')",
-            stdin=asyncio.subprocess.PIPE,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.STDOUT
-        )
+        # Create a mock process that will timeout on first wait (simulating stable process),
+        # then return 0 on second wait (normal termination)
+        mock_process = Mock()
+        wait_call_count = 0
+        
+        async def mock_wait():
+            nonlocal wait_call_count
+            wait_call_count += 1
+            if wait_call_count == 1:
+                # First call - timeout to simulate stable process
+                raise asyncio.TimeoutError()
+            else:
+                # Second call - return normally
+                return 0
+        
+        mock_process.wait = mock_wait
+        mock_process.returncode = 0  # Normal exit code
         
         server_process = ServerProcess(
             server_id=1,
-            process=process,
+            process=mock_process,
             log_queue=asyncio.Queue(),
-            status=ServerStatus.running,  # Already running
+            status=ServerStatus.starting,
             started_at=datetime.now(),
-            pid=process.pid
+            pid=12345
         )
         
         # Record status changes
@@ -402,10 +412,11 @@ sys.exit(0)
         with patch.object(manager, '_cleanup_server_process') as mock_cleanup:
             with patch("app.services.minecraft_server.logger") as mock_logger:
                 
-                # Wait for process to complete normally
+                # Wait for monitoring to complete
                 await manager._monitor_server(server_process)
                 
-                # Verify status change to stopped (normal termination)
+                # Verify status changes: starting -> running -> stopped
+                assert (1, ServerStatus.running) in status_changes
                 assert (1, ServerStatus.stopped) in status_changes
                 
                 # Verify cleanup was called
@@ -420,21 +431,31 @@ sys.exit(0)
     async def test_monitor_server_crash_detection(self, manager):
         """Test lines 649-654: Process crash detection"""
         
-        # Create a process that will crash (non-zero exit)
-        process = await asyncio.create_subprocess_exec(
-            "python", "-c", "import time; time.sleep(0.5); raise Exception('Server crashed')",
-            stdin=asyncio.subprocess.PIPE,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.STDOUT
-        )
+        # Create a mock process that will timeout on first wait (simulating stable process),
+        # then return non-zero on second wait (crash)
+        mock_process = Mock()
+        wait_call_count = 0
+        
+        async def mock_wait():
+            nonlocal wait_call_count
+            wait_call_count += 1
+            if wait_call_count == 1:
+                # First call - timeout to simulate stable process
+                raise asyncio.TimeoutError()
+            else:
+                # Second call - return with error code
+                return 1
+        
+        mock_process.wait = mock_wait
+        mock_process.returncode = 1  # Error exit code
         
         server_process = ServerProcess(
             server_id=1,
-            process=process,
+            process=mock_process,
             log_queue=asyncio.Queue(),
-            status=ServerStatus.running,
+            status=ServerStatus.starting,
             started_at=datetime.now(),
-            pid=process.pid
+            pid=12345
         )
         
         # Record status changes
@@ -452,7 +473,8 @@ sys.exit(0)
                 # Verify error status was set
                 assert server_process.status == ServerStatus.error
                 
-                # Verify status change notification
+                # Verify status changes: starting -> running -> error
+                assert (1, ServerStatus.running) in status_changes
                 assert (1, ServerStatus.error) in status_changes
                 
                 # Verify cleanup was called

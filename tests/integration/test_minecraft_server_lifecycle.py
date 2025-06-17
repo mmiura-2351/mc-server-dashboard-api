@@ -326,13 +326,13 @@ sys.exit(0)
     async def test_server_startup_process_immediate_exit(self, manager, lifecycle_server, mock_db_session, mock_java_service):
         """Test server startup with process immediate exit (lines 351-376)"""
         
-        # Create a process that exits immediately
+        # Create a mock process that appears to exit immediately
+        mock_process = Mock()
+        mock_process.returncode = 1  # Already exited with error code
+        mock_process.pid = 12345
+        
         async def mock_create_subprocess(*args, **kwargs):
-            # Create a process that will exit immediately
-            return await asyncio.create_subprocess_exec(
-                "python", "-c", "import sys; sys.exit(1)",
-                **kwargs
-            )
+            return mock_process
         
         with patch('app.services.minecraft_server.java_compatibility_service', mock_java_service):
             with patch('asyncio.create_subprocess_exec', side_effect=mock_create_subprocess):
@@ -347,7 +347,7 @@ sys.exit(0)
                     # Verify error logging for immediate exit
                     mock_logger.error.assert_called()
                     error_calls = [call[0][0] for call in mock_logger.error.call_args_list]
-                    exit_error_logs = [log for log in error_calls if "exited immediately" in log or "exited within" in log]
+                    exit_error_logs = [log for log in error_calls if "Process exited immediately" in log or "Process exited within" in log]
                     assert len(exit_error_logs) >= 1
 
     # ===== Complete Server Shutdown Workflow Integration Tests =====

@@ -54,7 +54,10 @@ class MockJavaCompatibilityService:
     
     def get_required_java_version(self, minecraft_version: str):
         """Mock required Java version"""
-        return "17" if minecraft_version.startswith("1.18") else "8"
+        # Minecraft 1.18+ requires Java 17
+        if minecraft_version.startswith(("1.18", "1.19", "1.20", "1.21")):
+            return "17"
+        return "8"
     
     def validate_java_compatibility(self, minecraft_version: str, java_version: JavaVersionInfo):
         """Mock Java compatibility validation"""
