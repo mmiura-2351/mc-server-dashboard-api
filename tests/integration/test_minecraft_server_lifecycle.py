@@ -171,7 +171,7 @@ sys.exit(0)
                 return await original_create_subprocess(*long_running_process_command, **kwargs)
             return await original_create_subprocess(*args, **kwargs)
         
-        with patch('app.services.java_compatibility.java_compatibility_service', mock_java_service):
+        with patch('app.services.minecraft_server.java_compatibility_service', mock_java_service):
             with patch('asyncio.create_subprocess_exec', side_effect=mock_create_subprocess):
                 with patch("app.services.minecraft_server.logger") as mock_logger:
                     
@@ -236,7 +236,7 @@ sys.exit(0)
             conflict_socket.bind(("localhost", lifecycle_server.port))
             conflict_socket.listen(1)
             
-            with patch('app.services.java_compatibility.java_compatibility_service', mock_java_service):
+            with patch('app.services.minecraft_server.java_compatibility_service', mock_java_service):
                 with patch("app.services.minecraft_server.logger") as mock_logger:
                     
                     result = await manager.start_server(lifecycle_server, mock_db_session)
@@ -263,7 +263,7 @@ sys.exit(0)
         mock_java_service.get_java_for_minecraft = AsyncMock(return_value=None)
         mock_java_service.discover_java_installations = AsyncMock(return_value={})
         
-        with patch('app.services.java_compatibility.java_compatibility_service', mock_java_service):
+        with patch('app.services.minecraft_server.java_compatibility_service', mock_java_service):
             with patch("app.services.minecraft_server.logger") as mock_logger:
                 
                 result = await manager.start_server(lifecycle_server, mock_db_session)
@@ -286,7 +286,7 @@ sys.exit(0)
         jar_path = Path(lifecycle_server.directory_path) / "server.jar"
         jar_path.unlink()
         
-        with patch('app.services.java_compatibility.java_compatibility_service', mock_java_service):
+        with patch('app.services.minecraft_server.java_compatibility_service', mock_java_service):
             with patch("app.services.minecraft_server.logger") as mock_logger:
                 
                 result = await manager.start_server(lifecycle_server, mock_db_session)
@@ -306,7 +306,7 @@ sys.exit(0)
         """Test server startup with process creation failure (lines 336-343)"""
         
         # Mock process creation to fail with OSError
-        with patch('app.services.java_compatibility.java_compatibility_service', mock_java_service):
+        with patch('app.services.minecraft_server.java_compatibility_service', mock_java_service):
             with patch('asyncio.create_subprocess_exec', side_effect=OSError("Permission denied")):
                 with patch("app.services.minecraft_server.logger") as mock_logger:
                     
@@ -334,7 +334,7 @@ sys.exit(0)
                 **kwargs
             )
         
-        with patch('app.services.java_compatibility.java_compatibility_service', mock_java_service):
+        with patch('app.services.minecraft_server.java_compatibility_service', mock_java_service):
             with patch('asyncio.create_subprocess_exec', side_effect=mock_create_subprocess):
                 with patch("app.services.minecraft_server.logger") as mock_logger:
                     
