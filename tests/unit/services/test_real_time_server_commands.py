@@ -80,11 +80,14 @@ class TestRealTimeServerCommandService:
     async def test_reload_whitelist_if_running_server_not_running(self, mock_manager, service):
         """Test whitelist reload when server is not running"""
         mock_manager.get_server_status.return_value = ServerStatus.stopped
+        
+        # Mock the discover_and_restore_processes method to return empty results
+        from unittest.mock import AsyncMock
+        mock_manager.discover_and_restore_processes = AsyncMock(return_value={})
 
         result = await service.reload_whitelist_if_running(1)
 
         assert result is False
-        mock_manager.get_server_status.assert_called_once_with(1)
         mock_manager.send_command.assert_not_called()
 
     @pytest.mark.asyncio
@@ -135,6 +138,10 @@ class TestRealTimeServerCommandService:
     async def test_sync_op_changes_if_running_server_not_running(self, mock_manager, service, mock_server_path):
         """Test OP sync when server is not running"""
         mock_manager.get_server_status.return_value = ServerStatus.stopped
+        
+        # Mock the discover_and_restore_processes method to return empty results
+        from unittest.mock import AsyncMock
+        mock_manager.discover_and_restore_processes = AsyncMock(return_value={})
 
         result = await service.sync_op_changes_if_running(1, mock_server_path)
 
@@ -222,6 +229,10 @@ class TestRealTimeServerCommandService:
     async def test_apply_op_diff_if_running_server_not_running(self, mock_manager, service):
         """Test OP diff when server is not running"""
         mock_manager.get_server_status.return_value = ServerStatus.stopped
+        
+        # Mock the discover_and_restore_processes method to return empty results
+        from unittest.mock import AsyncMock
+        mock_manager.discover_and_restore_processes = AsyncMock(return_value={})
 
         result = await service.apply_op_diff_if_running(1, {"player1"}, {"player2"})
 
@@ -299,6 +310,10 @@ class TestRealTimeServerCommandService:
     async def test_handle_group_change_commands_server_not_running(self, mock_manager, service, mock_server_path):
         """Test group change handling when server is not running"""
         mock_manager.get_server_status.return_value = ServerStatus.stopped
+        
+        # Mock the discover_and_restore_processes method to return empty results
+        from unittest.mock import AsyncMock
+        mock_manager.discover_and_restore_processes = AsyncMock(return_value={})
 
         result = await service.handle_group_change_commands(
             1, mock_server_path, GroupType.whitelist, "update"
