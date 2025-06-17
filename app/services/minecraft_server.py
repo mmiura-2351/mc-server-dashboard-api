@@ -55,6 +55,52 @@ class MinecraftServerManager:
         """Get path to PID file for server"""
         return server_dir / "server.pid"
 
+    async def _create_daemon_process_alternative(
+        self, cmd: List[str], cwd: str, env: Dict[str, str], server_id: int
+    ) -> Optional[int]:
+        """Alternative daemon creation using subprocess with detachment"""
+        log_file_path = Path(cwd) / "server.log"
+        error_file_path = Path(cwd) / "server_error.log"
+
+        try:
+            # Ensure log files exist
+            log_file_path.touch(exist_ok=True)
+            error_file_path.touch(exist_ok=True)
+
+            # Create the process with proper detachment
+            import subprocess
+
+            process = subprocess.Popen(
+                cmd,
+                cwd=cwd,
+                env=env,
+                stdout=open(log_file_path, "w"),
+                stderr=open(error_file_path, "w"),
+                stdin=subprocess.DEVNULL,
+                start_new_session=True,  # Detach from parent session
+                preexec_fn=(
+                    os.setsid if hasattr(os, "setsid") else None
+                ),  # Create new process group
+            )
+
+            daemon_pid = process.pid
+            logger.info(
+                f"Created alternative daemon process {daemon_pid} for server {server_id}"
+            )
+
+            # Verify process is running
+            if await self._is_process_running(daemon_pid):
+                return daemon_pid
+            else:
+                logger.error(f"Alternative daemon process {daemon_pid} died immediately")
+                return None
+
+        except Exception as e:
+            logger.error(
+                f"Alternative daemon creation failed for server {server_id}: {e}"
+            )
+            return None
+
     async def _create_daemon_process(
         self, cmd: List[str], cwd: str, env: Dict[str, str], server_id: int
     ) -> Optional[int]:
@@ -182,20 +228,8 @@ class MinecraftServerManager:
                     # Daemon process
                     os.close(write_fd)
 
-                    # Close all inherited file descriptors
-                    import resource
-
-                    maxfd = resource.getrlimit(resource.RLIMIT_NOFILE)[1]
-                    if maxfd == resource.RLIM_INFINITY:
-                        maxfd = 1024
-
-                    for fd in range(3, maxfd):
-                        try:
-                            os.close(fd)
-                        except OSError:
-                            pass
-
-                    # Redirect streams
+                    # Open log files BEFORE closing inherited file descriptors
+                    # This ensures the file descriptors are available for redirection
                     stdin_fd = os.open("/dev/null", os.O_RDONLY)
                     stdout_fd = os.open(
                         str(log_file_path), os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o644
@@ -206,19 +240,43 @@ class MinecraftServerManager:
                         0o644,
                     )
 
+                    # Redirect streams first
                     os.dup2(stdin_fd, 0)
                     os.dup2(stdout_fd, 1)
                     os.dup2(stderr_fd, 2)
 
+                    # Close the original file descriptors
                     os.close(stdin_fd)
                     os.close(stdout_fd)
                     os.close(stderr_fd)
+
+                    # Now close all OTHER inherited file descriptors (but preserve 0,1,2)
+                    import resource
+
+                    maxfd = resource.getrlimit(resource.RLIMIT_NOFILE)[1]
+                    if maxfd == resource.RLIM_INFINITY:
+                        maxfd = 1024
+
+                    # Close file descriptors starting from 3 (preserve stdin, stdout, stderr)
+                    for fd in range(3, maxfd):
+                        try:
+                            os.close(fd)
+                        except OSError:
+                            pass
+
+                    # Ensure output is not buffered
+                    os.environ["PYTHONUNBUFFERED"] = "1"
 
                     # Execute command
                     os.execvpe(cmd[0], cmd, env)
 
                 except Exception as e:
-                    sys.stderr.write(f"Intermediate child failed: {e}\n")
+                    # Write error to stderr before exiting
+                    try:
+                        sys.stderr.write(f"Intermediate child failed: {e}\n")
+                        sys.stderr.flush()
+                    except Exception:
+                        pass
                     os._exit(1)
 
             except Exception as e:
@@ -571,6 +629,54 @@ class MinecraftServerManager:
                     f"Failed to update database status for server {server_id}: {e}"
                 )
 
+    async def _diagnose_log_issues(self, server_id: int, server_dir: Path) -> str:
+        """Diagnose potential log file issues for debugging"""
+        try:
+            log_file_path = server_dir / "server.log"
+            error_file_path = server_dir / "server_error.log"
+
+            diagnostics = []
+
+            # Check log file
+            if log_file_path.exists():
+                stat = log_file_path.stat()
+                diagnostics.append(
+                    f"server.log: exists, size={stat.st_size}, readable={os.access(log_file_path, os.R_OK)}"
+                )
+            else:
+                diagnostics.append("server.log: does not exist")
+
+            # Check error file
+            if error_file_path.exists():
+                stat = error_file_path.stat()
+                diagnostics.append(
+                    f"server_error.log: exists, size={stat.st_size}, readable={os.access(error_file_path, os.R_OK)}"
+                )
+
+                # Read error file content if small enough
+                if stat.st_size > 0 and stat.st_size < 1024:
+                    try:
+                        with open(
+                            error_file_path, "r", encoding="utf-8", errors="ignore"
+                        ) as f:
+                            error_content = f.read().strip()
+                        if error_content:
+                            diagnostics.append(
+                                f"server_error.log content: '{error_content[:200]}'"
+                            )
+                    except Exception as e:
+                        diagnostics.append(f"server_error.log read error: {e}")
+            else:
+                diagnostics.append("server_error.log: does not exist")
+
+            # Check directory permissions
+            diagnostics.append(f"Directory writable: {os.access(server_dir, os.W_OK)}")
+
+            return "; ".join(diagnostics)
+
+        except Exception as e:
+            return f"Diagnostic error: {e}"
+
     async def _monitor_daemon_process(self, server_process: ServerProcess):
         """Monitor a daemon process for status updates"""
         try:
@@ -580,14 +686,17 @@ class MinecraftServerManager:
             logger.info(f"Starting daemon monitoring for server {server_id} (PID: {pid})")
 
             # Wait for initial startup (check for 45 seconds to account for world generation)
-            startup_timeout = 45
+            startup_timeout_seconds = 45
+            startup_timeout_iterations = (
+                startup_timeout_seconds * 2
+            )  # 0.5s intervals = 90 iterations
             startup_detected = False
 
             logger.info(
-                f"Monitoring daemon server {server_id} startup (timeout: {startup_timeout}s)"
+                f"Monitoring daemon server {server_id} startup (timeout: {startup_timeout_seconds}s, checking every 0.5s)"
             )
 
-            for i in range(startup_timeout):
+            for i in range(startup_timeout_iterations):
                 # Check if process is still running
                 if not await self._is_process_running(pid):
                     logger.error(
@@ -603,13 +712,16 @@ class MinecraftServerManager:
                     server_dir = self.base_directory / str(server_id)
                     log_file_path = server_dir / "server.log"
 
-                    if i % 5 == 0:  # Log every 5 seconds
-                        logger.debug(
-                            f"Checking startup for server {server_id}, attempt {i+1}/{startup_timeout}, "
-                            f"log file exists: {log_file_path.exists()}"
+                    if i % 10 == 0:  # Log every 5 seconds (10 iterations at 0.5s)
+                        file_exists = log_file_path.exists()
+                        file_size = log_file_path.stat().st_size if file_exists else 0
+                        elapsed_seconds = (i + 1) * 0.5
+                        logger.info(
+                            f"Checking startup for server {server_id}, {elapsed_seconds:.1f}s/{startup_timeout_seconds}s elapsed, "
+                            f"log file exists: {file_exists}, size: {file_size} bytes"
                         )
 
-                    if log_file_path.exists():
+                    if log_file_path.exists() and log_file_path.stat().st_size > 0:
                         # Read log file to check for startup completion
                         try:
                             with open(
@@ -617,13 +729,50 @@ class MinecraftServerManager:
                             ) as f:
                                 content = f.read()
 
-                            # Check entire log content for Done message
-                            # Look for the common Minecraft server startup completion message
-                            if "Done" in content and (
-                                "For help" in content or "Time elapsed" in content
-                            ):
+                            # Enhanced diagnostic logging - show sample content more frequently
+                            if (
+                                i % 10 == 0 and content
+                            ):  # Every 5 seconds, show sample content
+                                # Show both beginning and end of log for better debugging
+                                sample_start = content[:100].replace("\n", " ")
+                                sample_end = (
+                                    content[-100:].replace("\n", " ")
+                                    if len(content) > 100
+                                    else ""
+                                )
+                                elapsed_seconds = (i + 1) * 0.5
                                 logger.info(
-                                    f"Daemon server {server_id} startup completed (detected in log)"
+                                    f"Server {server_id} log sample at {elapsed_seconds:.1f}s ({len(content)} chars): "
+                                    f"START: '{sample_start}' ... END: '{sample_end}'"
+                                )
+
+                            # Check for multiple startup completion patterns
+                            startup_patterns = [
+                                ("Done", "For help"),  # Classic pattern
+                                ("Done", "Time elapsed"),  # Alternative pattern
+                                ("Done", "seconds"),  # Generic time-based pattern
+                                ("[Server thread/INFO]", "Done"),  # Modern format
+                                ("Server started", ""),  # Alternative completion message
+                                ("Ready to accept", "connections"),  # Network ready
+                            ]
+
+                            startup_detected_local = False
+                            detected_pattern = None
+
+                            for pattern1, pattern2 in startup_patterns:
+                                if pattern1 in content and (
+                                    not pattern2 or pattern2 in content
+                                ):
+                                    startup_detected_local = True
+                                    detected_pattern = (
+                                        f"{pattern1}+{pattern2}" if pattern2 else pattern1
+                                    )
+                                    break
+
+                            if startup_detected_local:
+                                elapsed_seconds = (i + 1) * 0.5
+                                logger.info(
+                                    f"Daemon server {server_id} startup completed (detected pattern '{detected_pattern}' after {elapsed_seconds:.1f}s)"
                                 )
                                 server_process.status = ServerStatus.running
                                 self._notify_status_change(
@@ -633,24 +782,64 @@ class MinecraftServerManager:
                                 break
 
                         except Exception as read_error:
-                            logger.debug(
+                            logger.warning(
                                 f"Error reading log file for server {server_id}: {read_error}"
                             )
                             # Continue with the loop, file might not be ready yet
+                    elif log_file_path.exists():
+                        # File exists but is empty - this indicates a log redirection issue
+                        if i % 10 == 0:  # Log every 5 seconds for empty files
+                            # Check both log files for more diagnostic info
+                            error_file_path = server_dir / "server_error.log"
+                            error_size = (
+                                error_file_path.stat().st_size
+                                if error_file_path.exists()
+                                else 0
+                            )
+                            elapsed_seconds = (i + 1) * 0.5
+
+                            logger.warning(
+                                f"Server {server_id} log redirection issue at {elapsed_seconds:.1f}s: server.log exists but empty, "
+                                f"server_error.log size: {error_size} bytes. This suggests daemon stdout/stderr redirection failed."
+                            )
+
+                            # If error file has content, show it
+                            if error_size > 0 and error_size < 500:
+                                try:
+                                    with open(
+                                        error_file_path,
+                                        "r",
+                                        encoding="utf-8",
+                                        errors="ignore",
+                                    ) as f:
+                                        error_content = f.read().strip()
+                                    if error_content:
+                                        logger.warning(
+                                            f"Server {server_id} error output: {error_content}"
+                                        )
+                                except Exception:
+                                    pass
 
                 except Exception as e:
                     logger.warning(
                         f"Error checking startup status for daemon server {server_id}: {e}"
                     )
 
-                await asyncio.sleep(1)
+                # Check more frequently for faster detection (every 0.5 seconds)
+                await asyncio.sleep(0.5)
 
             # If startup not detected after timeout, check if process is still running
             if not startup_detected:
                 if await self._is_process_running(pid):
+                    # Get diagnostic information about log files
+                    server_dir = self.base_directory / str(server_id)
+                    diagnostic_info = await self._diagnose_log_issues(
+                        server_id, server_dir
+                    )
+
                     logger.warning(
-                        f"Daemon server {server_id} startup completion not detected after {startup_timeout}s, "
-                        f"but process is running - assuming started"
+                        f"Daemon server {server_id} startup completion not detected after {startup_timeout_seconds}s, "
+                        f"but process is running - assuming started. Diagnostics: {diagnostic_info}"
                     )
                     server_process.status = ServerStatus.running
                     self._notify_status_change(server_id, ServerStatus.running)
@@ -1010,6 +1199,8 @@ class MinecraftServerManager:
                     {
                         "TERM": "dumb",  # Prevent issues with terminal-specific features
                         "JAVA_TOOL_OPTIONS": "-Djava.awt.headless=true",  # Ensure headless mode
+                        "PYTHONUNBUFFERED": "1",  # Disable Python output buffering
+                        "_JAVA_OPTIONS": "-Djava.awt.headless=true -Dfile.encoding=UTF-8",
                     }
                 )
 
@@ -1018,9 +1209,18 @@ class MinecraftServerManager:
                     cmd, str(abs_server_dir), env, server.id
                 )
 
+                # If primary daemon creation fails, try alternative method
+                if not daemon_pid:
+                    logger.warning(
+                        f"Primary daemon creation failed for server {server.id}, trying alternative method"
+                    )
+                    daemon_pid = await self._create_daemon_process_alternative(
+                        cmd, str(abs_server_dir), env, server.id
+                    )
+
                 if not daemon_pid:
                     logger.error(
-                        f"Failed to create daemon process for server {server.id}"
+                        f"All daemon creation methods failed for server {server.id}"
                     )
                     return False
 
