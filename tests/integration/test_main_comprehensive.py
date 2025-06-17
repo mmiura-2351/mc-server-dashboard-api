@@ -305,13 +305,13 @@ class TestApplicationStartupShutdown:
             
             # Mock successful initialization
             mock_service.initialize.return_value = None
-            mock_service.sync_server_states.return_value = None
+            mock_service.sync_server_states_with_restore.return_value = None
             
             await _initialize_database_integration()
             
             # Verify initialization calls
             mock_service.initialize.assert_called_once()
-            mock_service.sync_server_states.assert_called_once()
+            mock_service.sync_server_states_with_restore.assert_called_once()
             assert mock_status.database_integration_ready is True
 
     @pytest.mark.asyncio
