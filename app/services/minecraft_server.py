@@ -612,17 +612,32 @@ class MinecraftServerManager:
                     }
                 )
 
-                # Create detached process with reliable session separation
-                # start_new_session=True is sufficient for most cases and more reliable
+                # Create truly detached process by redirecting to files
+                # This removes pipe dependencies that prevent true detachment
+                log_file_path = abs_server_dir / "server.log"
+                error_file_path = abs_server_dir / "server_error.log"
+
+                # Ensure log files exist with proper permissions
+                log_file_path.touch(exist_ok=True)
+                error_file_path.touch(exist_ok=True)
+
+                # Open files for subprocess output redirection
+                log_file = open(log_file_path, "a", encoding="utf-8", buffering=1)
+                error_file = open(error_file_path, "a", encoding="utf-8", buffering=1)
+
                 process = await asyncio.create_subprocess_exec(
                     *cmd,
                     cwd=str(abs_server_dir),
-                    stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.STDOUT,
-                    stdin=asyncio.subprocess.PIPE,
+                    stdout=log_file,
+                    stderr=error_file,
+                    stdin=None,  # No stdin connection
                     env=env,
                     start_new_session=True,  # Create new process group and session
                 )
+
+                # Close file handles after process creation
+                log_file.close()
+                error_file.close()
             except OSError as e:
                 logger.error(f"Failed to create subprocess for server {server.id}: {e}")
                 return False
@@ -878,34 +893,67 @@ class MinecraftServerManager:
                 break
 
     async def _read_server_logs(self, server_process: ServerProcess):
-        """Read server logs and put them in the queue"""
+        """Read server logs from file and put them in the queue"""
         try:
-            async for line in server_process.process.stdout:
-                log_line = line.decode().strip()
+            server_dir = self.base_directory / str(server_process.server_id)
+            log_file_path = server_dir / "server.log"
 
-                # Add timestamp
-                timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                formatted_line = f"[{timestamp}] {log_line}"
+            # Track last read position to avoid re-reading
+            last_position = 0
 
-                # Put in queue (drop old logs if queue is full)
+            while server_process.server_id in self.processes:
                 try:
-                    server_process.log_queue.put_nowait(formatted_line)
-                except asyncio.QueueFull:
-                    # Remove oldest log and add new one
-                    try:
-                        server_process.log_queue.get_nowait()
-                        server_process.log_queue.put_nowait(formatted_line)
-                    except asyncio.QueueEmpty:
-                        pass
+                    # Check if log file exists
+                    if not log_file_path.exists():
+                        await asyncio.sleep(0.5)
+                        continue
 
-                # Check for server ready status
-                if "Done" in log_line and "For help" in log_line:
-                    server_process.status = ServerStatus.running
-                    # Notify database of running status
-                    self._notify_status_change(
-                        server_process.server_id, ServerStatus.running
+                    # Read new content from file
+                    with open(log_file_path, "r", encoding="utf-8", errors="ignore") as f:
+                        f.seek(last_position)
+                        new_content = f.read()
+                        last_position = f.tell()
+
+                    if new_content:
+                        lines = new_content.strip().split("\n")
+                        for line in lines:
+                            if line.strip():  # Skip empty lines
+                                # Add timestamp
+                                timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                                formatted_line = f"[{timestamp}] {line.strip()}"
+
+                                # Put in queue (drop old logs if queue is full)
+                                try:
+                                    server_process.log_queue.put_nowait(formatted_line)
+                                except asyncio.QueueFull:
+                                    # Remove oldest log and add new one
+                                    try:
+                                        server_process.log_queue.get_nowait()
+                                        server_process.log_queue.put_nowait(
+                                            formatted_line
+                                        )
+                                    except asyncio.QueueEmpty:
+                                        pass
+
+                                # Check for server ready status
+                                if "Done" in line and "For help" in line:
+                                    server_process.status = ServerStatus.running
+                                    # Notify database of running status
+                                    self._notify_status_change(
+                                        server_process.server_id, ServerStatus.running
+                                    )
+                                    logger.info(
+                                        f"Server {server_process.server_id} is now running"
+                                    )
+
+                    # Sleep before next read to avoid excessive CPU usage
+                    await asyncio.sleep(0.5)
+
+                except Exception as e:
+                    logger.warning(
+                        f"Error reading log file for server {server_process.server_id}: {e}"
                     )
-                    logger.info(f"Server {server_process.server_id} is now running")
+                    await asyncio.sleep(1.0)  # Wait longer on error
 
         except asyncio.CancelledError:
             logger.debug(
@@ -918,6 +966,11 @@ class MinecraftServerManager:
     async def _monitor_server(self, server_process: ServerProcess):
         """Monitor server process and update status"""
         try:
+            if server_process.process is None:
+                # This is a restored process - monitor using PID
+                await self._monitor_restored_process(server_process)
+                return
+
             # Check if process failed immediately (within 5 seconds)
             try:
                 await asyncio.wait_for(server_process.process.wait(), timeout=5.0)
@@ -943,23 +996,29 @@ class MinecraftServerManager:
                 server_process.status = ServerStatus.running
                 self._notify_status_change(server_process.server_id, ServerStatus.running)
 
-            # Continue monitoring for normal process termination
-            await server_process.process.wait()
-
-            # Process has ended normally
-            return_code = server_process.process.returncode
-
-            if return_code == 0:
-                logger.info(f"Server {server_process.server_id} stopped normally")
-                # Notify database of stopped status
-                self._notify_status_change(server_process.server_id, ServerStatus.stopped)
-            else:
-                logger.warning(
-                    f"Server {server_process.server_id} crashed with code {return_code}"
-                )
-                server_process.status = ServerStatus.error
-                # Notify database of error status
-                self._notify_status_change(server_process.server_id, ServerStatus.error)
+            # For detached processes, we can't reliably wait() so we check periodically
+            while server_process.server_id in self.processes:
+                try:
+                    # Check if process is still running
+                    if server_process.pid and await self._is_process_running(
+                        server_process.pid
+                    ):
+                        await asyncio.sleep(5.0)  # Check every 5 seconds
+                        continue
+                    else:
+                        # Process has ended
+                        logger.info(
+                            f"Server {server_process.server_id} process has ended"
+                        )
+                        self._notify_status_change(
+                            server_process.server_id, ServerStatus.stopped
+                        )
+                        break
+                except Exception as e:
+                    logger.warning(
+                        f"Error checking process status for server {server_process.server_id}: {e}"
+                    )
+                    await asyncio.sleep(5.0)
 
             # Clean up if still in processes dict
             await self._cleanup_server_process(server_process.server_id)
