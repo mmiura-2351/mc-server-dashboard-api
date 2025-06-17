@@ -16,6 +16,8 @@ class Settings(BaseSettings):
     # Server management configuration
     SERVER_LOG_QUEUE_SIZE: int = 500
     JAVA_CHECK_TIMEOUT: int = 5
+    KEEP_SERVERS_ON_SHUTDOWN: bool = True  # Keep servers running when API shuts down
+    AUTO_SYNC_ON_STARTUP: bool = True  # Auto-detect and sync running servers on startup
 
     # Java configuration for multi-version support
     JAVA_DISCOVERY_PATHS: str = (

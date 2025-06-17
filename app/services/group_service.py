@@ -642,7 +642,9 @@ class GroupService:
                         Path(directory_path),
                         group.type,
                         "player_remove",
-                        removed_player=removed_player_info,
+                        removed_players=(
+                            [removed_player_info] if removed_player_info else None
+                        ),
                     )
             except Exception as cmd_error:
                 logger.warning(
@@ -826,6 +828,16 @@ class GroupService:
         )
         self.db.add(audit_log)
 
+        # For OP groups, collect player information before detachment for deop commands
+        removed_players = None
+        if group.type == GroupType.op:
+            # Get all players in the group that will be removed
+            removed_players = []
+            for player in group.get_players():
+                removed_players.append(
+                    {"username": player["username"], "uuid": player["uuid"]}
+                )
+
         # Remove attachment
         self.db.delete(server_group)
         self.db.commit()
@@ -836,7 +848,11 @@ class GroupService:
         # Send real-time commands for detachment
         try:
             await real_time_server_commands.handle_group_change_commands(
-                server_id, Path(server.directory_path), group.type, "detach"
+                server_id,
+                Path(server.directory_path),
+                group.type,
+                "detach",
+                removed_players,
             )
         except Exception as cmd_error:
             logger.warning(

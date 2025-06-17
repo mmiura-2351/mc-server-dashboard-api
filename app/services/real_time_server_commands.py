@@ -51,10 +51,31 @@ class RealTimeServerCommandService:
             # Check if server is running
             status = minecraft_server_manager.get_server_status(server_id)
             if status != ServerStatus.running:
-                logger.debug(
-                    f"Server {server_id} is not running ({status.value}), skipping whitelist reload"
-                )
-                return False
+                # If server is not found in processes dict, try to restore daemon processes
+                if status == ServerStatus.stopped:
+                    logger.debug(
+                        f"Server {server_id} not found in manager, attempting daemon process restoration"
+                    )
+                    restoration_results = (
+                        await minecraft_server_manager.discover_and_restore_processes()
+                    )
+                    if (
+                        server_id in restoration_results
+                        and restoration_results[server_id]
+                    ):
+                        logger.info(
+                            f"Successfully restored daemon process for server {server_id}"
+                        )
+                        # Recheck status after restoration
+                        status = minecraft_server_manager.get_server_status(server_id)
+                    else:
+                        logger.debug(f"No daemon process found for server {server_id}")
+
+                if status != ServerStatus.running:
+                    logger.debug(
+                        f"Server {server_id} is not running ({status.value}), skipping whitelist reload"
+                    )
+                    return False
 
             # Send whitelist reload command
             success = await minecraft_server_manager.send_command(
@@ -90,10 +111,31 @@ class RealTimeServerCommandService:
             # Check if server is running
             status = minecraft_server_manager.get_server_status(server_id)
             if status != ServerStatus.running:
-                logger.debug(
-                    f"Server {server_id} is not running ({status.value}), skipping OP sync"
-                )
-                return False
+                # If server is not found in processes dict, try to restore daemon processes
+                if status == ServerStatus.stopped:
+                    logger.debug(
+                        f"Server {server_id} not found in manager, attempting daemon process restoration"
+                    )
+                    restoration_results = (
+                        await minecraft_server_manager.discover_and_restore_processes()
+                    )
+                    if (
+                        server_id in restoration_results
+                        and restoration_results[server_id]
+                    ):
+                        logger.info(
+                            f"Successfully restored daemon process for server {server_id}"
+                        )
+                        # Recheck status after restoration
+                        status = minecraft_server_manager.get_server_status(server_id)
+                    else:
+                        logger.debug(f"No daemon process found for server {server_id}")
+
+                if status != ServerStatus.running:
+                    logger.debug(
+                        f"Server {server_id} is not running ({status.value}), skipping OP sync"
+                    )
+                    return False
 
             # Validate server path is within expected directory structure
             try:
@@ -180,10 +222,31 @@ class RealTimeServerCommandService:
             # Check if server is running
             status = minecraft_server_manager.get_server_status(server_id)
             if status != ServerStatus.running:
-                logger.debug(
-                    f"Server {server_id} is not running ({status.value}), skipping OP diff"
-                )
-                return False
+                # If server is not found in processes dict, try to restore daemon processes
+                if status == ServerStatus.stopped:
+                    logger.debug(
+                        f"Server {server_id} not found in manager, attempting daemon process restoration"
+                    )
+                    restoration_results = (
+                        await minecraft_server_manager.discover_and_restore_processes()
+                    )
+                    if (
+                        server_id in restoration_results
+                        and restoration_results[server_id]
+                    ):
+                        logger.info(
+                            f"Successfully restored daemon process for server {server_id}"
+                        )
+                        # Recheck status after restoration
+                        status = minecraft_server_manager.get_server_status(server_id)
+                    else:
+                        logger.debug(f"No daemon process found for server {server_id}")
+
+                if status != ServerStatus.running:
+                    logger.debug(
+                        f"Server {server_id} is not running ({status.value}), skipping OP diff"
+                    )
+                    return False
 
             success_count = 0
             total_commands = len(added_players) + len(removed_players)
@@ -241,7 +304,7 @@ class RealTimeServerCommandService:
         server_path: Path,
         group_type: GroupType,
         change_type: str = "update",
-        removed_player: dict = None,
+        removed_players: list = None,
     ) -> bool:
         """
         Handle real-time commands for group changes
@@ -251,7 +314,7 @@ class RealTimeServerCommandService:
             server_path: Path to the server directory
             group_type: Type of group that changed (op or whitelist)
             change_type: Type of change (update, attach, detach, player_add, player_remove)
-            removed_player: Player data that was removed (for player_remove change_type)
+            removed_players: List of player data that was removed (for player_remove or detach change_type)
 
         Returns:
             bool: True if commands were sent successfully
@@ -260,10 +323,31 @@ class RealTimeServerCommandService:
             # Check if server is running
             status = minecraft_server_manager.get_server_status(server_id)
             if status != ServerStatus.running:
-                logger.debug(
-                    f"Server {server_id} is not running ({status.value}), skipping real-time commands"
-                )
-                return True  # Return True since file update already happened
+                # If server is not found in processes dict, try to restore daemon processes
+                if status == ServerStatus.stopped:
+                    logger.debug(
+                        f"Server {server_id} not found in manager, attempting daemon process restoration"
+                    )
+                    restoration_results = (
+                        await minecraft_server_manager.discover_and_restore_processes()
+                    )
+                    if (
+                        server_id in restoration_results
+                        and restoration_results[server_id]
+                    ):
+                        logger.info(
+                            f"Successfully restored daemon process for server {server_id}"
+                        )
+                        # Recheck status after restoration
+                        status = minecraft_server_manager.get_server_status(server_id)
+                    else:
+                        logger.debug(f"No daemon process found for server {server_id}")
+
+                if status != ServerStatus.running:
+                    logger.debug(
+                        f"Server {server_id} is not running ({status.value}), skipping real-time commands"
+                    )
+                    return True  # Return True since file update already happened
 
             success = True
 
@@ -282,29 +366,40 @@ class RealTimeServerCommandService:
 
             elif group_type == GroupType.op:
                 # For OP changes, handle differently based on change type
-                if change_type == "player_remove" and removed_player:
-                    # For player removal, use diff-based approach to ensure deop command is sent
-                    removed_player_name = removed_player.get("username")
-                    if removed_player_name:
-                        removed_players = {removed_player_name}
+                if change_type in ["player_remove", "detach"] and removed_players:
+                    # For player removal or group detachment, use diff-based approach to ensure deop commands are sent
+                    removed_player_names = set()
+                    for player in removed_players:
+                        if isinstance(player, dict):
+                            player_name = player.get("username")
+                            if player_name:
+                                removed_player_names.add(player_name)
+                        else:
+                            # Handle backward compatibility for single player data
+                            if hasattr(player, "get"):
+                                player_name = player.get("username")
+                                if player_name:
+                                    removed_player_names.add(player_name)
+
+                    if removed_player_names:
                         added_players = set()
 
-                        # Apply the diff to send deop command for removed player
+                        # Apply the diff to send deop commands for removed players
                         diff_success = await self.apply_op_diff_if_running(
-                            server_id, added_players, removed_players
+                            server_id, added_players, removed_player_names
                         )
                         if diff_success:
                             logger.info(
-                                f"Applied OP diff for server {server_id} after player removal: removed {removed_player_name}"
+                                f"Applied OP diff for server {server_id} after {change_type}: removed {', '.join(removed_player_names)}"
                             )
                         else:
                             logger.warning(
-                                f"Failed to apply OP diff for server {server_id} after player removal"
+                                f"Failed to apply OP diff for server {server_id} after {change_type}"
                             )
                             success = False
                     else:
                         logger.warning(
-                            f"Removed player data missing username for server {server_id}"
+                            f"No valid player names found in removed_players for server {server_id} during {change_type}"
                         )
                         success = False
                 else:

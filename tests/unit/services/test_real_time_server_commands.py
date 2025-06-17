@@ -80,11 +80,14 @@ class TestRealTimeServerCommandService:
     async def test_reload_whitelist_if_running_server_not_running(self, mock_manager, service):
         """Test whitelist reload when server is not running"""
         mock_manager.get_server_status.return_value = ServerStatus.stopped
+        
+        # Mock the discover_and_restore_processes method to return empty results
+        from unittest.mock import AsyncMock
+        mock_manager.discover_and_restore_processes = AsyncMock(return_value={})
 
         result = await service.reload_whitelist_if_running(1)
 
         assert result is False
-        mock_manager.get_server_status.assert_called_once_with(1)
         mock_manager.send_command.assert_not_called()
 
     @pytest.mark.asyncio
@@ -135,6 +138,10 @@ class TestRealTimeServerCommandService:
     async def test_sync_op_changes_if_running_server_not_running(self, mock_manager, service, mock_server_path):
         """Test OP sync when server is not running"""
         mock_manager.get_server_status.return_value = ServerStatus.stopped
+        
+        # Mock the discover_and_restore_processes method to return empty results
+        from unittest.mock import AsyncMock
+        mock_manager.discover_and_restore_processes = AsyncMock(return_value={})
 
         result = await service.sync_op_changes_if_running(1, mock_server_path)
 
@@ -222,6 +229,10 @@ class TestRealTimeServerCommandService:
     async def test_apply_op_diff_if_running_server_not_running(self, mock_manager, service):
         """Test OP diff when server is not running"""
         mock_manager.get_server_status.return_value = ServerStatus.stopped
+        
+        # Mock the discover_and_restore_processes method to return empty results
+        from unittest.mock import AsyncMock
+        mock_manager.discover_and_restore_processes = AsyncMock(return_value={})
 
         result = await service.apply_op_diff_if_running(1, {"player1"}, {"player2"})
 
@@ -284,11 +295,11 @@ class TestRealTimeServerCommandService:
     async def test_handle_group_change_commands_op_player_remove(self, mock_manager, service, mock_server_path):
         """Test group change handling for OP player removal"""
         mock_manager.get_server_status.return_value = ServerStatus.running
-        removed_player = {"username": "player1", "uuid": "123-456"}
+        removed_players = [{"username": "player1", "uuid": "123-456"}]
 
         with patch.object(service, 'apply_op_diff_if_running', return_value=True) as mock_diff:
             result = await service.handle_group_change_commands(
-                1, mock_server_path, GroupType.op, "player_remove", removed_player
+                1, mock_server_path, GroupType.op, "player_remove", removed_players
             )
 
         assert result is True
@@ -299,6 +310,10 @@ class TestRealTimeServerCommandService:
     async def test_handle_group_change_commands_server_not_running(self, mock_manager, service, mock_server_path):
         """Test group change handling when server is not running"""
         mock_manager.get_server_status.return_value = ServerStatus.stopped
+        
+        # Mock the discover_and_restore_processes method to return empty results
+        from unittest.mock import AsyncMock
+        mock_manager.discover_and_restore_processes = AsyncMock(return_value={})
 
         result = await service.handle_group_change_commands(
             1, mock_server_path, GroupType.whitelist, "update"
@@ -324,13 +339,31 @@ class TestRealTimeServerCommandService:
     async def test_handle_group_change_commands_op_player_remove_no_username(self, mock_manager, service, mock_server_path):
         """Test group change handling for OP player removal without username"""
         mock_manager.get_server_status.return_value = ServerStatus.running
-        removed_player = {"uuid": "123-456"}  # Missing username
+        removed_players = [{"uuid": "123-456"}]  # Missing username
 
         result = await service.handle_group_change_commands(
-            1, mock_server_path, GroupType.op, "player_remove", removed_player
+            1, mock_server_path, GroupType.op, "player_remove", removed_players
         )
 
         assert result is False
+
+    @pytest.mark.asyncio
+    @patch('app.services.real_time_server_commands.minecraft_server_manager')
+    async def test_handle_group_change_commands_op_detach(self, mock_manager, service, mock_server_path):
+        """Test group change handling for OP group detachment"""
+        mock_manager.get_server_status.return_value = ServerStatus.running
+        removed_players = [
+            {"username": "player1", "uuid": "123-456"},
+            {"username": "player2", "uuid": "789-012"}
+        ]
+
+        with patch.object(service, 'apply_op_diff_if_running', return_value=True) as mock_diff:
+            result = await service.handle_group_change_commands(
+                1, mock_server_path, GroupType.op, "detach", removed_players
+            )
+
+        assert result is True
+        mock_diff.assert_called_once_with(1, set(), {"player1", "player2"})
 
     @pytest.mark.asyncio
     @patch('app.services.real_time_server_commands.minecraft_server_manager')

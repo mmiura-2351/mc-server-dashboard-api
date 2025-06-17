@@ -380,5 +380,5 @@ class TestMinecraftServerManagerSimpleIntegration:
             with patch("app.services.minecraft_server.logger") as mock_logger:
                 await manager._cleanup_server_process(1)
                 
-                mock_logger.error.assert_called()
-                assert "Error during cleanup for server 1" in str(mock_logger.error.call_args)
+                mock_logger.warning.assert_called()
+                assert "Error during cleanup for server 1" in str(mock_logger.warning.call_args)
