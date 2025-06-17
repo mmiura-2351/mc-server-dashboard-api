@@ -2,7 +2,10 @@ import asyncio
 import json
 import logging
 import os
+import secrets
 import signal
+import socket
+import struct
 import sys
 import threading
 from dataclasses import dataclass
@@ -31,6 +34,9 @@ class ServerProcess:
     pid: Optional[int] = None
     # Directory path for the server (needed for log monitoring)
     server_directory: Optional[Path] = None
+    # RCON configuration for command sending
+    rcon_port: Optional[int] = None
+    rcon_password: Optional[str] = None
     # Track background tasks for proper cleanup
     log_task: Optional[asyncio.Task] = None
     monitor_task: Optional[asyncio.Task] = None
@@ -393,8 +399,10 @@ class MinecraftServerManager:
         process: asyncio.subprocess.Process,
         port: int,
         command: List[str],
+        rcon_port: Optional[int] = None,
+        rcon_password: Optional[str] = None,
     ) -> bool:
-        """Write PID file with process metadata"""
+        """Write PID file with process metadata including RCON credentials"""
         try:
             pid_file_path = self._get_pid_file_path(server_id, server_dir)
             pid_data = {
@@ -405,6 +413,15 @@ class MinecraftServerManager:
                 "command": command,
                 "api_version": "1.0",  # For future compatibility
             }
+
+            # Add RCON credentials if available
+            if rcon_port and rcon_password:
+                pid_data.update(
+                    {
+                        "rcon_port": rcon_port,
+                        "rcon_password": rcon_password,
+                    }
+                )
 
             with open(pid_file_path, "w") as f:
                 json.dump(pid_data, f, indent=2)
@@ -503,6 +520,10 @@ class MinecraftServerManager:
             except Exception:
                 started_at = datetime.now()  # Fallback to current time
 
+            # Extract RCON credentials if available
+            rcon_port = pid_data.get("rcon_port")
+            rcon_password = pid_data.get("rcon_password")
+
             server_process = ServerProcess(
                 server_id=server_id,
                 process=None,  # We'll set this to None since we can't recreate subprocess
@@ -511,6 +532,8 @@ class MinecraftServerManager:
                 started_at=started_at,
                 pid=pid,
                 server_directory=server_dir,  # Store correct directory path for monitoring
+                rcon_port=rcon_port,  # Restore RCON configuration
+                rcon_password=rcon_password,
             )
 
             self.processes[server_id] = server_process
@@ -713,7 +736,9 @@ class MinecraftServerManager:
 
                 # Check log file for startup completion
                 try:
-                    server_dir = server_process.server_directory or (self.base_directory / str(server_id))
+                    server_dir = server_process.server_directory or (
+                        self.base_directory / str(server_id)
+                    )
                     log_file_path = server_dir / "server.log"
 
                     if i % 10 == 0:  # Log every 5 seconds (10 iterations at 0.5s)
@@ -848,7 +873,9 @@ class MinecraftServerManager:
             if not startup_detected:
                 if await self._is_process_running(pid):
                     # Get diagnostic information about log files
-                    server_dir = server_process.server_directory or (self.base_directory / str(server_id))
+                    server_dir = server_process.server_directory or (
+                        self.base_directory / str(server_id)
+                    )
                     diagnostic_info = await self._diagnose_log_issues(
                         server_id, server_dir
                     )
@@ -957,7 +984,9 @@ class MinecraftServerManager:
 
                 # Remove PID file
                 try:
-                    server_dir = server_process.server_directory or (self.base_directory / str(server_id))
+                    server_dir = server_process.server_directory or (
+                        self.base_directory / str(server_id)
+                    )
                     await self._remove_pid_file(server_id, server_dir)
                 except Exception as pid_error:
                     logger.warning(
@@ -1056,6 +1085,191 @@ class MinecraftServerManager:
             logger.error(f"Failed to ensure EULA acceptance: {e}")
             return False
 
+    def _generate_rcon_password(self) -> str:
+        """Generate a secure RCON password"""
+        return secrets.token_urlsafe(32)
+
+    def _find_available_rcon_port(self, base_port: int = 25575) -> int:
+        """Find an available RCON port starting from base_port"""
+        for port in range(base_port, base_port + 100):
+            try:
+                with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                    s.bind(("localhost", port))
+                    return port
+            except OSError:
+                continue
+        raise RuntimeError("No available RCON ports found")
+
+    async def _ensure_rcon_configured(
+        self, server_dir: Path, server_id: int
+    ) -> tuple[bool, int, str]:
+        """Ensure RCON is configured in server.properties"""
+        try:
+            properties_path = server_dir / "server.properties"
+            rcon_port = self._find_available_rcon_port()
+            rcon_password = self._generate_rcon_password()
+
+            # Read existing properties if file exists
+            properties = {}
+            if properties_path.exists():
+                with open(properties_path, "r", encoding="utf-8") as f:
+                    for line in f:
+                        line = line.strip()
+                        if line and not line.startswith("#") and "=" in line:
+                            key, value = line.split("=", 1)
+                            properties[key] = value
+
+            # Update RCON settings
+            properties.update(
+                {
+                    "enable-rcon": "true",
+                    "rcon.port": str(rcon_port),
+                    "rcon.password": rcon_password,
+                    "broadcast-rcon-to-ops": "true",
+                }
+            )
+
+            # Write updated properties back
+            with open(properties_path, "w", encoding="utf-8") as f:
+                f.write("#Minecraft server properties\n")
+                f.write(f"#{datetime.now().strftime('%a %b %d %H:%M:%S %Z %Y')}\n")
+                for key, value in sorted(properties.items()):
+                    f.write(f"{key}={value}\n")
+
+            logger.info(f"Configured RCON for server {server_id}: port={rcon_port}")
+            return True, rcon_port, rcon_password
+
+        except Exception as e:
+            logger.error(f"Failed to configure RCON for server {server_id}: {e}")
+            return False, 0, ""
+
+
+class MinecraftRCONClient:
+    """RCON client for sending commands to Minecraft servers"""
+
+    def __init__(self):
+        self.socket = None
+        self.request_id = 0
+
+    async def connect(
+        self, host: str, port: int, password: str, timeout: float = 5.0
+    ) -> bool:
+        """Connect to RCON server"""
+        try:
+            self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            self.socket.settimeout(timeout)
+            await asyncio.get_event_loop().run_in_executor(
+                None, self.socket.connect, (host, port)
+            )
+
+            # Send authentication packet
+            auth_success = await self._authenticate(password)
+            if not auth_success:
+                await self.disconnect()
+                return False
+
+            logger.debug(f"RCON connected to {host}:{port}")
+            return True
+
+        except Exception as e:
+            logger.error(f"Failed to connect to RCON {host}:{port}: {e}")
+            await self.disconnect()
+            return False
+
+    async def _authenticate(self, password: str) -> bool:
+        """Authenticate with RCON server"""
+        try:
+            self.request_id += 1
+            packet = self._create_packet(self.request_id, 3, password)  # Type 3 = LOGIN
+            await self._send_packet(packet)
+
+            response = await self._receive_packet()
+            return response and response[0] == self.request_id
+
+        except Exception as e:
+            logger.error(f"RCON authentication failed: {e}")
+            return False
+
+    async def send_command(self, command: str) -> Optional[str]:
+        """Send a command and return the response"""
+        try:
+            if not self.socket:
+                return None
+
+            self.request_id += 1
+            packet = self._create_packet(self.request_id, 2, command)  # Type 2 = COMMAND
+            await self._send_packet(packet)
+
+            response = await self._receive_packet()
+            if response and response[0] == self.request_id:
+                return response[2]  # Return payload
+            return None
+
+        except Exception as e:
+            logger.error(f"Failed to send RCON command '{command}': {e}")
+            return None
+
+    def _create_packet(self, request_id: int, packet_type: int, payload: str) -> bytes:
+        """Create RCON packet"""
+        payload_bytes = payload.encode("utf-8") + b"\x00\x00"
+        packet_size = len(payload_bytes) + 10
+
+        packet = struct.pack("<i", packet_size - 4)  # Size (excluding size field)
+        packet += struct.pack("<i", request_id)
+        packet += struct.pack("<i", packet_type)
+        packet += payload_bytes
+
+        return packet
+
+    async def _send_packet(self, packet: bytes):
+        """Send packet to RCON server"""
+        await asyncio.get_event_loop().run_in_executor(None, self.socket.sendall, packet)
+
+    async def _receive_packet(self) -> Optional[tuple]:
+        """Receive packet from RCON server"""
+        try:
+            # Read packet size
+            size_data = await asyncio.get_event_loop().run_in_executor(
+                None, self.socket.recv, 4
+            )
+            if len(size_data) != 4:
+                return None
+
+            size = struct.unpack("<i", size_data)[0]
+
+            # Read packet data
+            data = await asyncio.get_event_loop().run_in_executor(
+                None, self.socket.recv, size
+            )
+            if len(data) != size:
+                return None
+
+            request_id = struct.unpack("<i", data[0:4])[0]
+            packet_type = struct.unpack("<i", data[4:8])[0]
+            payload = data[8:-2].decode("utf-8")  # Remove null terminators
+
+            return (request_id, packet_type, payload)
+
+        except Exception as e:
+            logger.error(f"Failed to receive RCON packet: {e}")
+            return None
+
+    async def disconnect(self):
+        """Disconnect from RCON server"""
+        if self.socket:
+            try:
+                self.socket.close()
+            except Exception:
+                pass
+            self.socket = None
+
+
+# Fix the misplaced methods by adding them to MinecraftServerManager
+
+# Patch the MinecraftServerManager class with the missing methods
+def _add_missing_methods_to_server_manager():
+    """Add the methods that were misplaced during formatting"""
+    
     async def _validate_server_files(self, server_dir: Path) -> tuple[bool, str]:
         """Validate that all required server files exist and are accessible"""
         try:
@@ -1190,6 +1404,16 @@ class MinecraftServerManager:
                 logger.error(f"Failed to ensure EULA acceptance for server {server.id}")
                 return False
 
+            # Configure RCON for real-time command support
+            rcon_success, rcon_port, rcon_password = await self._ensure_rcon_configured(
+                server_dir, server.id
+            )
+            if not rcon_success:
+                logger.warning(
+                    f"Failed to configure RCON for server {server.id}, continuing without real-time commands"
+                )
+                rcon_port, rcon_password = None, None
+
             # Prepare command with absolute paths
             jar_path = server_dir / "server.jar"
             abs_server_dir = server_dir.absolute()
@@ -1289,7 +1513,13 @@ class MinecraftServerManager:
 
             mock_process = DaemonProcess(daemon_pid)
             pid_file_success = await self._write_pid_file(
-                server.id, server_dir, mock_process, server.port, cmd
+                server.id,
+                server_dir,
+                mock_process,
+                server.port,
+                cmd,
+                rcon_port,
+                rcon_password,
             )
             if not pid_file_success:
                 logger.warning(
@@ -1306,6 +1536,8 @@ class MinecraftServerManager:
                 started_at=datetime.now(),
                 pid=daemon_pid,
                 server_directory=server_dir,  # Store correct directory path for monitoring
+                rcon_port=rcon_port,  # Store RCON configuration
+                rcon_password=rcon_password,
             )
 
             self.processes[server.id] = server_process
@@ -1434,21 +1666,87 @@ class MinecraftServerManager:
             return False
 
     async def send_command(self, server_id: int, command: str) -> bool:
-        """Send a command to a running server"""
+        """Send a command to a running server using RCON"""
         try:
             if server_id not in self.processes:
                 return False
 
             server_process = self.processes[server_id]
-            if server_process.process.stdin:
+
+            # Try RCON first for all servers (daemon and regular)
+            if server_process.rcon_port and server_process.rcon_password:
+                return await self._send_command_via_rcon(
+                    server_id, server_process, command
+                )
+
+            # Fallback to stdin for regular processes (backward compatibility)
+            if server_process.process and server_process.process.stdin:
+                logger.debug(
+                    f"Using stdin fallback for server {server_id} (RCON not available)"
+                )
                 command_bytes = f"{command}\n".encode()
                 server_process.process.stdin.write(command_bytes)
                 await server_process.process.stdin.drain()
                 return True
+
+            # No command mechanism available
+            logger.warning(f"No command mechanism available for server {server_id}")
             return False
 
         except Exception as e:
             logger.error(f"Failed to send command to server {server_id}: {e}")
+            return False
+
+    async def _send_command_via_rcon(
+        self, server_id: int, server_process: ServerProcess, command: str
+    ) -> bool:
+        """Send a command to a server using RCON"""
+        try:
+            # Check if RCON credentials are available
+            if not server_process.rcon_port or not server_process.rcon_password:
+                logger.warning(
+                    f"Cannot send command to server {server_id}: "
+                    f"RCON credentials not available (port: {server_process.rcon_port}, "
+                    f"password: {'set' if server_process.rcon_password else 'not set'})"
+                )
+                return False
+
+            # Create RCON client and connect
+            rcon_client = MinecraftRCONClient()
+
+            try:
+                # Connect to RCON server
+                connected = await rcon_client.connect(
+                    host="localhost",
+                    port=server_process.rcon_port,
+                    password=server_process.rcon_password,
+                    timeout=5.0,
+                )
+
+                if not connected:
+                    logger.error(f"Failed to connect to RCON for server {server_id}")
+                    return False
+
+                # Send command
+                response = await rcon_client.send_command(command)
+
+                if response is not None:
+                    logger.info(
+                        f"Command '{command}' sent to server {server_id} via RCON. "
+                        f"Response: {response[:100]}{'...' if len(response) > 100 else ''}"
+                    )
+                    return True
+                else:
+                    logger.error(
+                        f"Failed to send command '{command}' to server {server_id} via RCON"
+                    )
+                    return False
+
+            finally:
+                await rcon_client.disconnect()
+
+        except Exception as e:
+            logger.error(f"Failed to send command to server {server_id} via RCON: {e}")
             return False
 
     def get_server_status(self, server_id: int) -> Optional[ServerStatus]:
@@ -1513,7 +1811,9 @@ class MinecraftServerManager:
     async def _read_server_logs(self, server_process: ServerProcess):
         """Read server logs from file and put them in the queue"""
         try:
-            server_dir = server_process.server_directory or (self.base_directory / str(server_process.server_id))
+            server_dir = server_process.server_directory or (
+                self.base_directory / str(server_process.server_id)
+            )
             log_file_path = server_dir / "server.log"
 
             # Track last read position to avoid re-reading
