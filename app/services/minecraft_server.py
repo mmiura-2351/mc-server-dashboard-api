@@ -2,6 +2,8 @@ import asyncio
 import json
 import logging
 import os
+import sys
+import threading
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -51,6 +53,199 @@ class MinecraftServerManager:
     def _get_pid_file_path(self, server_id: int, server_dir: Path) -> Path:
         """Get path to PID file for server"""
         return server_dir / "server.pid"
+
+    async def _create_daemon_process(
+        self, cmd: List[str], cwd: str, env: Dict[str, str], server_id: int
+    ) -> Optional[int]:
+        """Create a true daemon process using double-fork technique for complete detachment"""
+        log_file_path = Path(cwd) / "server.log"
+        error_file_path = Path(cwd) / "server_error.log"
+
+        # Ensure log files exist
+        log_file_path.touch(exist_ok=True)
+        error_file_path.touch(exist_ok=True)
+
+        def daemon_fork():
+            """Double fork daemon creation in a separate thread"""
+            try:
+                # First fork
+                pid = os.fork()
+                if pid > 0:
+                    # Parent process - wait for child and return its PID
+                    os.waitpid(pid, 0)
+                    return None  # This will be handled by the child
+            except OSError as e:
+                logger.error(f"First fork failed for server {server_id}: {e}")
+                return None
+
+            # First child process
+            try:
+                # Decouple from parent environment
+                os.chdir(cwd)
+                os.setsid()  # Create new session and become session leader
+                os.umask(0)  # Clear umask for proper file permissions
+
+                # Second fork to prevent acquiring controlling terminal
+                pid = os.fork()
+                if pid > 0:
+                    # Exit first child
+                    os._exit(0)
+            except OSError as e:
+                logger.error(f"Second fork failed for server {server_id}: {e}")
+                os._exit(1)
+
+            # Second child process (daemon)
+            try:
+                # Close all inherited file descriptors
+                import resource
+
+                maxfd = resource.getrlimit(resource.RLIMIT_NOFILE)[1]
+                if maxfd == resource.RLIM_INFINITY:
+                    maxfd = 1024  # Default limit
+
+                # Close all file descriptors except the ones we need
+                for fd in range(3, maxfd):
+                    try:
+                        os.close(fd)
+                    except OSError:
+                        pass
+
+                # Redirect standard streams to log files
+                stdin_fd = os.open("/dev/null", os.O_RDONLY)
+                stdout_fd = os.open(
+                    str(log_file_path), os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o644
+                )
+                stderr_fd = os.open(
+                    str(error_file_path), os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o644
+                )
+
+                # Duplicate file descriptors to standard streams
+                os.dup2(stdin_fd, 0)  # stdin
+                os.dup2(stdout_fd, 1)  # stdout
+                os.dup2(stderr_fd, 2)  # stderr
+
+                # Close the original file descriptors
+                os.close(stdin_fd)
+                os.close(stdout_fd)
+                os.close(stderr_fd)
+
+                # Execute the Minecraft server command
+                os.execvpe(cmd[0], cmd, env)
+
+            except Exception as e:
+                # If anything fails, log and exit
+                sys.stderr.write(f"Daemon process failed for server {server_id}: {e}\n")
+                os._exit(1)
+
+        # Use a thread to handle the fork operations
+        daemon_pid = None
+        exception_occurred = None
+
+        def threaded_fork():
+            nonlocal daemon_pid, exception_occurred
+            try:
+                # Create a pipe to communicate the daemon PID back to parent
+                read_fd, write_fd = os.pipe()
+
+                # First fork
+                pid = os.fork()
+                if pid > 0:
+                    # Parent process
+                    os.close(write_fd)
+                    try:
+                        # Read the daemon PID from pipe
+                        pid_data = os.read(read_fd, 1024)
+                        if pid_data:
+                            daemon_pid = int(pid_data.decode().strip())
+                        os.waitpid(pid, 0)  # Wait for intermediate child
+                    finally:
+                        os.close(read_fd)
+                    return
+
+                # Intermediate child process
+                os.close(read_fd)
+                try:
+                    # Decouple from parent environment
+                    os.chdir(cwd)
+                    os.setsid()  # Create new session
+                    os.umask(0)
+
+                    # Second fork
+                    pid = os.fork()
+                    if pid > 0:
+                        # Send daemon PID to parent and exit
+                        os.write(write_fd, str(pid).encode())
+                        os.close(write_fd)
+                        os._exit(0)
+
+                    # Daemon process
+                    os.close(write_fd)
+
+                    # Close all inherited file descriptors
+                    import resource
+
+                    maxfd = resource.getrlimit(resource.RLIMIT_NOFILE)[1]
+                    if maxfd == resource.RLIM_INFINITY:
+                        maxfd = 1024
+
+                    for fd in range(3, maxfd):
+                        try:
+                            os.close(fd)
+                        except OSError:
+                            pass
+
+                    # Redirect streams
+                    stdin_fd = os.open("/dev/null", os.O_RDONLY)
+                    stdout_fd = os.open(
+                        str(log_file_path), os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o644
+                    )
+                    stderr_fd = os.open(
+                        str(error_file_path),
+                        os.O_WRONLY | os.O_CREAT | os.O_APPEND,
+                        0o644,
+                    )
+
+                    os.dup2(stdin_fd, 0)
+                    os.dup2(stdout_fd, 1)
+                    os.dup2(stderr_fd, 2)
+
+                    os.close(stdin_fd)
+                    os.close(stdout_fd)
+                    os.close(stderr_fd)
+
+                    # Execute command
+                    os.execvpe(cmd[0], cmd, env)
+
+                except Exception as e:
+                    sys.stderr.write(f"Intermediate child failed: {e}\n")
+                    os._exit(1)
+
+            except Exception as e:
+                exception_occurred = e
+
+        # Run daemon creation in thread to avoid blocking asyncio
+        thread = threading.Thread(target=threaded_fork)
+        thread.start()
+        thread.join(timeout=10.0)  # 10 second timeout
+
+        if thread.is_alive():
+            logger.error(f"Daemon creation timed out for server {server_id}")
+            return None
+
+        if exception_occurred:
+            logger.error(
+                f"Daemon creation failed for server {server_id}: {exception_occurred}"
+            )
+            return None
+
+        if daemon_pid:
+            logger.info(
+                f"Successfully created daemon process {daemon_pid} for server {server_id}"
+            )
+            return daemon_pid
+        else:
+            logger.error(f"Failed to get daemon PID for server {server_id}")
+            return None
 
     async def _write_pid_file(
         self,
@@ -601,9 +796,9 @@ class MinecraftServerManager:
             logger.info(f"JAR path exists: {abs_jar_path.exists()}")
             logger.info(f"Directory writable: {os.access(abs_server_dir, os.W_OK)}")
 
-            # Create process with detailed error handling and proper detachment
+            # Create truly detached daemon process
             try:
-                # Prepare environment for detached process
+                # Prepare environment for daemon process
                 env = dict(os.environ)
                 env.update(
                     {
@@ -612,96 +807,79 @@ class MinecraftServerManager:
                     }
                 )
 
-                # Create truly detached process by redirecting to files
-                # This removes pipe dependencies that prevent true detachment
-                log_file_path = abs_server_dir / "server.log"
-                error_file_path = abs_server_dir / "server_error.log"
-
-                # Ensure log files exist with proper permissions
-                log_file_path.touch(exist_ok=True)
-                error_file_path.touch(exist_ok=True)
-
-                # Open files for subprocess output redirection
-                log_file = open(log_file_path, "a", encoding="utf-8", buffering=1)
-                error_file = open(error_file_path, "a", encoding="utf-8", buffering=1)
-
-                process = await asyncio.create_subprocess_exec(
-                    *cmd,
-                    cwd=str(abs_server_dir),
-                    stdout=log_file,
-                    stderr=error_file,
-                    stdin=None,  # No stdin connection
-                    env=env,
-                    start_new_session=True,  # Create new process group and session
+                # Create daemon process using double-fork technique
+                daemon_pid = await self._create_daemon_process(
+                    cmd, str(abs_server_dir), env, server.id
                 )
 
-                # Close file handles after process creation
-                log_file.close()
-                error_file.close()
-            except OSError as e:
-                logger.error(f"Failed to create subprocess for server {server.id}: {e}")
-                return False
+                if not daemon_pid:
+                    logger.error(
+                        f"Failed to create daemon process for server {server.id}"
+                    )
+                    return False
+
             except Exception as e:
                 logger.error(
-                    f"Unexpected error creating subprocess for server {server.id}: {e}"
+                    f"Unexpected error creating daemon process for server {server.id}: {e}"
                 )
                 return False
 
-            # Verify process was created successfully
-            if process is None:
-                logger.error(f"Process creation returned None for server {server.id}")
-                return False
-
-            # Check if process exited immediately
-            if process.returncode is not None:
+            # Verify daemon process is running
+            if not await self._is_process_running(daemon_pid):
                 logger.error(
-                    f"Process exited immediately with code {process.returncode} for server {server.id}"
+                    f"Daemon process {daemon_pid} is not running for server {server.id}"
                 )
                 return False
 
             # Additional verification - wait and check multiple times
             for i in range(3):  # Check 3 times over 300ms
                 await asyncio.sleep(0.1)
-                if process.returncode is not None:
+                if not await self._is_process_running(daemon_pid):
                     logger.error(
-                        f"Process exited within {(i+1)*100}ms with code {process.returncode} for server {server.id}"
+                        f"Daemon process {daemon_pid} died within {(i+1)*100}ms for server {server.id}"
                     )
-                    # Try to read any immediate error output
+                    # Try to read any immediate error output from log files
                     try:
-                        if process.stdout:
-                            error_data = await asyncio.wait_for(
-                                process.stdout.read(1024), timeout=0.1
-                            )
-                            if error_data:
-                                logger.error(
-                                    f"Server {server.id} immediate error: {error_data.decode()[:500]}"
-                                )
+                        log_file_path = abs_server_dir / "server_error.log"
+                        if log_file_path.exists():
+                            with open(log_file_path, "r") as f:
+                                error_content = f.read(1024)
+                                if error_content.strip():
+                                    logger.error(
+                                        f"Server {server.id} immediate error: {error_content[:500]}"
+                                    )
                     except Exception:
                         pass
                     return False
 
             logger.info(
-                f"Process verification successful for server {server.id} - PID: {process.pid}"
+                f"Daemon process verification successful for server {server.id} - PID: {daemon_pid}"
             )
 
             # Write PID file for process persistence
+            # Create a mock process object for PID file writing
+            class DaemonProcess:
+                def __init__(self, pid):
+                    self.pid = pid
+
+            mock_process = DaemonProcess(daemon_pid)
             pid_file_success = await self._write_pid_file(
-                server.id, server_dir, process, server.port, cmd
+                server.id, server_dir, mock_process, server.port, cmd
             )
             if not pid_file_success:
                 logger.warning(
                     f"Failed to create PID file for server {server.id}, continuing anyway"
                 )
 
-            # Create server process tracking
+            # Create server process tracking (without process object for daemon)
             log_queue = asyncio.Queue(maxsize=self.log_queue_size)
             server_process = ServerProcess(
                 server_id=server.id,
-                process=process,
+                process=None,  # No process object for daemon processes
                 log_queue=log_queue,
                 status=ServerStatus.starting,
                 started_at=datetime.now(),
-                pid=process.pid,
+                pid=daemon_pid,
             )
 
             self.processes[server.id] = server_process
@@ -717,7 +895,9 @@ class MinecraftServerManager:
             # Notify database of status change
             self._notify_status_change(server.id, ServerStatus.starting)
 
-            logger.info(f"Successfully started server {server.id} with PID {process.pid}")
+            logger.info(
+                f"Successfully started daemon server {server.id} with PID {daemon_pid}"
+            )
             return True
 
         except Exception as e:

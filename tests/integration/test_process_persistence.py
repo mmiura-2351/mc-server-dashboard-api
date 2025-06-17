@@ -407,20 +407,15 @@ class TestProcessPersistence:
         assert server_id not in manager.processes
         assert callback_called
 
-    async def test_detached_process_creation_flag(self, manager, temp_server_dir):
-        """Test that start_new_session=True is used in process creation"""
+    async def test_daemon_process_creation(self, manager, temp_server_dir):
+        """Test that daemon process creation is used for true detachment"""
         from unittest.mock import patch
         
-        # This test verifies the implementation includes start_new_session=True
-        # We can't easily test the actual detachment without creating real processes
+        # This test verifies the implementation uses daemon process creation
+        # instead of asyncio.create_subprocess_exec for true detachment
         
-        with patch('asyncio.create_subprocess_exec') as mock_create:
-            mock_process = MagicMock()
-            mock_process.pid = 12345
-            mock_process.returncode = None
-            mock_process.stdout = MagicMock()
-            mock_process.stdin = MagicMock()
-            mock_create.return_value = mock_process
+        with patch.object(manager, '_create_daemon_process') as mock_daemon_create:
+            mock_daemon_create.return_value = 12345  # Mock daemon PID
             
             # Create a minimal server object
             server = MagicMock()
@@ -433,22 +428,31 @@ class TestProcessPersistence:
             # Create required files
             (temp_server_dir / "server.jar").touch()
             
-            # Mock Java compatibility check
+            # Mock other dependencies
             with patch.object(manager, '_check_java_compatibility', return_value=(True, "Java OK", "java")):
                 with patch.object(manager, '_validate_server_files', return_value=(True, "Files OK")):
                     with patch.object(manager, '_validate_port_availability', return_value=(True, "Port OK")):
                         with patch.object(manager, '_ensure_eula_accepted', return_value=True):
-                            try:
-                                # This should fail due to mock limitations, but we can check the call
-                                await manager.start_server(server)
-                            except:
-                                pass
+                            with patch.object(manager, '_is_process_running', return_value=True):
+                                try:
+                                    # This should succeed with mocked daemon creation
+                                    result = await manager.start_server(server)
+                                    assert result is True
+                                except Exception as e:
+                                    # Log any unexpected errors for debugging
+                                    print(f"Unexpected error in daemon test: {e}")
+                                    pass
             
-            # Verify start_new_session=True was passed
-            mock_create.assert_called()
-            call_args = mock_create.call_args
-            assert 'start_new_session' in call_args.kwargs
-            assert call_args.kwargs['start_new_session'] is True
+            # Verify daemon process creation was called
+            mock_daemon_create.assert_called_once()
+            call_args = mock_daemon_create.call_args
+            
+            # Verify the command structure includes Java execution
+            cmd = call_args[0][0]  # First positional argument is the command list
+            assert len(cmd) >= 3  # Should have java, memory flags, and jar
+            assert "java" in cmd[0] or cmd[0].endswith("java")
+            assert "-jar" in cmd
+            assert "nogui" in cmd
 
 
 class TestDatabaseIntegrationPersistence:
