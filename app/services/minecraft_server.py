@@ -612,14 +612,8 @@ class MinecraftServerManager:
                     }
                 )
 
-                # Create detached process with proper session separation
-                def make_detached():
-                    """Set up process to be detached from parent"""
-                    if hasattr(os, "setsid"):
-                        os.setsid()  # Create new session, detach from terminal
-                    if hasattr(os, "setpgrp"):
-                        os.setpgrp()  # Create new process group
-
+                # Create detached process with reliable session separation
+                # start_new_session=True is sufficient for most cases and more reliable
                 process = await asyncio.create_subprocess_exec(
                     *cmd,
                     cwd=str(abs_server_dir),
@@ -627,8 +621,7 @@ class MinecraftServerManager:
                     stderr=asyncio.subprocess.STDOUT,
                     stdin=asyncio.subprocess.PIPE,
                     env=env,
-                    start_new_session=True,  # Create new process group
-                    preexec_fn=make_detached,  # Additional detachment setup
+                    start_new_session=True,  # Create new process group and session
                 )
             except OSError as e:
                 logger.error(f"Failed to create subprocess for server {server.id}: {e}")
