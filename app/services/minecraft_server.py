@@ -266,38 +266,8 @@ class MinecraftServerManager:
                 self._notify_status_change(server_id, ServerStatus.stopped)
                 return True
 
-            if not force:
-                # Try graceful shutdown first by sending 'stop' command via file
-                try:
-                    server_dir = self.base_directory / str(server_id)
-                    stdin_file = server_dir / "server_input.txt"
-
-                    # Write stop command to input file
-                    with open(stdin_file, "w") as f:
-                        f.write("stop\n")
-                        f.flush()
-
-                    logger.info(
-                        f"Sent graceful stop command to daemon server {server_id}"
-                    )
-
-                    # Wait up to 30 seconds for graceful shutdown
-                    for i in range(30):
-                        await asyncio.sleep(1)
-                        if not await self._is_process_running(server_process.pid):
-                            logger.info(f"Daemon server {server_id} stopped gracefully")
-                            await self._cleanup_server_process(server_id)
-                            self._notify_status_change(server_id, ServerStatus.stopped)
-                            return True
-
-                    logger.warning(
-                        f"Daemon server {server_id} did not stop gracefully, using SIGTERM"
-                    )
-
-                except Exception as e:
-                    logger.warning(
-                        f"Failed to send graceful stop to daemon server {server_id}: {e}"
-                    )
+            # Start with graceful SIGTERM (even for non-force stops)
+            # Note: Daemon processes can't receive stdin commands easily, so we use signals
 
             # Force stop with SIGTERM
             try:
@@ -306,8 +276,8 @@ class MinecraftServerManager:
                     f"Sent SIGTERM to daemon server {server_id} (PID: {server_process.pid})"
                 )
 
-                # Wait up to 10 seconds for SIGTERM
-                for i in range(10):
+                # Wait up to 5 seconds for SIGTERM
+                for i in range(5):
                     await asyncio.sleep(1)
                     if not await self._is_process_running(server_process.pid):
                         logger.info(f"Daemon server {server_id} stopped with SIGTERM")
@@ -321,8 +291,8 @@ class MinecraftServerManager:
                 )
                 os.kill(server_process.pid, signal.SIGKILL)
 
-                # Wait up to 5 seconds for SIGKILL
-                for i in range(5):
+                # Wait up to 3 seconds for SIGKILL
+                for i in range(3):
                     await asyncio.sleep(1)
                     if not await self._is_process_running(server_process.pid):
                         logger.info(f"Daemon server {server_id} stopped with SIGKILL")
@@ -697,7 +667,7 @@ class MinecraftServerManager:
             if server_id in self.processes:
                 server_process = self.processes[server_id]
 
-                # Cancel background tasks first
+                # Cancel background tasks with improved error handling
                 tasks_to_cancel = []
                 if server_process.log_task and not server_process.log_task.done():
                     tasks_to_cancel.append(server_process.log_task)
@@ -708,19 +678,30 @@ class MinecraftServerManager:
                     logger.debug(
                         f"Cancelling {len(tasks_to_cancel)} background tasks for server {server_id}"
                     )
-                    for task in tasks_to_cancel:
-                        task.cancel()
 
-                    # Wait for tasks to be cancelled (with timeout)
-                    try:
-                        await asyncio.wait_for(
-                            asyncio.gather(*tasks_to_cancel, return_exceptions=True),
-                            timeout=2.0,
-                        )
-                    except asyncio.TimeoutError:
-                        logger.warning(
-                            f"Timeout waiting for tasks to cancel for server {server_id}"
-                        )
+                    # Cancel tasks individually to avoid recursion
+                    for task in tasks_to_cancel:
+                        try:
+                            if not task.cancelled():
+                                task.cancel()
+                        except Exception as e:
+                            logger.warning(
+                                f"Error cancelling task for server {server_id}: {e}"
+                            )
+
+                    # Wait for cancellation with individual handling
+                    for task in tasks_to_cancel:
+                        try:
+                            await asyncio.wait_for(task, timeout=1.0)
+                        except (asyncio.CancelledError, asyncio.TimeoutError):
+                            # Expected for cancelled tasks
+                            pass
+                        except Exception as e:
+                            logger.warning(f"Error waiting for task cancellation: {e}")
+
+                    # Reset task references to None
+                    server_process.log_task = None
+                    server_process.monitor_task = None
 
                 # Clear the log queue to free memory efficiently
                 try:
@@ -755,7 +736,8 @@ class MinecraftServerManager:
                 logger.debug(f"Cleaned up resources for server {server_id}")
 
         except Exception as e:
-            logger.error(
+            # Use warning instead of error to reduce noise for expected cleanup issues
+            logger.warning(
                 f"Error during cleanup for server {server_id}: {type(e).__name__}: {e}"
             )
 
