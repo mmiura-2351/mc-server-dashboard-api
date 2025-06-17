@@ -1222,7 +1222,6 @@ class MinecraftServerManager:
         except Exception as e:
             return False, f"Port validation failed: {e}"
 
-
     async def start_server(self, server: Server, db_session=None) -> bool:
         """Start a Minecraft server with comprehensive pre-checks"""
         try:
@@ -1591,7 +1590,7 @@ class MinecraftServerManager:
             try:
                 # Connect to RCON server
                 connected = await rcon_client.connect(
-                    host="localhost",
+                    host="127.0.0.1",
                     port=server_process.rcon_port,
                     password=server_process.rcon_password,
                     timeout=5.0,
@@ -1952,7 +1951,27 @@ class MinecraftRCONClient:
             await self._send_packet(packet)
 
             response = await self._receive_packet()
-            return response and response[0] == self.request_id
+
+            if response:
+                response_id, response_type, response_payload = response
+
+                # Check for authentication failure (response ID -1)
+                if response_id == -1:
+                    logger.error("RCON authentication failed: Invalid password")
+                    return False
+
+                # Check for successful authentication (matching request ID)
+                if response_id == self.request_id:
+                    logger.debug("RCON authentication successful")
+                    return True
+
+                logger.error(
+                    f"RCON authentication failed: Unexpected response ID {response_id} (expected {self.request_id})"
+                )
+                return False
+            else:
+                logger.error("RCON authentication failed: No response received")
+                return False
 
         except Exception as e:
             logger.error(f"RCON authentication failed: {e}")
@@ -1980,12 +1999,19 @@ class MinecraftRCONClient:
     def _create_packet(self, request_id: int, packet_type: int, payload: str) -> bytes:
         """Create RCON packet"""
         payload_bytes = payload.encode("utf-8") + b"\x00\x00"
-        packet_size = len(payload_bytes) + 10
+        # Size = request_id (4) + packet_type (4) + payload_bytes
+        packet_size = 4 + 4 + len(payload_bytes)
 
-        packet = struct.pack("<i", packet_size - 4)  # Size (excluding size field)
+        packet = struct.pack("<i", packet_size)  # Size (excluding size field itself)
         packet += struct.pack("<i", request_id)
         packet += struct.pack("<i", packet_type)
         packet += payload_bytes
+
+        logger.debug(
+            f"Created RCON packet: size={packet_size}, id={request_id}, type={packet_type}, payload_len={len(payload)}"
+        )
+        logger.debug(f"Payload bytes length: {len(payload_bytes)}")
+        logger.debug(f"Packet bytes: {packet.hex()}")
 
         return packet
 
@@ -1997,29 +2023,51 @@ class MinecraftRCONClient:
         """Receive packet from RCON server"""
         try:
             # Read packet size
+            logger.debug("Attempting to read RCON packet size...")
             size_data = await asyncio.get_event_loop().run_in_executor(
                 None, self.socket.recv, 4
             )
+            logger.debug(f"Received size data: {size_data} (length: {len(size_data)})")
+
             if len(size_data) != 4:
+                logger.error(f"Invalid size data length: {len(size_data)} (expected 4)")
                 return None
 
             size = struct.unpack("<i", size_data)[0]
+            logger.debug(f"Packet size: {size}")
+
+            if size <= 0 or size > 4096:  # Sanity check
+                logger.error(f"Invalid packet size: {size}")
+                return None
 
             # Read packet data
+            logger.debug(f"Attempting to read {size} bytes of packet data...")
             data = await asyncio.get_event_loop().run_in_executor(
                 None, self.socket.recv, size
             )
+            logger.debug(f"Received packet data: {data} (length: {len(data)})")
+
             if len(data) != size:
+                logger.error(
+                    f"Incomplete packet data: {len(data)} bytes (expected {size})"
+                )
                 return None
 
             request_id = struct.unpack("<i", data[0:4])[0]
             packet_type = struct.unpack("<i", data[4:8])[0]
             payload = data[8:-2].decode("utf-8")  # Remove null terminators
 
+            logger.debug(
+                f"Parsed packet: id={request_id}, type={packet_type}, payload='{payload}'"
+            )
+
             return (request_id, packet_type, payload)
 
         except Exception as e:
             logger.error(f"Failed to receive RCON packet: {e}")
+            import traceback
+
+            logger.debug(f"Exception traceback: {traceback.format_exc()}")
             return None
 
     async def disconnect(self):

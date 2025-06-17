@@ -51,10 +51,31 @@ class RealTimeServerCommandService:
             # Check if server is running
             status = minecraft_server_manager.get_server_status(server_id)
             if status != ServerStatus.running:
-                logger.debug(
-                    f"Server {server_id} is not running ({status.value}), skipping whitelist reload"
-                )
-                return False
+                # If server is not found in processes dict, try to restore daemon processes
+                if status == ServerStatus.stopped:
+                    logger.debug(
+                        f"Server {server_id} not found in manager, attempting daemon process restoration"
+                    )
+                    restoration_results = (
+                        await minecraft_server_manager.discover_and_restore_processes()
+                    )
+                    if (
+                        server_id in restoration_results
+                        and restoration_results[server_id]
+                    ):
+                        logger.info(
+                            f"Successfully restored daemon process for server {server_id}"
+                        )
+                        # Recheck status after restoration
+                        status = minecraft_server_manager.get_server_status(server_id)
+                    else:
+                        logger.debug(f"No daemon process found for server {server_id}")
+
+                if status != ServerStatus.running:
+                    logger.debug(
+                        f"Server {server_id} is not running ({status.value}), skipping whitelist reload"
+                    )
+                    return False
 
             # Send whitelist reload command
             success = await minecraft_server_manager.send_command(
@@ -90,10 +111,31 @@ class RealTimeServerCommandService:
             # Check if server is running
             status = minecraft_server_manager.get_server_status(server_id)
             if status != ServerStatus.running:
-                logger.debug(
-                    f"Server {server_id} is not running ({status.value}), skipping OP sync"
-                )
-                return False
+                # If server is not found in processes dict, try to restore daemon processes
+                if status == ServerStatus.stopped:
+                    logger.debug(
+                        f"Server {server_id} not found in manager, attempting daemon process restoration"
+                    )
+                    restoration_results = (
+                        await minecraft_server_manager.discover_and_restore_processes()
+                    )
+                    if (
+                        server_id in restoration_results
+                        and restoration_results[server_id]
+                    ):
+                        logger.info(
+                            f"Successfully restored daemon process for server {server_id}"
+                        )
+                        # Recheck status after restoration
+                        status = minecraft_server_manager.get_server_status(server_id)
+                    else:
+                        logger.debug(f"No daemon process found for server {server_id}")
+
+                if status != ServerStatus.running:
+                    logger.debug(
+                        f"Server {server_id} is not running ({status.value}), skipping OP sync"
+                    )
+                    return False
 
             # Validate server path is within expected directory structure
             try:
@@ -180,10 +222,31 @@ class RealTimeServerCommandService:
             # Check if server is running
             status = minecraft_server_manager.get_server_status(server_id)
             if status != ServerStatus.running:
-                logger.debug(
-                    f"Server {server_id} is not running ({status.value}), skipping OP diff"
-                )
-                return False
+                # If server is not found in processes dict, try to restore daemon processes
+                if status == ServerStatus.stopped:
+                    logger.debug(
+                        f"Server {server_id} not found in manager, attempting daemon process restoration"
+                    )
+                    restoration_results = (
+                        await minecraft_server_manager.discover_and_restore_processes()
+                    )
+                    if (
+                        server_id in restoration_results
+                        and restoration_results[server_id]
+                    ):
+                        logger.info(
+                            f"Successfully restored daemon process for server {server_id}"
+                        )
+                        # Recheck status after restoration
+                        status = minecraft_server_manager.get_server_status(server_id)
+                    else:
+                        logger.debug(f"No daemon process found for server {server_id}")
+
+                if status != ServerStatus.running:
+                    logger.debug(
+                        f"Server {server_id} is not running ({status.value}), skipping OP diff"
+                    )
+                    return False
 
             success_count = 0
             total_commands = len(added_players) + len(removed_players)
@@ -260,10 +323,31 @@ class RealTimeServerCommandService:
             # Check if server is running
             status = minecraft_server_manager.get_server_status(server_id)
             if status != ServerStatus.running:
-                logger.debug(
-                    f"Server {server_id} is not running ({status.value}), skipping real-time commands"
-                )
-                return True  # Return True since file update already happened
+                # If server is not found in processes dict, try to restore daemon processes
+                if status == ServerStatus.stopped:
+                    logger.debug(
+                        f"Server {server_id} not found in manager, attempting daemon process restoration"
+                    )
+                    restoration_results = (
+                        await minecraft_server_manager.discover_and_restore_processes()
+                    )
+                    if (
+                        server_id in restoration_results
+                        and restoration_results[server_id]
+                    ):
+                        logger.info(
+                            f"Successfully restored daemon process for server {server_id}"
+                        )
+                        # Recheck status after restoration
+                        status = minecraft_server_manager.get_server_status(server_id)
+                    else:
+                        logger.debug(f"No daemon process found for server {server_id}")
+
+                if status != ServerStatus.running:
+                    logger.debug(
+                        f"Server {server_id} is not running ({status.value}), skipping real-time commands"
+                    )
+                    return True  # Return True since file update already happened
 
             success = True
 
