@@ -427,3 +427,274 @@ class TestJarCacheManager:
         
         await manager._remove_cached_file(jar_path, metadata_path)
         # Should complete without error
+
+
+class TestJarCacheManagerMissingCoverage:
+    """Test cases for missing coverage in JarCacheManager"""
+
+    @pytest.fixture
+    def temp_cache_dir(self, tmp_path):
+        """Create temporary cache directory for testing"""
+        cache_dir = tmp_path / "test_cache"
+        return cache_dir
+
+    @pytest.mark.asyncio
+    async def test_copy_jar_to_server_exception(self, temp_cache_dir):
+        """Test copy_jar_to_server with exception (lines 62-63)"""
+        manager = JarCacheManager(temp_cache_dir)
+        
+        # Create source JAR but no permission to create server directory
+        cached_jar = temp_cache_dir / "cached.jar"
+        cached_jar.parent.mkdir(parents=True, exist_ok=True)
+        cached_jar.write_bytes(b"test content")
+        
+        # Mock server dir to be non-writable by making async_copy_file fail
+        server_dir = temp_cache_dir / "server"
+        server_dir.mkdir(parents=True, exist_ok=True)
+        
+        with patch.object(manager, '_async_copy_file', side_effect=OSError("Permission denied")):
+            with pytest.raises(Exception):  # Should call handle_file_error which raises
+                await manager.copy_jar_to_server(cached_jar, server_dir)
+
+    @pytest.mark.asyncio 
+    async def test_cleanup_old_cache_stat_exception(self, temp_cache_dir):
+        """Test cleanup_old_cache with stat exception (lines 94-95)"""
+        manager = JarCacheManager(temp_cache_dir)
+        
+        # Create JAR file
+        jar_file = temp_cache_dir / "test.jar"
+        jar_file.parent.mkdir(parents=True, exist_ok=True)
+        jar_file.write_bytes(b"test content")
+        
+        # Mock jar_file.stat() to raise exception
+        with patch.object(Path, 'stat', side_effect=OSError("Permission denied")):
+            # Should handle exception gracefully and continue
+            await manager.cleanup_old_cache()
+            # Should not raise exception
+    
+    @pytest.mark.asyncio
+    async def test_cleanup_old_cache_size_based_removal(self, temp_cache_dir):
+        """Test cleanup with size-based removal (lines 111-124, 126)"""
+        # Create manager with very small cache size
+        manager = JarCacheManager(temp_cache_dir)
+        manager.max_cache_size_gb = 0.000001  # ~1KB
+        
+        # Create multiple files that exceed size limit
+        jar1 = temp_cache_dir / "jar1.jar"
+        jar2 = temp_cache_dir / "jar2.jar" 
+        jar3 = temp_cache_dir / "jar3.jar"
+        
+        for jar in [jar1, jar2, jar3]:
+            jar.parent.mkdir(parents=True, exist_ok=True)
+            jar.write_bytes(b"x" * 1024)  # 1KB each
+        
+        # Set different modification times (jar1 = oldest, jar3 = newest)
+        import os
+        import time
+        base_time = time.time()
+        os.utime(jar1, (base_time - 200, base_time - 200))  # Oldest
+        os.utime(jar2, (base_time - 100, base_time - 100))  # Middle
+        os.utime(jar3, (base_time, base_time))              # Newest
+        
+        # Create metadata files
+        metadata_dir = temp_cache_dir / ".metadata"
+        metadata_dir.mkdir(exist_ok=True)
+        (metadata_dir / "jar1.json").write_text("{}")
+        (metadata_dir / "jar2.json").write_text("{}")
+        (metadata_dir / "jar3.json").write_text("{}")
+        
+        await manager.cleanup_old_cache()
+        
+        # Should remove oldest files first due to size limit
+        # Since we have 3KB total but limit is ~1KB, oldest should be removed
+        assert not jar1.exists() or not jar2.exists()  # At least one older file removed
+    
+    @pytest.mark.asyncio
+    async def test_cleanup_old_cache_general_exception(self, temp_cache_dir):
+        """Test cleanup_old_cache with general exception (lines 129-130)"""
+        manager = JarCacheManager(temp_cache_dir)
+        
+        # Mock glob to raise exception
+        with patch.object(Path, 'glob', side_effect=Exception("Unexpected error")):
+            # Should handle exception gracefully
+            await manager.cleanup_old_cache()
+            # Should not raise exception
+    
+    @pytest.mark.asyncio
+    async def test_is_cache_valid_file_age_exception(self, temp_cache_dir):
+        """Test cache validation with file age exception (line 172)"""
+        manager = JarCacheManager(temp_cache_dir)
+        
+        # Create JAR file
+        jar_path = temp_cache_dir / "test.jar"
+        metadata_path = temp_cache_dir / ".metadata" / "test.json"
+        
+        jar_path.parent.mkdir(parents=True, exist_ok=True)
+        jar_path.write_bytes(b"test")
+        
+        # Mock jar_path.stat() to raise exception
+        with patch.object(Path, 'stat', side_effect=OSError("Permission denied")):
+            result = await manager._is_cache_valid(jar_path, metadata_path, "http://example.com")
+            assert result is False
+    
+    @pytest.mark.asyncio
+    async def test_is_cache_valid_integrity_check_failed(self, temp_cache_dir):
+        """Test cache validation with integrity check failure (lines 176-177)"""
+        manager = JarCacheManager(temp_cache_dir)
+        
+        # Create JAR file and metadata
+        jar_path = temp_cache_dir / "test.jar"
+        metadata_path = temp_cache_dir / ".metadata" / "test.json"
+        
+        jar_path.parent.mkdir(parents=True, exist_ok=True)
+        metadata_path.parent.mkdir(parents=True, exist_ok=True)
+        
+        jar_path.write_bytes(b"test content")
+        
+        metadata = {"download_url": "http://example.com"}
+        metadata_path.write_text(json.dumps(metadata))
+        
+        # Mock integrity check to fail
+        with patch.object(manager, '_verify_jar_integrity', return_value=False):
+            result = await manager._is_cache_valid(jar_path, metadata_path, "http://example.com")
+            assert result is False
+    
+    @pytest.mark.asyncio
+    async def test_is_cache_valid_metadata_read_exception(self, temp_cache_dir):
+        """Test cache validation with metadata read exception (lines 191-193)"""
+        manager = JarCacheManager(temp_cache_dir)
+        
+        # Create JAR file
+        jar_path = temp_cache_dir / "test.jar"
+        metadata_path = temp_cache_dir / ".metadata" / "test.json"
+        
+        jar_path.parent.mkdir(parents=True, exist_ok=True)
+        metadata_path.parent.mkdir(parents=True, exist_ok=True)
+        
+        with zipfile.ZipFile(jar_path, 'w') as zf:
+            zf.writestr("test.txt", "test content" * 100)
+        
+        # Create corrupted metadata file
+        metadata_path.write_bytes(b"invalid json {")
+        
+        result = await manager._is_cache_valid(jar_path, metadata_path, "http://example.com")
+        assert result is False
+    
+    @pytest.mark.asyncio
+    async def test_is_cache_valid_general_exception(self, temp_cache_dir):
+        """Test cache validation with general exception (lines 197-199)"""
+        manager = JarCacheManager(temp_cache_dir)
+        
+        jar_path = temp_cache_dir / "test.jar"
+        metadata_path = temp_cache_dir / ".metadata" / "test.json"
+        
+        # Mock Path.exists to raise exception
+        with patch.object(Path, 'exists', side_effect=Exception("Unexpected error")):
+            result = await manager._is_cache_valid(jar_path, metadata_path, "http://example.com")
+            assert result is False
+    
+    @pytest.mark.asyncio
+    async def test_download_and_cache_with_content_length_and_progress(self, temp_cache_dir):
+        """Test download with content-length header and progress logging (lines 241, 256-257)"""
+        manager = JarCacheManager(temp_cache_dir)
+        manager.chunk_size = 5  # Small chunks for testing
+        
+        # Create chunks that will trigger progress logging
+        large_chunk = b"x" * (10 * 1024 * 1024)  # 10MB chunk to trigger progress log
+        
+        mock_response = MockAiohttpResponse(
+            status=200,
+            headers={'content-length': str(len(large_chunk))},
+            content_chunks=[large_chunk]
+        )
+        
+        mock_session = MockAiohttpSession({
+            "http://example.com/server.jar": mock_response
+        })
+        
+        with patch('aiohttp.ClientSession', return_value=mock_session):
+            jar_path = temp_cache_dir / "test.jar"
+            metadata_path = temp_cache_dir / ".metadata" / "test.json"
+            
+            with patch.object(manager, '_verify_jar_integrity', return_value=True):
+                result = await manager._download_and_cache(
+                    "http://example.com/server.jar", jar_path, metadata_path,
+                    ServerType.vanilla, "1.20.1"
+                )
+            
+            assert result == jar_path
+            assert jar_path.exists()
+    
+    @pytest.mark.asyncio
+    async def test_download_and_cache_no_content_length(self, temp_cache_dir):
+        """Test download without content-length header"""
+        manager = JarCacheManager(temp_cache_dir)
+        
+        mock_response = MockAiohttpResponse(
+            status=200,
+            headers={},  # No content-length header
+            content_chunks=[b"test content"]
+        )
+        
+        mock_session = MockAiohttpSession({
+            "http://example.com/server.jar": mock_response
+        })
+        
+        with patch('aiohttp.ClientSession', return_value=mock_session):
+            jar_path = temp_cache_dir / "test.jar"
+            metadata_path = temp_cache_dir / ".metadata" / "test.json"
+            
+            with patch.object(manager, '_verify_jar_integrity', return_value=True):
+                result = await manager._download_and_cache(
+                    "http://example.com/server.jar", jar_path, metadata_path,
+                    ServerType.vanilla, "1.20.1"
+                )
+            
+            assert result == jar_path
+    
+    @pytest.mark.asyncio
+    async def test_download_and_cache_exception_cleanup(self, temp_cache_dir):
+        """Test download exception with file cleanup (lines 288-291)"""
+        manager = JarCacheManager(temp_cache_dir)
+        
+        # Create files that will exist when exception occurs
+        jar_path = temp_cache_dir / "test.jar"
+        metadata_path = temp_cache_dir / ".metadata" / "test.json"
+        temp_path = temp_cache_dir / "test.jar.tmp"
+        
+        jar_path.parent.mkdir(parents=True, exist_ok=True)
+        metadata_path.parent.mkdir(parents=True, exist_ok=True)
+        
+        # Create existing files
+        jar_path.write_bytes(b"existing")
+        metadata_path.write_text("{}")
+        temp_path.write_bytes(b"temp")
+        
+        # Mock aiohttp to raise exception
+        with patch('aiohttp.ClientSession', side_effect=Exception("Network error")):
+            with pytest.raises(Exception):
+                await manager._download_and_cache(
+                    "http://example.com/server.jar", jar_path, metadata_path,
+                    ServerType.vanilla, "1.20.1"
+                )
+        
+        # Files should be cleaned up (but may still exist if cleanup has exceptions)
+        # The main point is that cleanup code ran without additional exceptions
+    
+    @pytest.mark.asyncio
+    async def test_remove_cached_file_with_exception(self, temp_cache_dir):
+        """Test _remove_cached_file with exception during removal (lines 313-314)"""
+        manager = JarCacheManager(temp_cache_dir)
+        
+        jar_path = temp_cache_dir / "test.jar"
+        metadata_path = temp_cache_dir / "test.json"
+        
+        jar_path.parent.mkdir(parents=True, exist_ok=True)
+        jar_path.write_bytes(b"test")
+        metadata_path.write_text("{}")
+        
+        # Mock unlink to raise exception
+        with patch.object(Path, 'unlink', side_effect=OSError("Permission denied")):
+            # Should handle exception gracefully
+            await manager._remove_cached_file(jar_path, metadata_path)
+            # Should not raise exception

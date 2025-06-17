@@ -358,11 +358,11 @@ async def get_server_status(
 
         from app.services.database_integration import database_integration_service
 
-        status = minecraft_server_manager.get_server_status(server_id)
+        server_status = minecraft_server_manager.get_server_status(server_id)
         process_info = database_integration_service.get_server_process_info(server_id)
 
         return ServerStatusResponse(
-            server_id=server_id, status=status, process_info=process_info
+            server_id=server_id, status=server_status, process_info=process_info
         )
 
     except HTTPException:
@@ -395,7 +395,7 @@ async def send_server_command(
         )
 
         # Check if server is running
-        status = minecraft_server_manager.get_server_status(server_id)
+        server_status = minecraft_server_manager.get_server_status(server_id)
 
         # Log command attempt (CRITICAL SECURITY EVENT)
         AuditService.log_server_command_event(
@@ -407,7 +407,7 @@ async def send_server_command(
             user_id=current_user.id,
         )
 
-        if status != ServerStatus.running:
+        if server_status != ServerStatus.running:
             # Log failed command due to status
             AuditService.log_server_event(
                 db=db,
@@ -418,13 +418,13 @@ async def send_server_command(
                     "server_name": server.name,
                     "command": command_request.command,
                     "reason": "server_not_running",
-                    "current_status": status.value,
+                    "current_status": server_status.value,
                 },
                 user_id=current_user.id,
             )
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
-                detail=f"Server is {status.value}, commands can only be sent to running servers",
+                detail=f"Server is {server_status.value}, commands can only be sent to running servers",
             )
 
         # Send command
