@@ -42,6 +42,8 @@ class TestProcessPersistence:
     def manager(self, temp_server_dir):
         """Create MinecraftServerManager with temporary directory"""
         manager = MinecraftServerManager()
+        # Set base_directory to the parent of the test server directory
+        # This allows manager.base_directory.iterdir() to find test server directories
         manager.base_directory = temp_server_dir.parent
         return manager
 
@@ -263,10 +265,14 @@ class TestProcessPersistence:
     @patch.object(MinecraftServerManager, '_restore_process_from_pid')
     async def test_discover_and_restore_processes(self, mock_restore, manager, temp_server_dir):
         """Test discovery and restoration of multiple processes"""
-        # Create multiple server directories with PID files
+        # Set manager base directory to temp_server_dir.parent so it can find the server directories
+        base_dir = temp_server_dir.parent
+        manager.base_directory = base_dir
+        
+        # Create multiple server directories with PID files in the base directory
         server_ids = [1, 2, 3]
         for server_id in server_ids:
-            server_dir = temp_server_dir / str(server_id)
+            server_dir = base_dir / str(server_id)
             server_dir.mkdir(exist_ok=True)
             
             pid_data = {
