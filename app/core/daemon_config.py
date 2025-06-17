@@ -10,7 +10,7 @@ from typing import Dict, Any, Optional, List
 from enum import Enum
 
 from pydantic import BaseModel, Field, validator
-from app.core.config import get_settings
+from app.core.config import settings
 
 
 class DaemonMode(str, Enum):
@@ -246,7 +246,6 @@ class DaemonConfig(BaseModel):
     @classmethod
     def from_environment(cls) -> 'DaemonConfig':
         """Create configuration from environment variables"""
-        settings = get_settings()
         
         config_data = {}
         

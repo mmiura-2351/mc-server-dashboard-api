@@ -305,14 +305,11 @@ class TestDaemonConfigGlobal:
     
     def test_get_daemon_config_default(self):
         """Test getting default daemon configuration"""
-        with patch('app.core.daemon_config.get_settings') as mock_settings:
-            mock_settings.return_value = Mock()
-            
-            config = get_daemon_config()
-            
-            assert isinstance(config, DaemonConfig)
-            assert config.daemon_mode == DaemonMode.DOUBLE_FORK
-            assert config.enable_process_persistence is True
+        config = get_daemon_config()
+        
+        assert isinstance(config, DaemonConfig)
+        assert config.daemon_mode == DaemonMode.DOUBLE_FORK
+        assert config.enable_process_persistence is True
 
     def test_set_and_get_daemon_config(self):
         """Test setting and getting daemon configuration"""
@@ -359,12 +356,10 @@ class TestDaemonConfigGlobal:
         
         # Reset and verify default
         reset_daemon_config()
-        with patch('app.core.daemon_config.get_settings') as mock_settings:
-            mock_settings.return_value = Mock()
-            
-            # Should create new default config
-            new_config = get_daemon_config()
-            assert new_config.monitoring_interval_seconds == 5  # Default value
+        
+        # Should create new default config
+        new_config = get_daemon_config()
+        assert new_config.monitoring_interval_seconds == 5  # Default value
 
     def test_environment_variable_parsing(self):
         """Test parsing of various environment variable types"""
@@ -393,32 +388,29 @@ class TestDaemonConfigGlobal:
         }
         
         with patch.dict(os.environ, env_vars, clear=False):
-            with patch('app.core.daemon_config.get_settings') as mock_settings:
-                mock_settings.return_value = Mock()
-                
-                config = DaemonConfig.from_environment()
-                
-                # Verify boolean parsing
-                assert config.enable_process_persistence is True
-                assert config.enable_process_monitoring is False
-                assert config.verify_detachment is True
-                assert config.secure_environment is False
-                assert config.enable_daemon_logs is True
-                assert config.enable_process_isolation is False
-                
-                # Verify integer parsing
-                assert config.monitoring_interval_seconds == 15
-                assert config.process_startup_timeout_seconds == 45
-                assert config.log_rotation_size_mb == 200
-                
-                # Verify string parsing
-                assert config.daemon_mode == DaemonMode.SUBPROCESS_DAEMON
-                assert config.log_level == LogLevel.WARNING
-                
-                # Verify resource limits
-                assert config.resource_limits.max_memory_mb == 1024
-                assert config.resource_limits.max_cpu_percent == 60.5
-                assert config.resource_limits.max_open_files == 512
+            config = DaemonConfig.from_environment()
+            
+            # Verify boolean parsing
+            assert config.enable_process_persistence is True
+            assert config.enable_process_monitoring is False
+            assert config.verify_detachment is True
+            assert config.secure_environment is False
+            assert config.enable_daemon_logs is True
+            assert config.enable_process_isolation is False
+            
+            # Verify integer parsing
+            assert config.monitoring_interval_seconds == 15
+            assert config.process_startup_timeout_seconds == 45
+            assert config.log_rotation_size_mb == 200
+            
+            # Verify string parsing
+            assert config.daemon_mode == DaemonMode.SUBPROCESS_DAEMON
+            assert config.log_level == LogLevel.WARNING
+            
+            # Verify resource limits
+            assert config.resource_limits.max_memory_mb == 1024
+            assert config.resource_limits.max_cpu_percent == 60.5
+            assert config.resource_limits.max_open_files == 512
 
     def test_pid_directory_from_environment(self):
         """Test PID directory configuration from environment"""
@@ -428,14 +420,11 @@ class TestDaemonConfigGlobal:
             }
             
             with patch.dict(os.environ, env_vars, clear=False):
-                with patch('app.core.daemon_config.get_settings') as mock_settings:
-                    mock_settings.return_value = Mock()
-                    
-                    config = DaemonConfig.from_environment()
-                    
-                    assert config.pid_file_directory == Path(temp_dir)
-                    assert config.pid_file_directory.exists()
-                    assert config.pid_file_directory.is_dir()
+                config = DaemonConfig.from_environment()
+                
+                assert config.pid_file_directory == Path(temp_dir)
+                assert config.pid_file_directory.exists()
+                assert config.pid_file_directory.is_dir()
 
     def test_invalid_environment_values(self):
         """Test handling of invalid environment variable values"""
@@ -445,9 +434,6 @@ class TestDaemonConfigGlobal:
         }
         
         with patch.dict(os.environ, env_vars, clear=False):
-            with patch('app.core.daemon_config.get_settings') as mock_settings:
-                mock_settings.return_value = Mock()
-                
-                # Should handle gracefully and use defaults
-                with pytest.raises((ValueError, ValidationError)):
-                    DaemonConfig.from_environment()
+            # Should handle gracefully and use defaults
+            with pytest.raises((ValueError, ValidationError)):
+                DaemonConfig.from_environment()
