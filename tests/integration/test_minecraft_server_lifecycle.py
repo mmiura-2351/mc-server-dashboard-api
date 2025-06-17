@@ -102,22 +102,26 @@ import signal
 import threading
 
 running = True
+start_time = time.time()
+MAX_RUNTIME = 10  # Maximum runtime in seconds
 
 def signal_handler(signum, frame):
     global running
-    print("[SERVER] Received signal, shutting down...")
+    print("[SERVER] Received signal, shutting down...", flush=True)
     running = False
+    sys.exit(0)
 
 signal.signal(signal.SIGTERM, signal_handler)
+signal.signal(signal.SIGINT, signal_handler)
 
 # Simulate server startup sequence
-print("[12:34:56] [Server thread/INFO]: Starting minecraft server version 1.20.1")
+print("[12:34:56] [Server thread/INFO]: Starting minecraft server version 1.20.1", flush=True)
+time.sleep(0.05)
+print("[12:34:56] [Server thread/INFO]: Loading properties", flush=True)
+time.sleep(0.05)
+print("[12:34:57] [Server thread/INFO]: Preparing level \\"world\\"", flush=True)
 time.sleep(0.1)
-print("[12:34:56] [Server thread/INFO]: Loading properties")
-time.sleep(0.1)
-print("[12:34:57] [Server thread/INFO]: Preparing level \\"world\\"")
-time.sleep(0.2)
-print("[12:34:58] [Server thread/INFO]: Done (1.234s)! For help, type \\"help\\"")
+print("[12:34:58] [Server thread/INFO]: Done (1.234s)! For help, type \\"help\\"", flush=True)
 
 # Handle stdin commands in separate thread
 def handle_commands():
@@ -127,25 +131,27 @@ def handle_commands():
             try:
                 line = input()
                 if line.strip() == "stop":
-                    print("[12:35:00] [Server thread/INFO]: Stopping server")
+                    print("[12:35:00] [Server thread/INFO]: Stopping server", flush=True)
                     running = False
                     break
                 else:
-                    print(f"[12:35:01] [Server thread/INFO]: Unknown command: {line}")
+                    print(f"[12:35:01] [Server thread/INFO]: Unknown command: {line}", flush=True)
             except EOFError:
+                running = False
                 break
     except:
-        pass
+        running = False
 
 command_thread = threading.Thread(target=handle_commands)
 command_thread.daemon = True
 command_thread.start()
 
-# Keep server running
-while running:
+# Keep server running with timeout
+while running and (time.time() - start_time) < MAX_RUNTIME:
     time.sleep(0.1)
 
-print("[12:35:02] [Server thread/INFO]: Server stopped")
+print("[12:35:02] [Server thread/INFO]: Server stopped", flush=True)
+sys.exit(0)
 """)
         
         return ["python", str(mock_server_script)]
@@ -204,8 +210,21 @@ print("[12:35:02] [Server thread/INFO]: Server stopped")
                     startup_logs = [log for log in logger_calls if "Starting pre-flight checks" in log or "Port validation passed" in log or "Java compatibility verified" in log]
                     assert len(startup_logs) >= 2  # At least some startup logs
                     
-                    # Cleanup: Stop the server
-                    await manager.stop_server(lifecycle_server.id)
+                    # Cleanup: Stop the server and ensure process is terminated
+                    try:
+                        await manager.stop_server(lifecycle_server.id, force=True)
+                    except Exception:
+                        pass
+                    
+                    # Ensure process is fully terminated
+                    if lifecycle_server.id in manager.processes:
+                        process = manager.processes[lifecycle_server.id].process
+                        if process and process.returncode is None:
+                            try:
+                                process.terminate()
+                                await asyncio.wait_for(process.wait(), timeout=2.0)
+                            except:
+                                process.kill()
 
     @pytest.mark.asyncio
     async def test_server_startup_port_validation_failure_workflow(self, manager, lifecycle_server, mock_db_session, mock_java_service):
@@ -383,6 +402,14 @@ print("[12:35:02] [Server thread/INFO]: Server stopped")
             info_calls = [call[0][0] for call in mock_logger.info.call_args_list]
             shutdown_logs = [log for log in info_calls if "Successfully stopped server" in log]
             assert len(shutdown_logs) >= 1
+            
+            # Ensure process is terminated
+            if process.returncode is None:
+                try:
+                    process.terminate()
+                    await asyncio.wait_for(process.wait(), timeout=2.0)
+                except:
+                    process.kill()
 
     @pytest.mark.asyncio
     async def test_server_shutdown_already_terminated_workflow(self, manager):
@@ -436,6 +463,10 @@ print("[12:35:02] [Server thread/INFO]: Server stopped")
         unresponsive_script = """
 import signal
 import time
+import sys
+
+start_time = time.time()
+MAX_RUNTIME = 10  # Maximum runtime
 
 # Ignore SIGTERM initially
 def ignore_signal(signum, frame):
@@ -444,15 +475,17 @@ def ignore_signal(signum, frame):
 signal.signal(signal.SIGTERM, ignore_signal)
 
 # Print startup messages
-print("[12:34:56] [Server thread/INFO]: Starting minecraft server")
-print("[12:34:57] [Server thread/INFO]: Done (1.234s)! For help, type \\"help\\"")
+print("[12:34:56] [Server thread/INFO]: Starting minecraft server", flush=True)
+print("[12:34:57] [Server thread/INFO]: Done (1.234s)! For help, type \\"help\\"", flush=True)
 
-# Run indefinitely, ignoring stop commands
+# Run with timeout, ignoring stop commands
 try:
-    while True:
+    while (time.time() - start_time) < MAX_RUNTIME:
         time.sleep(0.1)
 except:
     pass
+
+sys.exit(0)
 """
         
         process = await asyncio.create_subprocess_exec(
@@ -539,6 +572,14 @@ except:
         # Verify status changes
         assert (1, ServerStatus.stopping) in status_changes
         assert (1, ServerStatus.stopped) in status_changes
+        
+        # Ensure process is terminated
+        if process.returncode is None:
+            try:
+                process.terminate()
+                await asyncio.wait_for(process.wait(), timeout=2.0)
+            except:
+                process.kill()
 
     @pytest.mark.asyncio
     async def test_server_shutdown_exception_handling_workflow(self, manager):
@@ -606,11 +647,14 @@ import sys
 import threading
 import time
 
+start_time = time.time()
+MAX_RUNTIME = 10  # Maximum runtime
+
 def read_commands():
     try:
-        while True:
+        while (time.time() - start_time) < MAX_RUNTIME:
             line = input()
-            print(f"[SERVER] Received command: {line}")
+            print(f"[SERVER] Received command: {line}", flush=True)
             if line.strip() == "stop":
                 break
     except EOFError:
@@ -621,11 +665,13 @@ command_thread = threading.Thread(target=read_commands)
 command_thread.daemon = True
 command_thread.start()
 
-print("[SERVER] Ready for commands")
+print("[SERVER] Ready for commands", flush=True)
 
-# Keep running
-for i in range(100):
+# Keep running with timeout
+while (time.time() - start_time) < MAX_RUNTIME:
     time.sleep(0.1)
+
+sys.exit(0)
 """)
         
         process = await asyncio.create_subprocess_exec(
@@ -661,6 +707,14 @@ for i in range(100):
             # Cleanup
             if 1 in manager.processes:
                 await manager.stop_server(1, force=True)
+            
+            # Ensure process is terminated
+            if process.returncode is None:
+                try:
+                    process.terminate()
+                    await asyncio.wait_for(process.wait(), timeout=2.0)
+                except:
+                    process.kill()
 
     @pytest.mark.asyncio
     async def test_send_command_server_not_running_workflow(self, manager):

@@ -35,12 +35,16 @@ import signal
 import threading
 
 running = True
+start_time = time.time()
+MAX_RUNTIME = 10  # Maximum runtime
 
 def signal_handler(signum, frame):
     global running
     running = False
+    sys.exit(0)
 
 signal.signal(signal.SIGTERM, signal_handler)
+signal.signal(signal.SIGINT, signal_handler)
 
 # Simulate realistic Minecraft server log sequence
 logs = [
@@ -68,39 +72,40 @@ logs = [
 # Output logs with timing
 for i, log in enumerate(logs):
     print(log, flush=True)
-    time.sleep(0.1)
-    if not running:
+    time.sleep(0.05)  # Faster output
+    if not running or (time.time() - start_time) > MAX_RUNTIME:
         break
 
 # Handle commands
 def handle_commands():
     global running
     try:
-        while running:
+        while running and (time.time() - start_time) < MAX_RUNTIME:
             line = input()
             if line.strip() == "stop":
-                print("[12:35:10] [Server thread/INFO]: Stopping the server")
-                print("[12:35:10] [Server thread/INFO]: Stopping server")
-                print("[12:35:10] [Server thread/INFO]: Saving players")
-                print("[12:35:10] [Server thread/INFO]: Saving worlds")
-                print("[12:35:11] [Server thread/INFO]: Saving chunks for level 'ServerLevel[world]'/minecraft:overworld")
-                print("[12:35:11] [Server thread/INFO]: ThreadedAnvilChunkStorage: All chunks saved")
+                print("[12:35:10] [Server thread/INFO]: Stopping the server", flush=True)
+                print("[12:35:10] [Server thread/INFO]: Stopping server", flush=True)
+                print("[12:35:10] [Server thread/INFO]: Saving players", flush=True)
+                print("[12:35:10] [Server thread/INFO]: Saving worlds", flush=True)
+                print("[12:35:11] [Server thread/INFO]: Saving chunks for level 'ServerLevel[world]'/minecraft:overworld", flush=True)
+                print("[12:35:11] [Server thread/INFO]: ThreadedAnvilChunkStorage: All chunks saved", flush=True)
                 running = False
                 break
             else:
-                print(f"[12:35:15] [Server thread/INFO]: Unknown command. Type \\"help\\" for help.")
+                print(f"[12:35:15] [Server thread/INFO]: Unknown command. Type \\"help\\" for help.", flush=True)
     except EOFError:
-        pass
+        running = False
 
 command_thread = threading.Thread(target=handle_commands)
 command_thread.daemon = True
 command_thread.start()
 
-# Keep running
-while running:
+# Keep running with timeout
+while running and (time.time() - start_time) < MAX_RUNTIME:
     time.sleep(0.1)
 
-print("[12:35:12] [Server thread/INFO]: Closing Server")
+print("[12:35:12] [Server thread/INFO]: Closing Server", flush=True)
+sys.exit(0)
 """)
         
         return ["python", str(log_server_script)]
