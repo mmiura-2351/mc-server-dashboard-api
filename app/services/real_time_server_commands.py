@@ -304,7 +304,7 @@ class RealTimeServerCommandService:
         server_path: Path,
         group_type: GroupType,
         change_type: str = "update",
-        removed_player: dict = None,
+        removed_players: list = None,
     ) -> bool:
         """
         Handle real-time commands for group changes
@@ -314,7 +314,7 @@ class RealTimeServerCommandService:
             server_path: Path to the server directory
             group_type: Type of group that changed (op or whitelist)
             change_type: Type of change (update, attach, detach, player_add, player_remove)
-            removed_player: Player data that was removed (for player_remove change_type)
+            removed_players: List of player data that was removed (for player_remove or detach change_type)
 
         Returns:
             bool: True if commands were sent successfully
@@ -366,29 +366,40 @@ class RealTimeServerCommandService:
 
             elif group_type == GroupType.op:
                 # For OP changes, handle differently based on change type
-                if change_type == "player_remove" and removed_player:
-                    # For player removal, use diff-based approach to ensure deop command is sent
-                    removed_player_name = removed_player.get("username")
-                    if removed_player_name:
-                        removed_players = {removed_player_name}
+                if change_type in ["player_remove", "detach"] and removed_players:
+                    # For player removal or group detachment, use diff-based approach to ensure deop commands are sent
+                    removed_player_names = set()
+                    for player in removed_players:
+                        if isinstance(player, dict):
+                            player_name = player.get("username")
+                            if player_name:
+                                removed_player_names.add(player_name)
+                        else:
+                            # Handle backward compatibility for single player data
+                            if hasattr(player, "get"):
+                                player_name = player.get("username")
+                                if player_name:
+                                    removed_player_names.add(player_name)
+
+                    if removed_player_names:
                         added_players = set()
 
-                        # Apply the diff to send deop command for removed player
+                        # Apply the diff to send deop commands for removed players
                         diff_success = await self.apply_op_diff_if_running(
-                            server_id, added_players, removed_players
+                            server_id, added_players, removed_player_names
                         )
                         if diff_success:
                             logger.info(
-                                f"Applied OP diff for server {server_id} after player removal: removed {removed_player_name}"
+                                f"Applied OP diff for server {server_id} after {change_type}: removed {', '.join(removed_player_names)}"
                             )
                         else:
                             logger.warning(
-                                f"Failed to apply OP diff for server {server_id} after player removal"
+                                f"Failed to apply OP diff for server {server_id} after {change_type}"
                             )
                             success = False
                     else:
                         logger.warning(
-                            f"Removed player data missing username for server {server_id}"
+                            f"No valid player names found in removed_players for server {server_id} during {change_type}"
                         )
                         success = False
                 else:
