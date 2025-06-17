@@ -456,55 +456,40 @@ sys.exit(0)
                 assert len(terminated_logs) >= 1
 
     @pytest.mark.asyncio
-    async def test_server_shutdown_graceful_timeout_then_force(self, manager, long_running_process_command):
+    async def test_server_shutdown_graceful_timeout_then_force(self, manager):
         """Test lines 455-459, 462-477: Graceful timeout then force termination"""
         
-        # Create a process that won't respond to graceful stop
-        unresponsive_script = """
-import signal
-import time
-import sys
-
-start_time = time.time()
-MAX_RUNTIME = 10  # Maximum runtime
-
-# Ignore SIGTERM initially
-def ignore_signal(signum, frame):
-    pass
-
-signal.signal(signal.SIGTERM, ignore_signal)
-
-# Print startup messages
-print("[12:34:56] [Server thread/INFO]: Starting minecraft server", flush=True)
-print("[12:34:57] [Server thread/INFO]: Done (1.234s)! For help, type \\"help\\"", flush=True)
-
-# Run with timeout, ignoring stop commands
-try:
-    while (time.time() - start_time) < MAX_RUNTIME:
-        time.sleep(0.1)
-except:
-    pass
-
-sys.exit(0)
-"""
+        # Create a mock process that will timeout on graceful stop
+        mock_process = Mock()
+        mock_process.returncode = None
+        mock_process.pid = 12345
         
-        process = await asyncio.create_subprocess_exec(
-            "python", "-c", unresponsive_script,
-            stdin=asyncio.subprocess.PIPE,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.STDOUT
-        )
+        # Mock stdin to be available
+        mock_stdin = Mock()
+        mock_stdin.write = Mock()
+        mock_stdin.drain = AsyncMock()
+        mock_stdin.is_closing = Mock(return_value=False)
+        mock_process.stdin = mock_stdin
         
-        # Wait for process to start
-        await asyncio.sleep(0.2)
+        # Mock process.wait() to timeout first, then return normally
+        async def mock_wait_with_timeout():
+            # This simulates a timeout during graceful stop
+            raise asyncio.TimeoutError("Graceful stop timed out")
+        
+        mock_process.wait = mock_wait_with_timeout
+        mock_process.terminate = Mock()
+        
+        # Mock the second wait call for force termination
+        async def mock_wait_after_terminate():
+            return 0  # Process terminated successfully
         
         server_process = ServerProcess(
             server_id=1,
-            process=process,
+            process=mock_process,
             log_queue=asyncio.Queue(),
             status=ServerStatus.running,
             started_at=datetime.now(),
-            pid=process.pid
+            pid=12345
         )
         manager.processes[1] = server_process
         
@@ -516,6 +501,14 @@ sys.exit(0)
         manager.set_status_update_callback(record_status_change)
         
         with patch("app.services.minecraft_server.logger") as mock_logger:
+            # After timeout, we need to mock the second wait call for termination
+            def side_effect_wait(*args, **kwargs):
+                # First call times out, subsequent calls succeed
+                mock_process.wait = mock_wait_after_terminate
+                raise asyncio.TimeoutError("Graceful stop timed out")
+            
+            mock_process.wait = Mock(side_effect=side_effect_wait)
+            
             # Execute shutdown that will require force termination
             result = await manager.stop_server(1, force=False)
             
@@ -529,8 +522,11 @@ sys.exit(0)
             
             # Verify warning about graceful stop failure
             warning_calls = [call[0][0] for call in mock_logger.warning.call_args_list]
-            timeout_warnings = [log for log in warning_calls if "graceful stop failed" in log]
+            timeout_warnings = [log for log in warning_calls if "graceful stop failed" in log and "forcing termination" in log]
             assert len(timeout_warnings) >= 1
+            
+            # Verify terminate was called
+            mock_process.terminate.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_server_shutdown_force_immediate(self, manager, long_running_process_command):

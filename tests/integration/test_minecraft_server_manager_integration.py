@@ -201,7 +201,7 @@ print("[12:35:01] [Server thread/INFO]: Server stopped")
                 
                 # Verify logging (lines 130-134)
                 mock_logger.info.assert_called_with(
-                    "Selected Java 17 (17.0.1+12) at /usr/bin/java17 [OpenJDK]"
+                    "Selected Java 17 (17.0.1) at /usr/bin/java17 [OpenJDK]"
                 )
 
     # ===== File System Validation Integration Tests =====
