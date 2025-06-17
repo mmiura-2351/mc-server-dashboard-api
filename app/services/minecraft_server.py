@@ -1143,133 +1143,6 @@ class MinecraftServerManager:
             logger.error(f"Failed to configure RCON for server {server_id}: {e}")
             return False, 0, ""
 
-
-class MinecraftRCONClient:
-    """RCON client for sending commands to Minecraft servers"""
-
-    def __init__(self):
-        self.socket = None
-        self.request_id = 0
-
-    async def connect(
-        self, host: str, port: int, password: str, timeout: float = 5.0
-    ) -> bool:
-        """Connect to RCON server"""
-        try:
-            self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            self.socket.settimeout(timeout)
-            await asyncio.get_event_loop().run_in_executor(
-                None, self.socket.connect, (host, port)
-            )
-
-            # Send authentication packet
-            auth_success = await self._authenticate(password)
-            if not auth_success:
-                await self.disconnect()
-                return False
-
-            logger.debug(f"RCON connected to {host}:{port}")
-            return True
-
-        except Exception as e:
-            logger.error(f"Failed to connect to RCON {host}:{port}: {e}")
-            await self.disconnect()
-            return False
-
-    async def _authenticate(self, password: str) -> bool:
-        """Authenticate with RCON server"""
-        try:
-            self.request_id += 1
-            packet = self._create_packet(self.request_id, 3, password)  # Type 3 = LOGIN
-            await self._send_packet(packet)
-
-            response = await self._receive_packet()
-            return response and response[0] == self.request_id
-
-        except Exception as e:
-            logger.error(f"RCON authentication failed: {e}")
-            return False
-
-    async def send_command(self, command: str) -> Optional[str]:
-        """Send a command and return the response"""
-        try:
-            if not self.socket:
-                return None
-
-            self.request_id += 1
-            packet = self._create_packet(self.request_id, 2, command)  # Type 2 = COMMAND
-            await self._send_packet(packet)
-
-            response = await self._receive_packet()
-            if response and response[0] == self.request_id:
-                return response[2]  # Return payload
-            return None
-
-        except Exception as e:
-            logger.error(f"Failed to send RCON command '{command}': {e}")
-            return None
-
-    def _create_packet(self, request_id: int, packet_type: int, payload: str) -> bytes:
-        """Create RCON packet"""
-        payload_bytes = payload.encode("utf-8") + b"\x00\x00"
-        packet_size = len(payload_bytes) + 10
-
-        packet = struct.pack("<i", packet_size - 4)  # Size (excluding size field)
-        packet += struct.pack("<i", request_id)
-        packet += struct.pack("<i", packet_type)
-        packet += payload_bytes
-
-        return packet
-
-    async def _send_packet(self, packet: bytes):
-        """Send packet to RCON server"""
-        await asyncio.get_event_loop().run_in_executor(None, self.socket.sendall, packet)
-
-    async def _receive_packet(self) -> Optional[tuple]:
-        """Receive packet from RCON server"""
-        try:
-            # Read packet size
-            size_data = await asyncio.get_event_loop().run_in_executor(
-                None, self.socket.recv, 4
-            )
-            if len(size_data) != 4:
-                return None
-
-            size = struct.unpack("<i", size_data)[0]
-
-            # Read packet data
-            data = await asyncio.get_event_loop().run_in_executor(
-                None, self.socket.recv, size
-            )
-            if len(data) != size:
-                return None
-
-            request_id = struct.unpack("<i", data[0:4])[0]
-            packet_type = struct.unpack("<i", data[4:8])[0]
-            payload = data[8:-2].decode("utf-8")  # Remove null terminators
-
-            return (request_id, packet_type, payload)
-
-        except Exception as e:
-            logger.error(f"Failed to receive RCON packet: {e}")
-            return None
-
-    async def disconnect(self):
-        """Disconnect from RCON server"""
-        if self.socket:
-            try:
-                self.socket.close()
-            except Exception:
-                pass
-            self.socket = None
-
-
-# Fix the misplaced methods by adding them to MinecraftServerManager
-
-# Patch the MinecraftServerManager class with the missing methods
-def _add_missing_methods_to_server_manager():
-    """Add the methods that were misplaced during formatting"""
-    
     async def _validate_server_files(self, server_dir: Path) -> tuple[bool, str]:
         """Validate that all required server files exist and are accessible"""
         try:
@@ -1348,6 +1221,7 @@ def _add_missing_methods_to_server_manager():
 
         except Exception as e:
             return False, f"Port validation failed: {e}"
+
 
     async def start_server(self, server: Server, db_session=None) -> bool:
         """Start a Minecraft server with comprehensive pre-checks"""
@@ -2036,6 +1910,126 @@ def _add_missing_methods_to_server_manager():
     def list_running_servers(self) -> List[int]:
         """Get list of currently running server IDs"""
         return list(self.processes.keys())
+
+
+class MinecraftRCONClient:
+    """RCON client for sending commands to Minecraft servers"""
+
+    def __init__(self):
+        self.socket = None
+        self.request_id = 0
+
+    async def connect(
+        self, host: str, port: int, password: str, timeout: float = 5.0
+    ) -> bool:
+        """Connect to RCON server"""
+        try:
+            self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            self.socket.settimeout(timeout)
+            await asyncio.get_event_loop().run_in_executor(
+                None, self.socket.connect, (host, port)
+            )
+
+            # Send authentication packet
+            auth_success = await self._authenticate(password)
+            if not auth_success:
+                await self.disconnect()
+                return False
+
+            logger.debug(f"RCON connected to {host}:{port}")
+            return True
+
+        except Exception as e:
+            logger.error(f"Failed to connect to RCON {host}:{port}: {e}")
+            await self.disconnect()
+            return False
+
+    async def _authenticate(self, password: str) -> bool:
+        """Authenticate with RCON server"""
+        try:
+            self.request_id += 1
+            packet = self._create_packet(self.request_id, 3, password)  # Type 3 = LOGIN
+            await self._send_packet(packet)
+
+            response = await self._receive_packet()
+            return response and response[0] == self.request_id
+
+        except Exception as e:
+            logger.error(f"RCON authentication failed: {e}")
+            return False
+
+    async def send_command(self, command: str) -> Optional[str]:
+        """Send a command and return the response"""
+        try:
+            if not self.socket:
+                return None
+
+            self.request_id += 1
+            packet = self._create_packet(self.request_id, 2, command)  # Type 2 = COMMAND
+            await self._send_packet(packet)
+
+            response = await self._receive_packet()
+            if response and response[0] == self.request_id:
+                return response[2]  # Return payload
+            return None
+
+        except Exception as e:
+            logger.error(f"Failed to send RCON command '{command}': {e}")
+            return None
+
+    def _create_packet(self, request_id: int, packet_type: int, payload: str) -> bytes:
+        """Create RCON packet"""
+        payload_bytes = payload.encode("utf-8") + b"\x00\x00"
+        packet_size = len(payload_bytes) + 10
+
+        packet = struct.pack("<i", packet_size - 4)  # Size (excluding size field)
+        packet += struct.pack("<i", request_id)
+        packet += struct.pack("<i", packet_type)
+        packet += payload_bytes
+
+        return packet
+
+    async def _send_packet(self, packet: bytes):
+        """Send packet to RCON server"""
+        await asyncio.get_event_loop().run_in_executor(None, self.socket.sendall, packet)
+
+    async def _receive_packet(self) -> Optional[tuple]:
+        """Receive packet from RCON server"""
+        try:
+            # Read packet size
+            size_data = await asyncio.get_event_loop().run_in_executor(
+                None, self.socket.recv, 4
+            )
+            if len(size_data) != 4:
+                return None
+
+            size = struct.unpack("<i", size_data)[0]
+
+            # Read packet data
+            data = await asyncio.get_event_loop().run_in_executor(
+                None, self.socket.recv, size
+            )
+            if len(data) != size:
+                return None
+
+            request_id = struct.unpack("<i", data[0:4])[0]
+            packet_type = struct.unpack("<i", data[4:8])[0]
+            payload = data[8:-2].decode("utf-8")  # Remove null terminators
+
+            return (request_id, packet_type, payload)
+
+        except Exception as e:
+            logger.error(f"Failed to receive RCON packet: {e}")
+            return None
+
+    async def disconnect(self):
+        """Disconnect from RCON server"""
+        if self.socket:
+            try:
+                self.socket.close()
+            except Exception:
+                pass
+            self.socket = None
 
 
 # Global server manager instance
