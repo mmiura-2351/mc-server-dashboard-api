@@ -14,6 +14,7 @@ import json
 import os
 import tempfile
 import time
+from datetime import datetime
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -311,15 +312,28 @@ class TestProcessPersistence:
     @patch('app.core.config.settings.KEEP_SERVERS_ON_SHUTDOWN', True)
     async def test_shutdown_keep_servers(self, manager):
         """Test shutdown behavior when KEEP_SERVERS_ON_SHUTDOWN is True"""
-        # Add mock server process
+        # Add mock server process with background tasks
         server_id = 1
+        
+        # Create actual async tasks that can be cancelled
+        async def dummy_task():
+            try:
+                await asyncio.sleep(10)  # Long sleep that should be cancelled
+            except asyncio.CancelledError:
+                raise
+        
+        mock_log_task = asyncio.create_task(dummy_task())
+        mock_monitor_task = asyncio.create_task(dummy_task())
+        
         server_process = ServerProcess(
             server_id=server_id,
             process=MagicMock(),
             log_queue=asyncio.Queue(),
             status=ServerStatus.running,
-            started_at=time.time(),
-            pid=12345
+            started_at=datetime.now(),
+            pid=12345,
+            log_task=mock_log_task,
+            monitor_task=mock_monitor_task
         )
         manager.processes[server_id] = server_process
 
@@ -328,6 +342,10 @@ class TestProcessPersistence:
 
         # Process should be removed from tracking but not actually stopped
         assert server_id not in manager.processes
+        
+        # Tasks should be cancelled
+        assert mock_log_task.cancelled()
+        assert mock_monitor_task.cancelled()
 
     @patch('app.core.config.settings.KEEP_SERVERS_ON_SHUTDOWN', False)
     @patch.object(MinecraftServerManager, 'stop_server')
@@ -365,7 +383,7 @@ class TestProcessPersistence:
             process=None,  # Restored process doesn't have subprocess handle
             log_queue=asyncio.Queue(),
             status=ServerStatus.running,
-            started_at=time.time(),
+            started_at=datetime.now(),
             pid=pid
         )
         manager.processes[server_id] = server_process

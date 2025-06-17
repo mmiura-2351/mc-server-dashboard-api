@@ -26,6 +26,9 @@ class ServerProcess:
     status: ServerStatus
     started_at: datetime
     pid: Optional[int] = None
+    # Track background tasks for proper cleanup
+    log_task: Optional[asyncio.Task] = None
+    monitor_task: Optional[asyncio.Task] = None
 
 
 class MinecraftServerManager:
@@ -177,8 +180,10 @@ class MinecraftServerManager:
 
             self.processes[server_id] = server_process
 
-            # Start monitoring task for the restored process
-            asyncio.create_task(self._monitor_restored_process(server_process))
+            # Start monitoring task for the restored process and track it
+            server_process.monitor_task = asyncio.create_task(
+                self._monitor_restored_process(server_process)
+            )
 
             logger.info(f"Restored server {server_id} process (PID: {pid}) from PID file")
             return True
@@ -212,6 +217,9 @@ class MinecraftServerManager:
                 # Check every 5 seconds
                 await asyncio.sleep(5)
 
+        except asyncio.CancelledError:
+            logger.debug(f"Restored process monitor cancelled for server {server_id}")
+            raise  # Re-raise to properly handle cancellation
         except Exception as e:
             logger.error(f"Error monitoring restored server {server_id}: {e}")
             server_process.status = ServerStatus.error
@@ -294,6 +302,31 @@ class MinecraftServerManager:
         try:
             if server_id in self.processes:
                 server_process = self.processes[server_id]
+
+                # Cancel background tasks first
+                tasks_to_cancel = []
+                if server_process.log_task and not server_process.log_task.done():
+                    tasks_to_cancel.append(server_process.log_task)
+                if server_process.monitor_task and not server_process.monitor_task.done():
+                    tasks_to_cancel.append(server_process.monitor_task)
+
+                if tasks_to_cancel:
+                    logger.debug(
+                        f"Cancelling {len(tasks_to_cancel)} background tasks for server {server_id}"
+                    )
+                    for task in tasks_to_cancel:
+                        task.cancel()
+
+                    # Wait for tasks to be cancelled (with timeout)
+                    try:
+                        await asyncio.wait_for(
+                            asyncio.gather(*tasks_to_cancel, return_exceptions=True),
+                            timeout=2.0,
+                        )
+                    except asyncio.TimeoutError:
+                        logger.warning(
+                            f"Timeout waiting for tasks to cancel for server {server_id}"
+                        )
 
                 # Clear the log queue to free memory efficiently
                 try:
@@ -568,17 +601,34 @@ class MinecraftServerManager:
             logger.info(f"JAR path exists: {abs_jar_path.exists()}")
             logger.info(f"Directory writable: {os.access(abs_server_dir, os.W_OK)}")
 
-            # Create process with detailed error handling
-            # Note: Using stdin=None can help with some processes that don't expect stdin interaction
+            # Create process with detailed error handling and proper detachment
             try:
+                # Prepare environment for detached process
+                env = dict(os.environ)
+                env.update(
+                    {
+                        "TERM": "dumb",  # Prevent issues with terminal-specific features
+                        "JAVA_TOOL_OPTIONS": "-Djava.awt.headless=true",  # Ensure headless mode
+                    }
+                )
+
+                # Create detached process with proper session separation
+                def make_detached():
+                    """Set up process to be detached from parent"""
+                    if hasattr(os, "setsid"):
+                        os.setsid()  # Create new session, detach from terminal
+                    if hasattr(os, "setpgrp"):
+                        os.setpgrp()  # Create new process group
+
                 process = await asyncio.create_subprocess_exec(
                     *cmd,
                     cwd=str(abs_server_dir),
                     stdout=asyncio.subprocess.PIPE,
                     stderr=asyncio.subprocess.STDOUT,
                     stdin=asyncio.subprocess.PIPE,
-                    env=dict(os.environ, TERM="xterm"),  # Set terminal environment
-                    start_new_session=True,  # Detach from parent process group
+                    env=env,
+                    start_new_session=True,  # Create new process group
+                    preexec_fn=make_detached,  # Additional detachment setup
                 )
             except OSError as e:
                 logger.error(f"Failed to create subprocess for server {server.id}: {e}")
@@ -648,9 +698,13 @@ class MinecraftServerManager:
 
             self.processes[server.id] = server_process
 
-            # Start background tasks
-            asyncio.create_task(self._read_server_logs(server_process))
-            asyncio.create_task(self._monitor_server(server_process))
+            # Start background tasks and track them for proper cleanup
+            server_process.log_task = asyncio.create_task(
+                self._read_server_logs(server_process)
+            )
+            server_process.monitor_task = asyncio.create_task(
+                self._monitor_server(server_process)
+            )
 
             # Notify database of status change
             self._notify_status_change(server.id, ServerStatus.starting)
@@ -860,6 +914,11 @@ class MinecraftServerManager:
                     )
                     logger.info(f"Server {server_process.server_id} is now running")
 
+        except asyncio.CancelledError:
+            logger.debug(
+                f"Log reading task cancelled for server {server_process.server_id}"
+            )
+            raise  # Re-raise to properly handle cancellation
         except Exception as e:
             logger.error(f"Error reading logs for server {server_process.server_id}: {e}")
 
@@ -912,6 +971,9 @@ class MinecraftServerManager:
             # Clean up if still in processes dict
             await self._cleanup_server_process(server_process.server_id)
 
+        except asyncio.CancelledError:
+            logger.debug(f"Monitor task cancelled for server {server_process.server_id}")
+            raise  # Re-raise to properly handle cancellation
         except Exception as e:
             logger.error(f"Error monitoring server {server_process.server_id}: {e}")
             server_process.status = ServerStatus.error
@@ -953,13 +1015,32 @@ class MinecraftServerManager:
                 "Keeping servers running on shutdown (KEEP_SERVERS_ON_SHUTDOWN=True)"
             )
 
-            # Just clear our process tracking, but don't stop the actual processes
+            # Cancel background tasks but keep processes running
             # The PID files will remain so servers can be restored on next startup
             server_ids = list(self.processes.keys())
+            cleanup_tasks = []
+
             for server_id in server_ids:
                 try:
-                    # Remove from our tracking but don't stop the process
                     server_process = self.processes[server_id]
+
+                    # Cancel background tasks to allow clean shutdown
+                    tasks_to_cancel = []
+                    if server_process.log_task and not server_process.log_task.done():
+                        tasks_to_cancel.append(server_process.log_task)
+                    if (
+                        server_process.monitor_task
+                        and not server_process.monitor_task.done()
+                    ):
+                        tasks_to_cancel.append(server_process.monitor_task)
+
+                    if tasks_to_cancel:
+                        logger.debug(
+                            f"Cancelling background tasks for server {server_id}"
+                        )
+                        for task in tasks_to_cancel:
+                            task.cancel()
+                        cleanup_tasks.extend(tasks_to_cancel)
 
                     # Clear log queue to free memory
                     try:
@@ -968,7 +1049,7 @@ class MinecraftServerManager:
                     except (asyncio.QueueEmpty, AttributeError):
                         pass
 
-                    # Remove from processes dict but keep PID file
+                    # Remove from processes dict but keep PID file and don't kill process
                     del self.processes[server_id]
                     logger.info(
                         f"Detached from server {server_id} process (PID: {server_process.pid})"
@@ -976,6 +1057,17 @@ class MinecraftServerManager:
 
                 except Exception as e:
                     logger.error(f"Error detaching from server {server_id}: {e}")
+
+            # Wait for all background tasks to be cancelled
+            if cleanup_tasks:
+                try:
+                    await asyncio.wait_for(
+                        asyncio.gather(*cleanup_tasks, return_exceptions=True),
+                        timeout=5.0,
+                    )
+                    logger.info("All background tasks cancelled successfully")
+                except asyncio.TimeoutError:
+                    logger.warning("Timeout waiting for background tasks to cancel")
 
             logger.info(f"Detached from {len(server_ids)} running servers")
 
