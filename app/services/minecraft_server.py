@@ -579,9 +579,13 @@ class MinecraftServerManager:
 
             logger.info(f"Starting daemon monitoring for server {server_id} (PID: {pid})")
 
-            # Wait for initial startup (check for 30 seconds)
-            startup_timeout = 30
+            # Wait for initial startup (check for 45 seconds to account for world generation)
+            startup_timeout = 45
             startup_detected = False
+
+            logger.info(
+                f"Monitoring daemon server {server_id} startup (timeout: {startup_timeout}s)"
+            )
 
             for i in range(startup_timeout):
                 # Check if process is still running
@@ -599,29 +603,40 @@ class MinecraftServerManager:
                     server_dir = self.base_directory / str(server_id)
                     log_file_path = server_dir / "server.log"
 
+                    if i % 5 == 0:  # Log every 5 seconds
+                        logger.debug(
+                            f"Checking startup for server {server_id}, attempt {i+1}/{startup_timeout}, "
+                            f"log file exists: {log_file_path.exists()}"
+                        )
+
                     if log_file_path.exists():
-                        # Read last few lines to check for startup completion
-                        with open(
-                            log_file_path, "r", encoding="utf-8", errors="ignore"
-                        ) as f:
-                            lines = f.readlines()
-                            # Check last 10 lines for Done message
-                            recent_lines = lines[-10:] if len(lines) >= 10 else lines
+                        # Read log file to check for startup completion
+                        try:
+                            with open(
+                                log_file_path, "r", encoding="utf-8", errors="ignore"
+                            ) as f:
+                                content = f.read()
 
-                            for line in recent_lines:
-                                if "Done" in line and "For help" in line:
-                                    logger.info(
-                                        f"Daemon server {server_id} startup completed"
-                                    )
-                                    server_process.status = ServerStatus.running
-                                    self._notify_status_change(
-                                        server_id, ServerStatus.running
-                                    )
-                                    startup_detected = True
-                                    break
-
-                            if startup_detected:
+                            # Check entire log content for Done message
+                            # Look for the common Minecraft server startup completion message
+                            if "Done" in content and (
+                                "For help" in content or "Time elapsed" in content
+                            ):
+                                logger.info(
+                                    f"Daemon server {server_id} startup completed (detected in log)"
+                                )
+                                server_process.status = ServerStatus.running
+                                self._notify_status_change(
+                                    server_id, ServerStatus.running
+                                )
+                                startup_detected = True
                                 break
+
+                        except Exception as read_error:
+                            logger.debug(
+                                f"Error reading log file for server {server_id}: {read_error}"
+                            )
+                            # Continue with the loop, file might not be ready yet
 
                 except Exception as e:
                     logger.warning(
@@ -630,13 +645,23 @@ class MinecraftServerManager:
 
                 await asyncio.sleep(1)
 
-            # If startup not detected after timeout, assume running anyway
+            # If startup not detected after timeout, check if process is still running
             if not startup_detected:
-                logger.warning(
-                    f"Daemon server {server_id} startup completion not detected after {startup_timeout}s, assuming running"
-                )
-                server_process.status = ServerStatus.running
-                self._notify_status_change(server_id, ServerStatus.running)
+                if await self._is_process_running(pid):
+                    logger.warning(
+                        f"Daemon server {server_id} startup completion not detected after {startup_timeout}s, "
+                        f"but process is running - assuming started"
+                    )
+                    server_process.status = ServerStatus.running
+                    self._notify_status_change(server_id, ServerStatus.running)
+                else:
+                    logger.error(
+                        f"Daemon server {server_id} process {pid} died during startup (timeout)"
+                    )
+                    server_process.status = ServerStatus.error
+                    self._notify_status_change(server_id, ServerStatus.error)
+                    await self._cleanup_server_process(server_id)
+                    return
 
             # Continue monitoring for process termination
             while server_id in self.processes:
@@ -1308,16 +1333,8 @@ class MinecraftServerManager:
                                     except asyncio.QueueEmpty:
                                         pass
 
-                                # Check for server ready status
-                                if "Done" in line and "For help" in line:
-                                    server_process.status = ServerStatus.running
-                                    # Notify database of running status
-                                    self._notify_status_change(
-                                        server_process.server_id, ServerStatus.running
-                                    )
-                                    logger.info(
-                                        f"Server {server_process.server_id} is now running"
-                                    )
+                                # Note: Status updates are handled by _monitor_daemon_process
+                                # to avoid conflicts and ensure single source of truth
 
                     # Sleep before next read to avoid excessive CPU usage
                     await asyncio.sleep(0.5)
