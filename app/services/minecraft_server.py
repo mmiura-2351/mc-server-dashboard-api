@@ -1,10 +1,13 @@
 import asyncio
+import json
 import logging
 import os
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Any, AsyncGenerator, Callable, Dict, List, Optional
+
+import psutil
 
 from app.core.config import settings
 from app.servers.models import Server, ServerStatus
@@ -42,6 +45,240 @@ class MinecraftServerManager:
         """Set callback function to update database when server status changes"""
         self._status_update_callback = callback
 
+    def _get_pid_file_path(self, server_id: int, server_dir: Path) -> Path:
+        """Get path to PID file for server"""
+        return server_dir / "server.pid"
+
+    async def _write_pid_file(
+        self,
+        server_id: int,
+        server_dir: Path,
+        process: asyncio.subprocess.Process,
+        port: int,
+        command: List[str],
+    ) -> bool:
+        """Write PID file with process metadata"""
+        try:
+            pid_file_path = self._get_pid_file_path(server_id, server_dir)
+            pid_data = {
+                "server_id": server_id,
+                "pid": process.pid,
+                "port": port,
+                "started_at": datetime.now().isoformat(),
+                "command": command,
+                "api_version": "1.0",  # For future compatibility
+            }
+
+            with open(pid_file_path, "w") as f:
+                json.dump(pid_data, f, indent=2)
+
+            logger.info(f"Created PID file for server {server_id}: {pid_file_path}")
+            return True
+
+        except Exception as e:
+            logger.error(f"Failed to write PID file for server {server_id}: {e}")
+            return False
+
+    async def _read_pid_file(
+        self, server_id: int, server_dir: Path
+    ) -> Optional[Dict[str, Any]]:
+        """Read PID file and return process metadata"""
+        try:
+            pid_file_path = self._get_pid_file_path(server_id, server_dir)
+            if not pid_file_path.exists():
+                return None
+
+            with open(pid_file_path, "r") as f:
+                pid_data = json.load(f)
+
+            # Validate required fields
+            required_fields = ["server_id", "pid", "port", "started_at"]
+            if not all(field in pid_data for field in required_fields):
+                logger.warning(f"Invalid PID file format for server {server_id}")
+                return None
+
+            return pid_data
+
+        except Exception as e:
+            logger.error(f"Failed to read PID file for server {server_id}: {e}")
+            return None
+
+    async def _remove_pid_file(self, server_id: int, server_dir: Path) -> bool:
+        """Remove PID file for server"""
+        try:
+            pid_file_path = self._get_pid_file_path(server_id, server_dir)
+            if pid_file_path.exists():
+                pid_file_path.unlink()
+                logger.info(f"Removed PID file for server {server_id}")
+            return True
+
+        except Exception as e:
+            logger.error(f"Failed to remove PID file for server {server_id}: {e}")
+            return False
+
+    async def _is_process_running(self, pid: int) -> bool:
+        """Check if process with given PID is still running"""
+        try:
+            if not psutil.pid_exists(pid):
+                return False
+
+            # Additional check to ensure process is accessible
+            process = psutil.Process(pid)
+            return process.is_running() and process.status() != psutil.STATUS_ZOMBIE
+
+        except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+            return False
+        except Exception as e:
+            logger.error(f"Error checking process {pid}: {e}")
+            return False
+
+    async def _restore_process_from_pid(self, server_id: int, server_dir: Path) -> bool:
+        """Restore running process from PID file if still active"""
+        try:
+            pid_data = await self._read_pid_file(server_id, server_dir)
+            if not pid_data:
+                return False
+
+            pid = pid_data["pid"]
+            if not await self._is_process_running(pid):
+                logger.info(f"Process {pid} for server {server_id} is no longer running")
+                await self._remove_pid_file(server_id, server_dir)
+                return False
+
+            # Verify this is actually a Java process (additional safety check)
+            try:
+                process = psutil.Process(pid)
+                cmd_line = process.cmdline()
+                if not any("java" in arg.lower() for arg in cmd_line):
+                    logger.warning(f"Process {pid} doesn't appear to be Java process")
+                    await self._remove_pid_file(server_id, server_dir)
+                    return False
+            except Exception as e:
+                logger.warning(f"Could not verify process {pid} command line: {e}")
+
+            # Create a pseudo subprocess object for monitoring
+            # Note: We can't fully recreate the original subprocess, but we can monitor the PID
+            log_queue = asyncio.Queue(maxsize=self.log_queue_size)
+
+            # Parse started_at time
+            try:
+                started_at = datetime.fromisoformat(pid_data["started_at"])
+            except Exception:
+                started_at = datetime.now()  # Fallback to current time
+
+            server_process = ServerProcess(
+                server_id=server_id,
+                process=None,  # We'll set this to None since we can't recreate subprocess
+                log_queue=log_queue,
+                status=ServerStatus.running,  # Assume running since process exists
+                started_at=started_at,
+                pid=pid,
+            )
+
+            self.processes[server_id] = server_process
+
+            # Start monitoring task for the restored process
+            asyncio.create_task(self._monitor_restored_process(server_process))
+
+            logger.info(f"Restored server {server_id} process (PID: {pid}) from PID file")
+            return True
+
+        except Exception as e:
+            logger.error(f"Failed to restore process for server {server_id}: {e}")
+            await self._remove_pid_file(server_id, server_dir)
+            return False
+
+    async def _monitor_restored_process(self, server_process: ServerProcess):
+        """Monitor a restored process that we don't have subprocess handle for"""
+        try:
+            server_id = server_process.server_id
+            pid = server_process.pid
+
+            logger.info(
+                f"Starting monitoring for restored server {server_id} (PID: {pid})"
+            )
+
+            # Continuously check if process is still running
+            while True:
+                if not await self._is_process_running(pid):
+                    logger.info(f"Restored server {server_id} process {pid} has stopped")
+                    server_process.status = ServerStatus.stopped
+                    self._notify_status_change(server_id, ServerStatus.stopped)
+
+                    # Clean up
+                    await self._cleanup_server_process(server_id)
+                    break
+
+                # Check every 5 seconds
+                await asyncio.sleep(5)
+
+        except Exception as e:
+            logger.error(f"Error monitoring restored server {server_id}: {e}")
+            server_process.status = ServerStatus.error
+            self._notify_status_change(server_id, ServerStatus.error)
+            await self._cleanup_server_process(server_id)
+
+    async def discover_and_restore_processes(self) -> Dict[int, bool]:
+        """Discover and restore all running server processes from PID files
+
+        Returns:
+            Dictionary mapping server_id to restoration success status
+        """
+        if not settings.AUTO_SYNC_ON_STARTUP:
+            logger.info("Auto-sync on startup is disabled")
+            return {}
+
+        logger.info("Starting process discovery and restoration...")
+        restoration_results = {}
+
+        try:
+            # Scan all server directories for PID files
+            for server_dir in self.base_directory.iterdir():
+                if not server_dir.is_dir():
+                    continue
+
+                # Try to extract server ID from directory name or PID file
+                pid_file_path = server_dir / "server.pid"
+                if not pid_file_path.exists():
+                    continue
+
+                try:
+                    with open(pid_file_path, "r") as f:
+                        pid_data = json.load(f)
+
+                    server_id = pid_data.get("server_id")
+                    if server_id is None:
+                        logger.warning(f"No server_id in PID file: {pid_file_path}")
+                        continue
+
+                    # Skip if already managed
+                    if server_id in self.processes:
+                        logger.info(f"Server {server_id} already managed, skipping")
+                        restoration_results[server_id] = True
+                        continue
+
+                    # Attempt restoration
+                    success = await self._restore_process_from_pid(server_id, server_dir)
+                    restoration_results[server_id] = success
+
+                    if success:
+                        logger.info(f"Successfully restored server {server_id}")
+                        # Notify database of running status
+                        self._notify_status_change(server_id, ServerStatus.running)
+                    else:
+                        logger.info(f"Failed to restore server {server_id}")
+
+                except Exception as e:
+                    logger.error(f"Error processing PID file {pid_file_path}: {e}")
+                    continue
+
+            logger.info(f"Process restoration completed. Results: {restoration_results}")
+            return restoration_results
+
+        except Exception as e:
+            logger.error(f"Error during process discovery: {e}")
+            return restoration_results
+
     def _notify_status_change(self, server_id: int, status: ServerStatus):
         """Notify about status changes to update database"""
         if self._status_update_callback:
@@ -76,6 +313,15 @@ class MinecraftServerManager:
                             count += 1
                         except (asyncio.QueueEmpty, AttributeError, TypeError):
                             break
+
+                # Remove PID file
+                try:
+                    server_dir = self.base_directory / str(server_id)
+                    await self._remove_pid_file(server_id, server_dir)
+                except Exception as pid_error:
+                    logger.warning(
+                        f"Failed to remove PID file for server {server_id}: {pid_error}"
+                    )
 
                 # Remove from processes dict
                 del self.processes[server_id]
@@ -332,6 +578,7 @@ class MinecraftServerManager:
                     stderr=asyncio.subprocess.STDOUT,
                     stdin=asyncio.subprocess.PIPE,
                     env=dict(os.environ, TERM="xterm"),  # Set terminal environment
+                    start_new_session=True,  # Detach from parent process group
                 )
             except OSError as e:
                 logger.error(f"Failed to create subprocess for server {server.id}: {e}")
@@ -378,6 +625,15 @@ class MinecraftServerManager:
             logger.info(
                 f"Process verification successful for server {server.id} - PID: {process.pid}"
             )
+
+            # Write PID file for process persistence
+            pid_file_success = await self._write_pid_file(
+                server.id, server_dir, process, server.port, cmd
+            )
+            if not pid_file_success:
+                logger.warning(
+                    f"Failed to create PID file for server {server.id}, continuing anyway"
+                )
 
             # Create server process tracking
             log_queue = asyncio.Queue(maxsize=self.log_queue_size)
@@ -665,21 +921,63 @@ class MinecraftServerManager:
             # Clean up
             await self._cleanup_server_process(server_process.server_id)
 
-    async def shutdown_all(self):
-        """Shutdown all running servers"""
-        logger.info("Shutting down all servers...")
+    async def shutdown_all(self, force_stop: bool = None):
+        """Shutdown all running servers based on configuration
 
-        # Create stop tasks for all servers
-        stop_tasks = []
-        for server_id in list(self.processes.keys()):
-            task = asyncio.create_task(self.stop_server(server_id))
-            stop_tasks.append(task)
+        Args:
+            force_stop: Override setting to force stop all servers (for testing)
+        """
+        # Determine if we should stop servers based on configuration
+        should_stop_servers = (
+            force_stop
+            if force_stop is not None
+            else not settings.KEEP_SERVERS_ON_SHUTDOWN
+        )
 
-        # Wait for all servers to stop
-        if stop_tasks:
-            await asyncio.gather(*stop_tasks, return_exceptions=True)
+        if should_stop_servers:
+            logger.info("Shutting down all servers...")
 
-        logger.info("All servers shut down")
+            # Create stop tasks for all servers
+            stop_tasks = []
+            for server_id in list(self.processes.keys()):
+                task = asyncio.create_task(self.stop_server(server_id))
+                stop_tasks.append(task)
+
+            # Wait for all servers to stop
+            if stop_tasks:
+                await asyncio.gather(*stop_tasks, return_exceptions=True)
+
+            logger.info("All servers shut down")
+        else:
+            logger.info(
+                "Keeping servers running on shutdown (KEEP_SERVERS_ON_SHUTDOWN=True)"
+            )
+
+            # Just clear our process tracking, but don't stop the actual processes
+            # The PID files will remain so servers can be restored on next startup
+            server_ids = list(self.processes.keys())
+            for server_id in server_ids:
+                try:
+                    # Remove from our tracking but don't stop the process
+                    server_process = self.processes[server_id]
+
+                    # Clear log queue to free memory
+                    try:
+                        while not server_process.log_queue.empty():
+                            server_process.log_queue.get_nowait()
+                    except (asyncio.QueueEmpty, AttributeError):
+                        pass
+
+                    # Remove from processes dict but keep PID file
+                    del self.processes[server_id]
+                    logger.info(
+                        f"Detached from server {server_id} process (PID: {server_process.pid})"
+                    )
+
+                except Exception as e:
+                    logger.error(f"Error detaching from server {server_id}: {e}")
+
+            logger.info(f"Detached from {len(server_ids)} running servers")
 
     def list_running_servers(self) -> List[int]:
         """Get list of currently running server IDs"""

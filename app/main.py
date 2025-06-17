@@ -125,13 +125,13 @@ async def _initialize_database_integration():
         database_integration_service.initialize()
         logger.info("Database integration service initialized")
 
-        # Sync server states with error handling
+        # Sync server states with error handling (enhanced with process restoration)
         try:
-            database_integration_service.sync_server_states()
-            logger.info("Server states synchronized successfully")
+            await database_integration_service.sync_server_states_with_restore()
+            logger.info("Enhanced server states synchronized successfully")
         except Exception as sync_error:
             logger.warning(
-                f"Server state synchronization failed (will retry later): {sync_error}"
+                f"Enhanced server state synchronization failed (will retry later): {sync_error}"
             )
             # Don't fail initialization for sync issues
 
@@ -181,13 +181,20 @@ async def _cleanup_services():
 
     cleanup_errors = []
 
-    # Stop Minecraft server manager
+    # Stop Minecraft server manager (with configurable behavior)
     try:
         logger.info("Shutting down Minecraft server manager...")
         from app.services.minecraft_server import minecraft_server_manager
 
         await minecraft_server_manager.shutdown_all()
-        logger.info("Minecraft server manager shutdown completed")
+        if settings.KEEP_SERVERS_ON_SHUTDOWN:
+            logger.info(
+                "Minecraft server manager shutdown completed (servers kept running)"
+            )
+        else:
+            logger.info(
+                "Minecraft server manager shutdown completed (all servers stopped)"
+            )
     except Exception as e:
         logger.error(f"Error shutting down Minecraft server manager: {e}")
         cleanup_errors.append(f"minecraft_server_manager: {e}")

@@ -505,6 +505,10 @@ class TestSettingsDefaults:
         assert settings.DATABASE_RETRY_BACKOFF == 0.1
         assert settings.DATABASE_BATCH_SIZE == 100
         assert settings.ENVIRONMENT == "development"
+        
+        # Test new process persistence settings
+        assert settings.KEEP_SERVERS_ON_SHUTDOWN is True
+        assert settings.AUTO_SYNC_ON_STARTUP is True
 
     def test_empty_java_paths_default(self):
         """Test Java path fields default to empty string"""
@@ -518,6 +522,61 @@ class TestSettingsDefaults:
         assert settings.JAVA_16_PATH == ""
         assert settings.JAVA_17_PATH == ""
         assert settings.JAVA_21_PATH == ""
+
+
+class TestProcessPersistenceSettings:
+    """Test cases for new process persistence settings"""
+
+    def test_keep_servers_on_shutdown_true(self):
+        """Test KEEP_SERVERS_ON_SHUTDOWN can be set to True"""
+        settings = Settings(
+            SECRET_KEY="this-is-a-very-secure-secret-key-with-sufficient-length",
+            DATABASE_URL="sqlite:///test.db",
+            KEEP_SERVERS_ON_SHUTDOWN=True
+        )
+        
+        assert settings.KEEP_SERVERS_ON_SHUTDOWN is True
+
+    def test_keep_servers_on_shutdown_false(self):
+        """Test KEEP_SERVERS_ON_SHUTDOWN can be set to False"""
+        settings = Settings(
+            SECRET_KEY="this-is-a-very-secure-secret-key-with-sufficient-length",
+            DATABASE_URL="sqlite:///test.db",
+            KEEP_SERVERS_ON_SHUTDOWN=False
+        )
+        
+        assert settings.KEEP_SERVERS_ON_SHUTDOWN is False
+
+    def test_auto_sync_on_startup_true(self):
+        """Test AUTO_SYNC_ON_STARTUP can be set to True"""
+        settings = Settings(
+            SECRET_KEY="this-is-a-very-secure-secret-key-with-sufficient-length",
+            DATABASE_URL="sqlite:///test.db",
+            AUTO_SYNC_ON_STARTUP=True
+        )
+        
+        assert settings.AUTO_SYNC_ON_STARTUP is True
+
+    def test_auto_sync_on_startup_false(self):
+        """Test AUTO_SYNC_ON_STARTUP can be set to False"""
+        settings = Settings(
+            SECRET_KEY="this-is-a-very-secure-secret-key-with-sufficient-length",
+            DATABASE_URL="sqlite:///test.db",
+            AUTO_SYNC_ON_STARTUP=False
+        )
+        
+        assert settings.AUTO_SYNC_ON_STARTUP is False
+
+    def test_process_persistence_defaults(self):
+        """Test process persistence settings have correct defaults"""
+        settings = Settings(
+            SECRET_KEY="this-is-a-very-secure-secret-key-with-sufficient-length",
+            DATABASE_URL="sqlite:///test.db"
+        )
+        
+        # Both should default to True for production-ready behavior
+        assert settings.KEEP_SERVERS_ON_SHUTDOWN is True
+        assert settings.AUTO_SYNC_ON_STARTUP is True
 
 
 class TestSettingsGlobalInstance:

@@ -79,6 +79,55 @@ class DatabaseIntegrationService:
             )
             return False
 
+    async def sync_server_states_with_restore(self) -> bool:
+        """
+        Synchronize server states and restore running processes from PID files.
+
+        This enhanced version first attempts to restore processes from PID files,
+        then synchronizes database states based on actual running processes.
+
+        Returns:
+            True if synchronization succeeded, False otherwise
+        """
+        try:
+            logger.info(
+                "Starting enhanced server state synchronization with process restoration..."
+            )
+
+            # Step 1: Discover and restore processes from PID files
+            restoration_results = (
+                await minecraft_server_manager.discover_and_restore_processes()
+            )
+
+            if restoration_results:
+                restored_count = sum(
+                    1 for success in restoration_results.values() if success
+                )
+                total_attempted = len(restoration_results)
+                logger.info(
+                    f"Process restoration completed: {restored_count}/{total_attempted} servers restored"
+                )
+
+            # Step 2: Perform standard state synchronization
+            sync_success = self.sync_server_states()
+
+            if sync_success:
+                logger.info(
+                    "Enhanced server state synchronization completed successfully"
+                )
+            else:
+                logger.warning(
+                    "Enhanced server state synchronization completed with errors"
+                )
+
+            return sync_success
+
+        except Exception as e:
+            logger.error(
+                f"Error during enhanced server state synchronization: {e}", exc_info=True
+            )
+            return False
+
     def sync_server_states(self) -> bool:
         """
         Synchronize server states between database and MinecraftServerManager.
