@@ -1117,16 +1117,43 @@ class MinecraftServerManager:
 
             properties_path = server_dir / "server.properties"
 
+            # DEBUG: Log sync parameters
+            logger.info(f"DEBUG: Starting sync for server {server.id}")
+            logger.info(f"DEBUG: db_session provided: {'YES' if db_session else 'NO'}")
+            logger.info(f"DEBUG: Properties file exists: {properties_path.exists()}")
+
+            if properties_path.exists():
+                file_port = bidirectional_sync_service.get_properties_file_port(
+                    properties_path
+                )
+                logger.info(f"DEBUG: File port: {file_port}, DB port: {server.port}")
+
             if db_session:
                 success, description = (
                     bidirectional_sync_service.perform_bidirectional_sync(
                         server, properties_path, db_session
                     )
                 )
-                logger.info(f"Simplified sync for server {server.id}: {description}")
+                logger.info(
+                    f"Simplified sync for server {server.id}: success={success}, {description}"
+                )
+
+                # DEBUG: Verify sync worked
+                if success:
+                    db_session.refresh(server)
+                    file_port_after = bidirectional_sync_service.get_properties_file_port(
+                        properties_path
+                    )
+                    logger.info(
+                        f"DEBUG: After sync - File port: {file_port_after}, DB port: {server.port}"
+                    )
+
                 return success
             else:
                 # Fallback to database-to-file sync if no database session
+                logger.warning(
+                    f"No database session provided for server {server.id}, falling back to database-to-file sync"
+                )
                 return await self._sync_server_properties_from_database(
                     server, server_dir
                 )
@@ -1310,7 +1337,16 @@ class MinecraftServerManager:
             # Pre-flight checks
             logger.info(f"Starting pre-flight checks for server {server.id}")
 
-            # Check port availability
+            # FIRST: Perform bidirectional sync between database and server.properties
+            # This must happen BEFORE port validation so manual file edits are detected
+            logger.info(f"Performing sync check for server {server.id}")
+            if not await self._perform_bidirectional_sync(server, server_dir, db_session):
+                logger.error(
+                    f"Failed to perform bidirectional sync for server {server.id}"
+                )
+                return False
+
+            # Check port availability (after sync, so port changes are reflected)
             port_available, port_message = await self._validate_port_availability(
                 server, db_session
             )
@@ -1348,13 +1384,6 @@ class MinecraftServerManager:
             # Ensure EULA is accepted
             if not await self._ensure_eula_accepted(server_dir):
                 logger.error(f"Failed to ensure EULA acceptance for server {server.id}")
-                return False
-
-            # Perform bidirectional sync between database and server.properties
-            if not await self._perform_bidirectional_sync(server, server_dir, db_session):
-                logger.error(
-                    f"Failed to perform bidirectional sync for server {server.id}"
-                )
                 return False
 
             # Configure RCON for real-time command support

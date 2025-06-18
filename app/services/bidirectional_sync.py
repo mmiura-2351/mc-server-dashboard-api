@@ -91,12 +91,16 @@ class SimplifiedSyncService:
         """Sync port from file to database"""
         try:
             old_port = server.port
+            logger.info(
+                f"DEBUG: Updating server {server.id} port: {old_port} -> {new_port}"
+            )
+
             server.port = new_port
             db.commit()
             db.refresh(server)
 
             logger.info(
-                f"Synced port from file to database for server {server.id}: {old_port} -> {new_port}"
+                f"Successfully synced port from file to database for server {server.id}: {old_port} -> {new_port}"
             )
             return True
 
