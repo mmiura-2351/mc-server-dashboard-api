@@ -1103,7 +1103,15 @@ class MinecraftServerManager:
     async def _perform_bidirectional_sync(
         self, server: Server, server_dir: Path, db_session=None
     ) -> bool:
-        """Perform bidirectional sync between database and server.properties"""
+        """
+        Perform simplified sync between database and server.properties.
+
+        Key Logic (Simplified):
+        - API updates always modify both DB and file simultaneously
+        - Manual file edits only modify the file
+        - Therefore: if DB and file differ, file was manually edited and should sync to DB
+        - This eliminates complex timestamp comparisons
+        """
         try:
             from app.services.bidirectional_sync import bidirectional_sync_service
 
@@ -1115,7 +1123,7 @@ class MinecraftServerManager:
                         server, properties_path, db_session
                     )
                 )
-                logger.info(f"Bidirectional sync for server {server.id}: {description}")
+                logger.info(f"Simplified sync for server {server.id}: {description}")
                 return success
             else:
                 # Fallback to database-to-file sync if no database session
@@ -1124,9 +1132,7 @@ class MinecraftServerManager:
                 )
 
         except Exception as e:
-            logger.error(
-                f"Failed to perform bidirectional sync for server {server.id}: {e}"
-            )
+            logger.error(f"Failed to perform simplified sync for server {server.id}: {e}")
             return False
 
     async def _sync_server_properties_from_database(

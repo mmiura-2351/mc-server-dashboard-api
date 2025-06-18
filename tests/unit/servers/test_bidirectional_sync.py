@@ -88,86 +88,104 @@ class TestBidirectionalSync:
         port = bidirectional_sync_service.get_properties_file_port(properties_path)
         assert port == 25565
     
-    def test_file_modification_time(self, test_server):
-        """Test getting file modification time"""
+    def test_simplified_logic_explanation(self, test_db, test_server):
+        """
+        Test that demonstrates the simplified logic principle.
+        
+        Key insight: Since API updates always modify both DB and file,
+        any difference indicates manual file edit.
+        """
         properties_path = Path(test_server.directory_path) / "server.properties"
         
-        mtime = bidirectional_sync_service.get_file_modification_time(properties_path)
-        assert mtime is not None
-        assert isinstance(mtime, datetime)
-        assert mtime.tzinfo is not None
+        # Initially, DB and file should match (both 25565)
+        initial_port = bidirectional_sync_service.get_properties_file_port(properties_path)
+        assert initial_port == test_server.port == 25565
+        
+        # Simulate manual file edit (only file changes, DB unchanged)
+        with open(properties_path, "w") as f:
+            f.write("server-port=25599\n")
+            f.write("max-players=20\n")
+        
+        # Now DB (25565) and file (25599) differ
+        # Simplified logic: file must be manually edited, sync file → DB
+        success, description = bidirectional_sync_service.perform_bidirectional_sync(
+            test_server, properties_path, test_db
+        )
+        
+        assert success is True
+        assert "manual edit detected" in description.lower()
+        
+        # Database should now match the manually edited file
+        test_db.refresh(test_server)
+        assert test_server.port == 25599
     
-    def test_sync_from_newer_file_to_database(self, test_db, test_server):
-        """Test syncing from file to database when file is newer"""
+    def test_sync_from_file_to_database_when_different(self, test_db, test_server):
+        """Test syncing from file to database when ports differ (simplified logic)"""
         properties_path = Path(test_server.directory_path) / "server.properties"
         
-        # Make file newer by waiting and then updating it
-        sleep(0.1)  # Ensure time difference
+        # Update file with different port (manual edit simulation)
         with open(properties_path, "w") as f:
             f.write("server-port=25570\n")
             f.write("max-players=20\n")
             f.write("motd=A Minecraft Server\n")
         
-        # Perform bidirectional sync
+        # Perform simplified sync
         success, description = bidirectional_sync_service.perform_bidirectional_sync(
             test_server, properties_path, test_db
         )
         
         assert success is True
-        assert "Synced from file to database" in description
+        assert "Manual edit detected" in description
+        assert "synced file to database" in description
         
         # Verify database was updated
         test_db.refresh(test_server)
         assert test_server.port == 25570
     
-    def test_sync_from_newer_database_to_file(self, test_db, test_server):
-        """Test syncing from database to file when database is newer"""
+    def test_no_sync_when_ports_match_simplified(self, test_db, test_server):
+        """Test no sync needed when ports already match (simplified logic)"""
         properties_path = Path(test_server.directory_path) / "server.properties"
         
-        # Get current file modification time
-        import time
-        file_mtime = time.time()
-        
-        # Wait to ensure database timestamp is newer
-        sleep(0.1)
-        
-        # Update database port with explicit timestamp update
-        test_server.port = 25580
-        test_server.updated_at = datetime.now(timezone.utc)
-        test_db.commit()
-        test_db.refresh(test_server)
-        
-        # Set file modification time to be older than database
-        import os
-        os.utime(properties_path, (file_mtime, file_mtime))
-        
-        # Database is now newer than file
+        # File and database already have same port (25565)
+        # In simplified logic, this means no manual edit occurred
         success, description = bidirectional_sync_service.perform_bidirectional_sync(
             test_server, properties_path, test_db
         )
         
         assert success is True
-        assert "Synced from database to file" in description
-        
-        # Verify file was updated
-        with open(properties_path, "r") as f:
-            content = f.read()
-            assert "server-port=25580" in content
-    
-    def test_no_sync_when_ports_match(self, test_db, test_server):
-        """Test no sync when ports are already in sync"""
-        properties_path = Path(test_server.directory_path) / "server.properties"
-        
-        success, description = bidirectional_sync_service.perform_bidirectional_sync(
-            test_server, properties_path, test_db
-        )
-        
-        assert success is True
+        assert "No sync needed" in description
         assert "already in sync" in description
     
+    def test_manual_file_edit_detection(self, test_db, test_server):
+        """Test detection of manual file edits in simplified logic"""
+        properties_path = Path(test_server.directory_path) / "server.properties"
+        
+        # Simulate manual file edit by changing port in file only
+        # (This would happen when user manually edits server.properties)
+        with open(properties_path, "w") as f:
+            f.write("server-port=25575\n")  # Different from DB (25565)
+            f.write("max-players=20\n")
+            f.write("motd=Manually Edited Server\n")
+        
+        success, description = bidirectional_sync_service.perform_bidirectional_sync(
+            test_server, properties_path, test_db
+        )
+        
+        assert success is True
+        assert "manual edit detected" in description.lower()
+        
+        # Verify database was updated to match file
+        test_db.refresh(test_server)
+        assert test_server.port == 25575
+    
     @pytest.mark.asyncio
-    async def test_api_port_update_direct(self, test_db, test_server):
-        """Test API port update via direct port field"""
+    async def test_api_port_update_direct_simplified(self, test_db, test_server):
+        """
+        Test API port update via direct port field.
+        
+        In simplified logic: API updates modify both DB and file simultaneously,
+        so after API update, they should be in sync (no manual edit detected).
+        """
         update_request = ServerUpdateRequest(port=25590)
         
         with patch.object(server_service.validation_service, 'validate_server_exists', return_value=test_server):
@@ -181,14 +199,22 @@ class TestBidirectionalSync:
                 
                 mock_update.side_effect = update_side_effect
                 
-                # Call update_server
+                # Call update_server (this should update both DB and file)
                 await server_service.update_server(test_server.id, update_request, test_db)
         
-        # Verify server.properties was updated
+        # Verify server.properties was updated to match database
         properties_path = Path(test_server.directory_path) / "server.properties"
         with open(properties_path, "r") as f:
             content = f.read()
             assert "server-port=25590" in content
+            
+        # After API update, DB and file should be in sync
+        # So sync check should report "no sync needed"
+        success, description = bidirectional_sync_service.perform_bidirectional_sync(
+            test_server, properties_path, test_db
+        )
+        assert success is True
+        assert "No sync needed" in description
     
     @pytest.mark.asyncio
     async def test_api_port_update_via_server_properties(self, test_db, test_server):

@@ -1,11 +1,14 @@
 """
-Bidirectional synchronization service for server configuration files.
-Handles sync between database and server.properties based on modification times.
+Simplified synchronization service for server configuration files.
+
+Key Logic:
+- API updates always modify both database AND server.properties simultaneously
+- Therefore, when database and server.properties differ, server.properties is always the latest
+- This eliminates the need for complex timestamp comparisons
+- Sync direction is always: server.properties → database when values differ
 """
 
 import logging
-import os
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional, Tuple
 
@@ -16,8 +19,15 @@ from app.servers.models import Server
 logger = logging.getLogger(__name__)
 
 
-class BidirectionalSyncService:
-    """Service for bidirectional synchronization between database and server.properties"""
+class SimplifiedSyncService:
+    """
+    Simplified synchronization service between database and server.properties.
+
+    Core Principle:
+    Since API updates always update both DB and file simultaneously,
+    any difference between DB and file means the file was manually edited
+    and should be considered the source of truth.
+    """
 
     def __init__(self):
         pass
@@ -40,24 +50,15 @@ class BidirectionalSyncService:
             logger.error(f"Failed to read port from {properties_path}: {e}")
             return None
 
-    def get_file_modification_time(self, file_path: Path) -> Optional[datetime]:
-        """Get file modification time as timezone-aware datetime"""
-        try:
-            if not file_path.exists():
-                return None
-
-            # Get modification time and convert to timezone-aware datetime
-            mtime = os.path.getmtime(file_path)
-            return datetime.fromtimestamp(mtime, tz=timezone.utc)
-        except Exception as e:
-            logger.error(f"Failed to get modification time for {file_path}: {e}")
-            return None
-
     def should_sync_from_file(
         self, server: Server, properties_path: Path
     ) -> Tuple[bool, Optional[int], str]:
         """
-        Determine if we should sync from file to database.
+        Simplified sync determination logic.
+
+        Since API updates always modify both DB and file simultaneously,
+        any difference between DB and file means manual file edit occurred.
+        Therefore, file should always take precedence when values differ.
 
         Returns:
             Tuple of (should_sync, file_port, reason)
@@ -72,30 +73,13 @@ class BidirectionalSyncService:
             if file_port == server.port:
                 return False, file_port, "Ports are already in sync"
 
-            # Get file modification time
-            file_mtime = self.get_file_modification_time(properties_path)
-            if file_mtime is None:
-                return False, file_port, "Could not get file modification time"
-
-            # Compare with database updated_at
-            # Ensure both timestamps are timezone-aware for comparison
-            db_updated_at = server.updated_at
-            if db_updated_at.tzinfo is None:
-                db_updated_at = db_updated_at.replace(tzinfo=timezone.utc)
-
-            # If file is newer than database, sync from file
-            if file_mtime > db_updated_at:
-                return (
-                    True,
-                    file_port,
-                    f"File is newer (file: {file_mtime}, db: {server.updated_at})",
-                )
-            else:
-                return (
-                    False,
-                    file_port,
-                    f"Database is newer (db: {db_updated_at}, file: {file_mtime})",
-                )
+            # If ports differ, file was manually edited and should be synced to DB
+            # This is because API updates always update both DB and file together
+            return (
+                True,
+                file_port,
+                f"File port ({file_port}) differs from DB port ({server.port}) - manual edit detected, syncing file to DB",
+            )
 
         except Exception as e:
             logger.error(f"Error in should_sync_from_file for server {server.id}: {e}")
@@ -126,7 +110,13 @@ class BidirectionalSyncService:
     def sync_port_from_database_to_file(
         self, server: Server, properties_path: Path
     ) -> bool:
-        """Sync port from database to file"""
+        """
+        Sync port from database to file.
+
+        Note: This method is kept for compatibility but should rarely be used
+        in the new simplified logic, as file is always considered the source of truth
+        when values differ.
+        """
         try:
             # Read existing properties
             properties = {}
@@ -143,6 +133,8 @@ class BidirectionalSyncService:
             properties["max-players"] = str(server.max_players)
 
             # Write updated properties back
+            from datetime import datetime
+
             with open(properties_path, "w", encoding="utf-8") as f:
                 f.write("#Minecraft server properties\n")
                 f.write(f"#{datetime.now().strftime('%a %b %d %H:%M:%S %Z %Y')}\n")
@@ -160,11 +152,20 @@ class BidirectionalSyncService:
             )
             return False
 
-    def perform_bidirectional_sync(
+    def perform_simplified_sync(
         self, server: Server, properties_path: Path, db: Session
     ) -> Tuple[bool, str]:
         """
-        Perform bidirectional sync based on modification times.
+        Perform simplified sync operation.
+
+        Logic:
+        1. If DB and file ports match → no sync needed
+        2. If DB and file ports differ → file was manually edited, sync file to DB
+
+        This is much simpler than timestamp-based bidirectional sync because:
+        - API updates always update both DB and file simultaneously
+        - Manual file edits only update the file
+        - Therefore, any difference means manual edit occurred
 
         Returns:
             Tuple of (success, description)
@@ -175,24 +176,33 @@ class BidirectionalSyncService:
             )
 
             if should_sync and file_port is not None:
-                # Sync from file to database
+                # File differs from DB → manual edit detected → sync file to DB
                 success = self.sync_port_from_file_to_database(server, file_port, db)
                 if success:
-                    return True, f"Synced from file to database: {reason}"
+                    return (
+                        True,
+                        f"Manual edit detected - synced file to database: {reason}",
+                    )
                 else:
-                    return False, f"Failed to sync from file to database: {reason}"
+                    return False, f"Failed to sync file to database: {reason}"
             else:
-                # Sync from database to file (default behavior)
-                success = self.sync_port_from_database_to_file(server, properties_path)
-                if success:
-                    return True, f"Synced from database to file: {reason}"
-                else:
-                    return False, f"Failed to sync from database to file: {reason}"
+                # Ports match or file has no port → no sync needed
+                return True, f"No sync needed: {reason}"
 
         except Exception as e:
-            logger.error(f"Error in bidirectional sync for server {server.id}: {e}")
+            logger.error(f"Error in simplified sync for server {server.id}: {e}")
             return False, f"Sync error: {e}"
 
+    # Legacy method name for compatibility
+    def perform_bidirectional_sync(
+        self, server: Server, properties_path: Path, db: Session
+    ) -> Tuple[bool, str]:
+        """Legacy method name - calls the new simplified sync"""
+        return self.perform_simplified_sync(server, properties_path, db)
 
-# Global bidirectional sync service instance
-bidirectional_sync_service = BidirectionalSyncService()
+
+# Global simplified sync service instance
+simplified_sync_service = SimplifiedSyncService()
+
+# Legacy alias for backward compatibility
+bidirectional_sync_service = simplified_sync_service
