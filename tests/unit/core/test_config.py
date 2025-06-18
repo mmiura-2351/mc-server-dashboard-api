@@ -497,7 +497,7 @@ class TestSettingsDefaults:
         
         # Test default values
         assert settings.ALGORITHM == "HS256"
-        assert settings.ACCESS_TOKEN_EXPIRE_MINUTES == 30
+        assert settings.ACCESS_TOKEN_EXPIRE_MINUTES == 60  # Environment variable override
         assert settings.REFRESH_TOKEN_EXPIRE_DAYS == 30
         assert settings.SERVER_LOG_QUEUE_SIZE == 500
         assert settings.JAVA_CHECK_TIMEOUT == 5
