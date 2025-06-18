@@ -490,14 +490,21 @@ class TestSettingsDefaults:
 
     def test_default_values(self):
         """Test Settings default values are correctly set"""
+        import os
+        
         settings = Settings(
             SECRET_KEY="this-is-a-very-secure-secret-key-with-sufficient-length",
             DATABASE_URL="sqlite:///test.db"
         )
         
-        # Test default values
+        # Test default values (accounting for environment variable overrides)
         assert settings.ALGORITHM == "HS256"
-        assert settings.ACCESS_TOKEN_EXPIRE_MINUTES == 60  # Environment variable override
+        
+        # ACCESS_TOKEN_EXPIRE_MINUTES can be overridden by environment variable
+        # Check for both default (30) and common override (60)
+        expected_token_expire = int(os.environ.get('ACCESS_TOKEN_EXPIRE_MINUTES', 30))
+        assert settings.ACCESS_TOKEN_EXPIRE_MINUTES == expected_token_expire
+        
         assert settings.REFRESH_TOKEN_EXPIRE_DAYS == 30
         assert settings.SERVER_LOG_QUEUE_SIZE == 500
         assert settings.JAVA_CHECK_TIMEOUT == 5
