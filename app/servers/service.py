@@ -3,6 +3,7 @@ import fcntl
 import logging
 import re
 import shlex
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Optional
 
@@ -653,7 +654,17 @@ class ServerService:
         if request.max_memory is not None:
             ServerSecurityValidator.validate_memory_value(request.max_memory)
 
+        # Check if max_players is being updated (port is not updatable via API)
+        max_players_changed = (
+            request.max_players is not None and request.max_players != server.max_players
+        )
+
         updated_server = self.database_service.update_server_record(server, request, db)
+
+        # Sync server.properties if max_players changed
+        if max_players_changed:
+            await self._sync_server_properties_after_update(updated_server)
+
         return ServerResponse.model_validate(updated_server)
 
     async def delete_server(self, server_id: int, db: Session) -> bool:
@@ -798,6 +809,47 @@ class ServerService:
         except Exception as e:
             logger.error(f"Failed to get supported versions: {e}")
             raise
+
+    async def _sync_server_properties_after_update(self, server: Server) -> None:
+        """Sync server.properties file after database update"""
+        try:
+            server_dir = Path(server.directory_path)
+            properties_path = server_dir / "server.properties"
+
+            if not properties_path.exists():
+                logger.warning(
+                    f"server.properties not found for server {server.id}, skipping sync"
+                )
+                return
+
+            # Read existing properties
+            properties = {}
+            with open(properties_path, "r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if line and not line.startswith("#") and "=" in line:
+                        key, value = line.split("=", 1)
+                        properties[key] = value
+
+            # Update properties that might have changed
+            properties["server-port"] = str(server.port)
+            properties["max-players"] = str(server.max_players)
+
+            # Write updated properties back
+            with open(properties_path, "w", encoding="utf-8") as f:
+                f.write("#Minecraft server properties\n")
+                f.write(f"#{datetime.now().strftime('%a %b %d %H:%M:%S %Z %Y')}\n")
+                for key, value in sorted(properties.items()):
+                    f.write(f"{key}={value}\n")
+
+            logger.info(
+                f"Updated server.properties for server {server.id}: "
+                f"port={server.port}, max-players={server.max_players}"
+            )
+
+        except Exception as e:
+            logger.error(f"Failed to sync server.properties for server {server.id}: {e}")
+            # Don't fail the update if properties sync fails
 
     async def _validate_java_compatibility(self, minecraft_version: str) -> None:
         """Validate Java compatibility for Minecraft version"""

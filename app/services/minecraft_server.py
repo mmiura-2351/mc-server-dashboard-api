@@ -1100,6 +1100,44 @@ class MinecraftServerManager:
                 continue
         raise RuntimeError("No available RCON ports found")
 
+    async def _sync_server_properties_from_database(
+        self, server: Server, server_dir: Path
+    ) -> bool:
+        """Sync server.properties with database values to ensure consistency"""
+        try:
+            properties_path = server_dir / "server.properties"
+
+            # Read existing properties
+            properties = {}
+            if properties_path.exists():
+                with open(properties_path, "r", encoding="utf-8") as f:
+                    for line in f:
+                        line = line.strip()
+                        if line and not line.startswith("#") and "=" in line:
+                            key, value = line.split("=", 1)
+                            properties[key] = value
+
+            # Update critical properties from database
+            properties["server-port"] = str(server.port)
+            properties["max-players"] = str(server.max_players)
+
+            # Write updated properties back
+            with open(properties_path, "w", encoding="utf-8") as f:
+                f.write("#Minecraft server properties\n")
+                f.write(f"#{datetime.now().strftime('%a %b %d %H:%M:%S %Z %Y')}\n")
+                for key, value in sorted(properties.items()):
+                    f.write(f"{key}={value}\n")
+
+            logger.info(
+                f"Synced server.properties for server {server.id}: "
+                f"port={server.port}, max-players={server.max_players}"
+            )
+            return True
+
+        except Exception as e:
+            logger.error(f"Failed to sync server.properties for server {server.id}: {e}")
+            return False
+
     async def _ensure_rcon_configured(
         self, server_dir: Path, server_id: int
     ) -> tuple[bool, int, str]:
@@ -1275,6 +1313,11 @@ class MinecraftServerManager:
             # Ensure EULA is accepted
             if not await self._ensure_eula_accepted(server_dir):
                 logger.error(f"Failed to ensure EULA acceptance for server {server.id}")
+                return False
+
+            # Sync server.properties from database to ensure consistency
+            if not await self._sync_server_properties_from_database(server, server_dir):
+                logger.error(f"Failed to sync server.properties for server {server.id}")
                 return False
 
             # Configure RCON for real-time command support
