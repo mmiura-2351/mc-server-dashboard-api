@@ -1100,6 +1100,35 @@ class MinecraftServerManager:
                 continue
         raise RuntimeError("No available RCON ports found")
 
+    async def _perform_bidirectional_sync(
+        self, server: Server, server_dir: Path, db_session=None
+    ) -> bool:
+        """Perform bidirectional sync between database and server.properties"""
+        try:
+            from app.services.bidirectional_sync import bidirectional_sync_service
+
+            properties_path = server_dir / "server.properties"
+
+            if db_session:
+                success, description = (
+                    bidirectional_sync_service.perform_bidirectional_sync(
+                        server, properties_path, db_session
+                    )
+                )
+                logger.info(f"Bidirectional sync for server {server.id}: {description}")
+                return success
+            else:
+                # Fallback to database-to-file sync if no database session
+                return await self._sync_server_properties_from_database(
+                    server, server_dir
+                )
+
+        except Exception as e:
+            logger.error(
+                f"Failed to perform bidirectional sync for server {server.id}: {e}"
+            )
+            return False
+
     async def _sync_server_properties_from_database(
         self, server: Server, server_dir: Path
     ) -> bool:
@@ -1315,9 +1344,11 @@ class MinecraftServerManager:
                 logger.error(f"Failed to ensure EULA acceptance for server {server.id}")
                 return False
 
-            # Sync server.properties from database to ensure consistency
-            if not await self._sync_server_properties_from_database(server, server_dir):
-                logger.error(f"Failed to sync server.properties for server {server.id}")
+            # Perform bidirectional sync between database and server.properties
+            if not await self._perform_bidirectional_sync(server, server_dir, db_session):
+                logger.error(
+                    f"Failed to perform bidirectional sync for server {server.id}"
+                )
                 return False
 
             # Configure RCON for real-time command support

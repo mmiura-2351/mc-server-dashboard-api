@@ -654,16 +654,32 @@ class ServerService:
         if request.max_memory is not None:
             ServerSecurityValidator.validate_memory_value(request.max_memory)
 
-        # Check if max_players is being updated (port is not updatable via API)
+        # Check what fields are being updated
+        port_changed = request.port is not None and request.port != server.port
         max_players_changed = (
             request.max_players is not None and request.max_players != server.max_players
         )
 
+        # Check if port is being updated via server_properties
+        if request.server_properties and "server-port" in request.server_properties:
+            try:
+                new_port = int(request.server_properties["server-port"])
+                if new_port != server.port:
+                    # Update the port field in the request for consistency
+                    request.port = new_port
+                    port_changed = True
+            except (ValueError, TypeError):
+                logger.warning(
+                    f"Invalid port value in server_properties: {request.server_properties['server-port']}"
+                )
+
         updated_server = self.database_service.update_server_record(server, request, db)
 
-        # Sync server.properties if max_players changed
-        if max_players_changed:
-            await self._sync_server_properties_after_update(updated_server)
+        # Sync server.properties if port or max_players changed
+        if port_changed or max_players_changed:
+            await self._sync_server_properties_after_update(
+                updated_server, request.server_properties
+            )
 
         return ServerResponse.model_validate(updated_server)
 
@@ -810,7 +826,9 @@ class ServerService:
             logger.error(f"Failed to get supported versions: {e}")
             raise
 
-    async def _sync_server_properties_after_update(self, server: Server) -> None:
+    async def _sync_server_properties_after_update(
+        self, server: Server, custom_properties: Optional[Dict[str, Any]] = None
+    ) -> None:
         """Sync server.properties file after database update"""
         try:
             server_dir = Path(server.directory_path)
@@ -834,6 +852,13 @@ class ServerService:
             # Update properties that might have changed
             properties["server-port"] = str(server.port)
             properties["max-players"] = str(server.max_players)
+
+            # Apply custom properties if provided (from server_properties field)
+            if custom_properties:
+                for key, value in custom_properties.items():
+                    # Convert key format (server-port vs server_port)
+                    normalized_key = key.replace("_", "-")
+                    properties[normalized_key] = str(value)
 
             # Write updated properties back
             with open(properties_path, "w", encoding="utf-8") as f:
