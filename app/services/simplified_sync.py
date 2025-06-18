@@ -44,7 +44,21 @@ class SimplifiedSyncService:
                     if line and not line.startswith("#") and "=" in line:
                         key, value = line.split("=", 1)
                         if key.strip() == "server-port":
-                            return int(value.strip())
+                            try:
+                                port = int(value.strip())
+                                # Validate port range (1024-65535 for non-privileged ports)
+                                if not (1024 <= port <= 65535):
+                                    logger.warning(
+                                        f"Invalid port {port} in properties file {properties_path}. "
+                                        f"Port must be between 1024-65535."
+                                    )
+                                    return None
+                                return port
+                            except ValueError:
+                                logger.warning(
+                                    f"Invalid port value '{value.strip()}' in properties file {properties_path}"
+                                )
+                                return None
             return None
         except Exception as e:
             logger.error(f"Failed to read port from {properties_path}: {e}")
@@ -197,16 +211,6 @@ class SimplifiedSyncService:
             logger.error(f"Error in simplified sync for server {server.id}: {e}")
             return False, f"Sync error: {e}"
 
-    # Legacy method name for compatibility
-    def perform_bidirectional_sync(
-        self, server: Server, properties_path: Path, db: Session
-    ) -> Tuple[bool, str]:
-        """Legacy method name - calls the new simplified sync"""
-        return self.perform_simplified_sync(server, properties_path, db)
-
 
 # Global simplified sync service instance
 simplified_sync_service = SimplifiedSyncService()
-
-# Legacy alias for backward compatibility
-bidirectional_sync_service = simplified_sync_service

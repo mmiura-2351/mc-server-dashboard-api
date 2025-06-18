@@ -14,7 +14,7 @@ from app.core.database import Base
 from app.servers.models import Server, ServerStatus, ServerType
 from app.servers.schemas import ServerUpdateRequest
 from app.servers.service import server_service
-from app.services.bidirectional_sync import bidirectional_sync_service
+from app.services.simplified_sync import simplified_sync_service
 from app.users.models import User, Role
 
 
@@ -85,7 +85,7 @@ class TestBidirectionalSync:
         """Test extracting port from server.properties file"""
         properties_path = Path(test_server.directory_path) / "server.properties"
         
-        port = bidirectional_sync_service.get_properties_file_port(properties_path)
+        port = simplified_sync_service.get_properties_file_port(properties_path)
         assert port == 25565
     
     def test_simplified_logic_explanation(self, test_db, test_server):
@@ -98,7 +98,7 @@ class TestBidirectionalSync:
         properties_path = Path(test_server.directory_path) / "server.properties"
         
         # Initially, DB and file should match (both 25565)
-        initial_port = bidirectional_sync_service.get_properties_file_port(properties_path)
+        initial_port = simplified_sync_service.get_properties_file_port(properties_path)
         assert initial_port == test_server.port == 25565
         
         # Simulate manual file edit (only file changes, DB unchanged)
@@ -108,7 +108,7 @@ class TestBidirectionalSync:
         
         # Now DB (25565) and file (25599) differ
         # Simplified logic: file must be manually edited, sync file → DB
-        success, description = bidirectional_sync_service.perform_bidirectional_sync(
+        success, description = simplified_sync_service.perform_simplified_sync(
             test_server, properties_path, test_db
         )
         
@@ -130,7 +130,7 @@ class TestBidirectionalSync:
             f.write("motd=A Minecraft Server\n")
         
         # Perform simplified sync
-        success, description = bidirectional_sync_service.perform_bidirectional_sync(
+        success, description = simplified_sync_service.perform_simplified_sync(
             test_server, properties_path, test_db
         )
         
@@ -148,7 +148,7 @@ class TestBidirectionalSync:
         
         # File and database already have same port (25565)
         # In simplified logic, this means no manual edit occurred
-        success, description = bidirectional_sync_service.perform_bidirectional_sync(
+        success, description = simplified_sync_service.perform_simplified_sync(
             test_server, properties_path, test_db
         )
         
@@ -167,7 +167,7 @@ class TestBidirectionalSync:
             f.write("max-players=20\n")
             f.write("motd=Manually Edited Server\n")
         
-        success, description = bidirectional_sync_service.perform_bidirectional_sync(
+        success, description = simplified_sync_service.perform_simplified_sync(
             test_server, properties_path, test_db
         )
         
@@ -210,7 +210,7 @@ class TestBidirectionalSync:
             
         # After API update, DB and file should be in sync
         # So sync check should report "no sync needed"
-        success, description = bidirectional_sync_service.perform_bidirectional_sync(
+        success, description = simplified_sync_service.perform_simplified_sync(
             test_server, properties_path, test_db
         )
         assert success is True
@@ -260,14 +260,37 @@ class TestBidirectionalSync:
             f.write("server-port=invalid\n")
             f.write("max-players=20\n")
         
-        port = bidirectional_sync_service.get_properties_file_port(properties_path)
+        port = simplified_sync_service.get_properties_file_port(properties_path)
         assert port is None
+    
+    def test_port_range_validation(self, test_db, test_server):
+        """Test port range validation (security fix)"""
+        properties_path = Path(test_server.directory_path) / "server.properties"
+        
+        # Test ports outside valid range
+        invalid_ports = [80, 443, 1023, 65536, 99999]
+        
+        for invalid_port in invalid_ports:
+            with open(properties_path, "w") as f:
+                f.write(f"server-port={invalid_port}\n")
+                f.write("max-players=20\n")
+            
+            port = simplified_sync_service.get_properties_file_port(properties_path)
+            assert port is None, f"Port {invalid_port} should be invalid but was accepted"
+        
+        # Test valid port
+        with open(properties_path, "w") as f:
+            f.write("server-port=25565\n")
+            f.write("max-players=20\n")
+        
+        port = simplified_sync_service.get_properties_file_port(properties_path)
+        assert port == 25565
     
     def test_missing_properties_file(self, test_db, test_server):
         """Test handling when server.properties file doesn't exist"""
         properties_path = Path(test_server.directory_path) / "nonexistent.properties"
         
-        should_sync, file_port, reason = bidirectional_sync_service.should_sync_from_file(
+        should_sync, file_port, reason = simplified_sync_service.should_sync_from_file(
             test_server, properties_path
         )
         
@@ -292,7 +315,7 @@ class TestBidirectionalSync:
         test_db.commit()
         
         # Sync from database to file
-        success = bidirectional_sync_service.sync_port_from_database_to_file(
+        success = simplified_sync_service.sync_port_from_database_to_file(
             test_server, properties_path
         )
         

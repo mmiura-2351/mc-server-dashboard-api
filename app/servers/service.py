@@ -654,12 +654,6 @@ class ServerService:
         if request.max_memory is not None:
             ServerSecurityValidator.validate_memory_value(request.max_memory)
 
-        # Check what fields are being updated
-        port_changed = request.port is not None and request.port != server.port
-        max_players_changed = (
-            request.max_players is not None and request.max_players != server.max_players
-        )
-
         # Check if port is being updated via server_properties
         if request.server_properties and "server-port" in request.server_properties:
             try:
@@ -667,7 +661,6 @@ class ServerService:
                 if new_port != server.port:
                     # Update the port field in the request for consistency
                     request.port = new_port
-                    port_changed = True
             except (ValueError, TypeError):
                 logger.warning(
                     f"Invalid port value in server_properties: {request.server_properties['server-port']}"
@@ -675,11 +668,11 @@ class ServerService:
 
         updated_server = self.database_service.update_server_record(server, request, db)
 
-        # Sync server.properties if port or max_players changed
-        if port_changed or max_players_changed:
-            await self._sync_server_properties_after_update(
-                updated_server, request.server_properties
-            )
+        # Always sync server.properties after API updates to maintain consistency
+        # This ensures database changes are reflected in the file
+        await self._sync_server_properties_after_update(
+            updated_server, request.server_properties
+        )
 
         return ServerResponse.model_validate(updated_server)
 

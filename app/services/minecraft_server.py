@@ -1113,7 +1113,7 @@ class MinecraftServerManager:
         - This eliminates complex timestamp comparisons
         """
         try:
-            from app.services.bidirectional_sync import bidirectional_sync_service
+            from app.services.simplified_sync import simplified_sync_service
 
             properties_path = server_dir / "server.properties"
 
@@ -1123,16 +1123,14 @@ class MinecraftServerManager:
             logger.info(f"DEBUG: Properties file exists: {properties_path.exists()}")
 
             if properties_path.exists():
-                file_port = bidirectional_sync_service.get_properties_file_port(
+                file_port = simplified_sync_service.get_properties_file_port(
                     properties_path
                 )
                 logger.info(f"DEBUG: File port: {file_port}, DB port: {server.port}")
 
             if db_session:
-                success, description = (
-                    bidirectional_sync_service.perform_bidirectional_sync(
-                        server, properties_path, db_session
-                    )
+                success, description = simplified_sync_service.perform_simplified_sync(
+                    server, properties_path, db_session
                 )
                 logger.info(
                     f"Simplified sync for server {server.id}: success={success}, {description}"
@@ -1141,7 +1139,7 @@ class MinecraftServerManager:
                 # DEBUG: Verify sync worked
                 if success:
                     db_session.refresh(server)
-                    file_port_after = bidirectional_sync_service.get_properties_file_port(
+                    file_port_after = simplified_sync_service.get_properties_file_port(
                         properties_path
                     )
                     logger.info(
