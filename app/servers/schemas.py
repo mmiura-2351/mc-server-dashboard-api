@@ -160,6 +160,7 @@ class ServerUpdateRequest(BaseModel):
     description: Optional[str] = Field(None, max_length=500)
     max_memory: Optional[int] = Field(None, ge=512, le=16384)
     max_players: Optional[int] = Field(None, ge=1, le=100)
+    port: Optional[int] = Field(None, ge=1024, le=65535, description="Server port")
     server_properties: Optional[Dict[str, Any]] = None
 
     @field_validator("name")

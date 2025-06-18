@@ -1100,6 +1100,104 @@ class MinecraftServerManager:
                 continue
         raise RuntimeError("No available RCON ports found")
 
+    async def _perform_bidirectional_sync(
+        self, server: Server, server_dir: Path, db_session=None
+    ) -> bool:
+        """
+        Perform simplified sync between database and server.properties.
+
+        Key Logic (Simplified):
+        - API updates always modify both DB and file simultaneously
+        - Manual file edits only modify the file
+        - Therefore: if DB and file differ, file was manually edited and should sync to DB
+        - This eliminates complex timestamp comparisons
+        """
+        try:
+            from app.services.simplified_sync import simplified_sync_service
+
+            properties_path = server_dir / "server.properties"
+
+            # DEBUG: Log sync parameters
+            logger.info(f"DEBUG: Starting sync for server {server.id}")
+            logger.info(f"DEBUG: db_session provided: {'YES' if db_session else 'NO'}")
+            logger.info(f"DEBUG: Properties file exists: {properties_path.exists()}")
+
+            if properties_path.exists():
+                file_port = simplified_sync_service.get_properties_file_port(
+                    properties_path
+                )
+                logger.info(f"DEBUG: File port: {file_port}, DB port: {server.port}")
+
+            if db_session:
+                success, description = simplified_sync_service.perform_simplified_sync(
+                    server, properties_path, db_session
+                )
+                logger.info(
+                    f"Simplified sync for server {server.id}: success={success}, {description}"
+                )
+
+                # DEBUG: Verify sync worked
+                if success:
+                    db_session.refresh(server)
+                    file_port_after = simplified_sync_service.get_properties_file_port(
+                        properties_path
+                    )
+                    logger.info(
+                        f"DEBUG: After sync - File port: {file_port_after}, DB port: {server.port}"
+                    )
+
+                return success
+            else:
+                # Fallback to database-to-file sync if no database session
+                logger.warning(
+                    f"No database session provided for server {server.id}, falling back to database-to-file sync"
+                )
+                return await self._sync_server_properties_from_database(
+                    server, server_dir
+                )
+
+        except Exception as e:
+            logger.error(f"Failed to perform simplified sync for server {server.id}: {e}")
+            return False
+
+    async def _sync_server_properties_from_database(
+        self, server: Server, server_dir: Path
+    ) -> bool:
+        """Sync server.properties with database values to ensure consistency"""
+        try:
+            properties_path = server_dir / "server.properties"
+
+            # Read existing properties
+            properties = {}
+            if properties_path.exists():
+                with open(properties_path, "r", encoding="utf-8") as f:
+                    for line in f:
+                        line = line.strip()
+                        if line and not line.startswith("#") and "=" in line:
+                            key, value = line.split("=", 1)
+                            properties[key] = value
+
+            # Update critical properties from database
+            properties["server-port"] = str(server.port)
+            properties["max-players"] = str(server.max_players)
+
+            # Write updated properties back
+            with open(properties_path, "w", encoding="utf-8") as f:
+                f.write("#Minecraft server properties\n")
+                f.write(f"#{datetime.now().strftime('%a %b %d %H:%M:%S %Z %Y')}\n")
+                for key, value in sorted(properties.items()):
+                    f.write(f"{key}={value}\n")
+
+            logger.info(
+                f"Synced server.properties for server {server.id}: "
+                f"port={server.port}, max-players={server.max_players}"
+            )
+            return True
+
+        except Exception as e:
+            logger.error(f"Failed to sync server.properties for server {server.id}: {e}")
+            return False
+
     async def _ensure_rcon_configured(
         self, server_dir: Path, server_id: int
     ) -> tuple[bool, int, str]:
@@ -1237,7 +1335,16 @@ class MinecraftServerManager:
             # Pre-flight checks
             logger.info(f"Starting pre-flight checks for server {server.id}")
 
-            # Check port availability
+            # FIRST: Perform bidirectional sync between database and server.properties
+            # This must happen BEFORE port validation so manual file edits are detected
+            logger.info(f"Performing sync check for server {server.id}")
+            if not await self._perform_bidirectional_sync(server, server_dir, db_session):
+                logger.error(
+                    f"Failed to perform bidirectional sync for server {server.id}"
+                )
+                return False
+
+            # Check port availability (after sync, so port changes are reflected)
             port_available, port_message = await self._validate_port_availability(
                 server, db_session
             )

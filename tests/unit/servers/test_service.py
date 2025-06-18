@@ -237,6 +237,7 @@ class TestServerService:
     async def test_update_server_success(self, server_service, mock_db):
         """Test successful server update (lines 644-657)"""
         mock_server = Mock()
+        mock_server.max_players = 20  # Add max_players attribute
         server_service.validation_service.validate_server_exists = Mock(return_value=mock_server)
         
         mock_updated_server = Mock()
@@ -245,6 +246,9 @@ class TestServerService:
         request = Mock(spec=ServerUpdateRequest)
         request.name = "updated-server"
         request.max_memory = 2048
+        request.max_players = None  # Add max_players attribute
+        request.port = None  # Add port attribute
+        request.server_properties = None  # Add server_properties attribute
 
         with patch('app.servers.service.ServerSecurityValidator') as mock_validator:
             mock_validator.validate_server_name.return_value = True

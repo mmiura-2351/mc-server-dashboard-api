@@ -245,19 +245,22 @@ sys.exit(0)
             conflict_socket.listen(1)
             
             with patch('app.services.minecraft_server.java_compatibility_service', mock_java_service):
-                with patch("app.services.minecraft_server.logger") as mock_logger:
-                    
-                    result = await manager.start_server(lifecycle_server, mock_db_session)
-                    
-                    # Verify failure
-                    assert result is False
-                    assert lifecycle_server.id not in manager.processes
-                    
-                    # Verify error logging
-                    mock_logger.error.assert_called()
-                    error_calls = [call[0][0] for call in mock_logger.error.call_args_list]
-                    port_error_logs = [log for log in error_calls if "Port validation failed" in log]
-                    assert len(port_error_logs) >= 1
+                # Mock the sync to return success without changing the port
+                # This ensures the test validates port conflict detection, not sync logic
+                with patch.object(manager, '_perform_bidirectional_sync', return_value=True):
+                    with patch("app.services.minecraft_server.logger") as mock_logger:
+                        
+                        result = await manager.start_server(lifecycle_server, mock_db_session)
+                        
+                        # Verify failure
+                        assert result is False
+                        assert lifecycle_server.id not in manager.processes
+                        
+                        # Verify error logging
+                        mock_logger.error.assert_called()
+                        error_calls = [call[0][0] for call in mock_logger.error.call_args_list]
+                        port_error_logs = [log for log in error_calls if "Port validation failed" in log]
+                        assert len(port_error_logs) >= 1
                     
         finally:
             conflict_socket.close()
