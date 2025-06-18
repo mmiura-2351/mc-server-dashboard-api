@@ -133,12 +133,12 @@ class TestPortSynchronization:
                     # Call update_server
                     await server_service.update_server(test_server.id, update_request, test_db)
                     
-                    # Verify sync was called
-                    mock_sync.assert_called_once_with(test_server)
+                    # Verify sync was called with server and custom_properties (None in this case)
+                    mock_sync.assert_called_once_with(test_server, None)
         
         # Also test the actual sync method directly
         test_server.max_players = 50
-        await server_service._sync_server_properties_after_update(test_server)
+        await server_service._sync_server_properties_after_update(test_server, None)
         
         # Verify server.properties was updated
         properties_path = Path(test_server.directory_path) / "server.properties"
