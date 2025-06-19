@@ -370,7 +370,7 @@ class TestAuthorizationServiceServerFiltering:
         db.commit()
         
         servers = [sample_server, another_server]
-        filtered = AuthorizationService.filter_servers_for_user(admin_user, servers)
+        filtered = AuthorizationService.filter_servers_for_user(admin_user, servers, db)
         
         assert len(filtered) == 2
         assert sample_server in filtered
@@ -718,17 +718,21 @@ class TestAuthorizationServiceIntegration:
         
         all_servers = [admin_server, user_server, operator_server]
         
-        # Admin sees all servers (admin override works without db session)
-        admin_filtered = AuthorizationService.filter_servers_for_user(admin_user, all_servers)
+        # Admin sees all servers (admin override)
+        admin_filtered = AuthorizationService.filter_servers_for_user(admin_user, all_servers, db)
         assert len(admin_filtered) == 3
         assert all(server in admin_filtered for server in all_servers)
         
-        # With Phase 2 and no db session, falls back to return all (compatibility)
-        user_filtered = AuthorizationService.filter_servers_for_user(test_user, all_servers)
-        assert len(user_filtered) == 3
-        assert all(server in user_filtered for server in all_servers)
+        # With Phase 2, regular users see only owned servers (secure by default)
+        user_filtered = AuthorizationService.filter_servers_for_user(test_user, all_servers, db)
+        assert len(user_filtered) == 1
+        assert user_server in user_filtered
+        assert admin_server not in user_filtered
+        assert operator_server not in user_filtered
         
-        # Operator also gets all servers without db session (compatibility)
-        operator_filtered = AuthorizationService.filter_servers_for_user(operator_user, all_servers)
-        assert len(operator_filtered) == 3
-        assert all(server in operator_filtered for server in all_servers)
+        # Operator sees only owned servers (secure by default)
+        operator_filtered = AuthorizationService.filter_servers_for_user(operator_user, all_servers, db)
+        assert len(operator_filtered) == 1
+        assert operator_server in operator_filtered
+        assert admin_server not in operator_filtered
+        assert user_server not in operator_filtered
