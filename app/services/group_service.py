@@ -690,7 +690,7 @@ class GroupService:
                 status_code=status.HTTP_404_NOT_FOUND, detail="Server not found"
             )
 
-        self.access_service.check_server_access(user, server, self.db)
+        self.access_service.check_server_access(user, server)
 
         # Check group access
         group = self.get_group_by_id(user, group_id)
@@ -799,7 +799,7 @@ class GroupService:
                 status_code=status.HTTP_404_NOT_FOUND, detail="Server not found"
             )
 
-        self.access_service.check_server_access(user, server, self.db)
+        self.access_service.check_server_access(user, server)
 
         # Check group access
         group = self.get_group_by_id(user, group_id)
@@ -871,7 +871,7 @@ class GroupService:
                 status_code=status.HTTP_404_NOT_FOUND, detail="Server not found"
             )
 
-        self.access_service.check_server_access(user, server, self.db)
+        self.access_service.check_server_access(user, server)
 
         # Get attached groups with details
         result = (
