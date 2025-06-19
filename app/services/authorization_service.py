@@ -4,7 +4,9 @@ from typing import Optional
 from fastapi import HTTPException, Request, status
 from sqlalchemy.orm import Session
 
+from app.core.visibility import ResourceType
 from app.servers.models import Backup, Server
+from app.services.visibility_service import VisibilityService
 from app.users.models import Role, User
 
 
@@ -39,8 +41,14 @@ class AuthorizationService:
                 status_code=status.HTTP_404_NOT_FOUND, detail="Server not found"
             )
 
-        # Phase 1: Shared Resource Access - Allow all users with User role or higher to access servers
-        has_access = user.role in [Role.admin, Role.operator, Role.user]
+        # Phase 2: Visibility-based access control using the new visibility system
+        visibility_service = VisibilityService(db)
+        has_access = visibility_service.check_resource_access(
+            user=user,
+            resource_type=ResourceType.SERVER,
+            resource_id=server_id,
+            resource_owner_id=server.owner_id,
+        )
 
         if log_access and request:
             from app.audit.service import AuditService
@@ -77,8 +85,28 @@ class AuthorizationService:
                 status_code=status.HTTP_404_NOT_FOUND, detail="Backup not found"
             )
 
-        # Check if user has access to the server that owns this backup
-        AuthorizationService.check_server_access(backup.server_id, user, db)
+        # Check if user has access to the server that owns this backup using visibility system
+        visibility_service = VisibilityService(db)
+        server = db.query(Server).filter(Server.id == backup.server_id).first()
+        if not server:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Server not found for backup",
+            )
+
+        has_access = visibility_service.check_resource_access(
+            user=user,
+            resource_type=ResourceType.SERVER,
+            resource_id=backup.server_id,
+            resource_owner_id=server.owner_id,
+        )
+
+        if not has_access:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Not authorized to access this backup",
+            )
+
         return backup
 
     @staticmethod
@@ -175,13 +203,31 @@ class AuthorizationService:
         return user.role == Role.admin
 
     @staticmethod
-    def filter_servers_for_user(user: User, servers) -> list:
-        """Filter servers list based on user permissions"""
-        # Phase 1: Shared Resource Access - All users can see all servers
+    def filter_servers_for_user(user: User, servers, db: Session = None) -> list:
+        """Filter servers list based on user permissions using visibility system"""
         # Maintain validation to prevent None user for backward compatibility
         if user is None:
             raise AttributeError("'NoneType' object has no attribute 'role'")
-        return servers
+
+        # If no database session provided, fall back to returning all servers for compatibility
+        if db is None:
+            return servers
+
+        # Phase 2: Use visibility-based filtering
+        visibility_service = VisibilityService(db)
+
+        # Convert servers to (id, owner_id) tuples for visibility filtering
+        resource_tuples = [(server.id, server.owner_id) for server in servers]
+
+        # Get accessible server IDs
+        accessible_ids = visibility_service.filter_resources_by_visibility(
+            user=user, resources=resource_tuples, resource_type=ResourceType.SERVER
+        )
+
+        # Filter servers to only include accessible ones
+        accessible_servers = [server for server in servers if server.id in accessible_ids]
+
+        return accessible_servers
 
     @staticmethod
     def is_admin(user: User) -> bool:
