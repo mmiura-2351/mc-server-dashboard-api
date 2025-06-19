@@ -1,9 +1,95 @@
+import re
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.servers.models import ServerStatus, ServerType
+
+# Constants for server name validation
+FORBIDDEN_CHARS = ["/", "\\", ":", "*", "?", '"', "<", ">", "|"]
+WINDOWS_RESERVED_NAMES = {
+    "CON",
+    "PRN",
+    "AUX",
+    "NUL",
+    "COM1",
+    "COM2",
+    "COM3",
+    "COM4",
+    "COM5",
+    "COM6",
+    "COM7",
+    "COM8",
+    "COM9",
+    "LPT1",
+    "LPT2",
+    "LPT3",
+    "LPT4",
+    "LPT5",
+    "LPT6",
+    "LPT7",
+    "LPT8",
+    "LPT9",
+}
+
+# Regular expression patterns for better readability
+SINGLE_CHAR_PATTERN = r"^[a-zA-Z0-9]$"
+MULTI_CHAR_PATTERN = r"^[a-zA-Z0-9][a-zA-Z0-9\s\-_\.]*[a-zA-Z0-9]$"
+SERVER_NAME_PATTERN = f"{SINGLE_CHAR_PATTERN}|{MULTI_CHAR_PATTERN}"
+
+
+def validate_server_name(name: str) -> str:
+    """
+    Common server name validation logic for both create and import requests.
+
+    Args:
+        name: The server name to validate
+
+    Returns:
+        str: The validated and trimmed server name
+
+    Raises:
+        ValueError: If the name violates any validation rules
+    """
+    if not name.strip():
+        raise ValueError("Server name cannot be empty")
+
+    # Check for trailing spaces before trimming (but allow leading spaces to be trimmed)
+    original_name = name
+    name = name.strip()
+    if original_name != name and original_name.endswith(" "):
+        raise ValueError("Server name cannot end with a space")
+
+    # Security checks for path traversal
+    if ".." in name:
+        raise ValueError("Server name cannot contain '..' sequences")
+
+    # Check for invalid characters (path separators and dangerous chars)
+    if any(char in name for char in FORBIDDEN_CHARS):
+        raise ValueError(
+            f"Server name contains forbidden characters: {', '.join(FORBIDDEN_CHARS)}"
+        )
+
+    # Check for Windows reserved names (case-insensitive)
+    if name.upper() in WINDOWS_RESERVED_NAMES:
+        raise ValueError(f"Server name '{name}' is a reserved system name")
+
+    # Check starting/ending character restrictions
+    if name.startswith("."):
+        raise ValueError(
+            "Server name cannot start with a dot (creates hidden directories)"
+        )
+    if name.endswith("."):
+        raise ValueError("Server name cannot end with a dot")
+
+    # Enhanced character validation - allows dots in middle
+    if not re.match(SERVER_NAME_PATTERN, name):
+        raise ValueError(
+            "Server name can only contain letters, numbers, spaces, hyphens, underscores, and dots. Must start and end with alphanumeric characters."
+        )
+
+    return name
 
 
 class ServerCreateRequest(BaseModel):
@@ -38,71 +124,8 @@ class ServerCreateRequest(BaseModel):
     @field_validator("name")
     @classmethod
     def validate_name(cls, v):
-        if not v.strip():
-            raise ValueError("Server name cannot be empty")
-
-        # Check for trailing spaces before trimming (but allow leading spaces to be trimmed)
-        original_v = v
-        v = v.strip()
-        if original_v != v and original_v.endswith(" "):
-            raise ValueError("Server name cannot end with a space")
-
-        # Security checks for path traversal
-        if ".." in v:
-            raise ValueError("Server name cannot contain '..' sequences")
-
-        # Check for invalid characters (path separators and dangerous chars)
-        forbidden_chars = ["/", "\\", ":", "*", "?", '"', "<", ">", "|"]
-        if any(char in v for char in forbidden_chars):
-            raise ValueError(
-                f"Server name contains forbidden characters: {', '.join(forbidden_chars)}"
-            )
-
-        # Check for Windows reserved names (case-insensitive)
-        reserved_names = {
-            "CON",
-            "PRN",
-            "AUX",
-            "NUL",
-            "COM1",
-            "COM2",
-            "COM3",
-            "COM4",
-            "COM5",
-            "COM6",
-            "COM7",
-            "COM8",
-            "COM9",
-            "LPT1",
-            "LPT2",
-            "LPT3",
-            "LPT4",
-            "LPT5",
-            "LPT6",
-            "LPT7",
-            "LPT8",
-            "LPT9",
-        }
-        if v.upper() in reserved_names:
-            raise ValueError(f"Server name '{v}' is a reserved system name")
-
-        # Check starting/ending character restrictions
-        if v.startswith("."):
-            raise ValueError(
-                "Server name cannot start with a dot (creates hidden directories)"
-            )
-        if v.endswith("."):
-            raise ValueError("Server name cannot end with a dot")
-
-        # Enhanced character validation - allows dots in middle
-        import re
-
-        if not re.match(r"^[a-zA-Z0-9][a-zA-Z0-9\s\-_\.]*[a-zA-Z0-9]$|^[a-zA-Z0-9]$", v):
-            raise ValueError(
-                "Server name can only contain letters, numbers, spaces, hyphens, underscores, and dots. Must start and end with alphanumeric characters."
-            )
-
-        return v
+        """Validate server name using common validation logic."""
+        return validate_server_name(v)
 
     @field_validator("minecraft_version")
     @classmethod
@@ -327,71 +350,8 @@ class ServerImportRequest(BaseModel):
     @field_validator("name")
     @classmethod
     def validate_name(cls, v):
-        if not v.strip():
-            raise ValueError("Server name cannot be empty")
-
-        # Check for trailing spaces before trimming (but allow leading spaces to be trimmed)
-        original_v = v
-        v = v.strip()
-        if original_v != v and original_v.endswith(" "):
-            raise ValueError("Server name cannot end with a space")
-
-        # Security checks for path traversal
-        if ".." in v:
-            raise ValueError("Server name cannot contain '..' sequences")
-
-        # Check for invalid characters (path separators and dangerous chars)
-        forbidden_chars = ["/", "\\", ":", "*", "?", '"', "<", ">", "|"]
-        if any(char in v for char in forbidden_chars):
-            raise ValueError(
-                f"Server name contains forbidden characters: {', '.join(forbidden_chars)}"
-            )
-
-        # Check for Windows reserved names (case-insensitive)
-        reserved_names = {
-            "CON",
-            "PRN",
-            "AUX",
-            "NUL",
-            "COM1",
-            "COM2",
-            "COM3",
-            "COM4",
-            "COM5",
-            "COM6",
-            "COM7",
-            "COM8",
-            "COM9",
-            "LPT1",
-            "LPT2",
-            "LPT3",
-            "LPT4",
-            "LPT5",
-            "LPT6",
-            "LPT7",
-            "LPT8",
-            "LPT9",
-        }
-        if v.upper() in reserved_names:
-            raise ValueError(f"Server name '{v}' is a reserved system name")
-
-        # Check starting/ending character restrictions
-        if v.startswith("."):
-            raise ValueError(
-                "Server name cannot start with a dot (creates hidden directories)"
-            )
-        if v.endswith("."):
-            raise ValueError("Server name cannot end with a dot")
-
-        # Enhanced character validation - allows dots in middle
-        import re
-
-        if not re.match(r"^[a-zA-Z0-9][a-zA-Z0-9\s\-_\.]*[a-zA-Z0-9]$|^[a-zA-Z0-9]$", v):
-            raise ValueError(
-                "Server name can only contain letters, numbers, spaces, hyphens, underscores, and dots. Must start and end with alphanumeric characters."
-            )
-
-        return v
+        """Validate server name using common validation logic."""
+        return validate_server_name(v)
 
 
 class ServerExportResponse(BaseModel):
