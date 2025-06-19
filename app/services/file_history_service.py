@@ -41,7 +41,28 @@ class FileHistoryService:
         description: Optional[str] = None,
         db: Session = None,
     ) -> Optional[FileHistoryRecord]:
-        """Create backup version of file before editing"""
+        """Create backup version of file before editing
+
+        Args:
+            server_id: Server ID for the file
+            file_path: Path to the file being backed up
+            content: File content to backup
+            user_id: ID of user making the edit (optional)
+            description: Description of the backup (optional)
+            db: Database session (required for security)
+
+        Returns:
+            FileHistoryRecord if backup was created, None if skipped due to duplicate content
+
+        Raises:
+            ValueError: If database session is None
+            FileOperationException: If backup creation fails
+        """
+        if db is None:
+            raise ValueError(
+                "Database session is required for security-critical file backup operations"
+            )
+
         try:
             # Normalize file path
             normalized_path = self._normalize_file_path(file_path)
@@ -109,7 +130,25 @@ class FileHistoryService:
         limit: int = 20,
         db: Session = None,
     ) -> List[FileHistoryRecord]:
-        """Get edit history for a file"""
+        """Get edit history for a file
+
+        Args:
+            server_id: Server ID for the file
+            file_path: Path to the file
+            limit: Maximum number of history records to return
+            db: Database session (required for security)
+
+        Returns:
+            List of file history records
+
+        Raises:
+            ValueError: If database session is None
+        """
+        if db is None:
+            raise ValueError(
+                "Database session is required for security-critical file history operations"
+            )
+
         normalized_path = self._normalize_file_path(file_path)
 
         history_records = (
@@ -130,9 +169,29 @@ class FileHistoryService:
         server_id: int,
         file_path: str,
         version_number: int,
-        db: Session = None,
+        db: Session,
     ) -> Tuple[str, FileEditHistory]:
-        """Get content of specific version"""
+        """Get content of specific version
+
+        Args:
+            server_id: Server ID for the file
+            file_path: Path to the file
+            version_number: Version number to retrieve
+            db: Database session (required for security)
+
+        Returns:
+            Tuple of (file_content, history_record)
+
+        Raises:
+            ValueError: If database session is None
+            InvalidRequestException: If version not found
+            FileOperationException: If backup file cannot be read
+        """
+        if db is None:
+            raise ValueError(
+                "Database session is required for security-critical version content operations"
+            )
+
         normalized_path = self._normalize_file_path(file_path)
 
         history_record = (
@@ -173,7 +232,30 @@ class FileHistoryService:
         description: Optional[str] = None,
         db: Session = None,
     ) -> Tuple[str, bool]:
-        """Restore file from specific version"""
+        """Restore file from specific version
+
+        Args:
+            server_id: Server ID for the file
+            file_path: Path to the file to restore
+            version_number: Version number to restore from
+            user_id: ID of user performing the restore
+            create_backup_before_restore: Whether to backup current content before restore
+            description: Description for the restore operation (optional)
+            db: Database session (required for security)
+
+        Returns:
+            Tuple of (restored_content, backup_was_created)
+
+        Raises:
+            ValueError: If database session is None
+            ServerNotFoundException: If server not found
+            FileOperationException: If restore operation fails
+        """
+        if db is None:
+            raise ValueError(
+                "Database session is required for security-critical restore operations"
+            )
+
         # Get version content
         content, history_record = await self.get_version_content(
             server_id, file_path, version_number, db
@@ -226,9 +308,28 @@ class FileHistoryService:
         server_id: int,
         file_path: str,
         version_number: int,
-        db: Session = None,
+        db: Session,
     ) -> bool:
-        """Delete specific version"""
+        """Delete specific version
+
+        Args:
+            server_id: Server ID for the file
+            file_path: Path to the file
+            version_number: Version number to delete
+            db: Database session (required for security)
+
+        Returns:
+            True if version was successfully deleted
+
+        Raises:
+            ValueError: If database session is None
+            InvalidRequestException: If version not found
+        """
+        if db is None:
+            raise ValueError(
+                "Database session is required for security-critical version deletion operations"
+            )
+
         normalized_path = self._normalize_file_path(file_path)
 
         history_record = (
@@ -258,8 +359,24 @@ class FileHistoryService:
         logger.info(f"Deleted version {version_number} for {file_path}")
         return True
 
-    async def get_server_statistics(self, server_id: int, db: Session = None) -> dict:
-        """Get file history statistics for server"""
+    async def get_server_statistics(self, server_id: int, db: Session) -> dict:
+        """Get file history statistics for server
+
+        Args:
+            server_id: Server ID to get statistics for
+            db: Database session (required for security)
+
+        Returns:
+            Dictionary containing file history statistics
+
+        Raises:
+            ValueError: If database session is None
+        """
+        if db is None:
+            raise ValueError(
+                "Database session is required for security-critical statistics operations"
+            )
+
         stats = (
             db.query(
                 func.count(FileEditHistory.id).label("total_versions"),
@@ -299,7 +416,24 @@ class FileHistoryService:
     async def cleanup_old_versions(
         self, days: int = None, server_id: int = None, db: Session = None
     ) -> CleanupResult:
-        """Cleanup old versions"""
+        """Cleanup old versions
+
+        Args:
+            days: Number of days after which versions are considered old (optional)
+            server_id: Specific server ID to cleanup (optional, cleans all if None)
+            db: Database session (required for security)
+
+        Returns:
+            CleanupResult with deletion statistics
+
+        Raises:
+            ValueError: If database session is None
+        """
+        if db is None:
+            raise ValueError(
+                "Database session is required for security-critical cleanup operations"
+            )
+
         if days is None:
             days = self.auto_cleanup_days
 
@@ -406,7 +540,23 @@ class FileHistoryService:
     def _to_record_schema(
         self, record: FileEditHistory, db: Session
     ) -> FileHistoryRecord:
-        """Convert database record to schema"""
+        """Convert database record to schema
+
+        Args:
+            record: FileEditHistory database record
+            db: Database session (required for security)
+
+        Returns:
+            FileHistoryRecord schema object
+
+        Raises:
+            ValueError: If database session is None
+        """
+        if db is None:
+            raise ValueError(
+                "Database session is required for security-critical schema conversion operations"
+            )
+
         editor_username = None
         if record.editor:
             editor_username = record.editor.username

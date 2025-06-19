@@ -111,9 +111,9 @@ async def create_backup(
         backup = await backup_service.create_backup(
             server_id=server_id,
             name=request.name,
+            db=db,
             description=request.description,
             backup_type=request.backup_type,
-            db=db,
         )
 
         return BackupResponse.from_orm(backup)
@@ -176,9 +176,9 @@ async def upload_backup(
         backup = await backup_service.upload_backup(
             server_id=server_id,
             file=file,
+            db=db,
             name=name,
             description=description,
-            db=db,
         )
 
         backup_response = BackupResponse.from_orm(backup)
@@ -224,11 +224,11 @@ async def list_server_backups(
         authorization_service.check_server_access(server_id, current_user, db)
 
         result = backup_service.list_backups(
+            db=db,
             server_id=server_id,
             backup_type=backup_type,
             page=page,
             size=size,
-            db=db,
         )
 
         backup_responses = [
@@ -274,10 +274,10 @@ async def list_all_backups(
             )
 
         result = backup_service.list_backups(
+            db=db,
             backup_type=backup_type,
             page=page,
             size=size,
-            db=db,
         )
 
         backup_responses = [
@@ -392,8 +392,8 @@ async def restore_backup(
 
         success = await backup_service.restore_backup(
             backup_id=backup_id,
-            server_id=target_server_id,
             db=db,
+            server_id=target_server_id,
         )
 
         return BackupOperationResponse(
@@ -457,11 +457,11 @@ async def restore_backup_and_create_template(
         result = await backup_service.restore_backup_and_create_template(
             backup_id=backup_id,
             template_name=request.template_name,
+            db=db,
             template_description=request.template_description,
             is_public=request.is_public,
             user=current_user,
             server_id=target_server_id,
-            db=db,
         )
 
         message = f"Backup {backup_id} restored successfully to server {target_server_id}"
@@ -601,7 +601,7 @@ async def get_server_backup_statistics(
         # Check server access
         authorization_service.check_server_access(server_id, current_user, db)
 
-        stats = backup_service.get_backup_statistics(server_id=server_id, db=db)
+        stats = backup_service.get_backup_statistics(db=db, server_id=server_id)
 
         return BackupStatisticsResponse(**stats)
 

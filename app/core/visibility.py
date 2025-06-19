@@ -81,7 +81,7 @@ class ResourceVisibility(Base):
         "ResourceUserAccess",
         back_populates="visibility",
         cascade="all, delete-orphan",
-        lazy="selectin",
+        lazy="dynamic",  # Changed from selectin to dynamic for better performance on large datasets
     )
 
     # Constraints
@@ -142,8 +142,12 @@ class ResourceUserAccess(Base):
 
     # Relationships
     visibility = relationship("ResourceVisibility", back_populates="user_access_grants")
-    user = relationship("User", foreign_keys=[user_id], lazy="selectin")
-    granted_by = relationship("User", foreign_keys=[granted_by_user_id], lazy="selectin")
+    user = relationship(
+        "User", foreign_keys=[user_id], lazy="joined"
+    )  # Optimized for common access patterns
+    granted_by = relationship(
+        "User", foreign_keys=[granted_by_user_id], lazy="select"
+    )  # Less frequently accessed
 
     # Constraints
     __table_args__ = (

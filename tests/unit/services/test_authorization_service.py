@@ -494,16 +494,22 @@ class TestAuthorizationServiceEdgeCases:
         with pytest.raises(AttributeError):
             AuthorizationService.can_schedule_backups(None)
 
-    def test_filter_servers_with_none_user(self):
+    def test_filter_servers_with_none_user(self, db):
         """Test filter_servers_for_user with None user"""
         servers = []
         with pytest.raises(AttributeError):
-            AuthorizationService.filter_servers_for_user(None, servers)
+            AuthorizationService.filter_servers_for_user(None, servers, db)
 
-    def test_filter_servers_with_empty_list(self, test_user):
+    def test_filter_servers_with_none_db(self, test_user):
+        """Test filter_servers_for_user with None database session (security fix)"""
+        servers = []
+        with pytest.raises(ValueError, match="Database session is required for security filtering"):
+            AuthorizationService.filter_servers_for_user(test_user, servers, None)
+
+    def test_filter_servers_with_empty_list(self, test_user, db):
         """Test filter_servers_for_user with empty server list"""
         servers = []
-        filtered = AuthorizationService.filter_servers_for_user(test_user, servers)
+        filtered = AuthorizationService.filter_servers_for_user(test_user, servers, db)
         assert filtered == []
 
     def test_check_server_access_with_database_error(self, admin_user):

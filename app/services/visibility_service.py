@@ -190,7 +190,13 @@ class VisibilityService:
 
         Returns:
             Updated ResourceVisibility instance
+
+        Raises:
+            ValueError: If role configuration is invalid
         """
+        # Validate role hierarchy and visibility type consistency
+        self._validate_role_configuration(visibility_type, role_restriction)
+
         # Get or create visibility configuration
         visibility = self._get_resource_visibility(resource_type, resource_id)
 
@@ -412,6 +418,55 @@ class VisibilityService:
             )
 
         return migrated_count
+
+    def _validate_role_configuration(
+        self, visibility_type: VisibilityType, role_restriction: Optional[Role]
+    ) -> None:
+        """
+        Validate role hierarchy and visibility type consistency
+
+        Args:
+            visibility_type: The visibility type being set
+            role_restriction: The role restriction being applied
+
+        Raises:
+            ValueError: If the role configuration is invalid or illogical
+        """
+        # Validate role_restriction is only used with ROLE_BASED visibility
+        if visibility_type == VisibilityType.ROLE_BASED:
+            if role_restriction is None:
+                logger.warning(
+                    "ROLE_BASED visibility without role_restriction defaults to all authenticated users"
+                )
+            else:
+                # Validate the role makes logical sense in hierarchy
+                role_hierarchy = {Role.user: 1, Role.operator: 2, Role.admin: 3}
+
+                if role_restriction not in role_hierarchy:
+                    raise ValueError(f"Invalid role restriction: {role_restriction}")
+
+                # Log the configuration for audit purposes
+                logger.info(
+                    f"Setting ROLE_BASED visibility with {role_restriction.value} role restriction"
+                )
+        else:
+            # role_restriction should not be set for other visibility types
+            if role_restriction is not None:
+                # Provide specific error messages for each visibility type
+                if visibility_type == VisibilityType.PRIVATE:
+                    raise ValueError("PRIVATE visibility cannot have role restrictions")
+                elif visibility_type == VisibilityType.PUBLIC:
+                    raise ValueError("PUBLIC visibility cannot have role restrictions")
+                elif visibility_type == VisibilityType.SPECIFIC_USERS:
+                    raise ValueError(
+                        "SPECIFIC_USERS visibility cannot have role restrictions"
+                    )
+                else:
+                    # Generic fallback for any new visibility types
+                    raise ValueError(
+                        f"role_restriction can only be used with ROLE_BASED visibility, "
+                        f"not with {visibility_type.value}"
+                    )
 
 
 # Export service class

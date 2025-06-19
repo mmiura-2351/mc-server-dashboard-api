@@ -213,15 +213,20 @@ class AuthorizationService:
         return user.role == Role.admin
 
     @staticmethod
-    def filter_servers_for_user(user: User, servers, db: Session = None) -> list:
-        """Filter servers list based on user permissions using visibility system"""
-        # Maintain validation to prevent None user for backward compatibility
+    def filter_servers_for_user(user: User, servers, db: Session) -> list:
+        """Filter servers list based on user permissions using visibility system
+
+        SECURITY: Database session is now required to prevent security bypass.
+        No longer accepts None to ensure all filtering goes through visibility system.
+        """
+        # Validate required parameters
         if user is None:
             raise AttributeError("'NoneType' object has no attribute 'role'")
 
-        # If no database session provided, fall back to returning all servers for compatibility
         if db is None:
-            return servers
+            raise ValueError(
+                "Database session is required for security filtering - cannot be None"
+            )
 
         # Phase 2: Use visibility-based filtering
         visibility_service = VisibilityService(db)
