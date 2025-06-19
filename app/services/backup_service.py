@@ -573,13 +573,13 @@ class BackupService:
         self,
         server_id: Annotated[int, "ID of the server to backup"],
         name: Annotated[str, "Name for the backup"],
+        db: Annotated[Session, "Database session for secure operations"],
         description: Annotated[
             Optional[str], "Optional description for the backup"
         ] = None,
         backup_type: Annotated[
             BackupType, "Type of backup (manual/scheduled)"
         ] = BackupType.manual,
-        db: Annotated[Session, "Database session"] = None,
     ) -> Annotated[Backup, "Created backup instance"]:
         """Create a comprehensive backup of a server.
 
@@ -591,7 +591,7 @@ class BackupService:
             name: Human-readable name for the backup
             description: Optional description of the backup purpose
             backup_type: Type of backup (manual, scheduled, etc.)
-            db: Database session for operations
+            db: Database session for secure operations (required)
 
         Returns:
             The created backup instance with complete metadata
@@ -599,7 +599,11 @@ class BackupService:
         Raises:
             ServerNotFoundException: If server doesn't exist
             FileOperationException: If backup creation fails
+            ValueError: If database session is None
         """
+        # Validate database session for security-critical operations
+        if db is None:
+            raise ValueError("Database session is required for secure backup operations")
         # Validate server
         server = self.validation_service.validate_server_for_backup(server_id, db)
 
@@ -665,9 +669,26 @@ class BackupService:
             logger.warning(f"Creating backup of running server {server_id}")
 
     async def restore_backup(
-        self, backup_id: int, server_id: Optional[int] = None, db: Session = None
+        self, backup_id: int, db: Session, server_id: Optional[int] = None
     ) -> bool:
-        """Restore a backup to a server"""
+        """Restore a backup to a server.
+
+        Args:
+            backup_id: ID of the backup to restore
+            server_id: Optional target server ID (defaults to backup's original server)
+            db: Database session for secure operations (required)
+
+        Returns:
+            True if restoration was successful
+
+        Raises:
+            ValueError: If database session is None
+            BackupNotFoundException: If backup doesn't exist
+            ServerNotFoundException: If target server doesn't exist
+        """
+        # Validate database session for security-critical operations
+        if db is None:
+            raise ValueError("Database session is required for secure restore operations")
         # Validate backup exists and can be restored
         backup = self.validation_service.validate_backup_exists(backup_id, db)
         self.validation_service.validate_backup_status_for_restore(backup)
@@ -693,15 +714,34 @@ class BackupService:
         self,
         backup_id: int,
         template_name: str,
+        db: Session,
         template_description: Optional[str] = None,
         is_public: bool = False,
         user=None,
         server_id: Optional[int] = None,
-        db: Session = None,
     ) -> dict:
-        """Restore a backup and optionally create a template from the restored server"""
+        """Restore a backup and optionally create a template from the restored server.
+
+        Args:
+            backup_id: ID of the backup to restore
+            template_name: Name for the new template
+            template_description: Optional description for the template
+            is_public: Whether the template should be public
+            user: User creating the template
+            server_id: Optional target server ID
+            db: Database session for secure operations (required)
+
+        Returns:
+            Dictionary with restoration and template creation results
+
+        Raises:
+            ValueError: If database session is None
+        """
+        # Validate database session for security-critical operations
+        if db is None:
+            raise ValueError("Database session is required for secure restore operations")
         # First restore the backup
-        success = await self.restore_backup(backup_id, server_id, db)
+        success = await self.restore_backup(backup_id, db, server_id)
 
         if not success:
             raise FileOperationException(
@@ -722,11 +762,11 @@ class BackupService:
             template = await template_service.create_template_from_server(
                 server_id=target_server_id,
                 name=template_name,
+                db=db,
+                creator=user,
                 description=template_description
                 or f"Template created from backup {backup.name}",
                 is_public=is_public,
-                creator=user,
-                db=db,
             )
 
             result["template_created"] = True
@@ -778,9 +818,9 @@ class BackupService:
                 backup = await self.create_backup(
                     server_id=server_id,
                     name=backup_name,
+                    db=db,
                     description="Automatically scheduled backup",
                     backup_type=BackupType.scheduled,
-                    db=db,
                 )
 
                 results["successful"].append(
@@ -822,13 +862,31 @@ class BackupService:
 
     def list_backups(
         self,
+        db: Session,
         server_id: Optional[int] = None,
         backup_type: Optional[BackupType] = None,
         page: int = 1,
         size: int = 50,
-        db: Session = None,
     ) -> dict:
-        """List backups with filtering and pagination"""
+        """List backups with filtering and pagination.
+
+        Args:
+            server_id: Optional server ID to filter by
+            backup_type: Optional backup type to filter by
+            page: Page number for pagination
+            size: Number of items per page
+            db: Database session for secure operations (required)
+
+        Returns:
+            Dictionary containing backup list and pagination info
+
+        Raises:
+            ValueError: If database session is None
+            DatabaseOperationException: If database query fails
+        """
+        # Validate database session for security-critical operations
+        if db is None:
+            raise ValueError("Database session is required for secure backup listing")
         try:
             query = db.query(Backup)
 
@@ -885,19 +943,34 @@ class BackupService:
             return await self.create_backup(
                 server_id=server_id,
                 name=backup_name,
+                db=db,
                 description="Automatically created scheduled backup",
                 backup_type=BackupType.scheduled,
-                db=db,
             )
 
         except Exception as e:
             logger.error(f"Failed to create scheduled backup for server {server_id}: {e}")
             return None
 
-    def get_backup_statistics(
-        self, server_id: Optional[int] = None, db: Session = None
-    ) -> dict:
-        """Get backup statistics"""
+    def get_backup_statistics(self, db: Session, server_id: Optional[int] = None) -> dict:
+        """Get backup statistics.
+
+        Args:
+            server_id: Optional server ID to filter statistics by
+            db: Database session for secure operations (required)
+
+        Returns:
+            Dictionary containing backup statistics
+
+        Raises:
+            ValueError: If database session is None
+            DatabaseOperationException: If database query fails
+        """
+        # Validate database session for security-critical operations
+        if db is None:
+            raise ValueError(
+                "Database session is required for secure statistics retrieval"
+            )
         try:
             query = db.query(Backup)
 
@@ -939,11 +1012,30 @@ class BackupService:
         self,
         server_id: int,
         file: "UploadFile",
+        db: Session,
         name: Optional[str] = None,
         description: Optional[str] = None,
-        db: Session = None,
     ) -> Backup:
-        """Upload a backup file and create backup record with streaming processing"""
+        """Upload a backup file and create backup record with streaming processing.
+
+        Args:
+            server_id: ID of the server to associate with the backup
+            file: Uploaded backup file
+            name: Optional name for the backup
+            description: Optional description for the backup
+            db: Database session for secure operations (required)
+
+        Returns:
+            Created backup instance
+
+        Raises:
+            ValueError: If database session is None
+            FileOperationException: If file upload fails
+            DatabaseOperationException: If database operations fail
+        """
+        # Validate database session for security-critical operations
+        if db is None:
+            raise ValueError("Database session is required for secure backup upload")
         temp_path = None
         backup_path = None
 

@@ -48,12 +48,36 @@ class TemplateService:
         self,
         server_id: int,
         name: str,
+        db: Session,
+        creator: User,
         description: Optional[str] = None,
         is_public: bool = False,
-        creator: User = None,
-        db: Session = None,
     ) -> Template:
-        """Create a template from an existing server"""
+        """Create a template from an existing server
+
+        Args:
+            server_id: ID of the server to create template from
+            name: Name for the template
+            db: Database session (required for security)
+            creator: User creating the template (required)
+            description: Optional description for the template
+            is_public: Whether the template should be public
+
+        Returns:
+            Template: The created template
+
+        Raises:
+            TemplateError: If database session is None or other errors occur
+        """
+        # Security validation: ensure database session is provided
+        if db is None:
+            raise TemplateError(
+                "Database session is required for security-critical operations"
+            )
+
+        if creator is None:
+            raise TemplateError("Creator user is required for template creation")
+
         try:
             # Get server from database
             server = (
@@ -111,13 +135,40 @@ class TemplateService:
         minecraft_version: str,
         server_type: ServerType,
         configuration: Dict[str, Any],
+        db: Session,
+        creator: User,
         description: Optional[str] = None,
         default_groups: Optional[Dict[str, List[int]]] = None,
         is_public: bool = False,
-        creator: User = None,
-        db: Session = None,
     ) -> Template:
-        """Create a custom template with specified configuration"""
+        """Create a custom template with specified configuration
+
+        Args:
+            name: Name for the template
+            minecraft_version: Minecraft version for the template
+            server_type: Type of server (e.g., VANILLA, SPIGOT)
+            configuration: Template configuration dictionary
+            db: Database session (required for security)
+            creator: User creating the template (required)
+            description: Optional description
+            default_groups: Optional default group assignments
+            is_public: Whether template should be public
+
+        Returns:
+            Template: The created template
+
+        Raises:
+            TemplateError: If database session is None or other errors occur
+        """
+        # Security validation: ensure database session is provided
+        if db is None:
+            raise TemplateError(
+                "Database session is required for security-critical operations"
+            )
+
+        if creator is None:
+            raise TemplateError("Creator user is required for template creation")
+
         try:
             template = Template(
                 name=name,
@@ -330,14 +381,39 @@ class TemplateService:
     def list_templates(
         self,
         user: User,
+        db: Session,
         minecraft_version: Optional[str] = None,
         server_type: Optional[ServerType] = None,
         is_public: Optional[bool] = None,
         page: int = 1,
         size: int = 50,
-        db: Session = None,
     ) -> Dict[str, Any]:
-        """List templates with filtering and pagination"""
+        """List templates with filtering and pagination
+
+        Args:
+            user: User requesting the template list (required)
+            db: Database session (required for security)
+            minecraft_version: Optional filter by minecraft version
+            server_type: Optional filter by server type
+            is_public: Optional filter by public status
+            page: Page number for pagination (default: 1)
+            size: Page size for pagination (default: 50)
+
+        Returns:
+            Dict[str, Any]: Dictionary containing templates, total count, and pagination info
+
+        Raises:
+            TemplateError: If database session is None or other errors occur
+        """
+        # Security validation: ensure database session is provided
+        if db is None:
+            raise TemplateError(
+                "Database session is required for security-critical operations"
+            )
+
+        if user is None:
+            raise TemplateError("User is required for access control")
+
         try:
             query = db.query(Template)
 
@@ -378,15 +454,41 @@ class TemplateService:
     def update_template(
         self,
         template_id: int,
+        db: Session,
+        user: User,
         name: Optional[str] = None,
         description: Optional[str] = None,
         configuration: Optional[Dict[str, Any]] = None,
         default_groups: Optional[Dict[str, List[int]]] = None,
         is_public: Optional[bool] = None,
-        user: User = None,
-        db: Session = None,
     ) -> Optional[Template]:
-        """Update template"""
+        """Update template
+
+        Args:
+            template_id: ID of template to update
+            db: Database session (required for security)
+            user: User requesting the update (required for access control)
+            name: Optional new name for template
+            description: Optional new description
+            configuration: Optional new configuration
+            default_groups: Optional new default groups
+            is_public: Optional new public status
+
+        Returns:
+            Optional[Template]: Updated template or None if not found
+
+        Raises:
+            TemplateError: If database session is None or other errors occur
+        """
+        # Security validation: ensure database session is provided
+        if db is None:
+            raise TemplateError(
+                "Database session is required for security-critical operations"
+            )
+
+        if user is None:
+            raise TemplateError("User is required for access control")
+
         try:
             template = db.query(Template).filter(Template.id == template_id).first()
 
@@ -485,12 +587,36 @@ class TemplateService:
         self,
         original_template_id: int,
         name: str,
+        db: Session,
+        user: User,
         description: Optional[str] = None,
         is_public: bool = False,
-        user: User = None,
-        db: Session = None,
     ) -> Template:
-        """Clone an existing template"""
+        """Clone an existing template
+
+        Args:
+            original_template_id: ID of template to clone
+            name: Name for the new cloned template
+            db: Database session (required for security)
+            user: User creating the clone (required for access control)
+            description: Optional description for cloned template
+            is_public: Whether cloned template should be public
+
+        Returns:
+            Template: The cloned template
+
+        Raises:
+            TemplateError: If database session is None or other errors occur
+        """
+        # Security validation: ensure database session is provided
+        if db is None:
+            raise TemplateError(
+                "Database session is required for security-critical operations"
+            )
+
+        if user is None:
+            raise TemplateError("User is required for access control")
+
         try:
             # Get the original template
             original_template = (
