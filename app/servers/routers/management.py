@@ -54,11 +54,11 @@ async def create_server(
     - **attach_groups**: Groups to attach on creation
     """
     try:
-        # Only operators and admins can create servers
+        # Phase 1: All users can create servers
         if not authorization_service.can_create_server(current_user):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="Only operators and admins can create servers",
+                detail="Insufficient permissions to create servers",
             )
 
         server = await server_service.create_server(request, current_user, db)

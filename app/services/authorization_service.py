@@ -179,23 +179,33 @@ class AuthorizationService:
 
     @staticmethod
     def can_create_server(user: User) -> bool:
-        """Check if user can create servers"""
-        return user.role in [Role.admin, Role.operator]
+        """Check if user can create servers - Phase 1: All users can create servers"""
+        return user.role in [Role.admin, Role.operator, Role.user]
 
     @staticmethod
     def can_modify_files(user: User) -> bool:
-        """Check if user can modify server files"""
-        return user.role in [Role.admin, Role.operator]
+        """Check if user can modify server files - Phase 1: All users can edit files"""
+        return user.role in [Role.admin, Role.operator, Role.user]
+
+    @staticmethod
+    def can_create_backup(user: User) -> bool:
+        """Check if user can create backups - Phase 1: All users can create backups"""
+        return user.role in [Role.admin, Role.operator, Role.user]
 
     @staticmethod
     def can_restore_backup(user: User) -> bool:
-        """Check if user can restore backups"""
-        return user.role in [Role.admin, Role.operator]
+        """Check if user can restore backups - Phase 1: All users can restore backups"""
+        return user.role in [Role.admin, Role.operator, Role.user]
+
+    @staticmethod
+    def can_create_group(user: User) -> bool:
+        """Check if user can create groups - Phase 1: All users can create groups"""
+        return user.role in [Role.admin, Role.operator, Role.user]
 
     @staticmethod
     def can_create_template(user: User) -> bool:
-        """Check if user can create templates"""
-        return user.role in [Role.admin, Role.operator]
+        """Check if user can create templates - Phase 1: All users can create templates"""
+        return user.role in [Role.admin, Role.operator, Role.user]
 
     @staticmethod
     def can_schedule_backups(user: User) -> bool:

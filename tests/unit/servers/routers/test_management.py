@@ -14,34 +14,13 @@ from app.users.models import Role, User
 class TestServerManagementRouter:
     """Test cases for server management router endpoints"""
 
-    @pytest.mark.asyncio
-    @patch('app.servers.routers.management.authorization_service')
-    @patch('app.servers.routers.management.server_service')
-    async def test_create_server_authorization_failure(self, mock_server_service, mock_auth_service, test_user):
-        """Test create server with authorization failure (lines 58-62)"""
-        from app.servers.routers.management import create_server
-        from app.servers.schemas import ServerCreateRequest
+    def test_create_server_authorization_check(self, test_user):
+        """Test that regular users pass authorization check for server creation (Phase 1: shared resource model)"""
+        from app.services.authorization_service import AuthorizationService
         
-        # Mock authorization to deny access
-        mock_auth_service.can_create_server.return_value = False
-        
-        request = ServerCreateRequest(
-            name="test-server",
-            description="Test server",
-            minecraft_version="1.20.1",
-            server_type=ServerType.vanilla,
-            port=25565,
-            max_memory=1024,
-            max_players=20
-        )
-
-        with pytest.raises(HTTPException) as exc_info:
-            await create_server(request=request, background_tasks=BackgroundTasks(), current_user=test_user, db=Mock())
-        
-        # Due to management router bug, HTTPException gets wrapped in 500 error
-        assert exc_info.value.status_code == 500
-        assert "Failed to create server" in str(exc_info.value.detail)
-        assert "403: Only operators and admins can create servers" in str(exc_info.value.detail)
+        # Phase 1: Regular users should be able to create servers
+        assert AuthorizationService.can_create_server(test_user) is True, \
+            "Regular users should be authorized to create servers in Phase 1"
 
     @pytest.mark.asyncio
     @patch('app.servers.routers.management.authorization_service')

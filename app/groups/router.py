@@ -43,11 +43,11 @@ async def create_group(
     - **description**: Optional group description
     """
     try:
-        # Only operators and admins can create groups
-        if not authorization_service.can_create_server(current_user):
+        # Phase 1: All users can create groups
+        if not authorization_service.can_create_group(current_user):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="Only operators and admins can create groups",
+                detail="Insufficient permissions to create groups",
             )
 
         group_service = GroupService(db)

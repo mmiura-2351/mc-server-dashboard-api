@@ -126,14 +126,21 @@ class TestServerExportImport:
         if server_dir.exists():
             shutil.rmtree(server_dir)
     
-    def test_import_server_unauthorized(self, client: TestClient, user_headers):
-        """Test import without proper permissions"""
+    def test_import_server_authorized_for_regular_user(self, client: TestClient, user_headers):
+        """Test that regular users can import servers (Phase 1: shared resource model)"""
+        # Create a minimal zip buffer for testing
         zip_buffer = io.BytesIO()
+        with zipfile.ZipFile(zip_buffer, 'w') as zip_file:
+            zip_file.writestr("server.properties", "server-port=25565\n")
+        zip_buffer.seek(0)
+        
         files = {"file": ("test.zip", zip_buffer, "application/zip")}
         data = {"name": "Test Server"}
         
+        # Phase 1: Regular users can now create (import) servers
+        # Note: This may fail with other errors (like validation), but should not be 403 Forbidden
         response = client.post("/api/v1/servers/import", headers=user_headers, files=files, data=data)
-        assert response.status_code == status.HTTP_403_FORBIDDEN
+        assert response.status_code != status.HTTP_403_FORBIDDEN, "Regular users should be allowed to import servers in Phase 1"
     
     def test_import_server_invalid_file_type(self, client: TestClient, admin_headers):
         """Test import with non-ZIP file"""

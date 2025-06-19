@@ -272,8 +272,8 @@ class TestAuthorizationServicePermissionChecks:
         assert AuthorizationService.can_create_server(operator_user) is True
 
     def test_can_create_server_user(self, test_user):
-        """Test regular user cannot create servers"""
-        assert AuthorizationService.can_create_server(test_user) is False
+        """Test regular user can create servers (Phase 1: shared resource model)"""
+        assert AuthorizationService.can_create_server(test_user) is True
 
     def test_can_modify_files_admin(self, admin_user):
         """Test admin can modify files"""
@@ -284,8 +284,8 @@ class TestAuthorizationServicePermissionChecks:
         assert AuthorizationService.can_modify_files(operator_user) is True
 
     def test_can_modify_files_user(self, test_user):
-        """Test regular user cannot modify files"""
-        assert AuthorizationService.can_modify_files(test_user) is False
+        """Test regular user can modify files (Phase 1: shared resource model)"""
+        assert AuthorizationService.can_modify_files(test_user) is True
 
     def test_can_restore_backup_admin(self, admin_user):
         """Test admin can restore backups"""
@@ -296,8 +296,32 @@ class TestAuthorizationServicePermissionChecks:
         assert AuthorizationService.can_restore_backup(operator_user) is True
 
     def test_can_restore_backup_user(self, test_user):
-        """Test regular user cannot restore backups"""
-        assert AuthorizationService.can_restore_backup(test_user) is False
+        """Test regular user can restore backups (Phase 1: shared resource model)"""
+        assert AuthorizationService.can_restore_backup(test_user) is True
+
+    def test_can_create_backup_admin(self, admin_user):
+        """Test admin can create backups"""
+        assert AuthorizationService.can_create_backup(admin_user) is True
+
+    def test_can_create_backup_operator(self, operator_user):
+        """Test operator can create backups"""
+        assert AuthorizationService.can_create_backup(operator_user) is True
+
+    def test_can_create_backup_user(self, test_user):
+        """Test regular user can create backups (Phase 1: shared resource model)"""
+        assert AuthorizationService.can_create_backup(test_user) is True
+
+    def test_can_create_group_admin(self, admin_user):
+        """Test admin can create groups"""
+        assert AuthorizationService.can_create_group(admin_user) is True
+
+    def test_can_create_group_operator(self, operator_user):
+        """Test operator can create groups"""
+        assert AuthorizationService.can_create_group(operator_user) is True
+
+    def test_can_create_group_user(self, test_user):
+        """Test regular user can create groups (Phase 1: shared resource model)"""
+        assert AuthorizationService.can_create_group(test_user) is True
 
     def test_can_create_template_admin(self, admin_user):
         """Test admin can create templates"""
@@ -308,8 +332,8 @@ class TestAuthorizationServicePermissionChecks:
         assert AuthorizationService.can_create_template(operator_user) is True
 
     def test_can_create_template_user(self, test_user):
-        """Test regular user cannot create templates"""
-        assert AuthorizationService.can_create_template(test_user) is False
+        """Test regular user can create templates (Phase 1: shared resource model)"""
+        assert AuthorizationService.can_create_template(test_user) is True
 
     def test_can_schedule_backups_admin(self, admin_user):
         """Test only admin can schedule backups"""
@@ -511,42 +535,44 @@ class TestAuthorizationServiceRoleHierarchy:
 
     def test_role_hierarchy_admin_highest(self, admin_user, operator_user, test_user):
         """Test that admin role has highest privileges"""
-        # Admin can do everything operators can do
-        assert AuthorizationService.can_create_server(admin_user) == AuthorizationService.can_create_server(operator_user)
-        assert AuthorizationService.can_modify_files(admin_user) == AuthorizationService.can_modify_files(operator_user)
-        assert AuthorizationService.can_restore_backup(admin_user) == AuthorizationService.can_restore_backup(operator_user)
-        assert AuthorizationService.can_create_template(admin_user) == AuthorizationService.can_create_template(operator_user)
+        # Phase 1: All roles can do basic operations
+        assert AuthorizationService.can_create_server(admin_user) == AuthorizationService.can_create_server(operator_user) == AuthorizationService.can_create_server(test_user) is True
+        assert AuthorizationService.can_modify_files(admin_user) == AuthorizationService.can_modify_files(operator_user) == AuthorizationService.can_modify_files(test_user) is True
+        assert AuthorizationService.can_restore_backup(admin_user) == AuthorizationService.can_restore_backup(operator_user) == AuthorizationService.can_restore_backup(test_user) is True
+        assert AuthorizationService.can_create_backup(admin_user) == AuthorizationService.can_create_backup(operator_user) == AuthorizationService.can_create_backup(test_user) is True
+        assert AuthorizationService.can_create_group(admin_user) == AuthorizationService.can_create_group(operator_user) == AuthorizationService.can_create_group(test_user) is True
+        assert AuthorizationService.can_create_template(admin_user) == AuthorizationService.can_create_template(operator_user) == AuthorizationService.can_create_template(test_user) is True
         
-        # But admin has exclusive privileges
+        # But admin has exclusive privileges for scheduling
         assert AuthorizationService.can_schedule_backups(admin_user) is True
         assert AuthorizationService.can_schedule_backups(operator_user) is False
-        
-        # Admin can do everything users cannot
-        assert AuthorizationService.can_create_server(admin_user) is True
-        assert AuthorizationService.can_create_server(test_user) is False
+        assert AuthorizationService.can_schedule_backups(test_user) is False
 
     def test_role_hierarchy_operator_middle(self, operator_user, test_user):
-        """Test that operator role has middle privileges"""
-        # Operator has more privileges than regular user
-        assert AuthorizationService.can_create_server(operator_user) is True
-        assert AuthorizationService.can_create_server(test_user) is False
+        """Test that operator role has equivalent privileges to users (Phase 1: shared resource model)"""
+        # Phase 1: Operator and regular user have same privileges for basic operations
+        assert AuthorizationService.can_create_server(operator_user) == AuthorizationService.can_create_server(test_user) is True
+        assert AuthorizationService.can_modify_files(operator_user) == AuthorizationService.can_modify_files(test_user) is True
+        assert AuthorizationService.can_restore_backup(operator_user) == AuthorizationService.can_restore_backup(test_user) is True
+        assert AuthorizationService.can_create_backup(operator_user) == AuthorizationService.can_create_backup(test_user) is True
+        assert AuthorizationService.can_create_group(operator_user) == AuthorizationService.can_create_group(test_user) is True
+        assert AuthorizationService.can_create_template(operator_user) == AuthorizationService.can_create_template(test_user) is True
         
-        assert AuthorizationService.can_modify_files(operator_user) is True
-        assert AuthorizationService.can_modify_files(test_user) is False
-        
-        assert AuthorizationService.can_restore_backup(operator_user) is True
-        assert AuthorizationService.can_restore_backup(test_user) is False
-        
-        assert AuthorizationService.can_create_template(operator_user) is True
-        assert AuthorizationService.can_create_template(test_user) is False
+        # Both cannot schedule backups (admin-only)
+        assert AuthorizationService.can_schedule_backups(operator_user) is False
+        assert AuthorizationService.can_schedule_backups(test_user) is False
 
-    def test_role_hierarchy_user_lowest(self, test_user):
-        """Test that user role has lowest privileges"""
-        # User cannot do privileged operations
-        assert AuthorizationService.can_create_server(test_user) is False
-        assert AuthorizationService.can_modify_files(test_user) is False
-        assert AuthorizationService.can_restore_backup(test_user) is False
-        assert AuthorizationService.can_create_template(test_user) is False
+    def test_role_hierarchy_user_basic_operations(self, test_user):
+        """Test that user role can perform basic operations (Phase 1: shared resource model)"""
+        # Phase 1: User can do most operations
+        assert AuthorizationService.can_create_server(test_user) is True
+        assert AuthorizationService.can_modify_files(test_user) is True
+        assert AuthorizationService.can_restore_backup(test_user) is True
+        assert AuthorizationService.can_create_backup(test_user) is True
+        assert AuthorizationService.can_create_group(test_user) is True
+        assert AuthorizationService.can_create_template(test_user) is True
+        
+        # But cannot schedule backups (admin-only)
         assert AuthorizationService.can_schedule_backups(test_user) is False
 
 

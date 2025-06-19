@@ -309,7 +309,7 @@ async def restore_from_version(
     db: Session = Depends(get_db),
 ):
     """Restore file from specific version"""
-    # Check permissions (only operators and admins can restore)
+    # Check permissions (Phase 1: all users can restore files)
     if not authorization_service.can_modify_files(current_user):
         raise HTTPException(status_code=403, detail="Insufficient permissions")
 

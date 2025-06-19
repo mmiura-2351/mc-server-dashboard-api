@@ -101,11 +101,11 @@ async def create_backup(
         # Check server access
         authorization_service.check_server_access(server_id, current_user, db)
 
-        # Only operators and admins can create backups
-        if current_user.role == Role.user:
+        # Phase 1: All users can create backups
+        if not authorization_service.can_create_backup(current_user):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="Only operators and admins can create backups",
+                detail="Insufficient permissions to create backups",
             )
 
         backup = await backup_service.create_backup(

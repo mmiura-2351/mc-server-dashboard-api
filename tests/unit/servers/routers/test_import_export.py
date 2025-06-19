@@ -72,26 +72,13 @@ class TestImportExportRouter:
         assert exc_info.value.status_code == 400
         assert "Only ZIP files are supported" in str(exc_info.value.detail)
 
-    @pytest.mark.asyncio
-    async def test_import_server_non_operator_user(self, test_user):
-        """Test import server with regular user (non-operator)"""
-        from app.servers.routers.import_export import import_server
+    def test_import_server_regular_user_authorization_check(self, test_user):
+        """Test that regular users pass authorization check for server import (Phase 1: shared resource model)"""
+        from app.services.authorization_service import AuthorizationService
         
-        mock_file = Mock(spec=UploadFile)
-        mock_file.filename = "server.zip"
-        mock_file.size = 1000
-
-        with pytest.raises(HTTPException) as exc_info:
-            await import_server(
-                name="test-server",
-                description="Test server",
-                file=mock_file, 
-                current_user=test_user, 
-                db=Mock()
-            )
-        
-        assert exc_info.value.status_code == 403
-        assert "Only operators and admins can import servers" in str(exc_info.value.detail)
+        # Phase 1: Regular users should be able to create (import) servers
+        assert AuthorizationService.can_create_server(test_user) is True, \
+            "Regular users should be authorized to create/import servers in Phase 1"
 
     def test_router_configuration(self):
         """Test that router is properly configured"""
