@@ -387,14 +387,34 @@ class FileOperationService:
         self,
         file_path: Path,
         content: str,
+        db: Session,
         encoding: str = "utf-8",
         create_backup: bool = True,
         server_id: int = None,
         user_id: int = None,
         description: str = None,
-        db: Session = None,
     ) -> Optional[str]:
-        """Write content to file with specified encoding and create history backup"""
+        """Write content to file with specified encoding and create history backup
+
+        Args:
+            file_path: Path to the file to write
+            content: Content to write to the file
+            encoding: File encoding (default: utf-8)
+            create_backup: Whether to create a backup before writing
+            server_id: Server ID for backup tracking
+            user_id: User ID for backup tracking
+            description: Description for the backup
+            db: Database session (required for security-critical operations)
+
+        Returns:
+            Path to backup file if created, None otherwise
+        """
+        # Validate database session for security-critical operations
+        if db is None:
+            raise InvalidRequestException(
+                "Database session is required for file write operations"
+            )
+
         try:
             file_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -518,12 +538,30 @@ class FileSearchService:
         self,
         server_id: int,
         search_term: str,
+        db: Session,
         search_in_content: bool = False,
         file_type: Optional[str] = None,
         max_results: int = 100,
-        db: Session = None,
     ) -> Dict[str, Any]:
-        """Search for files by name and optionally content"""
+        """Search for files by name and optionally content
+
+        Args:
+            server_id: ID of the server to search in
+            search_term: Term to search for in filenames and/or content
+            search_in_content: Whether to search inside file contents
+            file_type: Optional file type filter
+            max_results: Maximum number of results to return
+            db: Database session (required for security validation)
+
+        Returns:
+            Dictionary containing search results and metadata
+        """
+        # Validate database session for security-critical operations
+        if db is None:
+            raise InvalidRequestException(
+                "Database session is required for file search operations"
+            )
+
         # Validate server
         server = self.validation_service.validate_server_exists(server_id, db)
         server_path = Path(server.directory_path)
@@ -636,11 +674,27 @@ class FileManagementService:
     async def get_server_files(
         self,
         server_id: int,
+        db: Session,
         path: str = "",
         file_type: Optional[FileType] = None,
-        db: Session = None,
     ) -> List[Dict[str, Any]]:
-        """Get files and directories in server path"""
+        """Get files and directories in server path
+
+        Args:
+            server_id: ID of the server to list files for
+            path: Relative path within the server directory
+            file_type: Optional file type filter
+            db: Database session (required for security validation)
+
+        Returns:
+            List of file and directory information dictionaries
+        """
+        # Validate database session for security-critical operations
+        if db is None:
+            raise InvalidRequestException(
+                "Database session is required for file listing operations"
+            )
+
         # Validate server and paths
         server = self.validation_service.validate_server_exists(server_id, db)
         server_path = Path(server.directory_path)
@@ -676,14 +730,26 @@ class FileManagementService:
         self,
         server_id: int,
         file_path: str,
+        db: Session,
         encoding: str = None,
-        db: Session = None,
     ) -> tuple[str, str]:
         """Read file content with encoding detection
+
+        Args:
+            server_id: ID of the server containing the file
+            file_path: Relative path to the file within the server directory
+            encoding: Optional encoding to use for reading
+            db: Database session (required for security validation)
 
         Returns:
             Tuple of (content, detected_encoding)
         """
+        # Validate database session for security-critical operations
+        if db is None:
+            raise InvalidRequestException(
+                "Database session is required for file read operations"
+            )
+
         # Validate server and file
         server = self.validation_service.validate_server_exists(server_id, db)
         server_path = Path(server.directory_path)
@@ -700,9 +766,24 @@ class FileManagementService:
         self,
         server_id: int,
         file_path: str,
-        db: Session = None,
+        db: Session,
     ) -> str:
-        """Read image file and return as base64 encoded string"""
+        """Read image file and return as base64 encoded string
+
+        Args:
+            server_id: ID of the server containing the image
+            file_path: Relative path to the image file within the server directory
+            db: Database session (required for security validation)
+
+        Returns:
+            Base64 encoded string of the image content
+        """
+        # Validate database session for security-critical operations
+        if db is None:
+            raise InvalidRequestException(
+                "Database session is required for image read operations"
+            )
+
         # Validate server and file
         server = self.validation_service.validate_server_exists(server_id, db)
         server_path = Path(server.directory_path)
@@ -737,12 +818,31 @@ class FileManagementService:
         server_id: int,
         file_path: str,
         content: str,
+        db: Session,
         encoding: str = "utf-8",
         create_backup: bool = True,
         user: User = None,
-        db: Session = None,
     ) -> Dict[str, Any]:
-        """Write content to file"""
+        """Write content to file
+
+        Args:
+            server_id: ID of the server containing the file
+            file_path: Relative path to the file within the server directory
+            content: Content to write to the file
+            encoding: File encoding (default: utf-8)
+            create_backup: Whether to create a backup before writing
+            user: User performing the operation
+            db: Database session (required for security validation)
+
+        Returns:
+            Dictionary containing operation results and file information
+        """
+        # Validate database session for security-critical operations
+        if db is None:
+            raise InvalidRequestException(
+                "Database session is required for file write operations"
+            )
+
         # Validate server and file
         server = self.validation_service.validate_server_exists(server_id, db)
         server_path = Path(server.directory_path)
@@ -755,12 +855,12 @@ class FileManagementService:
         backup_path = await self.operation_service.write_file_content(
             file_path=target_file,
             content=content,
+            db=db,
             encoding=encoding,
             create_backup=create_backup,
             server_id=server_id,
             user_id=user.id if user else None,
             description=None,
-            db=db,
         )
 
         # Get updated file info
@@ -777,10 +877,26 @@ class FileManagementService:
         self,
         server_id: int,
         file_path: str,
+        db: Session,
         user: User = None,
-        db: Session = None,
     ) -> Dict[str, str]:
-        """Delete file or directory"""
+        """Delete file or directory
+
+        Args:
+            server_id: ID of the server containing the file
+            file_path: Relative path to the file/directory within the server directory
+            user: User performing the operation
+            db: Database session (required for security validation)
+
+        Returns:
+            Dictionary containing deletion confirmation message
+        """
+        # Validate database session for security-critical operations
+        if db is None:
+            raise InvalidRequestException(
+                "Database session is required for file delete operations"
+            )
+
         # Validate server and file
         server = self.validation_service.validate_server_exists(server_id, db)
         server_path = Path(server.directory_path)
@@ -799,12 +915,30 @@ class FileManagementService:
         self,
         server_id: int,
         file: UploadFile,
+        db: Session,
         destination_path: str = "",
         extract_if_archive: bool = False,
         user: User = None,
-        db: Session = None,
     ) -> Dict[str, Any]:
-        """Upload file to server directory"""
+        """Upload file to server directory
+
+        Args:
+            server_id: ID of the server to upload to
+            file: Uploaded file object
+            destination_path: Relative path within server directory for upload
+            extract_if_archive: Whether to extract archive files after upload
+            user: User performing the operation
+            db: Database session (required for security validation)
+
+        Returns:
+            Dictionary containing upload results and file information
+        """
+        # Validate database session for security-critical operations
+        if db is None:
+            raise InvalidRequestException(
+                "Database session is required for file upload operations"
+            )
+
         # Validate server
         server = self.validation_service.validate_server_exists(server_id, db)
         server_path = Path(server.directory_path)
@@ -846,23 +980,50 @@ class FileManagementService:
         self,
         server_id: int,
         search_term: str,
+        db: Session,
         search_in_content: bool = False,
         file_type: Optional[str] = None,
         max_results: int = 100,
-        db: Session = None,
     ) -> Dict[str, Any]:
-        """Search for files by name and optionally content"""
+        """Search for files by name and optionally content
+
+        Args:
+            server_id: ID of the server to search in
+            search_term: Term to search for in filenames and/or content
+            db: Database session (required for security validation)
+            search_in_content: Whether to search inside file contents
+            file_type: Optional file type filter
+            max_results: Maximum number of results to return
+
+        Returns:
+            Dictionary containing search results and metadata
+        """
         return await self.search_service.search_files(
-            server_id, search_term, search_in_content, file_type, max_results, db
+            server_id, search_term, db, search_in_content, file_type, max_results
         )
 
     async def create_directory(
         self,
         server_id: int,
         directory_path: str,
-        db: Session = None,
+        db: Session,
     ) -> Dict[str, Any]:
-        """Create new directory"""
+        """Create new directory
+
+        Args:
+            server_id: ID of the server to create directory in
+            directory_path: Relative path for the new directory within server directory
+            db: Database session (required for security validation)
+
+        Returns:
+            Dictionary containing creation results and directory information
+        """
+        # Validate database session for security-critical operations
+        if db is None:
+            raise InvalidRequestException(
+                "Database session is required for directory creation operations"
+            )
+
         # Validate server
         server = self.validation_service.validate_server_exists(server_id, db)
         server_path = Path(server.directory_path)
@@ -886,10 +1047,27 @@ class FileManagementService:
         server_id: int,
         source_path: str,
         destination_path: str,
+        db: Session,
         user: User = None,
-        db: Session = None,
     ) -> Dict[str, str]:
-        """Move file or directory"""
+        """Move file or directory
+
+        Args:
+            server_id: ID of the server containing the file
+            source_path: Current relative path of the file/directory
+            destination_path: Target relative path for the file/directory
+            user: User performing the operation
+            db: Database session (required for security validation)
+
+        Returns:
+            Dictionary containing move confirmation message
+        """
+        # Validate database session for security-critical operations
+        if db is None:
+            raise InvalidRequestException(
+                "Database session is required for file move operations"
+            )
+
         # Validate server
         server = self.validation_service.validate_server_exists(server_id, db)
         server_path = Path(server.directory_path)
@@ -911,10 +1089,27 @@ class FileManagementService:
         server_id: int,
         file_path: str,
         new_name: str,
+        db: Session,
         user: User = None,
-        db: Session = None,
     ) -> Dict[str, Any]:
-        """Rename file or directory"""
+        """Rename file or directory
+
+        Args:
+            server_id: ID of the server containing the file
+            file_path: Current relative path of the file/directory
+            new_name: New name for the file/directory
+            user: User performing the operation
+            db: Database session (required for security validation)
+
+        Returns:
+            Dictionary containing rename results and updated file information
+        """
+        # Validate database session for security-critical operations
+        if db is None:
+            raise InvalidRequestException(
+                "Database session is required for file rename operations"
+            )
+
         # Validate server
         server = self.validation_service.validate_server_exists(server_id, db)
         server_path = Path(server.directory_path)
@@ -1011,9 +1206,24 @@ class FileManagementService:
         self,
         server_id: int,
         file_path: str,
-        db: Session = None,
+        db: Session,
     ) -> tuple[str, str]:
-        """Download file from server directory"""
+        """Download file from server directory
+
+        Args:
+            server_id: ID of the server containing the file
+            file_path: Relative path to the file within the server directory
+            db: Database session (required for security validation)
+
+        Returns:
+            Tuple of (file_path, filename) for FileResponse
+        """
+        # Validate database session for security-critical operations
+        if db is None:
+            raise InvalidRequestException(
+                "Database session is required for file download operations"
+            )
+
         # Validate server and file
         server = self.validation_service.validate_server_exists(server_id, db)
         server_path = Path(server.directory_path)

@@ -4,7 +4,9 @@ from typing import Optional
 from fastapi import HTTPException, Request, status
 from sqlalchemy.orm import Session
 
+from app.core.visibility import ResourceType
 from app.servers.models import Backup, Server
+from app.services.visibility_service import VisibilityService
 from app.users.models import Role, User
 
 
@@ -39,7 +41,14 @@ class AuthorizationService:
                 status_code=status.HTTP_404_NOT_FOUND, detail="Server not found"
             )
 
-        has_access = user.role == Role.admin or server.owner_id == user.id
+        # Phase 2: Visibility-based access control using the new visibility system
+        visibility_service = VisibilityService(db)
+        has_access = visibility_service.check_resource_access(
+            user=user,
+            resource_type=ResourceType.SERVER,
+            resource_id=server_id,
+            resource_owner_id=server.owner_id,
+        )
 
         if log_access and request:
             from app.audit.service import AuditService
@@ -76,8 +85,28 @@ class AuthorizationService:
                 status_code=status.HTTP_404_NOT_FOUND, detail="Backup not found"
             )
 
-        # Check if user has access to the server that owns this backup
-        AuthorizationService.check_server_access(backup.server_id, user, db)
+        # Check if user has access to the server that owns this backup using visibility system
+        visibility_service = VisibilityService(db)
+        server = db.query(Server).filter(Server.id == backup.server_id).first()
+        if not server:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Server not found for backup",
+            )
+
+        has_access = visibility_service.check_resource_access(
+            user=user,
+            resource_type=ResourceType.SERVER,
+            resource_id=backup.server_id,
+            resource_owner_id=server.owner_id,
+        )
+
+        if not has_access:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Not authorized to access this backup",
+            )
+
         return backup
 
     @staticmethod
@@ -150,23 +179,33 @@ class AuthorizationService:
 
     @staticmethod
     def can_create_server(user: User) -> bool:
-        """Check if user can create servers"""
-        return user.role in [Role.admin, Role.operator]
+        """Check if user can create servers - Phase 1: All users can create servers"""
+        return user.role in [Role.admin, Role.operator, Role.user]
 
     @staticmethod
     def can_modify_files(user: User) -> bool:
-        """Check if user can modify server files"""
-        return user.role in [Role.admin, Role.operator]
+        """Check if user can modify server files - Phase 1: All users can edit files"""
+        return user.role in [Role.admin, Role.operator, Role.user]
+
+    @staticmethod
+    def can_create_backup(user: User) -> bool:
+        """Check if user can create backups - Phase 1: All users can create backups"""
+        return user.role in [Role.admin, Role.operator, Role.user]
 
     @staticmethod
     def can_restore_backup(user: User) -> bool:
-        """Check if user can restore backups"""
-        return user.role in [Role.admin, Role.operator]
+        """Check if user can restore backups - Phase 1: All users can restore backups"""
+        return user.role in [Role.admin, Role.operator, Role.user]
+
+    @staticmethod
+    def can_create_group(user: User) -> bool:
+        """Check if user can create groups - Phase 1: All users can create groups"""
+        return user.role in [Role.admin, Role.operator, Role.user]
 
     @staticmethod
     def can_create_template(user: User) -> bool:
-        """Check if user can create templates"""
-        return user.role in [Role.admin, Role.operator]
+        """Check if user can create templates - Phase 1: All users can create templates"""
+        return user.role in [Role.admin, Role.operator, Role.user]
 
     @staticmethod
     def can_schedule_backups(user: User) -> bool:
@@ -174,12 +213,36 @@ class AuthorizationService:
         return user.role == Role.admin
 
     @staticmethod
-    def filter_servers_for_user(user: User, servers) -> list:
-        """Filter servers list based on user permissions"""
-        if user.role == Role.admin:
-            return servers
-        else:
-            return [server for server in servers if server.owner_id == user.id]
+    def filter_servers_for_user(user: User, servers, db: Session) -> list:
+        """Filter servers list based on user permissions using visibility system
+
+        SECURITY: Database session is now required to prevent security bypass.
+        No longer accepts None to ensure all filtering goes through visibility system.
+        """
+        # Validate required parameters
+        if user is None:
+            raise AttributeError("'NoneType' object has no attribute 'role'")
+
+        if db is None:
+            raise ValueError(
+                "Database session is required for security filtering - cannot be None"
+            )
+
+        # Phase 2: Use visibility-based filtering
+        visibility_service = VisibilityService(db)
+
+        # Convert servers to (id, owner_id) tuples for visibility filtering
+        resource_tuples = [(server.id, server.owner_id) for server in servers]
+
+        # Get accessible server IDs
+        accessible_ids = visibility_service.filter_resources_by_visibility(
+            user=user, resources=resource_tuples, resource_type=ResourceType.SERVER
+        )
+
+        # Filter servers to only include accessible ones
+        accessible_servers = [server for server in servers if server.id in accessible_ids]
+
+        return accessible_servers
 
     @staticmethod
     def is_admin(user: User) -> bool:

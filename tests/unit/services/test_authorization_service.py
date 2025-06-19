@@ -53,11 +53,12 @@ class TestAuthorizationServiceServerAccess:
         assert result == sample_server
         assert result.owner_id == test_user.id
 
-    def test_check_server_access_non_owner_user(self, db: Session, test_user, sample_server):
-        """Test non-owner user cannot access server"""
+    def test_check_server_access_non_owner_user_no_visibility_config(self, db: Session, test_user, sample_server):
+        """Test non-owner user CANNOT access server without visibility config (Phase 2: Secure by default)"""
         # Ensure test_user is not the owner
         assert sample_server.owner_id != test_user.id
         
+        # With Phase 2, resources without visibility config default to PRIVATE
         with pytest.raises(HTTPException) as exc_info:
             AuthorizationService.check_server_access(sample_server.id, test_user, db)
         
@@ -74,11 +75,12 @@ class TestAuthorizationServiceServerAccess:
         assert exc_info.value.status_code == status.HTTP_404_NOT_FOUND
         assert "Server not found" in str(exc_info.value.detail)
 
-    def test_check_server_access_operator_non_owner(self, db: Session, operator_user, sample_server):
-        """Test operator user cannot access server they don't own"""
+    def test_check_server_access_operator_non_owner_no_visibility_config(self, db: Session, operator_user, sample_server):
+        """Test operator user CANNOT access server without visibility config (Phase 2: Secure by default)"""
         # Ensure operator_user is not the owner
         assert sample_server.owner_id != operator_user.id
         
+        # With Phase 2, even operators need explicit access without visibility config
         with pytest.raises(HTTPException) as exc_info:
             AuthorizationService.check_server_access(sample_server.id, operator_user, db)
         
@@ -119,15 +121,17 @@ class TestAuthorizationServiceBackupAccess:
         result = AuthorizationService.check_backup_access(sample_backup.id, test_user, db)
         assert result == sample_backup
 
-    def test_check_backup_access_non_server_owner(self, db: Session, test_user, sample_backup, sample_server):
-        """Test non-server-owner cannot access backup"""
+    def test_check_backup_access_non_server_owner_no_visibility_config(self, db: Session, test_user, sample_backup, sample_server):
+        """Test non-server-owner CANNOT access backup without visibility config (Phase 2: Secure by default)"""
         # Ensure test_user is not the owner
         assert sample_server.owner_id != test_user.id
         
+        # With Phase 2, backup access follows server visibility (secure by default)
         with pytest.raises(HTTPException) as exc_info:
             AuthorizationService.check_backup_access(sample_backup.id, test_user, db)
         
         assert exc_info.value.status_code == status.HTTP_403_FORBIDDEN
+        assert "Not authorized to access this backup" in str(exc_info.value.detail)
 
     def test_check_backup_access_nonexistent_backup(self, db: Session, admin_user):
         """Test accessing non-existent backup raises 404"""
@@ -268,8 +272,8 @@ class TestAuthorizationServicePermissionChecks:
         assert AuthorizationService.can_create_server(operator_user) is True
 
     def test_can_create_server_user(self, test_user):
-        """Test regular user cannot create servers"""
-        assert AuthorizationService.can_create_server(test_user) is False
+        """Test regular user can create servers (Phase 1: shared resource model)"""
+        assert AuthorizationService.can_create_server(test_user) is True
 
     def test_can_modify_files_admin(self, admin_user):
         """Test admin can modify files"""
@@ -280,8 +284,8 @@ class TestAuthorizationServicePermissionChecks:
         assert AuthorizationService.can_modify_files(operator_user) is True
 
     def test_can_modify_files_user(self, test_user):
-        """Test regular user cannot modify files"""
-        assert AuthorizationService.can_modify_files(test_user) is False
+        """Test regular user can modify files (Phase 1: shared resource model)"""
+        assert AuthorizationService.can_modify_files(test_user) is True
 
     def test_can_restore_backup_admin(self, admin_user):
         """Test admin can restore backups"""
@@ -292,8 +296,32 @@ class TestAuthorizationServicePermissionChecks:
         assert AuthorizationService.can_restore_backup(operator_user) is True
 
     def test_can_restore_backup_user(self, test_user):
-        """Test regular user cannot restore backups"""
-        assert AuthorizationService.can_restore_backup(test_user) is False
+        """Test regular user can restore backups (Phase 1: shared resource model)"""
+        assert AuthorizationService.can_restore_backup(test_user) is True
+
+    def test_can_create_backup_admin(self, admin_user):
+        """Test admin can create backups"""
+        assert AuthorizationService.can_create_backup(admin_user) is True
+
+    def test_can_create_backup_operator(self, operator_user):
+        """Test operator can create backups"""
+        assert AuthorizationService.can_create_backup(operator_user) is True
+
+    def test_can_create_backup_user(self, test_user):
+        """Test regular user can create backups (Phase 1: shared resource model)"""
+        assert AuthorizationService.can_create_backup(test_user) is True
+
+    def test_can_create_group_admin(self, admin_user):
+        """Test admin can create groups"""
+        assert AuthorizationService.can_create_group(admin_user) is True
+
+    def test_can_create_group_operator(self, operator_user):
+        """Test operator can create groups"""
+        assert AuthorizationService.can_create_group(operator_user) is True
+
+    def test_can_create_group_user(self, test_user):
+        """Test regular user can create groups (Phase 1: shared resource model)"""
+        assert AuthorizationService.can_create_group(test_user) is True
 
     def test_can_create_template_admin(self, admin_user):
         """Test admin can create templates"""
@@ -304,8 +332,8 @@ class TestAuthorizationServicePermissionChecks:
         assert AuthorizationService.can_create_template(operator_user) is True
 
     def test_can_create_template_user(self, test_user):
-        """Test regular user cannot create templates"""
-        assert AuthorizationService.can_create_template(test_user) is False
+        """Test regular user can create templates (Phase 1: shared resource model)"""
+        assert AuthorizationService.can_create_template(test_user) is True
 
     def test_can_schedule_backups_admin(self, admin_user):
         """Test only admin can schedule backups"""
@@ -342,14 +370,14 @@ class TestAuthorizationServiceServerFiltering:
         db.commit()
         
         servers = [sample_server, another_server]
-        filtered = AuthorizationService.filter_servers_for_user(admin_user, servers)
+        filtered = AuthorizationService.filter_servers_for_user(admin_user, servers, db)
         
         assert len(filtered) == 2
         assert sample_server in filtered
         assert another_server in filtered
 
-    def test_filter_servers_for_regular_user(self, db: Session, test_user, sample_server):
-        """Test regular user only sees owned servers"""
+    def test_filter_servers_for_regular_user_with_db(self, db: Session, test_user, sample_server):
+        """Test regular user sees only owned servers by default (Phase 2: Secure by default)"""
         # Create server owned by test_user
         user_server = Server(
             name="User Server",
@@ -367,22 +395,24 @@ class TestAuthorizationServiceServerFiltering:
         db.commit()
         
         servers = [sample_server, user_server]  # sample_server owned by admin_user
-        filtered = AuthorizationService.filter_servers_for_user(test_user, servers)
+        filtered = AuthorizationService.filter_servers_for_user(test_user, servers, db)
         
+        # With Phase 2, users see only owned servers (no visibility config = private)
         assert len(filtered) == 1
         assert user_server in filtered
         assert sample_server not in filtered
 
-    def test_filter_servers_for_user_no_owned_servers(self, db: Session, test_user, sample_server):
-        """Test user with no owned servers gets empty list"""
+    def test_filter_servers_for_user_no_owned_servers_with_db(self, db: Session, test_user, sample_server):
+        """Test user with no owned servers sees no servers by default (Phase 2: Secure by default)"""
         servers = [sample_server]  # owned by admin_user
-        filtered = AuthorizationService.filter_servers_for_user(test_user, servers)
+        filtered = AuthorizationService.filter_servers_for_user(test_user, servers, db)
         
+        # With Phase 2, users see no servers if they don't own any and no visibility config exists
         assert len(filtered) == 0
         assert sample_server not in filtered
 
-    def test_filter_servers_for_operator(self, db: Session, operator_user, sample_server):
-        """Test operator user only sees owned servers (same as regular user)"""
+    def test_filter_servers_for_operator_with_db(self, db: Session, operator_user, sample_server):
+        """Test operator user sees only owned servers by default (Phase 2: Secure by default)"""
         # Create server owned by operator_user
         operator_server = Server(
             name="Operator Server",
@@ -400,8 +430,9 @@ class TestAuthorizationServiceServerFiltering:
         db.commit()
         
         servers = [sample_server, operator_server]  # sample_server owned by admin_user
-        filtered = AuthorizationService.filter_servers_for_user(operator_user, servers)
+        filtered = AuthorizationService.filter_servers_for_user(operator_user, servers, db)
         
+        # With Phase 2, operators see only owned servers (no visibility config = private)
         assert len(filtered) == 1
         assert operator_server in filtered
         assert sample_server not in filtered
@@ -463,16 +494,22 @@ class TestAuthorizationServiceEdgeCases:
         with pytest.raises(AttributeError):
             AuthorizationService.can_schedule_backups(None)
 
-    def test_filter_servers_with_none_user(self):
+    def test_filter_servers_with_none_user(self, db):
         """Test filter_servers_for_user with None user"""
         servers = []
         with pytest.raises(AttributeError):
-            AuthorizationService.filter_servers_for_user(None, servers)
+            AuthorizationService.filter_servers_for_user(None, servers, db)
 
-    def test_filter_servers_with_empty_list(self, test_user):
+    def test_filter_servers_with_none_db(self, test_user):
+        """Test filter_servers_for_user with None database session (security fix)"""
+        servers = []
+        with pytest.raises(ValueError, match="Database session is required for security filtering"):
+            AuthorizationService.filter_servers_for_user(test_user, servers, None)
+
+    def test_filter_servers_with_empty_list(self, test_user, db):
         """Test filter_servers_for_user with empty server list"""
         servers = []
-        filtered = AuthorizationService.filter_servers_for_user(test_user, servers)
+        filtered = AuthorizationService.filter_servers_for_user(test_user, servers, db)
         assert filtered == []
 
     def test_check_server_access_with_database_error(self, admin_user):
@@ -504,42 +541,44 @@ class TestAuthorizationServiceRoleHierarchy:
 
     def test_role_hierarchy_admin_highest(self, admin_user, operator_user, test_user):
         """Test that admin role has highest privileges"""
-        # Admin can do everything operators can do
-        assert AuthorizationService.can_create_server(admin_user) == AuthorizationService.can_create_server(operator_user)
-        assert AuthorizationService.can_modify_files(admin_user) == AuthorizationService.can_modify_files(operator_user)
-        assert AuthorizationService.can_restore_backup(admin_user) == AuthorizationService.can_restore_backup(operator_user)
-        assert AuthorizationService.can_create_template(admin_user) == AuthorizationService.can_create_template(operator_user)
+        # Phase 1: All roles can do basic operations
+        assert AuthorizationService.can_create_server(admin_user) == AuthorizationService.can_create_server(operator_user) == AuthorizationService.can_create_server(test_user) is True
+        assert AuthorizationService.can_modify_files(admin_user) == AuthorizationService.can_modify_files(operator_user) == AuthorizationService.can_modify_files(test_user) is True
+        assert AuthorizationService.can_restore_backup(admin_user) == AuthorizationService.can_restore_backup(operator_user) == AuthorizationService.can_restore_backup(test_user) is True
+        assert AuthorizationService.can_create_backup(admin_user) == AuthorizationService.can_create_backup(operator_user) == AuthorizationService.can_create_backup(test_user) is True
+        assert AuthorizationService.can_create_group(admin_user) == AuthorizationService.can_create_group(operator_user) == AuthorizationService.can_create_group(test_user) is True
+        assert AuthorizationService.can_create_template(admin_user) == AuthorizationService.can_create_template(operator_user) == AuthorizationService.can_create_template(test_user) is True
         
-        # But admin has exclusive privileges
+        # But admin has exclusive privileges for scheduling
         assert AuthorizationService.can_schedule_backups(admin_user) is True
         assert AuthorizationService.can_schedule_backups(operator_user) is False
-        
-        # Admin can do everything users cannot
-        assert AuthorizationService.can_create_server(admin_user) is True
-        assert AuthorizationService.can_create_server(test_user) is False
+        assert AuthorizationService.can_schedule_backups(test_user) is False
 
     def test_role_hierarchy_operator_middle(self, operator_user, test_user):
-        """Test that operator role has middle privileges"""
-        # Operator has more privileges than regular user
-        assert AuthorizationService.can_create_server(operator_user) is True
-        assert AuthorizationService.can_create_server(test_user) is False
+        """Test that operator role has equivalent privileges to users (Phase 1: shared resource model)"""
+        # Phase 1: Operator and regular user have same privileges for basic operations
+        assert AuthorizationService.can_create_server(operator_user) == AuthorizationService.can_create_server(test_user) is True
+        assert AuthorizationService.can_modify_files(operator_user) == AuthorizationService.can_modify_files(test_user) is True
+        assert AuthorizationService.can_restore_backup(operator_user) == AuthorizationService.can_restore_backup(test_user) is True
+        assert AuthorizationService.can_create_backup(operator_user) == AuthorizationService.can_create_backup(test_user) is True
+        assert AuthorizationService.can_create_group(operator_user) == AuthorizationService.can_create_group(test_user) is True
+        assert AuthorizationService.can_create_template(operator_user) == AuthorizationService.can_create_template(test_user) is True
         
-        assert AuthorizationService.can_modify_files(operator_user) is True
-        assert AuthorizationService.can_modify_files(test_user) is False
-        
-        assert AuthorizationService.can_restore_backup(operator_user) is True
-        assert AuthorizationService.can_restore_backup(test_user) is False
-        
-        assert AuthorizationService.can_create_template(operator_user) is True
-        assert AuthorizationService.can_create_template(test_user) is False
+        # Both cannot schedule backups (admin-only)
+        assert AuthorizationService.can_schedule_backups(operator_user) is False
+        assert AuthorizationService.can_schedule_backups(test_user) is False
 
-    def test_role_hierarchy_user_lowest(self, test_user):
-        """Test that user role has lowest privileges"""
-        # User cannot do privileged operations
-        assert AuthorizationService.can_create_server(test_user) is False
-        assert AuthorizationService.can_modify_files(test_user) is False
-        assert AuthorizationService.can_restore_backup(test_user) is False
-        assert AuthorizationService.can_create_template(test_user) is False
+    def test_role_hierarchy_user_basic_operations(self, test_user):
+        """Test that user role can perform basic operations (Phase 1: shared resource model)"""
+        # Phase 1: User can do most operations
+        assert AuthorizationService.can_create_server(test_user) is True
+        assert AuthorizationService.can_modify_files(test_user) is True
+        assert AuthorizationService.can_restore_backup(test_user) is True
+        assert AuthorizationService.can_create_backup(test_user) is True
+        assert AuthorizationService.can_create_group(test_user) is True
+        assert AuthorizationService.can_create_template(test_user) is True
+        
+        # But cannot schedule backups (admin-only)
         assert AuthorizationService.can_schedule_backups(test_user) is False
 
 
@@ -570,7 +609,7 @@ class TestAuthorizationServiceIntegration:
         result = AuthorizationService.check_server_access(server.id, admin_user, db)
         assert result.id == server.id
         
-        # Other users cannot access
+        # With Phase 2, other users cannot access without visibility config (secure default)
         with pytest.raises(HTTPException):
             AuthorizationService.check_server_access(server.id, test_user, db)
         
@@ -589,7 +628,7 @@ class TestAuthorizationServiceIntegration:
         result = AuthorizationService.check_server_access(server.id, admin_user, db)
         assert result.id == server.id
         
-        # Operator cannot access (not owner, not admin)
+        # With Phase 2, operator cannot access (not owner, not admin, no visibility config)
         with pytest.raises(HTTPException):
             AuthorizationService.check_server_access(server.id, operator_user, db)
 
@@ -679,20 +718,20 @@ class TestAuthorizationServiceIntegration:
         
         all_servers = [admin_server, user_server, operator_server]
         
-        # Admin sees all servers
-        admin_filtered = AuthorizationService.filter_servers_for_user(admin_user, all_servers)
+        # Admin sees all servers (admin override)
+        admin_filtered = AuthorizationService.filter_servers_for_user(admin_user, all_servers, db)
         assert len(admin_filtered) == 3
         assert all(server in admin_filtered for server in all_servers)
         
-        # User sees only their server
-        user_filtered = AuthorizationService.filter_servers_for_user(test_user, all_servers)
+        # With Phase 2, regular users see only owned servers (secure by default)
+        user_filtered = AuthorizationService.filter_servers_for_user(test_user, all_servers, db)
         assert len(user_filtered) == 1
         assert user_server in user_filtered
         assert admin_server not in user_filtered
         assert operator_server not in user_filtered
         
-        # Operator sees only their server
-        operator_filtered = AuthorizationService.filter_servers_for_user(operator_user, all_servers)
+        # Operator sees only owned servers (secure by default)
+        operator_filtered = AuthorizationService.filter_servers_for_user(operator_user, all_servers, db)
         assert len(operator_filtered) == 1
         assert operator_server in operator_filtered
         assert admin_server not in operator_filtered

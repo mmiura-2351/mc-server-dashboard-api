@@ -13,6 +13,8 @@ from app.backups.router import router as backups_router
 from app.backups.scheduler_router import router as scheduler_router
 from app.core.config import settings
 from app.core.database import Base, engine
+
+# Import visibility models for Phase 2 resource access control
 from app.files.router import router as files_router
 from app.groups.router import router as groups_router
 from app.middleware.audit_middleware import AuditMiddleware

@@ -77,8 +77,8 @@ class TestBackupService:
             await service.create_backup(
                 server_id=999,
                 name="test_backup",
-                backup_type=BackupType.manual,
-                db=mock_db
+                db=mock_db,
+                backup_type=BackupType.manual
             )
     
     @pytest.mark.asyncio
@@ -102,8 +102,8 @@ class TestBackupService:
                 result = await service.create_backup(
                     server_id=1,
                     name="test_backup",
-                    backup_type=BackupType.manual,
-                    db=mock_db
+                    db=mock_db,
+                    backup_type=BackupType.manual
                 )
                 
                 mock_db.add.assert_called_once()
@@ -144,7 +144,7 @@ class TestBackupService:
         mock_query.all.return_value = mock_backups
         mock_query.count.return_value = 2
         
-        result = service.list_backups(server_id=1, db=mock_db)
+        result = service.list_backups(db=mock_db, server_id=1)
         
         assert result["backups"] == mock_backups
         assert result["total"] == 2
@@ -169,7 +169,7 @@ class TestBackupService:
         # Mock the new SQL SUM query for total size calculation
         mock_query.scalar.return_value = 3000000  # Sum of file sizes
         
-        result = service.get_backup_statistics(server_id=1, db=mock_db)
+        result = service.get_backup_statistics(db=mock_db, server_id=1)
         
         assert result["total_backups"] == 10
         assert result["completed_backups"] == 8
@@ -341,9 +341,9 @@ class TestBackupServiceAdditionalExceptions:
                     await backup_service.create_backup(
                         mock_server.id,
                         "test-backup",
+                        mock_db_session,
                         None,
-                        BackupType.manual,
-                        mock_db_session
+                        BackupType.manual
                     )
                 assert "Server directory not found" in str(exc_info.value)
 
@@ -374,9 +374,9 @@ class TestBackupServiceAdditionalExceptions:
                         result = await backup_service.create_backup(
                             mock_server.id,
                             backup_name,
+                            mock_db_session,
                             None,
-                            BackupType.manual,
-                            mock_db_session
+                            BackupType.manual
                         )
                         assert result is not None
 
@@ -388,8 +388,8 @@ class TestBackupServiceAdditionalExceptions:
                 with pytest.raises(ServerStateException) as exc_info:
                     await backup_service.restore_backup(
                         mock_backup.id,
-                        mock_server.id,
-                        mock_db_session
+                        mock_db_session,
+                        mock_server.id
                     )
                 assert "stopped" in str(exc_info.value)
 
@@ -462,9 +462,9 @@ class TestBackupServiceConcurrencyAndEdgeCases:
                     task = backup_service.create_backup(
                         mock_server.id,
                         f"concurrent-backup-{i}",
+                        mock_db_session,
                         None,
-                        BackupType.manual,
-                        mock_db_session
+                        BackupType.manual
                     )
                     tasks.append(task)
                 
@@ -606,8 +606,8 @@ class TestMemoryExhaustionPrevention:
                 await backup_service.upload_backup(
                     server_id=1,
                     file=mock_upload_file,
-                    name="test_backup",
-                    db=mock_db_session
+                    db=mock_db_session,
+                    name="test_backup"
                 )
             assert "exceeds maximum allowed size" in str(exc_info.value)
     
@@ -626,8 +626,8 @@ class TestMemoryExhaustionPrevention:
                 await backup_service.upload_backup(
                     server_id=1,
                     file=mock_upload_file,
-                    name="test_backup",
-                    db=mock_db_session
+                    db=mock_db_session,
+                    name="test_backup"
                 )
             assert "exceeds maximum allowed size" in str(exc_info.value)
     
@@ -666,8 +666,8 @@ class TestMemoryExhaustionPrevention:
                     await backup_service.upload_backup(
                         server_id=1,
                         file=mock_upload_file,
-                        name="test_backup",
-                        db=mock_db_session
+                        db=mock_db_session,
+                        name="test_backup"
                     )
                 assert ("Memory limit exceeded" in str(exc_info.value) or 
                         "Memory usage exceeded limit" in str(exc_info.value))
@@ -698,8 +698,8 @@ class TestMemoryExhaustionPrevention:
                                 result = await backup_service.upload_backup(
                                     server_id=1,
                                     file=mock_upload_file,
-                                    name="test_backup",
-                                    db=mock_db_session
+                                    db=mock_db_session,
+                                    name="test_backup"
                                 )
                                 assert result is not None
     

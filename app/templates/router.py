@@ -63,10 +63,10 @@ async def create_template_from_server(
         template = await template_service.create_template_from_server(
             server_id=server_id,
             name=request.name,
+            db=db,
+            creator=current_user,
             description=request.description,
             is_public=request.is_public,
-            creator=current_user,
-            db=db,
         )
 
         return TemplateResponse.from_orm(template)
@@ -114,11 +114,11 @@ async def create_custom_template(
             minecraft_version=request.minecraft_version,
             server_type=request.server_type,
             configuration=request.configuration,
+            db=db,
+            creator=current_user,
             description=request.description,
             default_groups=request.default_groups,
             is_public=request.is_public,
-            creator=current_user,
-            db=db,
         )
 
         return TemplateResponse.from_orm(template)
@@ -155,12 +155,12 @@ async def list_templates(
     try:
         result = template_service.list_templates(
             user=current_user,
+            db=db,
             minecraft_version=minecraft_version,
             server_type=server_type,
             is_public=is_public,
             page=page,
             size=size,
-            db=db,
         )
 
         template_responses = [
@@ -229,13 +229,13 @@ async def update_template(
     try:
         template = template_service.update_template(
             template_id=template_id,
+            db=db,
+            user=current_user,
             name=request.name,
             description=request.description,
             configuration=request.configuration,
             default_groups=request.default_groups,
             is_public=request.is_public,
-            user=current_user,
-            db=db,
         )
 
         if not template:
@@ -347,11 +347,11 @@ async def clone_template(
             minecraft_version=original_template.minecraft_version,
             server_type=original_template.server_type,
             configuration=original_template.get_configuration(),
+            db=db,
+            creator=current_user,
             description=request.description or f"Cloned from {original_template.name}",
             default_groups=original_template.get_default_groups(),
             is_public=request.is_public,
-            creator=current_user,
-            db=db,
         )
 
         return TemplateResponse.from_orm(cloned_template)

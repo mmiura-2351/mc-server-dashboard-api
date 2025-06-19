@@ -88,8 +88,8 @@ class TestBackupRouterFixed:
             mock_auth.assert_called_once()
             mock_create.assert_called_once()
 
-    def test_create_backup_forbidden_for_regular_user(self, client, test_user, db):
-        """Test that regular users cannot create backups"""
+    def test_create_backup_not_forbidden_for_regular_user(self, client, test_user, db):
+        """Test that regular users are not forbidden from creating backups (Phase 1: shared resource model)"""
         # Ensure user has regular role (default from fixture)
         assert test_user.role == Role.user
         
@@ -107,25 +107,20 @@ class TestBackupRouterFixed:
         db.add(server)
         db.commit()
 
-        with patch("app.services.authorization_service.authorization_service.check_server_access") as mock_auth:
-            # Mock authorization to return server (access granted)
-            mock_auth.return_value = server
+        response = client.post(
+            "/api/v1/backups/servers/1/backups",
+            json={
+                "name": "Test Backup",
+                "description": "Test description",
+                "backup_type": "manual",
+            },
+            headers=get_auth_headers(test_user.username),
+        )
 
-            response = client.post(
-                "/api/v1/backups/servers/1/backups",
-                json={
-                    "name": "Test Backup",
-                    "description": "Test description",
-                    "backup_type": "manual",
-                },
-                headers=get_auth_headers(test_user.username),
-            )
-
-            assert response.status_code == status.HTTP_403_FORBIDDEN
-            assert "Only operators and admins can create backups" in response.json()["detail"]
-            
-            # Authorization check should still be called
-            mock_auth.assert_called_once()
+        # Phase 1: Regular users should NOT get 403 Forbidden for backup creation
+        # (May get other errors due to mocking/setup, but not authorization errors)
+        assert response.status_code != status.HTTP_403_FORBIDDEN, \
+            f"Regular users should not be forbidden from creating backups in Phase 1. Got {response.status_code}: {response.json() if response.status_code != 500 else 'Internal Server Error'}"
 
     def test_create_backup_server_not_found(self, client, test_user):
         """Test backup creation when server doesn't exist"""

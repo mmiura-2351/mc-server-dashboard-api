@@ -21,10 +21,29 @@ class ServerService:
         pass
 
     def list_servers_for_user(
-        self, user: User, page: int = 1, size: int = 50, db: Session = None
+        self, user: User, db: Session, page: int = 1, size: int = 50
     ) -> Dict[str, Any]:
-        """List servers with pagination and user-based filtering"""
+        """List servers with pagination and user-based filtering
+
+        Args:
+            user: User requesting server list
+            db: Database session (required for security)
+            page: Page number for pagination
+            size: Page size for pagination
+
+        Returns:
+            Dictionary containing servers and pagination info
+
+        Raises:
+            HTTPException: If database operations fail
+        """
         try:
+            if db is None:
+                raise HTTPException(
+                    status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail="Database session is required for security-critical operation",
+                )
+
             # Calculate offset
             offset = (page - 1) * size
 
@@ -57,10 +76,28 @@ class ServerService:
             )
 
     def validate_server_operation(
-        self, server_id: int, operation: str, db: Session = None
+        self, server_id: int, operation: str, db: Session
     ) -> bool:
-        """Validate if a server operation can be performed"""
+        """Validate if a server operation can be performed
+
+        Args:
+            server_id: ID of the server to validate
+            operation: Operation to validate
+            db: Database session (required for security)
+
+        Returns:
+            True if operation is valid
+
+        Raises:
+            HTTPException: If server not found or operation invalid
+        """
         try:
+            if db is None:
+                raise HTTPException(
+                    status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail="Database session is required for security-critical operation",
+                )
+
             server = db.query(Server).filter(Server.id == server_id).first()
             if not server:
                 raise HTTPException(
@@ -108,10 +145,28 @@ class ServerService:
             )
 
     def get_server_with_access_check(
-        self, server_id: int, user: User, db: Session = None
+        self, server_id: int, user: User, db: Session
     ) -> Server:
-        """Get server with user access validation"""
+        """Get server with user access validation
+
+        Args:
+            server_id: ID of the server to retrieve
+            user: User requesting access
+            db: Database session (required for security)
+
+        Returns:
+            Server object if access is granted
+
+        Raises:
+            HTTPException: If server not found or access denied
+        """
         try:
+            if db is None:
+                raise HTTPException(
+                    status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail="Database session is required for security-critical operation",
+                )
+
             server = (
                 db.query(Server)
                 .filter(and_(Server.id == server_id, ~Server.is_deleted))
@@ -141,9 +196,23 @@ class ServerService:
                 detail=f"Failed to get server: {str(e)}",
             )
 
-    def server_exists(self, server_id: int, db: Session = None) -> bool:
-        """Check if server exists"""
+    def server_exists(self, server_id: int, db: Session) -> bool:
+        """Check if server exists
+
+        Args:
+            server_id: ID of the server to check
+            db: Database session (required for security)
+
+        Returns:
+            True if server exists and is not deleted
+        """
         try:
+            if db is None:
+                logger.error(
+                    f"Database session is required for server existence check {server_id}"
+                )
+                return False
+
             server = (
                 db.query(Server)
                 .filter(and_(Server.id == server_id, ~Server.is_deleted))
@@ -155,9 +224,26 @@ class ServerService:
             logger.error(f"Failed to check server existence {server_id}: {e}")
             return False
 
-    def get_server_statistics(self, user: User, db: Session = None) -> Dict[str, Any]:
-        """Get server statistics for user"""
+    def get_server_statistics(self, user: User, db: Session) -> Dict[str, Any]:
+        """Get server statistics for user
+
+        Args:
+            user: User requesting statistics
+            db: Database session (required for security)
+
+        Returns:
+            Dictionary containing server statistics
+
+        Raises:
+            HTTPException: If database operations fail
+        """
         try:
+            if db is None:
+                raise HTTPException(
+                    status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail="Database session is required for security-critical operation",
+                )
+
             # Base query
             query = db.query(Server).filter(~Server.is_deleted)
 
@@ -222,10 +308,25 @@ class ServerService:
             return False
 
     def update_server_status(
-        self, server_id: int, status: ServerStatus, db: Session = None
+        self, server_id: int, status: ServerStatus, db: Session
     ) -> bool:
-        """Update server status in database"""
+        """Update server status in database
+
+        Args:
+            server_id: ID of the server to update
+            status: New status to set
+            db: Database session (required for security)
+
+        Returns:
+            True if update successful, False otherwise
+        """
         try:
+            if db is None:
+                logger.error(
+                    f"Database session is required for server status update {server_id}"
+                )
+                return False
+
             server = db.query(Server).filter(Server.id == server_id).first()
             if not server:
                 return False

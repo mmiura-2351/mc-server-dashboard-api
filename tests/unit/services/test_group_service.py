@@ -309,8 +309,8 @@ class TestGroupAccessService:
         # Admin should be able to access any group
         GroupAccessService.check_group_access(admin_user, group)
 
-    def test_check_group_access_forbidden(self, test_user):
-        """Test group access check with insufficient permissions"""
+    def test_check_group_access_non_owner_allowed(self, test_user):
+        """Test group access check for non-owner user (Phase 1: Shared Resource Access)"""
         group = Group(
             id=1,
             name="test-group",
@@ -319,11 +319,9 @@ class TestGroupAccessService:
             players=[]
         )
 
-        with pytest.raises(HTTPException) as exc_info:
-            GroupAccessService.check_group_access(test_user, group)
-        
-        assert exc_info.value.status_code == 403
-        assert "You don't have permission to access this group" in str(exc_info.value.detail)
+        # With Phase 1 changes, all users can access all groups
+        # Should not raise exception
+        GroupAccessService.check_group_access(test_user, group)
 
     def test_check_server_access_owner_success(self, test_user):
         """Test successful server access check for owner"""
@@ -361,8 +359,8 @@ class TestGroupAccessService:
         # Admin should be able to access any server
         GroupAccessService.check_server_access(admin_user, server)
 
-    def test_check_server_access_forbidden(self, test_user):
-        """Test server access check with insufficient permissions"""
+    def test_check_server_access_non_owner_allowed(self, test_user):
+        """Test server access check for non-owner user (Phase 1: Shared Resource Access)"""
         server = Server(
             id=1,
             name="test-server",
@@ -376,10 +374,9 @@ class TestGroupAccessService:
             max_players=20,
         )
 
-        with pytest.raises(HTTPException) as exc_info:
-            GroupAccessService.check_server_access(test_user, server)
-        
-        assert exc_info.value.status_code == 403
+        # With Phase 1 changes, all users can access all servers
+        # Should not raise exception
+        GroupAccessService.check_server_access(test_user, server)
 
 
 class TestGroupFileService:
