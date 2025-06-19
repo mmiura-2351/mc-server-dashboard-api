@@ -52,14 +52,17 @@ class TestServerCreateRequest:
         assert "Server name cannot be empty" in str(exc_info.value)
 
     def test_server_name_invalid_characters(self):
-        """Test server name with invalid characters (line 47)"""
+        """Test server name with invalid characters"""
         invalid_names = [
-            "server@name",  # Contains @
-            "server#name",  # Contains #
-            "server$name",  # Contains $
-            "server%name",  # Contains %
-            "server&name",  # Contains &
-            "server*name",  # Contains *
+            "server/name",   # Contains forward slash
+            "server\\name",  # Contains backslash
+            "server:name",   # Contains colon
+            "server*name",   # Contains asterisk
+            "server?name",   # Contains question mark
+            "server\"name",  # Contains quote
+            "server<name",   # Contains less than
+            "server>name",   # Contains greater than
+            "server|name",   # Contains pipe
         ]
         
         for invalid_name in invalid_names:
@@ -74,7 +77,7 @@ class TestServerCreateRequest:
                     max_players=20
                 )
             
-            assert "Server name contains invalid characters" in str(exc_info.value)
+            assert "forbidden characters" in str(exc_info.value)
 
     def test_server_name_valid_characters(self):
         """Test server name with valid characters"""
@@ -84,6 +87,9 @@ class TestServerCreateRequest:
             "server name",    # Contains space
             "server123",      # Contains numbers
             "ServerName",     # Contains uppercase
+            "server.1.20",    # Contains dots (new feature)
+            "Test.Server",    # Mixed case with dot
+            "My-Server.v2",   # Complex name with dot
         ]
         
         for valid_name in valid_names:
@@ -97,6 +103,96 @@ class TestServerCreateRequest:
                 max_players=20
             )
             assert request.name == valid_name.strip()
+
+    def test_server_name_path_traversal_protection(self):
+        """Test protection against path traversal attacks"""
+        path_traversal_names = [
+            "../server",
+            "server../backup", 
+            "server..name",
+            "..hidden",
+            "test..test",
+        ]
+        
+        for invalid_name in path_traversal_names:
+            with pytest.raises(ValidationError) as exc_info:
+                ServerCreateRequest(
+                    name=invalid_name,
+                    description="Test server",
+                    minecraft_version="1.20.1",
+                    server_type=ServerType.vanilla,
+                    port=25565,
+                    max_memory=1024,
+                    max_players=20
+                )
+            
+            assert "cannot contain '..' sequences" in str(exc_info.value)
+
+    def test_server_name_windows_reserved_names(self):
+        """Test protection against Windows reserved names"""
+        reserved_names = [
+            "CON", "PRN", "AUX", "NUL",
+            "COM1", "COM2", "COM9", 
+            "LPT1", "LPT2", "LPT9",
+            "con", "prn", "aux",  # Test case insensitive
+        ]
+        
+        for reserved_name in reserved_names:
+            with pytest.raises(ValidationError) as exc_info:
+                ServerCreateRequest(
+                    name=reserved_name,
+                    description="Test server",
+                    minecraft_version="1.20.1",
+                    server_type=ServerType.vanilla,
+                    port=25565,
+                    max_memory=1024,
+                    max_players=20
+                )
+            
+            assert "is a reserved system name" in str(exc_info.value)
+
+    def test_server_name_dot_position_restrictions(self):
+        """Test dot position restrictions"""
+        invalid_dot_names = [
+            ".hidden",        # Starts with dot
+            "server.",        # Ends with dot
+            "server ",        # Ends with space
+        ]
+        
+        for invalid_name in invalid_dot_names:
+            with pytest.raises(ValidationError) as exc_info:
+                ServerCreateRequest(
+                    name=invalid_name,
+                    description="Test server",
+                    minecraft_version="1.20.1",
+                    server_type=ServerType.vanilla,
+                    port=25565,
+                    max_memory=1024,
+                    max_players=20
+                )
+            
+            error_msg = str(exc_info.value)
+            assert any(msg in error_msg for msg in [
+                "cannot start with a dot",
+                "cannot end with a dot", 
+                "cannot end with a space"
+            ])
+
+    def test_server_name_single_character_validation(self):
+        """Test single character names are allowed"""
+        single_char_names = ["A", "1", "Z", "9"]
+        
+        for name in single_char_names:
+            request = ServerCreateRequest(
+                name=name,
+                description="Test server",
+                minecraft_version="1.20.1",
+                server_type=ServerType.vanilla,
+                port=25565,
+                max_memory=1024,
+                max_players=20
+            )
+            assert request.name == name
 
     def test_minecraft_version_invalid_format(self):
         """Test invalid Minecraft version format (line 59)"""
@@ -249,7 +345,22 @@ class TestServerImportRequest:
         
         # Test invalid characters
         with pytest.raises(ValidationError):
-            ServerImportRequest(name="server$name")
+            ServerImportRequest(name="server/name")
+            
+        # Test path traversal protection
+        with pytest.raises(ValidationError):
+            ServerImportRequest(name="../server")
+            
+        # Test dot restrictions
+        with pytest.raises(ValidationError):
+            ServerImportRequest(name=".hidden")
+            
+        # Test valid names with dots
+        request = ServerImportRequest(
+            name="server.1.20.1",
+            description="Import test"
+        )
+        assert request.name == "server.1.20.1"
 
 
 class TestServerResponse:
@@ -351,9 +462,10 @@ class TestSchemaEdgeCases:
     """Test edge cases for schema validation"""
 
     def test_name_with_leading_trailing_spaces(self):
-        """Test name trimming functionality"""
+        """Test name trimming functionality and trailing space rejection"""
+        # Leading spaces should be trimmed
         request = ServerCreateRequest(
-            name="  test-server  ",  # Spaces around name
+            name="  test-server",  # Leading spaces only
             description="Test server",
             minecraft_version="1.20.1",
             server_type=ServerType.vanilla,
@@ -361,8 +473,20 @@ class TestSchemaEdgeCases:
             max_memory=1024,
             max_players=20
         )
-        
         assert request.name == "test-server"  # Should be trimmed
+        
+        # Trailing spaces should be rejected
+        with pytest.raises(ValidationError) as exc_info:
+            ServerCreateRequest(
+                name="test-server  ",  # Trailing spaces
+                description="Test server",
+                minecraft_version="1.20.1",
+                server_type=ServerType.vanilla,
+                port=25565,
+                max_memory=1024,
+                max_players=20
+            )
+        assert "cannot end with a space" in str(exc_info.value)
 
     def test_valid_port_ranges(self):
         """Test valid port range validation"""
