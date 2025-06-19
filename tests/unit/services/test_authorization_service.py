@@ -54,15 +54,14 @@ class TestAuthorizationServiceServerAccess:
         assert result.owner_id == test_user.id
 
     def test_check_server_access_non_owner_user(self, db: Session, test_user, sample_server):
-        """Test non-owner user cannot access server"""
+        """Test non-owner user CAN access server (Phase 1: Shared Resource Access)"""
         # Ensure test_user is not the owner
         assert sample_server.owner_id != test_user.id
         
-        with pytest.raises(HTTPException) as exc_info:
-            AuthorizationService.check_server_access(sample_server.id, test_user, db)
-        
-        assert exc_info.value.status_code == status.HTTP_403_FORBIDDEN
-        assert "Not authorized to access this server" in str(exc_info.value.detail)
+        # With Phase 1 changes, all users can access all servers
+        result = AuthorizationService.check_server_access(sample_server.id, test_user, db)
+        assert result == sample_server
+        assert result.id == sample_server.id
 
     def test_check_server_access_nonexistent_server(self, db: Session, admin_user):
         """Test accessing non-existent server raises 404"""
@@ -75,15 +74,14 @@ class TestAuthorizationServiceServerAccess:
         assert "Server not found" in str(exc_info.value.detail)
 
     def test_check_server_access_operator_non_owner(self, db: Session, operator_user, sample_server):
-        """Test operator user cannot access server they don't own"""
+        """Test operator user CAN access server they don't own (Phase 1: Shared Resource Access)"""
         # Ensure operator_user is not the owner
         assert sample_server.owner_id != operator_user.id
         
-        with pytest.raises(HTTPException) as exc_info:
-            AuthorizationService.check_server_access(sample_server.id, operator_user, db)
-        
-        assert exc_info.value.status_code == status.HTTP_403_FORBIDDEN
-        assert "Not authorized to access this server" in str(exc_info.value.detail)
+        # With Phase 1 changes, all users can access all servers
+        result = AuthorizationService.check_server_access(sample_server.id, operator_user, db)
+        assert result == sample_server
+        assert result.id == sample_server.id
 
 
 class TestAuthorizationServiceBackupAccess:
@@ -120,14 +118,14 @@ class TestAuthorizationServiceBackupAccess:
         assert result == sample_backup
 
     def test_check_backup_access_non_server_owner(self, db: Session, test_user, sample_backup, sample_server):
-        """Test non-server-owner cannot access backup"""
+        """Test non-server-owner CAN access backup (Phase 1: Shared Resource Access)"""
         # Ensure test_user is not the owner
         assert sample_server.owner_id != test_user.id
         
-        with pytest.raises(HTTPException) as exc_info:
-            AuthorizationService.check_backup_access(sample_backup.id, test_user, db)
-        
-        assert exc_info.value.status_code == status.HTTP_403_FORBIDDEN
+        # With Phase 1 changes, all users can access all backups
+        result = AuthorizationService.check_backup_access(sample_backup.id, test_user, db)
+        assert result == sample_backup
+        assert result.id == sample_backup.id
 
     def test_check_backup_access_nonexistent_backup(self, db: Session, admin_user):
         """Test accessing non-existent backup raises 404"""
@@ -349,7 +347,7 @@ class TestAuthorizationServiceServerFiltering:
         assert another_server in filtered
 
     def test_filter_servers_for_regular_user(self, db: Session, test_user, sample_server):
-        """Test regular user only sees owned servers"""
+        """Test regular user sees all servers (Phase 1: Shared Resource Access)"""
         # Create server owned by test_user
         user_server = Server(
             name="User Server",
@@ -369,20 +367,22 @@ class TestAuthorizationServiceServerFiltering:
         servers = [sample_server, user_server]  # sample_server owned by admin_user
         filtered = AuthorizationService.filter_servers_for_user(test_user, servers)
         
-        assert len(filtered) == 1
+        # With Phase 1 changes, all users see all servers
+        assert len(filtered) == 2
         assert user_server in filtered
-        assert sample_server not in filtered
+        assert sample_server in filtered
 
     def test_filter_servers_for_user_no_owned_servers(self, db: Session, test_user, sample_server):
-        """Test user with no owned servers gets empty list"""
+        """Test user with no owned servers sees all servers (Phase 1: Shared Resource Access)"""
         servers = [sample_server]  # owned by admin_user
         filtered = AuthorizationService.filter_servers_for_user(test_user, servers)
         
-        assert len(filtered) == 0
-        assert sample_server not in filtered
+        # With Phase 1 changes, all users see all servers
+        assert len(filtered) == 1
+        assert sample_server in filtered
 
     def test_filter_servers_for_operator(self, db: Session, operator_user, sample_server):
-        """Test operator user only sees owned servers (same as regular user)"""
+        """Test operator user sees all servers (Phase 1: Shared Resource Access)"""
         # Create server owned by operator_user
         operator_server = Server(
             name="Operator Server",
@@ -402,9 +402,10 @@ class TestAuthorizationServiceServerFiltering:
         servers = [sample_server, operator_server]  # sample_server owned by admin_user
         filtered = AuthorizationService.filter_servers_for_user(operator_user, servers)
         
-        assert len(filtered) == 1
+        # With Phase 1 changes, all users see all servers
+        assert len(filtered) == 2
         assert operator_server in filtered
-        assert sample_server not in filtered
+        assert sample_server in filtered
 
 
 class TestAuthorizationServiceInstance:
@@ -570,12 +571,12 @@ class TestAuthorizationServiceIntegration:
         result = AuthorizationService.check_server_access(server.id, admin_user, db)
         assert result.id == server.id
         
-        # Other users cannot access
-        with pytest.raises(HTTPException):
-            AuthorizationService.check_server_access(server.id, test_user, db)
+        # With Phase 1 changes, all users can access all servers
+        result = AuthorizationService.check_server_access(server.id, test_user, db)
+        assert result.id == server.id
         
-        with pytest.raises(HTTPException):
-            AuthorizationService.check_server_access(server.id, operator_user, db)
+        result = AuthorizationService.check_server_access(server.id, operator_user, db)
+        assert result.id == server.id
         
         # Transfer ownership to test_user
         server.owner_id = test_user.id
@@ -589,9 +590,9 @@ class TestAuthorizationServiceIntegration:
         result = AuthorizationService.check_server_access(server.id, admin_user, db)
         assert result.id == server.id
         
-        # Operator cannot access (not owner, not admin)
-        with pytest.raises(HTTPException):
-            AuthorizationService.check_server_access(server.id, operator_user, db)
+        # With Phase 1 changes, operator can still access (shared access model)
+        result = AuthorizationService.check_server_access(server.id, operator_user, db)
+        assert result.id == server.id
 
     def test_backup_access_through_server_ownership(self, db: Session, test_user, admin_user):
         """Test backup access is controlled through server ownership"""
@@ -684,16 +685,12 @@ class TestAuthorizationServiceIntegration:
         assert len(admin_filtered) == 3
         assert all(server in admin_filtered for server in all_servers)
         
-        # User sees only their server
+        # With Phase 1 changes, all users see all servers
         user_filtered = AuthorizationService.filter_servers_for_user(test_user, all_servers)
-        assert len(user_filtered) == 1
-        assert user_server in user_filtered
-        assert admin_server not in user_filtered
-        assert operator_server not in user_filtered
+        assert len(user_filtered) == 3
+        assert all(server in user_filtered for server in all_servers)
         
-        # Operator sees only their server
+        # Operator also sees all servers
         operator_filtered = AuthorizationService.filter_servers_for_user(operator_user, all_servers)
-        assert len(operator_filtered) == 1
-        assert operator_server in operator_filtered
-        assert admin_server not in operator_filtered
-        assert user_server not in operator_filtered
+        assert len(operator_filtered) == 3
+        assert all(server in operator_filtered for server in all_servers)

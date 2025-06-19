@@ -39,7 +39,8 @@ class AuthorizationService:
                 status_code=status.HTTP_404_NOT_FOUND, detail="Server not found"
             )
 
-        has_access = user.role == Role.admin or server.owner_id == user.id
+        # Phase 1: Shared Resource Access - Allow all users with User role or higher to access servers
+        has_access = user.role in [Role.admin, Role.operator, Role.user]
 
         if log_access and request:
             from app.audit.service import AuditService
@@ -176,10 +177,11 @@ class AuthorizationService:
     @staticmethod
     def filter_servers_for_user(user: User, servers) -> list:
         """Filter servers list based on user permissions"""
-        if user.role == Role.admin:
-            return servers
-        else:
-            return [server for server in servers if server.owner_id == user.id]
+        # Phase 1: Shared Resource Access - All users can see all servers
+        # Maintain validation to prevent None user for backward compatibility
+        if user is None:
+            raise AttributeError("'NoneType' object has no attribute 'role'")
+        return servers
 
     @staticmethod
     def is_admin(user: User) -> bool:

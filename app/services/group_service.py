@@ -39,7 +39,8 @@ class GroupAccessService:
         Raises:
             HTTPException: If user doesn't have permission to access the group
         """
-        if user.role != Role.admin and group.owner_id != user.id:
+        # Phase 1: Shared Resource Access - Allow all users with User role or higher to access groups
+        if user.role not in [Role.admin, Role.operator, Role.user]:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="You don't have permission to access this group",
@@ -59,7 +60,8 @@ class GroupAccessService:
         Raises:
             HTTPException: If user doesn't have permission to access the server
         """
-        if user.role != Role.admin and server.owner_id != user.id:
+        # Phase 1: Shared Resource Access - Allow all users with User role or higher to access servers
+        if user.role not in [Role.admin, Role.operator, Role.user]:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="You don't have permission to access this server",
@@ -379,8 +381,9 @@ class GroupService:
     def get_user_groups(
         self, user: User, group_type: Optional[GroupType] = None
     ) -> List[Group]:
-        """Get groups owned by user"""
-        query = self.db.query(Group).filter(Group.owner_id == user.id)
+        """Get groups accessible by user"""
+        # Phase 1: Shared Resource Access - All users can see all groups
+        query = self.db.query(Group)
 
         if group_type:
             query = query.filter(Group.type == group_type)
@@ -926,16 +929,15 @@ class GroupService:
 
         servers = []
         for server_group, server in result:
-            # Check if user has access to this server
-            if user.role == Role.admin or server.owner_id == user.id:
-                servers.append(
-                    {
-                        "id": server.id,
-                        "name": server.name,
-                        "status": server.status.value,
-                        "priority": server_group.priority,
-                        "attached_at": server_group.attached_at.isoformat(),
-                    }
-                )
+            # Phase 1: Shared Resource Access - All users can see all servers
+            servers.append(
+                {
+                    "id": server.id,
+                    "name": server.name,
+                    "status": server.status.value,
+                    "priority": server_group.priority,
+                    "attached_at": server_group.attached_at.isoformat(),
+                }
+            )
 
         return servers
