@@ -9,7 +9,11 @@ from pathlib import Path
 import tempfile
 import shutil
 
-from app.core.exceptions import InvalidRequestException, ConflictException, ServerNotFoundException
+from app.core.exceptions import (
+    InvalidRequestException,
+    ConflictException,
+    ServerNotFoundException,
+)
 from app.servers.models import Server, ServerType, ServerStatus, Template
 from app.servers.schemas import ServerCreateRequest, ServerUpdateRequest
 from app.servers.service import (
@@ -19,7 +23,7 @@ from app.servers.service import (
     ServerFileSystemService,
     ServerDatabaseService,
     ServerTemplateService,
-    ServerService
+    ServerService,
 )
 from app.users.models import Role, User
 
@@ -139,7 +143,9 @@ class TestServerValidationService:
         await validation_service.validate_server_uniqueness(request, mock_db)
 
     @pytest.mark.asyncio
-    async def test_validate_server_uniqueness_name_conflict(self, validation_service, mock_db):
+    async def test_validate_server_uniqueness_name_conflict(
+        self, validation_service, mock_db
+    ):
         """Test server name conflict validation (lines 143-144)"""
         request = Mock()
         request.name = "existing-server"
@@ -150,7 +156,7 @@ class TestServerValidationService:
 
         with pytest.raises(ConflictException) as exc_info:
             await validation_service.validate_server_uniqueness(request, mock_db)
-        
+
         assert "Server with name 'existing-server' already exists" in str(exc_info.value)
 
     def test_validate_server_exists_success(self, validation_service, mock_db):
@@ -202,35 +208,45 @@ class TestServerService:
         return Mock()
 
     @pytest.mark.asyncio
-    async def test_create_server_unsupported_version(self, server_service, mock_request, mock_user, mock_db):
+    async def test_create_server_unsupported_version(
+        self, server_service, mock_request, mock_user, mock_db
+    ):
         """Test server creation with unsupported version (lines 582-588)"""
         # Mock validation to pass initial checks
         server_service.validation_service.validate_server_uniqueness = AsyncMock()
-        
-        with patch('app.servers.service.ServerSecurityValidator') as mock_validator:
+
+        with patch("app.servers.service.ServerSecurityValidator") as mock_validator:
             mock_validator.validate_server_name.return_value = True
             mock_validator.validate_memory_value.return_value = True
-            
-            with patch('app.servers.service.minecraft_version_manager') as mock_version_manager:
+
+            with patch(
+                "app.servers.service.minecraft_version_manager"
+            ) as mock_version_manager:
                 mock_version_manager.is_version_supported.return_value = False
 
                 with pytest.raises(InvalidRequestException) as exc_info:
                     await server_service.create_server(mock_request, mock_user, mock_db)
-                
-                assert "Version 1.20.1 is not supported for vanilla" in str(exc_info.value)
+
+                assert "Version 1.20.1 is not supported for vanilla" in str(
+                    exc_info.value
+                )
 
     @pytest.mark.asyncio
     async def test_get_server_success(self, server_service, mock_db):
         """Test successful get server (lines 639-642)"""
         mock_server = Mock()
-        server_service.validation_service.validate_server_exists = Mock(return_value=mock_server)
+        server_service.validation_service.validate_server_exists = Mock(
+            return_value=mock_server
+        )
 
-        with patch('app.servers.service.ServerResponse') as mock_response:
+        with patch("app.servers.service.ServerResponse") as mock_response:
             mock_response.model_validate.return_value = "server_response"
-            
+
             result = await server_service.get_server(1, mock_db)
-            
-            server_service.validation_service.validate_server_exists.assert_called_once_with(1, mock_db)
+
+            server_service.validation_service.validate_server_exists.assert_called_once_with(
+                1, mock_db
+            )
             mock_response.model_validate.assert_called_once_with(mock_server)
 
     @pytest.mark.asyncio
@@ -238,10 +254,14 @@ class TestServerService:
         """Test successful server update (lines 644-657)"""
         mock_server = Mock()
         mock_server.max_players = 20  # Add max_players attribute
-        server_service.validation_service.validate_server_exists = Mock(return_value=mock_server)
-        
+        server_service.validation_service.validate_server_exists = Mock(
+            return_value=mock_server
+        )
+
         mock_updated_server = Mock()
-        server_service.database_service.update_server_record = Mock(return_value=mock_updated_server)
+        server_service.database_service.update_server_record = Mock(
+            return_value=mock_updated_server
+        )
 
         request = Mock(spec=ServerUpdateRequest)
         request.name = "updated-server"
@@ -250,31 +270,41 @@ class TestServerService:
         request.port = None  # Add port attribute
         request.server_properties = None  # Add server_properties attribute
 
-        with patch('app.servers.service.ServerSecurityValidator') as mock_validator:
+        with patch("app.servers.service.ServerSecurityValidator") as mock_validator:
             mock_validator.validate_server_name.return_value = True
             mock_validator.validate_memory_value.return_value = True
-            
-            with patch('app.servers.service.ServerResponse') as mock_response:
+
+            with patch("app.servers.service.ServerResponse") as mock_response:
                 mock_response.model_validate.return_value = "updated_response"
 
                 result = await server_service.update_server(1, request, mock_db)
-                
-                server_service.validation_service.validate_server_exists.assert_called_once_with(1, mock_db)
-                mock_validator.validate_server_name.assert_called_once_with("updated-server")
+
+                server_service.validation_service.validate_server_exists.assert_called_once_with(
+                    1, mock_db
+                )
+                mock_validator.validate_server_name.assert_called_once_with(
+                    "updated-server"
+                )
                 mock_validator.validate_memory_value.assert_called_once_with(2048)
 
     @pytest.mark.asyncio
     async def test_delete_server_success(self, server_service, mock_db):
         """Test successful server deletion (lines 659-663)"""
         mock_server = Mock()
-        server_service.validation_service.validate_server_exists = Mock(return_value=mock_server)
+        server_service.validation_service.validate_server_exists = Mock(
+            return_value=mock_server
+        )
         server_service.database_service.soft_delete_server = Mock()
 
         result = await server_service.delete_server(1, mock_db)
-        
+
         assert result is True
-        server_service.validation_service.validate_server_exists.assert_called_once_with(1, mock_db)
-        server_service.database_service.soft_delete_server.assert_called_once_with(mock_server, mock_db)
+        server_service.validation_service.validate_server_exists.assert_called_once_with(
+            1, mock_db
+        )
+        server_service.database_service.soft_delete_server.assert_called_once_with(
+            mock_server, mock_db
+        )
 
 
 class TestServerValidationServiceExtended:
@@ -286,44 +316,50 @@ class TestServerValidationServiceExtended:
 
     def test_validate_server_directory_success(self, validation_service):
         """Test successful server directory validation (lines 157-172)"""
-        with patch('app.servers.service.PathValidator') as mock_path_validator:
+        with patch("app.servers.service.PathValidator") as mock_path_validator:
             mock_server_dir = Mock()
             mock_server_dir.exists.return_value = False
-            mock_path_validator.create_safe_server_directory.return_value = mock_server_dir
-            
+            mock_path_validator.create_safe_server_directory.return_value = (
+                mock_server_dir
+            )
+
             result = validation_service.validate_server_directory("test-server")
-            
+
             assert result == mock_server_dir
             mock_path_validator.create_safe_server_directory.assert_called_once()
 
     def test_validate_server_directory_exists(self, validation_service):
         """Test server directory already exists (lines 168-171)"""
-        with patch('app.servers.service.PathValidator') as mock_path_validator:
+        with patch("app.servers.service.PathValidator") as mock_path_validator:
             mock_server_dir = Mock()
             mock_server_dir.exists.return_value = True
-            mock_path_validator.create_safe_server_directory.return_value = mock_server_dir
-            
+            mock_path_validator.create_safe_server_directory.return_value = (
+                mock_server_dir
+            )
+
             with pytest.raises(ConflictException) as exc_info:
                 validation_service.validate_server_directory("existing-server")
-            
-            assert "Server directory for 'existing-server' already exists" in str(exc_info.value)
+
+            assert "Server directory for 'existing-server' already exists" in str(
+                exc_info.value
+            )
 
     def test_validate_server_name_basic_empty(self, validation_service):
         """Test basic server name validation with empty string (lines 178-179)"""
         from app.core.security import SecurityError
-        
+
         with pytest.raises(SecurityError) as exc_info:
             validation_service._validate_server_name_basic("")
-        
+
         assert "Server name must be a non-empty string" in str(exc_info.value)
 
     def test_validate_server_name_basic_none(self, validation_service):
         """Test basic server name validation with None (lines 178-179)"""
         from app.core.security import SecurityError
-        
+
         with pytest.raises(SecurityError) as exc_info:
             validation_service._validate_server_name_basic(None)
-        
+
         assert "Server name must be a non-empty string" in str(exc_info.value)
 
 
@@ -337,21 +373,33 @@ class TestServerJarServiceExtended:
     @pytest.mark.asyncio
     async def test_get_server_jar_unsupported_version(self, jar_service):
         """Test JAR service with unsupported version (lines 212-218)"""
-        with patch.object(jar_service.version_manager, 'is_version_supported', return_value=False):
-            with patch('app.servers.service.handle_file_error') as mock_handle_error:
-                await jar_service.get_server_jar(ServerType.vanilla, "1.7.10", Path("/tmp"))
-                
+        with patch.object(
+            jar_service.version_manager, "is_version_supported", return_value=False
+        ):
+            with patch("app.servers.service.handle_file_error") as mock_handle_error:
+                await jar_service.get_server_jar(
+                    ServerType.vanilla, "1.7.10", Path("/tmp")
+                )
+
                 # Should call handle_file_error due to InvalidRequestException
                 mock_handle_error.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_get_server_jar_exception_handling(self, jar_service):
         """Test JAR service exception handling (lines 240-241)"""
-        with patch.object(jar_service.version_manager, 'is_version_supported', return_value=True):
-            with patch.object(jar_service.version_manager, 'get_download_url', side_effect=Exception("Download error")):
-                with patch('app.servers.service.handle_file_error') as mock_handle_error:
-                    await jar_service.get_server_jar(ServerType.vanilla, "1.20.1", Path("/tmp"))
-                    
+        with patch.object(
+            jar_service.version_manager, "is_version_supported", return_value=True
+        ):
+            with patch.object(
+                jar_service.version_manager,
+                "get_download_url",
+                side_effect=Exception("Download error"),
+            ):
+                with patch("app.servers.service.handle_file_error") as mock_handle_error:
+                    await jar_service.get_server_jar(
+                        ServerType.vanilla, "1.20.1", Path("/tmp")
+                    )
+
                     mock_handle_error.assert_called_once()
 
 
@@ -362,7 +410,7 @@ class TestServerFileSystemServiceExtended:
     def filesystem_service(self):
         return ServerFileSystemService()
 
-    @pytest.mark.asyncio 
+    @pytest.mark.asyncio
     async def test_generate_server_files_success(self, filesystem_service):
         """Test server files generation (lines 335-352)"""
         mock_server = Mock()
@@ -370,13 +418,15 @@ class TestServerFileSystemServiceExtended:
         mock_server.name = "test-server"
         mock_request = Mock()
         mock_server_dir = Path("/tmp/test")
-        
+
         filesystem_service._generate_server_properties = AsyncMock()
         filesystem_service._generate_eula_file = AsyncMock()
         filesystem_service._generate_startup_script = AsyncMock()
-        
-        await filesystem_service.generate_server_files(mock_server, mock_request, mock_server_dir)
-        
+
+        await filesystem_service.generate_server_files(
+            mock_server, mock_request, mock_server_dir
+        )
+
         filesystem_service._generate_server_properties.assert_called_once()
         filesystem_service._generate_eula_file.assert_called_once()
         filesystem_service._generate_startup_script.assert_called_once()
@@ -400,33 +450,34 @@ class TestServerDatabaseService:
         mock_request.max_memory = 1024
         mock_request.max_players = 20
         mock_request.server_properties = {}
-        
+
         mock_owner = Mock()
         mock_owner.id = 1
-        
+
         server_dir = "/tmp/test-server"
         mock_db = Mock()
-        
-        with patch('app.servers.service.Server') as mock_server_class:
+
+        with patch("app.servers.service.Server") as mock_server_class:
             mock_server = Mock()
             mock_server_class.return_value = mock_server
-            
-            result = database_service.create_server_record(mock_request, mock_owner, server_dir, mock_db)
-            
+
+            result = database_service.create_server_record(
+                mock_request, mock_owner, server_dir, mock_db
+            )
+
             assert result == mock_server
             mock_db.add.assert_called_once_with(mock_server)
             mock_db.commit.assert_called_once()
             mock_db.refresh.assert_called_once_with(mock_server)
-
 
     def test_soft_delete_server_success(self, database_service):
         """Test server soft deletion (lines 531-545)"""
         mock_server = Mock()
         mock_server.is_deleted = False
         mock_db = Mock()
-        
+
         database_service.soft_delete_server(mock_server, mock_db)
-        
+
         assert mock_server.is_deleted is True
         mock_db.commit.assert_called_once()
 
@@ -445,22 +496,22 @@ class TestServerTemplateService:
         mock_server = Mock()
         mock_server.id = 1
         mock_server.directory_path = "/tmp/server"
-        
+
         mock_template = Mock()
         mock_template.id = 1
         mock_template.name = "test-template"
         mock_template.file_path = "/tmp/template.tar.gz"
-        
+
         mock_db = Mock()
         mock_db.query.return_value.filter.return_value.first.return_value = mock_template
-        
+
         template_service._extract_template_files = AsyncMock()
-        
-        with patch('app.servers.service.Path') as mock_path:
+
+        with patch("app.servers.service.Path") as mock_path:
             mock_template_path = Mock()
             mock_template_path.exists.return_value = True
             mock_path.return_value = mock_template_path
-            
+
             await template_service.apply_template(mock_server, 1, mock_db)
-            
+
             template_service._extract_template_files.assert_called_once()

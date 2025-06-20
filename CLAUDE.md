@@ -20,7 +20,7 @@ This process enables continuous improvement of project rules and ensures consist
 
 When completing any significant task or feature implementation:
 1. **CI Verification**: Ensure all tests pass before committing
-2. **Code Quality**: Run lint and format checks (`uv run ruff check app/` and `uv run black app/`)
+2. **Code Quality**: Run lint and format checks (`uv run ruff check app/` and `uv run ruff format app/`)
 3. **Commit Changes**: Create meaningful commit messages with proper documentation
 4. **Status Update**: Update relevant tracking documents (e.g., CODE_REVIEW_FINDINGS.md)
 
@@ -139,7 +139,7 @@ This is a comprehensive FastAPI-based backend API for managing multiple Minecraf
 |-------------------|-------------------------------|
 | Start application | `uv run fastapi dev`          |
 | Lint code         | `uv run ruff check app/`      |
-| Format code       | `uv run black app/`           |
+| Format code       | `uv run ruff format app/`     |
 | Run tests         | `uv run pytest`               |
 | Run single test   | `uv run pytest tests/test_filename.py::test_function_name` |
 | Check code coverage | `uv run coverage run -m pytest && uv run coverage report` |
@@ -251,8 +251,8 @@ async def endpoint(db: Session = Depends(get_db)):
 - Consider migration strategy for schema changes affecting existing data
 
 ### Code Quality Standards
-- Black formatting with 90-character line length
-- Ruff linting with import sorting enabled
+- Ruff formatting and linting with 90-character line length
+- Import sorting enabled via Ruff
 - Type hints required for all new code
 - Comprehensive test coverage for business logic
 

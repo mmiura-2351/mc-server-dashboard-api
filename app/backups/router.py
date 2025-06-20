@@ -64,7 +64,7 @@ async def validate_upload_size(request: Request) -> None:
     if size > max_size:
         raise HTTPException(
             status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-            detail=f"Request size ({size / (1024*1024):.1f}MB) exceeds maximum allowed size (500MB)",
+            detail=f"Request size ({size / (1024 * 1024):.1f}MB) exceeds maximum allowed size (500MB)",
         )
 
     if size <= 0:

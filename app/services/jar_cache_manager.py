@@ -241,7 +241,7 @@ class JarCacheManager:
                     if content_length:
                         total_size = int(content_length)
                         logger.info(
-                            f"Downloading {total_size / (1024*1024):.1f}MB JAR file"
+                            f"Downloading {total_size / (1024 * 1024):.1f}MB JAR file"
                         )
 
                     # Download with progress tracking

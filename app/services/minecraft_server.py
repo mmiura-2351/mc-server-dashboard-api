@@ -807,7 +807,7 @@ class MinecraftServerManager:
                             # Debug logging for pattern matching
                             if i % 10 == 0 and content:  # Every 5 seconds
                                 logger.info(
-                                    f"Server {server_id} pattern check at {(i+1)*0.5:.1f}s: {pattern_results[:2]}"
+                                    f"Server {server_id} pattern check at {(i + 1) * 0.5:.1f}s: {pattern_results[:2]}"
                                 )
 
                             if startup_detected_local:
@@ -1356,9 +1356,11 @@ class MinecraftServerManager:
             logger.info(f"Port validation passed for server {server.id}: {port_message}")
 
             # Check Java compatibility with Minecraft version
-            java_compatible, java_message, java_executable = (
-                await self._check_java_compatibility(server.minecraft_version)
-            )
+            (
+                java_compatible,
+                java_message,
+                java_executable,
+            ) = await self._check_java_compatibility(server.minecraft_version)
             if not java_compatible:
                 logger.error(
                     f"Java compatibility check failed for server {server.id}: {java_message}"
@@ -1465,7 +1467,7 @@ class MinecraftServerManager:
                 await asyncio.sleep(0.1)
                 if not await self._is_process_running(daemon_pid):
                     logger.error(
-                        f"Daemon process {daemon_pid} died within {(i+1)*100}ms for server {server.id}"
+                        f"Daemon process {daemon_pid} died within {(i + 1) * 100}ms for server {server.id}"
                     )
                     # Try to read any immediate error output from log files
                     try:

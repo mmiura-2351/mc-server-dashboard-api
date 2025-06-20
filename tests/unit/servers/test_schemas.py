@@ -12,7 +12,7 @@ from app.servers.schemas import (
     ServerResponse,
     ServerImportRequest,
     SupportedVersionsResponse,
-    MinecraftVersionInfo
+    MinecraftVersionInfo,
 )
 from app.servers.models import ServerType, ServerStatus
 
@@ -29,9 +29,9 @@ class TestServerCreateRequest:
             server_type=ServerType.vanilla,
             port=25565,
             max_memory=1024,
-            max_players=20
+            max_players=20,
         )
-        
+
         assert request.name == "test-server"
         assert request.minecraft_version == "1.20.1"
         assert request.server_type == ServerType.vanilla
@@ -46,25 +46,25 @@ class TestServerCreateRequest:
                 server_type=ServerType.vanilla,
                 port=25565,
                 max_memory=1024,
-                max_players=20
+                max_players=20,
             )
-        
+
         assert "Server name cannot be empty" in str(exc_info.value)
 
     def test_server_name_invalid_characters(self):
         """Test server name with invalid characters"""
         invalid_names = [
-            "server/name",   # Contains forward slash
+            "server/name",  # Contains forward slash
             "server\\name",  # Contains backslash
-            "server:name",   # Contains colon
-            "server*name",   # Contains asterisk
-            "server?name",   # Contains question mark
-            "server\"name",  # Contains quote
-            "server<name",   # Contains less than
-            "server>name",   # Contains greater than
-            "server|name",   # Contains pipe
+            "server:name",  # Contains colon
+            "server*name",  # Contains asterisk
+            "server?name",  # Contains question mark
+            'server"name',  # Contains quote
+            "server<name",  # Contains less than
+            "server>name",  # Contains greater than
+            "server|name",  # Contains pipe
         ]
-        
+
         for invalid_name in invalid_names:
             with pytest.raises(ValidationError) as exc_info:
                 ServerCreateRequest(
@@ -74,24 +74,24 @@ class TestServerCreateRequest:
                     server_type=ServerType.vanilla,
                     port=25565,
                     max_memory=1024,
-                    max_players=20
+                    max_players=20,
                 )
-            
+
             assert "forbidden characters" in str(exc_info.value)
 
     def test_server_name_valid_characters(self):
         """Test server name with valid characters"""
         valid_names = [
-            "server-name",    # Contains hyphen
-            "server_name",    # Contains underscore
-            "server name",    # Contains space
-            "server123",      # Contains numbers
-            "ServerName",     # Contains uppercase
-            "server.1.20",    # Contains dots (new feature)
-            "Test.Server",    # Mixed case with dot
-            "My-Server.v2",   # Complex name with dot
+            "server-name",  # Contains hyphen
+            "server_name",  # Contains underscore
+            "server name",  # Contains space
+            "server123",  # Contains numbers
+            "ServerName",  # Contains uppercase
+            "server.1.20",  # Contains dots (new feature)
+            "Test.Server",  # Mixed case with dot
+            "My-Server.v2",  # Complex name with dot
         ]
-        
+
         for valid_name in valid_names:
             request = ServerCreateRequest(
                 name=valid_name,
@@ -100,7 +100,7 @@ class TestServerCreateRequest:
                 server_type=ServerType.vanilla,
                 port=25565,
                 max_memory=1024,
-                max_players=20
+                max_players=20,
             )
             assert request.name == valid_name.strip()
 
@@ -108,12 +108,12 @@ class TestServerCreateRequest:
         """Test protection against path traversal attacks"""
         path_traversal_names = [
             "../server",
-            "server../backup", 
+            "server../backup",
             "server..name",
             "..hidden",
             "test..test",
         ]
-        
+
         for invalid_name in path_traversal_names:
             with pytest.raises(ValidationError) as exc_info:
                 ServerCreateRequest(
@@ -123,20 +123,29 @@ class TestServerCreateRequest:
                     server_type=ServerType.vanilla,
                     port=25565,
                     max_memory=1024,
-                    max_players=20
+                    max_players=20,
                 )
-            
+
             assert "cannot contain '..' sequences" in str(exc_info.value)
 
     def test_server_name_windows_reserved_names(self):
         """Test protection against Windows reserved names"""
         reserved_names = [
-            "CON", "PRN", "AUX", "NUL",
-            "COM1", "COM2", "COM9", 
-            "LPT1", "LPT2", "LPT9",
-            "con", "prn", "aux",  # Test case insensitive
+            "CON",
+            "PRN",
+            "AUX",
+            "NUL",
+            "COM1",
+            "COM2",
+            "COM9",
+            "LPT1",
+            "LPT2",
+            "LPT9",
+            "con",
+            "prn",
+            "aux",  # Test case insensitive
         ]
-        
+
         for reserved_name in reserved_names:
             with pytest.raises(ValidationError) as exc_info:
                 ServerCreateRequest(
@@ -146,19 +155,19 @@ class TestServerCreateRequest:
                     server_type=ServerType.vanilla,
                     port=25565,
                     max_memory=1024,
-                    max_players=20
+                    max_players=20,
                 )
-            
+
             assert "is a reserved system name" in str(exc_info.value)
 
     def test_server_name_dot_position_restrictions(self):
         """Test dot position restrictions"""
         invalid_dot_names = [
-            ".hidden",        # Starts with dot
-            "server.",        # Ends with dot
-            "server ",        # Ends with space
+            ".hidden",  # Starts with dot
+            "server.",  # Ends with dot
+            "server ",  # Ends with space
         ]
-        
+
         for invalid_name in invalid_dot_names:
             with pytest.raises(ValidationError) as exc_info:
                 ServerCreateRequest(
@@ -168,20 +177,23 @@ class TestServerCreateRequest:
                     server_type=ServerType.vanilla,
                     port=25565,
                     max_memory=1024,
-                    max_players=20
+                    max_players=20,
                 )
-            
+
             error_msg = str(exc_info.value)
-            assert any(msg in error_msg for msg in [
-                "cannot start with a dot",
-                "cannot end with a dot", 
-                "cannot end with a space"
-            ])
+            assert any(
+                msg in error_msg
+                for msg in [
+                    "cannot start with a dot",
+                    "cannot end with a dot",
+                    "cannot end with a space",
+                ]
+            )
 
     def test_server_name_single_character_validation(self):
         """Test single character names are allowed"""
         single_char_names = ["A", "1", "Z", "9"]
-        
+
         for name in single_char_names:
             request = ServerCreateRequest(
                 name=name,
@@ -190,20 +202,20 @@ class TestServerCreateRequest:
                 server_type=ServerType.vanilla,
                 port=25565,
                 max_memory=1024,
-                max_players=20
+                max_players=20,
             )
             assert request.name == name
 
     def test_minecraft_version_invalid_format(self):
         """Test invalid Minecraft version format (line 59)"""
         invalid_versions = [
-            "1",           # Too short
-            "1.20.1.1",    # Too long
-            "v1.20.1",     # Has prefix
+            "1",  # Too short
+            "1.20.1.1",  # Too long
+            "v1.20.1",  # Has prefix
             "1.20.1-pre",  # Has suffix
-            "abc.def.ghi", # Non-numeric
+            "abc.def.ghi",  # Non-numeric
         ]
-        
+
         for invalid_version in invalid_versions:
             with pytest.raises(ValidationError) as exc_info:
                 ServerCreateRequest(
@@ -213,9 +225,9 @@ class TestServerCreateRequest:
                     server_type=ServerType.vanilla,
                     port=25565,
                     max_memory=1024,
-                    max_players=20
+                    max_players=20,
                 )
-            
+
             assert "Invalid Minecraft version format" in str(exc_info.value)
 
     def test_minecraft_version_below_minimum(self):
@@ -226,7 +238,7 @@ class TestServerCreateRequest:
             "1.6.4",
             "1.5.2",
         ]
-        
+
         for version in below_minimum_versions:
             with pytest.raises(ValidationError) as exc_info:
                 ServerCreateRequest(
@@ -236,9 +248,9 @@ class TestServerCreateRequest:
                     server_type=ServerType.vanilla,
                     port=25565,
                     max_memory=1024,
-                    max_players=20
+                    max_players=20,
                 )
-            
+
             assert "Minimum supported Minecraft version is 1.8" in str(exc_info.value)
 
     def test_minecraft_version_parsing_exception(self):
@@ -253,13 +265,15 @@ class TestServerCreateRequest:
                 server_type=ServerType.vanilla,
                 port=25565,
                 max_memory=1024,
-                max_players=20
+                max_players=20,
             )
-        
+
         # Either format validation or parsing should catch this
         error_msg = str(exc_info.value)
-        assert ("Invalid Minecraft version format" in error_msg or 
-                "Invalid version format" in error_msg)
+        assert (
+            "Invalid Minecraft version format" in error_msg
+            or "Invalid version format" in error_msg
+        )
 
     def test_valid_minecraft_versions(self):
         """Test valid Minecraft versions"""
@@ -273,7 +287,7 @@ class TestServerCreateRequest:
             "1.20.1",
             "1.21",
         ]
-        
+
         for version in valid_versions:
             request = ServerCreateRequest(
                 name="test-server",
@@ -282,7 +296,7 @@ class TestServerCreateRequest:
                 server_type=ServerType.vanilla,
                 port=25565,
                 max_memory=1024,
-                max_players=20
+                max_players=20,
             )
             assert request.minecraft_version == version
 
@@ -293,10 +307,9 @@ class TestServerUpdateRequest:
     def test_valid_server_update_request(self):
         """Test valid server update request"""
         request = ServerUpdateRequest(
-            name="updated-server",
-            description="Updated description"
+            name="updated-server", description="Updated description"
         )
-        
+
         assert request.name == "updated-server"
         assert request.description == "Updated description"
 
@@ -306,7 +319,7 @@ class TestServerUpdateRequest:
         with pytest.raises(ValidationError) as exc_info:
             ServerUpdateRequest(name="   ")
         assert "Server name cannot be empty" in str(exc_info.value)
-        
+
         # Test None name should be allowed for updates
         request = ServerUpdateRequest(name=None)
         assert request.name is None
@@ -317,7 +330,7 @@ class TestServerUpdateRequest:
         request1 = ServerUpdateRequest(name="new-name")
         assert request1.name == "new-name"
         assert request1.description is None
-        
+
         # Only description
         request2 = ServerUpdateRequest(description="new description")
         assert request2.name is None
@@ -330,10 +343,9 @@ class TestServerImportRequest:
     def test_valid_server_import_request(self):
         """Test valid server import request"""
         request = ServerImportRequest(
-            name="imported-server",
-            description="Imported from backup"
+            name="imported-server", description="Imported from backup"
         )
-        
+
         assert request.name == "imported-server"
         assert request.description == "Imported from backup"
 
@@ -342,24 +354,21 @@ class TestServerImportRequest:
         # Test empty name
         with pytest.raises(ValidationError):
             ServerImportRequest(name="")
-        
+
         # Test invalid characters
         with pytest.raises(ValidationError):
             ServerImportRequest(name="server/name")
-            
+
         # Test path traversal protection
         with pytest.raises(ValidationError):
             ServerImportRequest(name="../server")
-            
+
         # Test dot restrictions
         with pytest.raises(ValidationError):
             ServerImportRequest(name=".hidden")
-            
+
         # Test valid names with dots
-        request = ServerImportRequest(
-            name="server.1.20.1",
-            description="Import test"
-        )
+        request = ServerImportRequest(name="server.1.20.1", description="Import test")
         assert request.name == "server.1.20.1"
 
 
@@ -369,7 +378,7 @@ class TestServerResponse:
     def test_server_response_creation(self):
         """Test server response creation"""
         from datetime import datetime
-        
+
         response = ServerResponse(
             id=1,
             name="test-server",
@@ -384,9 +393,9 @@ class TestServerResponse:
             template_id=None,
             created_at=datetime.now(),
             updated_at=datetime.now(),
-            directory_path="/servers/test-server"
+            directory_path="/servers/test-server",
         )
-        
+
         assert response.id == 1
         assert response.name == "test-server"
         assert response.server_type == ServerType.vanilla
@@ -405,9 +414,9 @@ class TestMinecraftVersionInfo:
             is_supported=True,
             release_date="2023-06-07",
             is_stable=True,
-            build_number=None
+            build_number=None,
         )
-        
+
         assert version_info.version == "1.20.1"
         assert version_info.server_type == ServerType.vanilla
         assert version_info.is_supported is True
@@ -423,9 +432,9 @@ class TestMinecraftVersionInfo:
             is_supported=True,
             release_date="2023-06-07",
             is_stable=False,
-            build_number=123
+            build_number=123,
         )
-        
+
         assert version_info.build_number == 123
         assert version_info.server_type == ServerType.paper
         assert version_info.is_stable is False
@@ -443,18 +452,18 @@ class TestSupportedVersionsResponse:
             is_supported=True,
             release_date="2023-06-07",
             is_stable=True,
-            build_number=None
+            build_number=None,
         )
-        
+
         response = SupportedVersionsResponse(versions=[version_info])
-        
+
         assert len(response.versions) == 1
         assert response.versions[0].version == "1.20.1"
 
     def test_supported_versions_response_empty(self):
         """Test SupportedVersionsResponse with empty versions"""
         response = SupportedVersionsResponse(versions=[])
-        
+
         assert len(response.versions) == 0
 
 
@@ -471,10 +480,10 @@ class TestSchemaEdgeCases:
             server_type=ServerType.vanilla,
             port=25565,
             max_memory=1024,
-            max_players=20
+            max_players=20,
         )
         assert request.name == "test-server"  # Should be trimmed
-        
+
         # Trailing spaces should be rejected
         with pytest.raises(ValidationError) as exc_info:
             ServerCreateRequest(
@@ -484,7 +493,7 @@ class TestSchemaEdgeCases:
                 server_type=ServerType.vanilla,
                 port=25565,
                 max_memory=1024,
-                max_players=20
+                max_players=20,
             )
         assert "cannot end with a space" in str(exc_info.value)
 
@@ -498,10 +507,10 @@ class TestSchemaEdgeCases:
             server_type=ServerType.vanilla,
             port=1024,  # Minimum non-privileged port
             max_memory=1024,
-            max_players=20
+            max_players=20,
         )
         assert request1.port == 1024
-        
+
         # Test maximum valid port
         request2 = ServerCreateRequest(
             name="test-server",
@@ -510,6 +519,6 @@ class TestSchemaEdgeCases:
             server_type=ServerType.vanilla,
             port=65535,  # Maximum port
             max_memory=1024,
-            max_players=20
+            max_players=20,
         )
         assert request2.port == 65535

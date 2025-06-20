@@ -3,11 +3,11 @@ from fastapi import status
 
 
 class TestAuthRouter:
-
     def test_login_success(self, client, test_user):
         """有効なユーザーでのログイン成功"""
         response = client.post(
-            "/api/v1/auth/token", data={"username": "testuser", "password": "testpassword"}
+            "/api/v1/auth/token",
+            data={"username": "testuser", "password": "testpassword"},
         )
 
         assert response.status_code == status.HTTP_200_OK
@@ -27,7 +27,8 @@ class TestAuthRouter:
     def test_login_invalid_password(self, client, test_user):
         """間違ったパスワードでのログイン失敗"""
         response = client.post(
-            "/api/v1/auth/token", data={"username": "testuser", "password": "wrongpassword"}
+            "/api/v1/auth/token",
+            data={"username": "testuser", "password": "wrongpassword"},
         )
 
         assert response.status_code == status.HTTP_401_UNAUTHORIZED

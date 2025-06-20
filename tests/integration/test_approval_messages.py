@@ -10,7 +10,6 @@ def get_auth_headers(username: str):
 
 
 class TestApprovalMessages:
-
     def test_unapproved_user_login_returns_detailed_message(
         self, client, db, unapproved_user
     ):
@@ -29,7 +28,8 @@ class TestApprovalMessages:
     def test_approved_user_login_succeeds(self, client, db, test_user):
         """承認済みユーザーのログインは成功する"""
         response = client.post(
-            "/api/v1/auth/token", data={"username": "testuser", "password": "testpassword"}
+            "/api/v1/auth/token",
+            data={"username": "testuser", "password": "testpassword"},
         )
 
         assert response.status_code == status.HTTP_200_OK
@@ -72,7 +72,9 @@ class TestApprovalMessages:
     def test_admin_can_approve_user(self, client, db, admin_user, unapproved_user):
         """管理者はユーザーを承認できる"""
         headers = get_auth_headers("admin")
-        response = client.post(f"/api/v1/users/approve/{unapproved_user.id}", headers=headers)
+        response = client.post(
+            f"/api/v1/users/approve/{unapproved_user.id}", headers=headers
+        )
 
         assert response.status_code == status.HTTP_200_OK
         data = response.json()
@@ -147,7 +149,8 @@ class TestApprovalMessages:
     def test_wrong_password_different_error(self, client, db, test_user):
         """間違ったパスワードは異なるエラーメッセージ"""
         response = client.post(
-            "/api/v1/auth/token", data={"username": "testuser", "password": "wrongpassword"}
+            "/api/v1/auth/token",
+            data={"username": "testuser", "password": "wrongpassword"},
         )
 
         assert response.status_code == status.HTTP_401_UNAUTHORIZED

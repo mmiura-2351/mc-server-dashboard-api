@@ -21,7 +21,7 @@ class TestBackupScheduleModel:
             hashed_password="hashed_password",
             role=Role.operator,
             is_active=True,
-            is_approved=True
+            is_approved=True,
         )
         db.add(user)
         db.flush()
@@ -35,7 +35,7 @@ class TestBackupScheduleModel:
             max_memory=1024,
             max_players=20,
             owner_id=user.id,
-            directory_path="/servers/test-server"
+            directory_path="/servers/test-server",
         )
         db.add(server)
         db.flush()
@@ -46,7 +46,7 @@ class TestBackupScheduleModel:
             interval_hours=12,
             max_backups=10,
             enabled=True,
-            only_when_running=True
+            only_when_running=True,
         )
         db.add(schedule)
         db.commit()
@@ -71,7 +71,7 @@ class TestBackupScheduleModel:
             hashed_password="hashed_password",
             role=Role.operator,
             is_active=True,
-            is_approved=True
+            is_approved=True,
         )
         db.add(user)
         db.flush()
@@ -85,7 +85,7 @@ class TestBackupScheduleModel:
             max_memory=1024,
             max_players=20,
             owner_id=user.id,
-            directory_path="/servers/test-server2"
+            directory_path="/servers/test-server2",
         )
         db.add(server)
         db.flush()
@@ -95,7 +95,7 @@ class TestBackupScheduleModel:
             schedule = BackupSchedule(
                 server_id=server.id,
                 interval_hours=0,  # 無効値
-                max_backups=10
+                max_backups=10,
             )
             db.add(schedule)
             db.commit()
@@ -107,7 +107,7 @@ class TestBackupScheduleModel:
             schedule = BackupSchedule(
                 server_id=server.id,
                 interval_hours=169,  # 無効値
-                max_backups=10
+                max_backups=10,
             )
             db.add(schedule)
             db.commit()
@@ -119,7 +119,7 @@ class TestBackupScheduleModel:
             schedule = BackupSchedule(
                 server_id=server.id,
                 interval_hours=12,
-                max_backups=0  # 無効値
+                max_backups=0,  # 無効値
             )
             db.add(schedule)
             db.commit()
@@ -131,7 +131,7 @@ class TestBackupScheduleModel:
             schedule = BackupSchedule(
                 server_id=server.id,
                 interval_hours=12,
-                max_backups=31  # 無効値
+                max_backups=31,  # 無効値
             )
             db.add(schedule)
             db.commit()
@@ -144,7 +144,7 @@ class TestBackupScheduleModel:
             hashed_password="hashed_password",
             role=Role.operator,
             is_active=True,
-            is_approved=True
+            is_approved=True,
         )
         db.add(user)
         db.flush()
@@ -158,26 +158,20 @@ class TestBackupScheduleModel:
             max_memory=1024,
             max_players=20,
             owner_id=user.id,
-            directory_path="/servers/test-server3"
+            directory_path="/servers/test-server3",
         )
         db.add(server)
         db.flush()
 
         # 最初のスケジュール作成
-        schedule1 = BackupSchedule(
-            server_id=server.id,
-            interval_hours=12,
-            max_backups=10
-        )
+        schedule1 = BackupSchedule(server_id=server.id, interval_hours=12, max_backups=10)
         db.add(schedule1)
         db.commit()
 
         # 同じサーバーに2つ目のスケジュール作成（失敗するはず）
         with pytest.raises(IntegrityError):  # UNIQUE制約エラー
             schedule2 = BackupSchedule(
-                server_id=server.id,
-                interval_hours=24,
-                max_backups=5
+                server_id=server.id, interval_hours=24, max_backups=5
             )
             db.add(schedule2)
             db.commit()
@@ -190,7 +184,7 @@ class TestBackupScheduleModel:
             hashed_password="hashed_password",
             role=Role.operator,
             is_active=True,
-            is_approved=True
+            is_approved=True,
         )
         db.add(user)
         db.flush()
@@ -204,16 +198,12 @@ class TestBackupScheduleModel:
             max_memory=1024,
             max_players=20,
             owner_id=user.id,
-            directory_path="/servers/test-server4"
+            directory_path="/servers/test-server4",
         )
         db.add(server)
         db.flush()
 
-        schedule = BackupSchedule(
-            server_id=server.id,
-            interval_hours=6,
-            max_backups=15
-        )
+        schedule = BackupSchedule(server_id=server.id, interval_hours=6, max_backups=15)
         db.add(schedule)
         db.commit()
 
@@ -229,7 +219,7 @@ class TestBackupScheduleModel:
             hashed_password="hashed_password",
             role=Role.operator,
             is_active=True,
-            is_approved=True
+            is_approved=True,
         )
         db.add(user)
         db.flush()
@@ -243,16 +233,12 @@ class TestBackupScheduleModel:
             max_memory=1024,
             max_players=20,
             owner_id=user.id,
-            directory_path="/servers/test-server5"
+            directory_path="/servers/test-server5",
         )
         db.add(server)
         db.flush()
 
-        schedule = BackupSchedule(
-            server_id=server.id,
-            interval_hours=8,
-            max_backups=12
-        )
+        schedule = BackupSchedule(server_id=server.id, interval_hours=8, max_backups=12)
         db.add(schedule)
         db.commit()
 
@@ -263,7 +249,9 @@ class TestBackupScheduleModel:
         db.commit()
 
         # スケジュールも削除されているか確認
-        deleted_schedule = db.query(BackupSchedule).filter(BackupSchedule.id == schedule_id).first()
+        deleted_schedule = (
+            db.query(BackupSchedule).filter(BackupSchedule.id == schedule_id).first()
+        )
         assert deleted_schedule is None
 
     def test_backup_schedule_default_values(self, db: Session):
@@ -274,7 +262,7 @@ class TestBackupScheduleModel:
             hashed_password="hashed_password",
             role=Role.operator,
             is_active=True,
-            is_approved=True
+            is_approved=True,
         )
         db.add(user)
         db.flush()
@@ -288,17 +276,13 @@ class TestBackupScheduleModel:
             max_memory=1024,
             max_players=20,
             owner_id=user.id,
-            directory_path="/servers/test-server6"
+            directory_path="/servers/test-server6",
         )
         db.add(server)
         db.flush()
 
         # 最小限のフィールドでスケジュール作成
-        schedule = BackupSchedule(
-            server_id=server.id,
-            interval_hours=12,
-            max_backups=10
-        )
+        schedule = BackupSchedule(server_id=server.id, interval_hours=12, max_backups=10)
         db.add(schedule)
         db.commit()
 
@@ -320,7 +304,7 @@ class TestBackupScheduleLogModel:
             hashed_password="hashed_password",
             role=Role.admin,
             is_active=True,
-            is_approved=True
+            is_approved=True,
         )
         db.add(user)
         db.flush()
@@ -334,7 +318,7 @@ class TestBackupScheduleLogModel:
             max_memory=1024,
             max_players=20,
             owner_id=user.id,
-            directory_path="/servers/log-server1"
+            directory_path="/servers/log-server1",
         )
         db.add(server)
         db.flush()
@@ -345,7 +329,7 @@ class TestBackupScheduleLogModel:
             action=ScheduleAction.created,
             reason="Schedule created by admin",
             new_config={"interval_hours": 12, "max_backups": 10},
-            executed_by_user_id=user.id
+            executed_by_user_id=user.id,
         )
         db.add(log)
         db.commit()
@@ -368,7 +352,7 @@ class TestBackupScheduleLogModel:
             hashed_password="hashed_password",
             role=Role.admin,
             is_active=True,
-            is_approved=True
+            is_approved=True,
         )
         db.add(user)
         db.flush()
@@ -382,7 +366,7 @@ class TestBackupScheduleLogModel:
             max_memory=1024,
             max_players=20,
             owner_id=user.id,
-            directory_path="/servers/log-server2"
+            directory_path="/servers/log-server2",
         )
         db.add(server)
         db.flush()
@@ -390,7 +374,7 @@ class TestBackupScheduleLogModel:
         log = BackupScheduleLog(
             server_id=server.id,
             action=ScheduleAction.updated,
-            executed_by_user_id=user.id
+            executed_by_user_id=user.id,
         )
         db.add(log)
         db.commit()
@@ -407,7 +391,7 @@ class TestBackupScheduleLogModel:
             hashed_password="hashed_password",
             role=Role.admin,
             is_active=True,
-            is_approved=True
+            is_approved=True,
         )
         db.add(user)
         db.flush()
@@ -421,7 +405,7 @@ class TestBackupScheduleLogModel:
             max_memory=1024,
             max_players=20,
             owner_id=user.id,
-            directory_path="/servers/log-server3"
+            directory_path="/servers/log-server3",
         )
         db.add(server)
         db.flush()
@@ -432,7 +416,7 @@ class TestBackupScheduleLogModel:
             ScheduleAction.updated,
             ScheduleAction.deleted,
             ScheduleAction.executed,
-            ScheduleAction.skipped
+            ScheduleAction.skipped,
         ]
 
         for action in actions:
@@ -440,14 +424,18 @@ class TestBackupScheduleLogModel:
                 server_id=server.id,
                 action=action,
                 reason=f"Test {action.value}",
-                executed_by_user_id=user.id
+                executed_by_user_id=user.id,
             )
             db.add(log)
 
         db.commit()
 
         # 作成されたログの確認
-        logs = db.query(BackupScheduleLog).filter(BackupScheduleLog.server_id == server.id).all()
+        logs = (
+            db.query(BackupScheduleLog)
+            .filter(BackupScheduleLog.server_id == server.id)
+            .all()
+        )
         assert len(logs) == 5
 
         log_actions = [log.action for log in logs]
@@ -462,7 +450,7 @@ class TestBackupScheduleLogModel:
             hashed_password="hashed_password",
             role=Role.admin,
             is_active=True,
-            is_approved=True
+            is_approved=True,
         )
         db.add(user)
         db.flush()
@@ -476,7 +464,7 @@ class TestBackupScheduleLogModel:
             max_memory=1024,
             max_players=20,
             owner_id=user.id,
-            directory_path="/servers/log-server4"
+            directory_path="/servers/log-server4",
         )
         db.add(server)
         db.flush()
@@ -485,7 +473,7 @@ class TestBackupScheduleLogModel:
         log = BackupScheduleLog(
             server_id=server.id,
             action=ScheduleAction.executed,
-            reason="Automated execution"
+            reason="Automated execution",
         )
         db.add(log)
         db.commit()

