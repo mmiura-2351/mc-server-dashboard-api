@@ -970,8 +970,8 @@ class TestBackupRouterFixed:
             if os.path.exists(tmp_file.name):
                 os.unlink(tmp_file.name)
 
-    def test_upload_backup_forbidden_for_regular_user(self, client, test_user, db):
-        """Test that regular users cannot upload backups"""
+    def test_upload_backup_allowed_for_regular_user(self, client, test_user, db):
+        """Test that regular users can now upload backups (Phase 1: shared resource model)"""
         # Create a test server in database
         server = Server(
             id=1,
@@ -1001,8 +1001,11 @@ class TestBackupRouterFixed:
                     headers=get_auth_headers(test_user.username),
                 )
 
-        assert response.status_code == status.HTTP_403_FORBIDDEN
-        assert "Only operators and admins can upload backups" in response.json()["detail"]
+        # Phase 1: Regular users should NOT get 403 Forbidden for backup upload
+        # (May get other errors due to file format, but not authorization errors)
+        assert response.status_code != status.HTTP_403_FORBIDDEN, (
+            f"Regular users should not be forbidden from uploading backups in Phase 1. Got {response.status_code}: {response.json() if response.status_code != 500 else 'Internal Server Error'}"
+        )
 
     def test_upload_backup_no_file(self, client, test_user, db):
         """Test upload without providing a file"""

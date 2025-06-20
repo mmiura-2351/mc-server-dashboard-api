@@ -48,15 +48,11 @@ async def create_backup_schedule(
     - **only_when_running**: Only backup when server is running
     """
     try:
-        # Check server access (owner or admin)
+        # Check server access
         authorization_service.check_server_access(server_id, current_user, db)
 
-        # Only operators and admins can create schedules
-        if current_user.role == Role.user:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Only operators and admins can create backup schedules",
-            )
+        # All authenticated users can create backup schedules (Phase 1: shared resource model)
+        # No role restriction - all users can create backup schedules
 
         schedule = await backup_scheduler.create_schedule(
             db=db,
@@ -149,15 +145,11 @@ async def update_backup_schedule(
     Only server owners and admins can update schedules.
     """
     try:
-        # Check server access (owner or admin)
+        # Check server access
         authorization_service.check_server_access(server_id, current_user, db)
 
-        # Only operators and admins can update schedules
-        if current_user.role == Role.user:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Only operators and admins can update backup schedules",
-            )
+        # All authenticated users can update backup schedules (Phase 1: shared resource model)
+        # No role restriction - all users can update backup schedules
 
         schedule = await backup_scheduler.update_schedule(
             db=db,
@@ -206,15 +198,11 @@ async def delete_backup_schedule(
     Only server owners and admins can delete schedules.
     """
     try:
-        # Check server access (owner or admin)
+        # Check server access
         authorization_service.check_server_access(server_id, current_user, db)
 
-        # Only operators and admins can delete schedules
-        if current_user.role == Role.user:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Only operators and admins can delete backup schedules",
-            )
+        # All authenticated users can delete backup schedules (Phase 1: shared resource model)
+        # No role restriction - all users can delete backup schedules
 
         success = await backup_scheduler.delete_schedule(
             db=db,
