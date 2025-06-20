@@ -39,12 +39,9 @@ class GroupAccessService:
         Raises:
             HTTPException: If user doesn't have permission to access the group
         """
-        # Phase 1: Shared Resource Access - Allow all users with User role or higher to access groups
-        if user.role not in [Role.admin, Role.operator, Role.user]:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="You don't have permission to access this group",
-            )
+        # Phase 1: Shared Resource Access - Allow all authenticated users to access groups
+        # No role restrictions - all authenticated users can access groups
+        pass
 
     @staticmethod
     def check_server_access(
@@ -60,12 +57,28 @@ class GroupAccessService:
         Raises:
             HTTPException: If user doesn't have permission to access the server
         """
-        # Phase 1: Shared Resource Access - Allow all users with User role or higher to access servers
-        if user.role not in [Role.admin, Role.operator, Role.user]:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="You don't have permission to access this server",
-            )
+        # Phase 1: Shared Resource Access - Allow all authenticated users to access servers
+        # No role restrictions - all authenticated users can access servers
+        pass
+
+    @staticmethod
+    def can_manage_server_groups(
+        user: Annotated[User, "User requesting access"],
+        server: Annotated[Server, "Server to manage groups for"],
+    ) -> bool:
+        """Check if user can attach/detach groups to/from server.
+
+        Special rule: Only server owner + admin can attach/detach groups to/from servers.
+        This is based on server ownership, not group ownership.
+
+        Args:
+            user: The user requesting access
+            server: The server to manage groups for
+
+        Returns:
+            True if user can manage server groups, False otherwise
+        """
+        return user.role == Role.admin or server.owner_id == user.id
 
 
 class GroupFileService:
@@ -690,7 +703,12 @@ class GroupService:
                 status_code=status.HTTP_404_NOT_FOUND, detail="Server not found"
             )
 
-        self.access_service.check_server_access(user, server)
+        # Special rule: Only server owner + admin can attach groups to servers
+        if not self.access_service.can_manage_server_groups(user, server):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Only server owners and admins can attach groups to servers",
+            )
 
         # Check group access
         group = self.get_group_by_id(user, group_id)
@@ -799,7 +817,12 @@ class GroupService:
                 status_code=status.HTTP_404_NOT_FOUND, detail="Server not found"
             )
 
-        self.access_service.check_server_access(user, server)
+        # Special rule: Only server owner + admin can detach groups from servers
+        if not self.access_service.can_manage_server_groups(user, server):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Only server owners and admins can detach groups from servers",
+            )
 
         # Check group access
         group = self.get_group_by_id(user, group_id)
