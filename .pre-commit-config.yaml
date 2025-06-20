@@ -29,6 +29,18 @@ repos:
       - id: ruff-format
         types_or: [python, pyi]
 
+  # Full test suite execution for comprehensive quality assurance
+  - repo: local
+    hooks:
+      - id: pytest-all
+        name: Run full test suite
+        entry: uv run pytest
+        args: [--tb=short, --maxfail=5, -v]
+        language: system
+        types: [python]
+        pass_filenames: false
+        stages: [pre-commit]
+
 # MyPy type checking - currently disabled due to extensive type annotation work needed
 # Will be re-enabled gradually as type coverage improves
 # - repo: https://github.com/pre-commit/mirrors-mypy

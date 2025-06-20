@@ -68,8 +68,9 @@ When addressing GitHub Issues, follow this standard procedure:
 **Be mindful of test execution performance and timeouts.**
 
 When running tests, follow these guidelines:
-1. **Avoid Full Test Suite Timeouts**: Running all tests may result in timeouts. Focus on running minimal, targeted tests when possible
-2. **Extend Timeout for Full Suite**: When running the complete test suite is necessary, explicitly extend the timeout duration (e.g., use `--timeout=300000` parameter)
+1. **Pre-commit Full Test Suite**: Pre-commit hooks now run the complete test suite for comprehensive quality assurance
+2. **Manual Test Execution**: For manual testing, use appropriate timeout settings if needed
+3. **Extend Timeout for Full Suite**: When running the complete test suite manually, explicitly extend the timeout duration (e.g., use `--timeout=300000` parameter)
 
 ### Rule 7: Issue Resolution Completion Process
 **Always close resolved Issues with proper documentation and status updates.**
@@ -147,6 +148,7 @@ This is a comprehensive FastAPI-based backend API for managing multiple Minecraf
 | Check code coverage | `uv run coverage run -m pytest && uv run coverage report` |
 | Install pre-commit hooks | `uv run pre-commit install` |
 | Run pre-commit on all files | `uv run pre-commit run --all-files` |
+| Run specific pre-commit hook | `uv run pre-commit run <hook-name>` |
 
 ## System Architecture
 
