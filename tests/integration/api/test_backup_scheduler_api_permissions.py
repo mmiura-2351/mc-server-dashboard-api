@@ -173,7 +173,11 @@ class TestBackupSchedulerAPIPermissions:
     def test_create_schedule_as_non_owner_forbidden(
         self, client: TestClient, db: Session, other_user: User, owner_server: Server
     ):
-        """Non-owner user cannot create schedule"""
+        """Non-owner regular user cannot create schedule (operator+ required)"""
+        # Ensure other_user is regular user (not operator/admin)
+        other_user.role = Role.user
+        db.commit()
+
         headers = self.get_auth_headers(other_user)
 
         response = client.post(
@@ -183,7 +187,7 @@ class TestBackupSchedulerAPIPermissions:
         )
 
         assert response.status_code == 403
-        assert "access" in response.json()["detail"].lower()
+        assert "Only operators and admins can create backup schedules" in response.json()["detail"]
 
     def test_create_schedule_as_regular_user_forbidden(
         self, client: TestClient, db: Session, regular_user: User, owner_server: Server
@@ -266,10 +270,17 @@ class TestBackupSchedulerAPIPermissions:
 
         assert response.status_code == 200
 
-    def test_get_schedule_as_non_owner_forbidden(
+    def test_get_schedule_as_non_owner_allowed(
         self, client: TestClient, db: Session, other_user: User, owner_server: Server
     ):
-        """Non-owner user cannot get schedule"""
+        """Non-owner user can get schedule (all users can view)"""
+        # Create a schedule first
+        schedule = BackupSchedule(
+            server_id=owner_server.id, interval_hours=12, max_backups=10
+        )
+        db.add(schedule)
+        db.commit()
+
         headers = self.get_auth_headers(other_user)
 
         response = client.get(
@@ -277,7 +288,7 @@ class TestBackupSchedulerAPIPermissions:
             headers=headers,
         )
 
-        assert response.status_code == 403
+        assert response.status_code == 200
 
     def test_update_schedule_as_server_owner(
         self, client: TestClient, db: Session, operator_user: User, owner_server: Server
@@ -313,7 +324,11 @@ class TestBackupSchedulerAPIPermissions:
     def test_update_schedule_as_non_owner_forbidden(
         self, client: TestClient, db: Session, other_user: User, owner_server: Server
     ):
-        """Non-owner user cannot update schedule"""
+        """Non-owner regular user cannot update schedule (operator+ required)"""
+        # Ensure other_user is regular user
+        other_user.role = Role.user
+        db.commit()
+
         headers = self.get_auth_headers(other_user)
 
         response = client.put(
@@ -323,6 +338,7 @@ class TestBackupSchedulerAPIPermissions:
         )
 
         assert response.status_code == 403
+        assert "Only operators and admins can update backup schedules" in response.json()["detail"]
 
     def test_delete_schedule_as_server_owner(
         self, client: TestClient, db: Session, operator_user: User, owner_server: Server
@@ -387,7 +403,11 @@ class TestBackupSchedulerAPIPermissions:
     def test_delete_schedule_as_non_owner_forbidden(
         self, client: TestClient, db: Session, other_user: User, owner_server: Server
     ):
-        """Non-owner user cannot delete schedule"""
+        """Non-owner regular user cannot delete schedule (operator+ required)"""
+        # Ensure other_user is regular user
+        other_user.role = Role.user
+        db.commit()
+
         headers = self.get_auth_headers(other_user)
 
         response = client.delete(
@@ -396,6 +416,7 @@ class TestBackupSchedulerAPIPermissions:
         )
 
         assert response.status_code == 403
+        assert "Only operators and admins can delete backup schedules" in response.json()["detail"]
 
     def test_scheduler_status_admin_only(
         self, client: TestClient, db: Session, admin_user: User, operator_user: User

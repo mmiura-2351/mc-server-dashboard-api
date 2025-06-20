@@ -120,10 +120,10 @@ class TestServerManagementRouter:
 
     @pytest.mark.asyncio
     @patch("app.servers.routers.management.server_service")
-    async def test_list_servers_admin_vs_user_access(
+    async def test_list_servers_all_users_see_all(
         self, mock_server_service, admin_user, test_user
     ):
-        """Test list servers access control for admin vs user (lines 90-91)"""
+        """Test list servers access control - all users see all servers (lines 89-90)"""
         from app.servers.routers.management import list_servers
 
         mock_result = {"servers": [], "total": 0, "page": 1, "size": 10}
@@ -143,11 +143,11 @@ class TestServerManagementRouter:
         # Reset mock
         mock_server_service.list_servers.reset_mock()
 
-        # Test regular user access (should see only own servers)
+        # Test regular user access (should also see all servers - owner_id=None)
         await list_servers(page=1, size=10, current_user=test_user, db=db_mock)
 
-        # Verify user call had owner_id=user.id
-        assert mock_server_service.list_servers.call_args[1]["owner_id"] == test_user.id
+        # Verify user call also had owner_id=None (all users see all servers)
+        assert mock_server_service.list_servers.call_args[1]["owner_id"] is None
         assert mock_server_service.list_servers.call_args[1]["page"] == 1
         assert mock_server_service.list_servers.call_args[1]["size"] == 10
 
@@ -377,11 +377,16 @@ class TestServerManagementRouter:
     async def test_delete_server_success(
         self, mock_server_service, mock_auth_service, admin_user
     ):
-        """Test delete server success path (lines 194-207)"""
+        """Test delete server success path for admin"""
         from app.servers.routers.management import delete_server
 
-        # Mock authorization to pass
-        mock_auth_service.check_server_access.return_value = None
+        # Mock server object
+        mock_server = Mock()
+        mock_server.owner_id = 999  # Different from admin_user.id
+
+        # Mock authorization to return server and allow deletion for admin
+        mock_auth_service.check_server_access.return_value = mock_server
+        mock_auth_service.can_delete_server.return_value = True
         # Mock server service to return success
         mock_server_service.delete_server = AsyncMock(return_value=True)
 
@@ -391,14 +396,42 @@ class TestServerManagementRouter:
     @pytest.mark.asyncio
     @patch("app.servers.routers.management.authorization_service")
     @patch("app.servers.routers.management.server_service")
+    async def test_delete_server_permission_denied(
+        self, mock_server_service, mock_auth_service, test_user
+    ):
+        """Test delete server permission denied for non-owner regular user"""
+        from app.servers.routers.management import delete_server
+
+        # Mock server object owned by different user
+        mock_server = Mock()
+        mock_server.owner_id = 999  # Different from test_user.id
+
+        # Mock authorization to return server but deny deletion for non-owner
+        mock_auth_service.check_server_access.return_value = mock_server
+        mock_auth_service.can_delete_server.return_value = False
+
+        with pytest.raises(HTTPException) as exc_info:
+            await delete_server(server_id=1, current_user=test_user, db=Mock())
+
+        assert exc_info.value.status_code == 403
+        assert "Only admins and server owners can delete servers" in str(exc_info.value.detail)
+
+    @pytest.mark.asyncio
+    @patch("app.servers.routers.management.authorization_service")
+    @patch("app.servers.routers.management.server_service")
     async def test_delete_server_not_found(
         self, mock_server_service, mock_auth_service, admin_user
     ):
-        """Test delete server not found (lines 199-202)"""
+        """Test delete server not found"""
         from app.servers.routers.management import delete_server
 
+        # Mock server object
+        mock_server = Mock()
+        mock_server.owner_id = 999
+
         # Mock authorization to pass
-        mock_auth_service.check_server_access.return_value = None
+        mock_auth_service.check_server_access.return_value = mock_server
+        mock_auth_service.can_delete_server.return_value = True
         # Mock server service to return False (not found)
         mock_server_service.delete_server = AsyncMock(return_value=False)
 
@@ -414,11 +447,16 @@ class TestServerManagementRouter:
     async def test_delete_server_general_exception(
         self, mock_server_service, mock_auth_service, admin_user
     ):
-        """Test delete server with general exception (lines 206-210)"""
+        """Test delete server with general exception"""
         from app.servers.routers.management import delete_server
 
+        # Mock server object
+        mock_server = Mock()
+        mock_server.owner_id = 999
+
         # Mock authorization to pass
-        mock_auth_service.check_server_access.return_value = None
+        mock_auth_service.check_server_access.return_value = mock_server
+        mock_auth_service.can_delete_server.return_value = True
         # Mock server service to raise exception
         mock_server_service.delete_server = AsyncMock(
             side_effect=Exception("Delete failed")

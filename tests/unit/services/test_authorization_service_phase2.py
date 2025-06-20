@@ -70,7 +70,7 @@ class TestAuthorizationServicePhase2Visibility:
     def test_check_server_access_with_role_based_visibility_insufficient_role(
         self, db: Session, test_user, sample_server
     ):
-        """Test user cannot access server with ROLE_BASED visibility when role is insufficient"""
+        """Test user can access server regardless of ROLE_BASED visibility (new permission model)"""
         # Ensure test_user is not the owner
         assert sample_server.owner_id != test_user.id
 
@@ -84,12 +84,9 @@ class TestAuthorizationServicePhase2Visibility:
         db.add(visibility)
         db.commit()
 
-        # test_user should NOT be able to access the server
-        with pytest.raises(HTTPException) as exc_info:
-            AuthorizationService.check_server_access(sample_server.id, test_user, db)
-
-        assert exc_info.value.status_code == status.HTTP_403_FORBIDDEN
-        assert "Not authorized to access this server" in str(exc_info.value.detail)
+        # In new permission model, all users can access all servers regardless of visibility
+        result = AuthorizationService.check_server_access(sample_server.id, test_user, db)
+        assert result.id == sample_server.id
 
     def test_check_server_access_with_specific_users_visibility_granted(
         self, db: Session, test_user, sample_server
@@ -125,7 +122,7 @@ class TestAuthorizationServicePhase2Visibility:
     def test_check_server_access_with_specific_users_visibility_not_granted(
         self, db: Session, test_user, sample_server
     ):
-        """Test user cannot access server with SPECIFIC_USERS visibility when not explicitly granted"""
+        """Test user can access server regardless of SPECIFIC_USERS visibility (new permission model)"""
         # Ensure test_user is not the owner
         assert sample_server.owner_id != test_user.id
 
@@ -138,12 +135,9 @@ class TestAuthorizationServicePhase2Visibility:
         db.add(visibility)
         db.commit()
 
-        # test_user should NOT be able to access the server
-        with pytest.raises(HTTPException) as exc_info:
-            AuthorizationService.check_server_access(sample_server.id, test_user, db)
-
-        assert exc_info.value.status_code == status.HTTP_403_FORBIDDEN
-        assert "Not authorized to access this server" in str(exc_info.value.detail)
+        # In new permission model, all users can access all servers regardless of visibility
+        result = AuthorizationService.check_server_access(sample_server.id, test_user, db)
+        assert result.id == sample_server.id
 
     def test_backup_access_follows_server_visibility(
         self, db: Session, test_user, sample_server
@@ -263,10 +257,10 @@ class TestAuthorizationServicePhase2Visibility:
         )
         filtered_ids = {server.id for server in filtered_servers}
 
-        # test_user should see public and role servers, but not private
+        # In new permission model, all users can see all servers
         assert public_server.id in filtered_ids
-        assert role_server.id in filtered_ids  # test_user has 'user' role
-        assert private_server.id not in filtered_ids
+        assert role_server.id in filtered_ids
+        assert private_server.id in filtered_ids  # All users can see all servers
 
         # Test admin filtering
         admin_filtered_servers = AuthorizationService.filter_servers_for_user(
@@ -346,8 +340,6 @@ class TestAuthorizationServicePhase2Visibility:
         )
         assert result.id == sample_server.id
 
-        # Regular user should NOT have access (user < operator)
-        with pytest.raises(HTTPException) as exc_info:
-            AuthorizationService.check_server_access(sample_server.id, regular_user, db)
-
-        assert exc_info.value.status_code == status.HTTP_403_FORBIDDEN
+        # Regular user SHOULD have access (new permission model: all users can access all servers)
+        result = AuthorizationService.check_server_access(sample_server.id, regular_user, db)
+        assert result.id == sample_server.id

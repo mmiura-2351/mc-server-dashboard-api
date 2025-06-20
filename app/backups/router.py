@@ -556,16 +556,18 @@ async def delete_backup(
 
     Permanently deletes a backup and its associated file.
     This action cannot be undone.
+
+    Only admins and server owners can delete backups.
     """
     try:
-        # Check backup access
-        authorization_service.check_backup_access(backup_id, current_user, db)
+        # Check backup exists and get backup object
+        backup = authorization_service.check_backup_access(backup_id, current_user, db)
 
-        # Only operators and admins can delete backups
-        if current_user.role == Role.user:
+        # Check deletion permission (admin or server owner only)
+        if not authorization_service.can_delete_backup(backup, current_user):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="Only operators and admins can delete backups",
+                detail="Only admins and server owners can delete backups",
             )
 
         success = await backup_service.delete_backup(backup_id, db)
