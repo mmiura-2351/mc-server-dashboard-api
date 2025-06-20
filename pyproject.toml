@@ -36,7 +36,6 @@ dependencies = [
     "pytest==8.3.4",
     "pytest-asyncio==0.25.0",
     "httpx==0.28.1",
-    "black>=25.1.0",
     "ruff>=0.11.12",
     "aiohttp>=3.12.9",
     "aiofiles>=24.1.0",
@@ -51,11 +50,6 @@ members = [
     "mc-server-dashboard-api",
 ]
 
-[tool.black]
-line-length = 90
-target-version = ["py313"]
-skip-string-normalization = false
-
 [tool.ruff]
 line-length = 90
 target-version = "py313"
@@ -64,6 +58,13 @@ fix = true
 
 [tool.ruff.lint]
 extend-select = ["I"]
+
+[tool.ruff.format]
+# Use same settings as Black for consistency
+quote-style = "double"
+indent-style = "space"
+skip-magic-trailing-comma = false
+line-ending = "auto"
 
 [dependency-groups]
 dev = [

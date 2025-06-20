@@ -42,7 +42,7 @@ class TestAuditLogging:
         response = client.get("/health")
 
         assert response.status_code == 200
-        
+
         # Note: TestClient may not always call middleware in the same way as production
         # This test verifies basic health endpoint functionality
         # X-Request-ID header addition is tested in integration tests
@@ -148,7 +148,7 @@ class TestAuditLogging:
         # Clear any existing audit logs first
         db.query(AuditLog).delete()
         db.commit()
-        
+
         # Test authentication event logging
         AuditService.log_authentication_event(
             db=db,
@@ -182,7 +182,7 @@ class TestAuditLogging:
         # Force a fresh query to check if logs were created
         # Service should auto-commit via direct DB logging path
         db.expunge_all()  # Clear session cache
-        
+
         # Verify logs were created
         auth_logs = (
             db.query(AuditLog).filter(AuditLog.resource_type == "authentication").all()
@@ -190,7 +190,7 @@ class TestAuditLogging:
         # In test environment, logging behavior may be different
         # Check if any logs exist at all
         all_logs = db.query(AuditLog).all()
-        
+
         # If service works correctly, we should have audit logs
         # But in CI environment, this may work differently
         if all_logs:
@@ -223,9 +223,10 @@ class TestAuditLogging:
             # Either the log belongs to the user or it's a system log without user_id
             # Note: In different test environments, user IDs may vary
             # The important thing is that users can only see their own logs
-            assert (
-                log["user_id"] is None or log["user_id"] in [1, 2]
-            )  # Flexible user ID check
+            assert log["user_id"] is None or log["user_id"] in [
+                1,
+                2,
+            ]  # Flexible user ID check
 
     def test_audit_statistics_admin_only(
         self, client: TestClient, admin_headers: dict, user_headers: dict
@@ -320,7 +321,7 @@ class TestAuditLogging:
         # Clear existing security logs
         db.query(AuditLog).filter(AuditLog.resource_type == "security").delete()
         db.commit()
-        
+
         AuditService.log_security_event(
             db=db,
             request=mock_request,
@@ -340,7 +341,7 @@ class TestAuditLogging:
         # Verify critical security events are properly logged
         # First check all security events
         all_security_alerts = AuditService.get_security_alerts(db, limit=10)
-        
+
         # In test environments, DB behavior may be different
         if all_security_alerts:
             assert len(all_security_alerts) >= 1

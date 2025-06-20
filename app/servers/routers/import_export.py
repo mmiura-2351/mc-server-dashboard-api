@@ -175,7 +175,7 @@ async def import_server(
         if file.size and file.size > max_size:
             raise HTTPException(
                 status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-                detail=f"File too large. Maximum size is {max_size // (1024*1024)}MB",
+                detail=f"File too large. Maximum size is {max_size // (1024 * 1024)}MB",
             )
 
         # Validate file type

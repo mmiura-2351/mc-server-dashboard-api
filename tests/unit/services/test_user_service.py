@@ -5,7 +5,6 @@ from app.users.models import Role
 
 
 class TestUserService:
-
     def test_register_first_user_as_admin(self, user_service):
         """最初のユーザーは管理者として登録される"""
         user_data = UserCreate(

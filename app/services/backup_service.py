@@ -248,7 +248,7 @@ class BackupFileService:
         total_files, total_size = await self._calculate_directory_size_async(server_dir)
 
         logger.info(
-            f"Starting backup of {total_files} files ({total_size / (1024*1024):.1f}MB) from {server_dir}"
+            f"Starting backup of {total_files} files ({total_size / (1024 * 1024):.1f}MB) from {server_dir}"
         )
 
         if progress_callback:
@@ -267,7 +267,7 @@ class BackupFileService:
         )
 
         logger.info(
-            f"Backup creation completed for {total_files} files ({total_size / (1024*1024):.1f}MB)"
+            f"Backup creation completed for {total_files} files ({total_size / (1024 * 1024):.1f}MB)"
         )
 
     def _create_tar_archive_sync(
@@ -292,7 +292,7 @@ class BackupFileService:
                         # Use streaming backup for large files (>100MB)
                         if file_size > 100 * 1024 * 1024:
                             logger.debug(
-                                f"Processing large file: {item} ({file_size / (1024*1024):.1f}MB)"
+                                f"Processing large file: {item} ({file_size / (1024 * 1024):.1f}MB)"
                             )
                             self._add_large_file_to_tar_chunked(tar, item, arcname)
                         else:
@@ -314,7 +314,7 @@ class BackupFileService:
                                 else 0
                             )
                             logger.info(
-                                f"Backup progress: {processed_files}/{total_files} files ({progress:.1f}%), {processed_size / (1024*1024):.1f}/{total_size / (1024*1024):.1f}MB ({size_progress:.1f}%)"
+                                f"Backup progress: {processed_files}/{total_files} files ({progress:.1f}%), {processed_size / (1024 * 1024):.1f}/{total_size / (1024 * 1024):.1f}MB ({size_progress:.1f}%)"
                             )
 
                             if progress_callback:
@@ -334,7 +334,7 @@ class BackupFileService:
             progress_callback(processed_files, total_files, processed_size, total_size)
 
         logger.info(
-            f"Backup completed: {processed_files}/{total_files} files processed ({processed_size / (1024*1024):.1f}MB)"
+            f"Backup completed: {processed_files}/{total_files} files processed ({processed_size / (1024 * 1024):.1f}MB)"
         )
 
     def _create_tar_backup(self, server_dir: Path, backup_path: Path) -> None:
@@ -1061,7 +1061,7 @@ class BackupService:
                     raise FileOperationException(
                         "upload",
                         file.filename,
-                        f"File size ({int(content_length) / (1024*1024):.1f}MB) exceeds maximum allowed size (500MB)",
+                        f"File size ({int(content_length) / (1024 * 1024):.1f}MB) exceeds maximum allowed size (500MB)",
                     )
 
                 # Generate backup name if not provided
@@ -1092,7 +1092,7 @@ class BackupService:
                             raise FileOperationException(
                                 "upload",
                                 file.filename,
-                                f"File size ({total_size / (1024*1024):.1f}MB) exceeds maximum allowed size (500MB)",
+                                f"File size ({total_size / (1024 * 1024):.1f}MB) exceeds maximum allowed size (500MB)",
                             )
 
                         temp_file.write(chunk)

@@ -7,8 +7,9 @@ from app.users.models import Role
 
 
 class TestServerPortConflicts:
-    
-    def test_create_server_allows_duplicate_ports(self, client: TestClient, admin_headers, db, admin_user):
+    def test_create_server_allows_duplicate_ports(
+        self, client: TestClient, admin_headers, db, admin_user
+    ):
         """Test that creating servers with duplicate ports is now allowed during creation"""
         # Create a server with port 25565
         first_server = Server(
@@ -21,11 +22,11 @@ class TestServerPortConflicts:
             port=25565,
             max_memory=1024,
             max_players=20,
-            owner_id=admin_user.id
+            owner_id=admin_user.id,
         )
         db.add(first_server)
         db.commit()
-        
+
         # Try to create another server with the same port - this should now succeed
         server_data = {
             "name": "Second Server",
@@ -34,29 +35,34 @@ class TestServerPortConflicts:
             "server_type": "vanilla",
             "port": 25565,
             "max_memory": 1024,
-            "max_players": 20
+            "max_players": 20,
         }
-        
-        response = client.post("/api/v1/servers/", headers=admin_headers, json=server_data)
-        
+
+        response = client.post(
+            "/api/v1/servers/", headers=admin_headers, json=server_data
+        )
+
         assert response.status_code == status.HTTP_201_CREATED
         server_response = response.json()
         assert server_response["port"] == 25565
         assert server_response["name"] == "Second Server"
-        
+
         # Cleanup
         import shutil
         from pathlib import Path
+
         server_dir = Path(server_response["directory_path"])
         if server_dir.exists():
             shutil.rmtree(server_dir)
-    
-    def test_create_server_port_conflict_with_stopped_server_allowed(self, client: TestClient, admin_headers, db, admin_user):
+
+    def test_create_server_port_conflict_with_stopped_server_allowed(
+        self, client: TestClient, admin_headers, db, admin_user
+    ):
         """Test that creating a server succeeds when port conflicts with stopped server"""
         # Create a stopped server with port 25566
         stopped_server = Server(
             name="Stopped Server",
-            description="A stopped server", 
+            description="A stopped server",
             minecraft_version="1.20.1",
             server_type=ServerType.vanilla,
             status=ServerStatus.stopped,
@@ -64,37 +70,42 @@ class TestServerPortConflicts:
             port=25566,
             max_memory=1024,
             max_players=20,
-            owner_id=admin_user.id
+            owner_id=admin_user.id,
         )
         db.add(stopped_server)
         db.commit()
-        
+
         # Try to create another server with the same port as stopped server
         server_data = {
             "name": "New Server",
             "description": "This should succeed",
-            "minecraft_version": "1.20.1", 
+            "minecraft_version": "1.20.1",
             "server_type": "vanilla",
             "port": 25566,
             "max_memory": 1024,
-            "max_players": 20
+            "max_players": 20,
         }
-        
-        response = client.post("/api/v1/servers/", headers=admin_headers, json=server_data)
-        
+
+        response = client.post(
+            "/api/v1/servers/", headers=admin_headers, json=server_data
+        )
+
         assert response.status_code == status.HTTP_201_CREATED
         server_response = response.json()
         assert server_response["port"] == 25566
         assert server_response["name"] == "New Server"
-        
+
         # Cleanup
         import shutil
         from pathlib import Path
+
         server_dir = Path(server_response["directory_path"])
         if server_dir.exists():
             shutil.rmtree(server_dir)
-    
-    def test_create_server_allows_duplicate_ports_with_any_status(self, client: TestClient, admin_headers, db, admin_user):
+
+    def test_create_server_allows_duplicate_ports_with_any_status(
+        self, client: TestClient, admin_headers, db, admin_user
+    ):
         """Test that creating servers with duplicate ports is allowed regardless of existing server status"""
         # Create a starting server with port 25567
         starting_server = Server(
@@ -103,15 +114,15 @@ class TestServerPortConflicts:
             minecraft_version="1.20.1",
             server_type=ServerType.vanilla,
             status=ServerStatus.starting,
-            directory_path="./servers/starting_server", 
+            directory_path="./servers/starting_server",
             port=25567,
             max_memory=1024,
             max_players=20,
-            owner_id=admin_user.id
+            owner_id=admin_user.id,
         )
         db.add(starting_server)
         db.commit()
-        
+
         # Try to create another server with the same port - this should now succeed
         server_data = {
             "name": "New Server",
@@ -120,19 +131,22 @@ class TestServerPortConflicts:
             "server_type": "vanilla",
             "port": 25567,
             "max_memory": 1024,
-            "max_players": 20
+            "max_players": 20,
         }
-        
-        response = client.post("/api/v1/servers/", headers=admin_headers, json=server_data)
-        
+
+        response = client.post(
+            "/api/v1/servers/", headers=admin_headers, json=server_data
+        )
+
         assert response.status_code == status.HTTP_201_CREATED
         server_response = response.json()
         assert server_response["port"] == 25567
         assert server_response["name"] == "New Server"
-        
+
         # Cleanup
         import shutil
         from pathlib import Path
+
         server_dir = Path(server_response["directory_path"])
         if server_dir.exists():
             shutil.rmtree(server_dir)

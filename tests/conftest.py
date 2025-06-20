@@ -14,27 +14,32 @@ from passlib.context import CryptContext
 import os
 import tempfile
 
+
 # Worker固有のデータベースファイルを使用して並列実行時の分離を確保
 def get_worker_db_path():
     """Get worker-specific database path for parallel execution isolation"""
     try:
         # pytest-xdistのworker IDを取得
         import pytest
-        worker_id = getattr(pytest.current_pytest_config, 'workerinput', {}).get('workerid', 'master')
+
+        worker_id = getattr(pytest.current_pytest_config, "workerinput", {}).get(
+            "workerid", "master"
+        )
     except (AttributeError, ImportError):
         # フォールバック: 環境変数またはデフォルト
-        worker_id = os.environ.get('PYTEST_XDIST_WORKER', 'master')
-    
+        worker_id = os.environ.get("PYTEST_XDIST_WORKER", "master")
+
     return os.path.join(tempfile.gettempdir(), f"test_mc_server_{worker_id}.db")
+
 
 test_db_path = get_worker_db_path()
 SQLALCHEMY_DATABASE_URL = f"sqlite:///{test_db_path}"
 
 engine = create_engine(
-    SQLALCHEMY_DATABASE_URL, 
+    SQLALCHEMY_DATABASE_URL,
     connect_args={"check_same_thread": False},
     pool_pre_ping=True,
-    echo=False
+    echo=False,
 )
 TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
@@ -65,6 +70,7 @@ def pytest_sessionfinish(session, exitstatus):
     except Exception as e:
         # エラーをログに記録するが、テスト結果には影響させない
         import warnings
+
         warnings.warn(f"Failed to cleanup test database {current_worker_db}: {e}")
 
 
@@ -172,10 +178,7 @@ def user_service(db):
 @pytest.fixture
 def admin_headers(client, admin_user):
     """管理者用認証ヘッダーを生成"""
-    login_data = {
-        "username": admin_user.username,
-        "password": "adminpassword"
-    }
+    login_data = {"username": admin_user.username, "password": "adminpassword"}
     response = client.post("/api/v1/auth/token", data=login_data)
     if response.status_code != 200:
         print(f"Login failed: {response.status_code} - {response.text}")
@@ -187,10 +190,7 @@ def admin_headers(client, admin_user):
 @pytest.fixture
 def user_headers(client, test_user):
     """一般ユーザー用認証ヘッダーを生成"""
-    login_data = {
-        "username": test_user.username,
-        "password": "testpassword"
-    }
+    login_data = {"username": test_user.username, "password": "testpassword"}
     response = client.post("/api/v1/auth/token", data=login_data)
     token = response.json()["access_token"]
     return {"Authorization": f"Bearer {token}"}
@@ -200,6 +200,7 @@ def user_headers(client, test_user):
 def sample_server(db, admin_user):
     """テスト用サーバーを作成"""
     from app.servers.models import Server, ServerType, ServerStatus
+
     server = Server(
         name="Test Server",
         description="A test server",
@@ -210,7 +211,7 @@ def sample_server(db, admin_user):
         port=25565,
         max_memory=1024,
         max_players=20,
-        owner_id=admin_user.id
+        owner_id=admin_user.id,
     )
     db.add(server)
     db.commit()
