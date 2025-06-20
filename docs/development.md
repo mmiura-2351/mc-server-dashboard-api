@@ -324,7 +324,7 @@ def test_role_based_access(client, test_user, admin_user):
     # User cannot access admin endpoints
     user_response = client.get("/api/v1/users/", headers=auth_headers(test_user))
     assert user_response.status_code == 403
-    
+
     # Admin can access admin endpoints
     admin_response = client.get("/api/v1/users/", headers=auth_headers(admin_user))
     assert admin_response.status_code == 200

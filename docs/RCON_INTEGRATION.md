@@ -51,15 +51,15 @@ class RCONConnection:
         self.port = port
         self.password = password
         self.socket = None
-    
+
     async def connect(self) -> bool:
         # TCP connection establishment
         # Authentication handshake
-    
+
     async def send_command(self, command: str) -> str:
         # Command packet construction
         # Response parsing
-    
+
     async def disconnect(self):
         # Clean connection closure
 ```
@@ -95,13 +95,13 @@ The system automatically configures RCON for each server:
 ```python
 async def configure_rcon(server_dir: Path, server_id: int):
     """Auto-configure RCON for a server"""
-    
+
     # Generate secure password
     rcon_password = secrets.token_urlsafe(16)
-    
+
     # Find available port
     rcon_port = await find_available_port(25575)
-    
+
     # Update server.properties
     properties = {
         'enable-rcon': 'true',
@@ -109,9 +109,9 @@ async def configure_rcon(server_dir: Path, server_id: int):
         'rcon.password': rcon_password,
         'broadcast-rcon-to-ops': 'false'
     }
-    
+
     await update_server_properties(server_dir, properties)
-    
+
     return rcon_port, rcon_password
 ```
 
@@ -197,7 +197,7 @@ async def handle_op_group_change(server_id: int, change_type: str, removed_playe
                 logger.info(f"Deopped {player['username']} on server {server_id}")
             else:
                 logger.warning(f"Failed to deop {player['username']} on server {server_id}")
-    
+
     # Always reload whitelist for consistency
     await rcon_service.reload_whitelist(server_id)
 ```
@@ -270,17 +270,17 @@ def store_rcon_credentials(server_id: int, password: str):
 ```python
 def validate_rcon_command(command: str) -> bool:
     """Validate RCON command for security"""
-    
+
     # Whitelist allowed commands
     allowed_commands = {
         'whitelist', 'op', 'deop', 'say', 'tellraw',
         'kick', 'ban', 'pardon', 'list'
     }
-    
+
     cmd_parts = command.strip().split()
     if not cmd_parts:
         return False
-    
+
     base_command = cmd_parts[0].lstrip('/')
     return base_command in allowed_commands
 ```
@@ -294,13 +294,13 @@ class RCONConnectionPool:
     def __init__(self, max_connections: int = 10):
         self.pool = {}
         self.max_connections = max_connections
-    
+
     async def get_connection(self, server_id: int) -> RCONConnection:
         """Get pooled connection for server"""
         if server_id not in self.pool:
             self.pool[server_id] = await self.create_connection(server_id)
         return self.pool[server_id]
-    
+
     async def release_connection(self, server_id: int):
         """Release connection back to pool"""
         # Keep connection alive for reuse
@@ -312,12 +312,12 @@ class RCONConnectionPool:
 async def batch_execute_commands(server_id: int, commands: List[str]):
     """Execute multiple commands in single connection"""
     connection = await pool.get_connection(server_id)
-    
+
     results = []
     for command in commands:
         result = await connection.send_command(command)
         results.append(result)
-    
+
     await pool.release_connection(server_id)
     return results
 ```
@@ -346,7 +346,7 @@ async def log_rcon_command(server_id: int, command: str, success: bool, response
         "response": response[:500],  # Truncate long responses
         "source": "rcon"
     }
-    
+
     logger.info("RCON command executed", extra=log_entry)
 ```
 
@@ -389,15 +389,15 @@ async def execute_server_command(
 async def server_console(websocket: WebSocket, server_id: int):
     """Real-time server console via RCON"""
     await websocket.accept()
-    
+
     try:
         while True:
             # Receive command from WebSocket
             command = await websocket.receive_text()
-            
+
             # Execute via RCON
             result = await rcon_service.execute_command(server_id, command)
-            
+
             # Send result back
             await websocket.send_text(result)
     except WebSocketDisconnect:
@@ -413,11 +413,11 @@ class TestRCONService:
     @pytest.mark.asyncio
     async def test_execute_command_success(self):
         """Test successful command execution"""
-        
+
     @pytest.mark.asyncio  
     async def test_connection_failure_retry(self):
         """Test retry logic on connection failure"""
-        
+
     @pytest.mark.asyncio
     async def test_group_change_commands(self):
         """Test group change command handling"""
@@ -430,7 +430,7 @@ class TestRCONIntegration:
     @pytest.mark.asyncio
     async def test_server_lifecycle_with_rcon(self):
         """Test complete server lifecycle with RCON"""
-        
+
     @pytest.mark.asyncio
     async def test_group_operations_end_to_end(self):
         """Test group operations through RCON"""
@@ -447,7 +447,7 @@ async def rcon_load_test():
             rcon_service.execute_command(1, f"say Test {i}")
         )
         tasks.append(task)
-    
+
     results = await asyncio.gather(*tasks)
     success_rate = sum(1 for r in results if r) / len(results)
     print(f"RCON load test success rate: {success_rate:.2%}")

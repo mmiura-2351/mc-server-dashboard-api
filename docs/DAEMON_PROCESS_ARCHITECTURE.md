@@ -199,7 +199,7 @@ def create_secure_environment():
 
 #### 1. Process Creation Failure
 **Symptoms**: Daemon process not created
-**Solutions**: 
+**Solutions**:
 - Check user permissions
 - Verify resource limits
 - Review system ulimits
@@ -278,7 +278,7 @@ grep "RCON" logs/app.log
    ```bash
    # Stop all servers
    curl -X POST /api/v1/servers/shutdown-all
-   
+
    # Backup database
    cp app.db app.db.backup
    ```
@@ -299,7 +299,7 @@ grep "RCON" logs/app.log
    ```bash
    # Check process restoration
    curl /api/v1/health
-   
+
    # Verify server status
    curl /api/v1/servers/
    ```

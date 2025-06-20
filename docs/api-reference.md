@@ -76,7 +76,7 @@ GET /health
   "timestamp": "2024-01-01T00:00:00Z",
   "services": {
     "database": "operational",
-    "database_integration": "operational", 
+    "database_integration": "operational",
     "backup_scheduler": "operational",
     "websocket_service": "operational"
   },
@@ -165,7 +165,7 @@ POST /users/register
 ```json
 {
   "username": "newuser",
-  "email": "user@example.com", 
+  "email": "user@example.com",
   "password": "password123",
   "full_name": "New User"
 }
