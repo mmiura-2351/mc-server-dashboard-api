@@ -50,14 +50,14 @@ A comprehensive FastAPI-based backend system for managing multiple Minecraft ser
    SECRET_KEY=your-secret-key
    DATABASE_URL=sqlite:///./app.db
    CORS_ORIGINS=["http://localhost:3000"]
-   
+
    # Java Configuration (Optional - for specific Java paths)
    JAVA_8_PATH=/usr/lib/jvm/java-8-openjdk/bin/java
    JAVA_16_PATH=/usr/lib/jvm/java-16-openjdk/bin/java
    JAVA_17_PATH=/usr/lib/jvm/java-17-openjdk/bin/java
    JAVA_21_PATH=/usr/lib/jvm/java-21-openjdk/bin/java
    JAVA_DISCOVERY_PATHS=/opt/java,/usr/local/java
-   
+
    # Daemon Process Configuration (Optional - defaults provided)
    DAEMON_MODE=double_fork                    # Process creation method
    DAEMON_ENABLE_PERSISTENCE=true            # Enable process persistence
@@ -65,7 +65,7 @@ A comprehensive FastAPI-based backend system for managing multiple Minecraft ser
    DAEMON_MONITORING_INTERVAL=5              # Monitor every 5 seconds
    DAEMON_ENABLE_RCON=true                   # Enable real-time commands
    DAEMON_ENABLE_AUTO_RECOVERY=true          # Enable auto-recovery
-   
+
    # See full configuration options in docs/DAEMON_PROCESS_ARCHITECTURE.md
    ```
 4. Start the application:

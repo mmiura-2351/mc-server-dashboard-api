@@ -21,15 +21,16 @@ This process enables continuous improvement of project rules and ensures consist
 When completing any significant task or feature implementation:
 1. **CI Verification**: Ensure all tests pass before committing
 2. **Code Quality**: Run lint and format checks (`uv run ruff check app/` and `uv run ruff format app/`)
-3. **Commit Changes**: Create meaningful commit messages with proper documentation
-4. **Status Update**: Update relevant tracking documents (e.g., CODE_REVIEW_FINDINGS.md)
+3. **Pre-commit Hooks**: Ensure pre-commit hooks are installed and pass (`uv run pre-commit install`)
+4. **Commit Changes**: Create meaningful commit messages with proper documentation
+5. **Status Update**: Update relevant tracking documents (e.g., CODE_REVIEW_FINDINGS.md)
 
 ### Rule 3: Test Code Development Process
 **Follow systematic approach for test coverage improvement.**
 
 When creating test coverage for services or components:
 1. **Establish Target Coverage**: Set target coverage percentage based on component criticality
-2. **Analyze Required Testing Elements**: 
+2. **Analyze Required Testing Elements**:
    - Analyze the service/component implementation thoroughly
    - Identify uncovered lines, error paths, and edge cases
    - Understand method signatures, exception handling, and dependencies
@@ -140,9 +141,12 @@ This is a comprehensive FastAPI-based backend API for managing multiple Minecraf
 | Start application | `uv run fastapi dev`          |
 | Lint code         | `uv run ruff check app/`      |
 | Format code       | `uv run ruff format app/`     |
+| Type checking     | `uv run mypy app/` (currently disabled in pre-commit) |
 | Run tests         | `uv run pytest`               |
 | Run single test   | `uv run pytest tests/test_filename.py::test_function_name` |
 | Check code coverage | `uv run coverage run -m pytest && uv run coverage report` |
+| Install pre-commit hooks | `uv run pre-commit install` |
+| Run pre-commit on all files | `uv run pre-commit run --all-files` |
 
 ## System Architecture
 
@@ -159,7 +163,7 @@ The application follows a layered architecture with tight integration between co
 
 **Multi-Domain Resource Management**: The system manages interconnected resources (servers, groups, backups, templates) with complex relationships. Always consider cross-domain impacts when making changes.
 
-**Service Orchestration**: 
+**Service Orchestration**:
 - `minecraft_server_manager`: Physical server process management
 - `database_integration_service`: Sync between filesystem and database state
 - `backup_scheduler`: Automated backup operations
@@ -199,6 +203,25 @@ The application follows a layered architecture with tight integration between co
 
 ## Environment Setup
 
+### Initial Project Setup
+
+1. **Install dependencies:**
+   ```bash
+   uv sync --group dev
+   ```
+
+2. **Install pre-commit hooks:**
+   ```bash
+   uv run pre-commit install
+   ```
+
+3. **Create `.env` file:**
+   ```bash
+   cp .env.example .env  # Edit with your values
+   ```
+
+### Required Environment Variables
+
 Required `.env` variables:
 ```
 SECRET_KEY=your-secret-key
@@ -209,6 +232,19 @@ Optional configuration:
 ```
 ALGORITHM=HS256
 ACCESS_TOKEN_EXPIRE_MINUTES=30
+```
+
+### Pre-commit Hooks
+
+The project uses pre-commit hooks to ensure code quality:
+- **Ruff**: Linting and formatting
+- **MyPy**: Type checking  
+- **Standard checks**: Trailing whitespace, file endings, YAML/JSON validation
+- **Security**: Basic secret detection
+
+Hooks run automatically on commit. To run manually:
+```bash
+uv run pre-commit run --all-files
 ```
 
 ## Database Dependency Injection
@@ -254,6 +290,8 @@ async def endpoint(db: Session = Depends(get_db)):
 - Ruff formatting and linting with 90-character line length
 - Import sorting enabled via Ruff
 - Type hints required for all new code
+- MyPy type checking for static analysis
+- Pre-commit hooks for automated quality checks
 - Comprehensive test coverage for business logic
 
 ## Security Considerations
