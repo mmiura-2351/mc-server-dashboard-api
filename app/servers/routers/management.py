@@ -23,7 +23,7 @@ from app.servers.schemas import (
 from app.servers.service import server_service
 from app.services.authorization_service import authorization_service
 from app.services.minecraft_server import minecraft_server_manager
-from app.users.models import Role, User
+from app.users.models import User
 
 logger = logging.getLogger(__name__)
 
@@ -83,12 +83,11 @@ async def list_servers(
     """
     List servers with pagination
 
-    Returns a paginated list of servers. Regular users see only their own servers,
-    while admins see all servers.
+    Returns a paginated list of all servers. All authenticated users can see all servers.
     """
     try:
-        # Admins see all servers, others see only their own
-        owner_id = None if current_user.role == Role.admin else current_user.id
+        # All users can see all servers
+        owner_id = None
 
         result = server_service.list_servers(
             owner_id=owner_id, page=page, size=size, db=db
@@ -190,10 +189,19 @@ async def delete_server(
 
     Performs a soft delete of the server. The server will be stopped if running
     and marked as deleted in the database.
+
+    Only admins and server owners can delete servers.
     """
     try:
-        # Check ownership/admin access
-        authorization_service.check_server_access(server_id, current_user, db)
+        # Check server exists and get server object
+        server = authorization_service.check_server_access(server_id, current_user, db)
+
+        # Check deletion permission (admin or server owner only)
+        if not authorization_service.can_delete_server(server, current_user):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Only admins and server owners can delete servers",
+            )
 
         success = await server_service.delete_server(server_id, db)
         if not success:

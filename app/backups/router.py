@@ -159,12 +159,8 @@ async def upload_backup(
         # Check server access
         authorization_service.check_server_access(server_id, current_user, db)
 
-        # Only operators and admins can upload backups
-        if current_user.role == Role.user:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Only operators and admins can upload backups",
-            )
+        # All authenticated users can upload backups (Phase 1: shared resource model)
+        # No role restriction - all users can upload backups
 
         # Validate file is provided
         if not file.filename:
@@ -379,12 +375,8 @@ async def restore_backup(
         # Check backup access
         backup = authorization_service.check_backup_access(backup_id, current_user, db)
 
-        # Only operators and admins can restore backups
-        if current_user.role == Role.user:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Only operators and admins can restore backups",
-            )
+        # All authenticated users can restore backups (Phase 1: shared resource model)
+        # No role restriction - all users can restore backups
 
         # Check target server access if specified
         target_server_id = request.target_server_id or backup.server_id
@@ -443,12 +435,8 @@ async def restore_backup_and_create_template(
         # Check backup access
         backup = authorization_service.check_backup_access(backup_id, current_user, db)
 
-        # Only operators and admins can restore backups
-        if current_user.role == Role.user:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Only operators and admins can restore backups",
-            )
+        # All authenticated users can restore backups (Phase 1: shared resource model)
+        # No role restriction - all users can restore backups
 
         # Check target server access if specified
         target_server_id = request.target_server_id or backup.server_id
@@ -556,16 +544,18 @@ async def delete_backup(
 
     Permanently deletes a backup and its associated file.
     This action cannot be undone.
+
+    Only admins and server owners can delete backups.
     """
     try:
-        # Check backup access
-        authorization_service.check_backup_access(backup_id, current_user, db)
+        # Check backup exists and get backup object
+        backup = authorization_service.check_backup_access(backup_id, current_user, db)
 
-        # Only operators and admins can delete backups
-        if current_user.role == Role.user:
+        # Check deletion permission (admin or server owner only)
+        if not authorization_service.can_delete_backup(backup, current_user):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="Only operators and admins can delete backups",
+                detail="Only admins and server owners can delete backups",
             )
 
         success = await backup_service.delete_backup(backup_id, db)

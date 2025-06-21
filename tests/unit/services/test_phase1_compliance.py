@@ -96,8 +96,7 @@ class TestPhase1ComplianceResourceAccess:
         db.add(server)
         db.commit()
 
-        # Without visibility config, Phase 2 defaults to private (secure by default)
-        # This tests that the visibility system works as expected
+        # New permission model: all users can access all servers regardless of visibility config
         try:
             AuthorizationService.check_server_access(server.id, test_user, db)
             # If this doesn't raise an exception, the user has access
@@ -105,9 +104,9 @@ class TestPhase1ComplianceResourceAccess:
         except HTTPException:
             has_access = False
 
-        # Phase 2 behavior: secure by default (no visibility config = private)
-        assert has_access is False, (
-            "Without visibility config, access should be denied (Phase 2 secure default)"
+        # New permission model: all users can access all servers
+        assert has_access is True, (
+            "All users should be able to access all servers in the new permission model"
         )
 
 

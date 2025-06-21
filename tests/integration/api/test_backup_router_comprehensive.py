@@ -381,9 +381,19 @@ class TestBackupRouterFixed:
             assert response.status_code == status.HTTP_404_NOT_FOUND
 
     def test_delete_backup(self, client, test_user, db):
-        """Test deleting a backup"""
-        # Update test user to operator role
-        test_user.role = Role.operator
+        """Test deleting a backup as server owner"""
+        # Create a server owned by test_user
+        server = Server(
+            id=1,
+            name="Test User Server",
+            minecraft_version="1.20.4",
+            server_type=ServerType.vanilla,
+            directory_path="/servers/test-server",
+            port=25565,
+            owner_id=test_user.id,  # Owned by test_user
+            is_deleted=False,
+        )
+        db.add(server)
         db.commit()
 
         backup = Backup(
@@ -396,16 +406,23 @@ class TestBackupRouterFixed:
             file_size=1024,
             created_at=datetime.now(),
         )
+        backup.server = server  # Set up relationship
+        db.add(backup)
+        db.commit()
 
         with (
             patch(
                 "app.services.authorization_service.authorization_service.check_backup_access"
             ) as mock_auth,
             patch(
+                "app.services.authorization_service.authorization_service.can_delete_backup"
+            ) as mock_can_delete,
+            patch(
                 "app.services.backup_service.backup_service.delete_backup"
             ) as mock_delete,
         ):
             mock_auth.return_value = backup
+            mock_can_delete.return_value = True  # Server owner can delete
             mock_delete.return_value = True
 
             response = client.delete(
@@ -415,12 +432,38 @@ class TestBackupRouterFixed:
 
             # Verify service calls
             mock_auth.assert_called_once()
+            mock_can_delete.assert_called_once()
             mock_delete.assert_called_once()
 
     def test_delete_backup_forbidden_for_regular_user(self, client, test_user, db):
-        """Test that regular users cannot delete backups"""
+        """Test that regular users cannot delete backups they don't own"""
         # Ensure user has regular role
         assert test_user.role == Role.user
+
+        # Create a server owned by a different user
+        other_user = User(
+            id=999,
+            username="otheruser",
+            email="other@example.com",
+            hashed_password="hashed",
+            role=Role.user,
+            is_approved=True,
+        )
+        db.add(other_user)
+        db.commit()
+
+        server = Server(
+            id=1,
+            name="Other User Server",
+            minecraft_version="1.20.4",
+            server_type=ServerType.vanilla,
+            directory_path="/servers/other-server",
+            port=25565,
+            owner_id=other_user.id,  # Owned by different user
+            is_deleted=False,
+        )
+        db.add(server)
+        db.commit()
 
         backup = Backup(
             id=1,
@@ -432,18 +475,24 @@ class TestBackupRouterFixed:
             file_size=1024,
             created_at=datetime.now(),
         )
+        backup.server = server  # Set up relationship
+        db.add(backup)
+        db.commit()
 
         with patch(
             "app.services.authorization_service.authorization_service.check_backup_access"
-        ) as mock_auth:
+        ) as mock_auth, patch(
+            "app.services.authorization_service.authorization_service.can_delete_backup"
+        ) as mock_can_delete:
             mock_auth.return_value = backup
+            mock_can_delete.return_value = False  # Not owner, not admin
 
             response = client.delete(
                 "/api/v1/backups/backups/1", headers=get_auth_headers(test_user.username)
             )
             assert response.status_code == status.HTTP_403_FORBIDDEN
             assert (
-                "Only operators and admins can delete backups"
+                "Only admins and server owners can delete backups"
                 in response.json()["detail"]
             )
 
@@ -763,46 +812,31 @@ class TestBackupRouterFixed:
             assert response.status_code == status.HTTP_404_NOT_FOUND
             assert "Backup file not found on disk" in response.json()["detail"]
 
-    def test_download_backup_unauthorized(self, client, test_user, db):
-        """Test download backup that user doesn't have access to"""
-        # Create another user's server
-        from passlib.context import CryptContext
-
-        pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-
-        other_user = User(
-            username="otheruser",
-            email="other@example.com",
-            hashed_password=pwd_context.hash("otherpass"),
-            role=Role.user,
-            is_approved=True,
-        )
-        db.add(other_user)
-        db.commit()
-
-        # Create a server owned by other_user
+    def test_download_backup_file_not_exist(self, client, test_user, db):
+        """Test download backup when file doesn't exist on disk"""
+        # Create a server owned by test_user
         server = Server(
             id=1,
-            name="Other User's Server",
+            name="Test User's Server",
             description="Test server description",
             minecraft_version="1.20.4",
             server_type=ServerType.vanilla,
-            directory_path="/servers/other-server",
+            directory_path="/servers/test-server",
             port=25565,
-            owner_id=other_user.id,  # Owned by other_user
+            owner_id=test_user.id,
             is_deleted=False,
         )
         db.add(server)
         db.commit()
 
-        # Create a backup for other_user's server
+        # Create a backup with non-existent file path
         backup = Backup(
             id=1,
             server_id=server.id,
-            name="Other User's Backup",
+            name="Test Backup",
             backup_type=BackupType.manual,
             status=BackupStatus.completed,
-            file_path="/tmp/other_backup.tar.gz",
+            file_path="/tmp/nonexistent_backup.tar.gz",  # Non-existent file
             file_size=1024,
             created_at=datetime.now(),
         )
@@ -810,13 +844,14 @@ class TestBackupRouterFixed:
         db.add(backup)
         db.commit()
 
-        # Try to download as test_user (should fail)
+        # Try to download (should fail because file doesn't exist)
         response = client.get(
             f"/api/v1/backups/backups/{backup.id}/download",
             headers=get_auth_headers(test_user.username),
         )
 
-        assert response.status_code == status.HTTP_403_FORBIDDEN
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+        assert "Backup file not found on disk" in response.json()["detail"]
 
     def test_upload_backup_success(self, client, test_user, db):
         """Test successful backup upload"""
@@ -935,8 +970,8 @@ class TestBackupRouterFixed:
             if os.path.exists(tmp_file.name):
                 os.unlink(tmp_file.name)
 
-    def test_upload_backup_forbidden_for_regular_user(self, client, test_user, db):
-        """Test that regular users cannot upload backups"""
+    def test_upload_backup_allowed_for_regular_user(self, client, test_user, db):
+        """Test that regular users can now upload backups (Phase 1: shared resource model)"""
         # Create a test server in database
         server = Server(
             id=1,
@@ -966,8 +1001,11 @@ class TestBackupRouterFixed:
                     headers=get_auth_headers(test_user.username),
                 )
 
-        assert response.status_code == status.HTTP_403_FORBIDDEN
-        assert "Only operators and admins can upload backups" in response.json()["detail"]
+        # Phase 1: Regular users should NOT get 403 Forbidden for backup upload
+        # (May get other errors due to file format, but not authorization errors)
+        assert response.status_code != status.HTTP_403_FORBIDDEN, (
+            f"Regular users should not be forbidden from uploading backups in Phase 1. Got {response.status_code}: {response.json() if response.status_code != 500 else 'Internal Server Error'}"
+        )
 
     def test_upload_backup_no_file(self, client, test_user, db):
         """Test upload without providing a file"""

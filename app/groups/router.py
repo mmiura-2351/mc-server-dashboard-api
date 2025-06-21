@@ -18,7 +18,6 @@ from app.groups.schemas import (
     ServerAttachRequest,
     ServerGroupsResponse,
 )
-from app.services.authorization_service import authorization_service
 from app.services.group_service import GroupService
 from app.users.models import User
 
@@ -43,12 +42,8 @@ async def create_group(
     - **description**: Optional group description
     """
     try:
-        # Phase 1: All users can create groups
-        if not authorization_service.can_create_group(current_user):
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Insufficient permissions to create groups",
-            )
+        # Phase 1: All authenticated users can create groups
+        # No permission check needed - all authenticated users can create groups
 
         group_service = GroupService(db)
         group = group_service.create_group(
