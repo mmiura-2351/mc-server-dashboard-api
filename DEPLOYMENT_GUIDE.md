@@ -120,7 +120,7 @@ Group=your-username  # 実際のユーザー名に置き換え
 WorkingDirectory=/opt/mcs-dashboard
 Environment=PATH=/opt/mcs-dashboard/.venv/bin:/usr/local/bin:/usr/bin:/bin
 EnvironmentFile=-/opt/mcs-dashboard/.env
-ExecStart=/opt/mcs-dashboard/.venv/bin/python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
+ExecStart=/opt/mcs-dashboard/.venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000
 ExecStop=/bin/kill -TERM $MAINPID
 ExecReload=/bin/kill -HUP $MAINPID
 KillMode=mixed
@@ -149,7 +149,7 @@ sudo journalctl -u minecraft-dashboard -n 50 --no-pager
 
 # 手動での動作確認
 cd /opt/mcs-dashboard
-.venv/bin/python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
+.venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000
 
 # よくあるエラー: SECRET_KEY validation error
 # 解決方法: .envファイルのSECRET_KEYを安全な値に変更

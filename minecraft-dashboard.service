@@ -8,7 +8,7 @@ Type=simple
 WorkingDirectory=/opt/mcs-dashboard
 Environment=PATH=/opt/mcs-dashboard/.venv/bin:/usr/local/bin:/usr/bin:/bin
 EnvironmentFile=-/opt/mcs-dashboard/.env
-ExecStart=/opt/mcs-dashboard/.venv/bin/python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
+ExecStart=/opt/mcs-dashboard/.venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000
 ExecStop=/bin/kill -TERM $MAINPID
 ExecReload=/bin/kill -HUP $MAINPID
 KillMode=mixed
