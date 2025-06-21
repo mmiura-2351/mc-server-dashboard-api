@@ -1,0 +1,17 @@
+[Unit]
+Description=Minecraft Dashboard API
+After=network.target
+
+[Service]
+Type=simple
+User=mcs-dashboard
+Group=mcs-dashboard
+WorkingDirectory=/opt/mcs-dashboard
+Environment=PATH=/opt/mcs-dashboard/.venv/bin
+EnvironmentFile=/opt/mcs-dashboard/.env
+ExecStart=/opt/mcs-dashboard/.venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

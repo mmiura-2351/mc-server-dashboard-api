@@ -42,7 +42,7 @@ sudo yum install -y python3.13 python3.13-venv git
 
 ```bash
 # 複数のJavaバージョンをインストール
-sudo apt install -y openjdk-8-jdk openjdk-17-jdk openjdk-21-jdk
+sudo apt install -y openjdk-8-jdk　openjdk-16-jdk openjdk-17-jdk openjdk-21-jdk
 
 # インストール確認
 java -version
@@ -59,11 +59,15 @@ source ~/.bashrc
 ### 4. アプリケーションのデプロイ
 
 ```bash
-# アプリケーションディレクトリに移動
-cd /path/to/your/application
+# アプリケーションディレクトリの作成
+sudo mkdir -p /opt/mcs-dashboard
+sudo chown $USER:$USER /opt/mcs-dashboard
 
-# リポジトリのクローン (または既存のコードを配置)
-git clone https://github.com/your-repo/mc-server-dashboard-api.git .
+# ディレクトリに移動
+cd /opt/mcs-dashboard
+
+# リポジトリのクローン
+git clone https://github.com/mmiura-2351/mc-server-dashboard-api.git .
 
 # 依存関係のインストール
 uv sync
@@ -84,18 +88,32 @@ ACCESS_TOKEN_EXPIRE_MINUTES=30
 REFRESH_TOKEN_EXPIRE_DAYS=7
 ENVIRONMENT=production
 
-# Java パス設定
+# Java パス設定（必要な場合）
 JAVA_17_PATH=/usr/lib/jvm/java-17-openjdk-amd64/bin/java
 JAVA_21_PATH=/usr/lib/jvm/java-21-openjdk-amd64/bin/java
 ```
 
 ## systemd サービス設定
 
+### 1. 専用ユーザーの作成
+
 ```bash
-# サービスファイルの作成
+# サービス用ユーザーの作成
+sudo useradd -r -s /bin/false mcs-dashboard
+sudo chown -R mcs-dashboard:mcs-dashboard /opt/mcs-dashboard
+```
+
+### 2. サービスファイルの設置
+
+```bash
+# 提供されているサービスファイルをコピー
+sudo cp /opt/mcs-dashboard/minecraft-dashboard.service /etc/systemd/system/
+
+# または手動で作成
 sudo nano /etc/systemd/system/minecraft-dashboard.service
 ```
 
+サービスファイルの内容（`minecraft-dashboard.service`）:
 ```ini
 [Unit]
 Description=Minecraft Dashboard API
@@ -103,18 +121,20 @@ After=network.target
 
 [Service]
 Type=simple
-User=your-username
-Group=your-group
-WorkingDirectory=/path/to/your/application
-Environment=PATH=/path/to/your/application/.venv/bin
-EnvironmentFile=/path/to/your/application/.env
-ExecStart=/path/to/your/application/.venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000
+User=mcs-dashboard
+Group=mcs-dashboard
+WorkingDirectory=/opt/mcs-dashboard
+Environment=PATH=/opt/mcs-dashboard/.venv/bin
+EnvironmentFile=/opt/mcs-dashboard/.env
+ExecStart=/opt/mcs-dashboard/.venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000
 Restart=always
 RestartSec=10
 
 [Install]
 WantedBy=multi-user.target
 ```
+
+### 3. サービスの有効化と開始
 
 ```bash
 # サービスの有効化と開始
@@ -134,8 +154,8 @@ sudo systemctl status minecraft-dashboard
 # systemd ログの確認
 sudo journalctl -u minecraft-dashboard -f
 
-# アプリケーションログの確認
-tail -f /path/to/your/application/logs/app.log
+# アプリケーションログの確認（もしあれば）
+tail -f /opt/mcs-dashboard/logs/app.log
 ```
 
 ### ヘルスチェック
@@ -156,9 +176,9 @@ curl http://localhost:8000/metrics
 #!/bin/bash
 # backup.sh
 
-BACKUP_DIR="/backup/minecraft-dashboard"
+BACKUP_DIR="/backup/mcs-dashboard"
 DATE=$(date +%Y%m%d_%H%M%S)
-APP_DIR="/path/to/your/application"
+APP_DIR="/opt/mcs-dashboard"
 
 mkdir -p $BACKUP_DIR/$DATE
 
@@ -191,7 +211,7 @@ echo "Backup completed: $BACKUP_DIR/$DATE"
 sudo journalctl -u minecraft-dashboard -f
 
 # 手動での起動テスト
-cd /path/to/your/application
+cd /opt/mcs-dashboard
 source .venv/bin/activate
 uv run fastapi dev  # 開発モードでテスト
 ```
@@ -226,10 +246,10 @@ sudo lsof -i :8000
 ```bash
 # ディスク使用量の確認
 df -h
-du -sh /path/to/your/application/*
+du -sh /opt/mcs-dashboard/*
 
 # 大きなファイルの検索
-find /path/to/your/application -type f -size +100M -exec ls -lh {} \;
+find /opt/mcs-dashboard -type f -size +100M -exec ls -lh {} \;
 ```
 
 ## まとめ
