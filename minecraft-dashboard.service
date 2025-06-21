@@ -4,8 +4,7 @@ After=network.target
 
 [Service]
 Type=simple
-User=mcs-dashboard
-Group=mcs-dashboard
+# User and Group will be set to current user during installation
 WorkingDirectory=/opt/mcs-dashboard
 Environment=PATH=/opt/mcs-dashboard/.venv/bin
 EnvironmentFile=/opt/mcs-dashboard/.env

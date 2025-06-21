@@ -26,23 +26,16 @@
 
 ### 1. 必要なパッケージのインストール
 
-#### Ubuntu/Debian
 ```bash
 sudo apt update
-sudo apt install -y python3.13 python3.13-venv git
-```
-
-#### CentOS/RHEL
-```bash
-sudo yum update
-sudo yum install -y python3.13 python3.13-venv git
+sudo apt install -y git curl
 ```
 
 ### 2. Java のインストール
 
 ```bash
 # 複数のJavaバージョンをインストール
-sudo apt install -y openjdk-8-jdk　openjdk-16-jdk openjdk-17-jdk openjdk-21-jdk
+sudo apt install -y openjdk-8-jdk openjdk-17-jdk openjdk-21-jdk
 
 # インストール確認
 java -version
@@ -74,7 +67,7 @@ uv sync
 
 # 環境変数の設定
 cp .env.example .env
-nano .env  # 本番環境用に編集
+vim .env  # 本番環境用に編集
 ```
 
 ### 5. 環境変数の設定例
@@ -95,22 +88,15 @@ JAVA_21_PATH=/usr/lib/jvm/java-21-openjdk-amd64/bin/java
 
 ## systemd サービス設定
 
-### 1. 専用ユーザーの作成
+### サービスファイルの設置
 
 ```bash
-# サービス用ユーザーの作成
-sudo useradd -r -s /bin/false mcs-dashboard
-sudo chown -R mcs-dashboard:mcs-dashboard /opt/mcs-dashboard
-```
-
-### 2. サービスファイルの設置
-
-```bash
-# 提供されているサービスファイルをコピー
+# 提供されているサービスファイルをコピーし、現在のユーザーに設定
 sudo cp /opt/mcs-dashboard/minecraft-dashboard.service /etc/systemd/system/
+sudo sed -i "7a User=$USER\nGroup=$USER" /etc/systemd/system/minecraft-dashboard.service
 
 # または手動で作成
-sudo nano /etc/systemd/system/minecraft-dashboard.service
+sudo vim /etc/systemd/system/minecraft-dashboard.service
 ```
 
 サービスファイルの内容（`minecraft-dashboard.service`）:
@@ -121,8 +107,8 @@ After=network.target
 
 [Service]
 Type=simple
-User=mcs-dashboard
-Group=mcs-dashboard
+User=your-username  # 実際のユーザー名に置き換え
+Group=your-username  # 実際のユーザー名に置き換え
 WorkingDirectory=/opt/mcs-dashboard
 Environment=PATH=/opt/mcs-dashboard/.venv/bin
 EnvironmentFile=/opt/mcs-dashboard/.env
@@ -134,7 +120,7 @@ RestartSec=10
 WantedBy=multi-user.target
 ```
 
-### 3. サービスの有効化と開始
+### サービスの有効化と開始
 
 ```bash
 # サービスの有効化と開始
