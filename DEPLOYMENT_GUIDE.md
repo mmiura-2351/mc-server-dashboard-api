@@ -111,9 +111,9 @@ Type=simple
 User=your-username  # 実際のユーザー名に置き換え
 Group=your-username  # 実際のユーザー名に置き換え
 WorkingDirectory=/opt/mcs-dashboard
-Environment=PATH=/opt/mcs-dashboard/.venv/bin
-EnvironmentFile=/opt/mcs-dashboard/.env
-ExecStart=/opt/mcs-dashboard/.venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000
+Environment=PATH=/opt/mcs-dashboard/.venv/bin:/usr/local/bin:/usr/bin:/bin
+EnvironmentFile=-/opt/mcs-dashboard/.env
+ExecStart=/opt/mcs-dashboard/.venv/bin/python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
 ExecStop=/bin/kill -TERM $MAINPID
 ExecReload=/bin/kill -HUP $MAINPID
 KillMode=mixed
@@ -136,6 +136,13 @@ sudo systemctl start minecraft-dashboard
 
 # ステータス確認
 sudo systemctl status minecraft-dashboard
+
+# エラーが発生した場合のログ確認
+sudo journalctl -u minecraft-dashboard -n 50 --no-pager
+
+# 手動での動作確認
+cd /opt/mcs-dashboard
+.venv/bin/python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
 
 # サービスの制御コマンド
 sudo systemctl stop minecraft-dashboard     # サービス停止
