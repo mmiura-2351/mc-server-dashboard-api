@@ -116,6 +116,11 @@ WorkingDirectory=/opt/mcs-dashboard
 Environment=PATH=/opt/mcs-dashboard/.venv/bin
 EnvironmentFile=/opt/mcs-dashboard/.env
 ExecStart=/opt/mcs-dashboard/.venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000
+ExecStop=/bin/kill -TERM $MAINPID
+ExecReload=/bin/kill -HUP $MAINPID
+KillMode=mixed
+KillSignal=SIGTERM
+TimeoutStopSec=30
 Restart=always
 RestartSec=10
 
@@ -133,6 +138,11 @@ sudo systemctl start minecraft-dashboard
 
 # ステータス確認
 sudo systemctl status minecraft-dashboard
+
+# サービスの制御コマンド
+sudo systemctl stop minecraft-dashboard     # サービス停止
+sudo systemctl restart minecraft-dashboard  # サービス再起動
+sudo systemctl reload minecraft-dashboard   # 設定リロード
 ```
 
 ## 監視とログ管理
