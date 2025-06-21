@@ -67,14 +67,19 @@ uv sync
 
 # 環境変数の設定
 cp .env.example .env
-vim .env  # 本番環境用に編集
+
+# 安全なSECRET_KEYを生成
+python3 -c "import secrets; print('SECRET_KEY=' + secrets.token_urlsafe(32))"
+
+# .envファイルを編集（生成されたSECRET_KEYを使用）
+vim .env
 ```
 
 ### 5. 環境変数の設定例
 
 ```bash
 # .env ファイル
-SECRET_KEY=your-super-secure-secret-key-at-least-32-characters-long
+SECRET_KEY=生成された安全なキー（デフォルト値は使用しないこと）
 DATABASE_URL=sqlite:///./app.db
 ALGORITHM=HS256
 ACCESS_TOKEN_EXPIRE_MINUTES=30
@@ -86,6 +91,8 @@ JAVA_8_PATH=/usr/lib/jvm/java-8-openjdk-amd64/bin/java
 JAVA_17_PATH=/usr/lib/jvm/java-17-openjdk-amd64/bin/java
 JAVA_21_PATH=/usr/lib/jvm/java-21-openjdk-amd64/bin/java
 ```
+
+**重要**: `SECRET_KEY`は必ず上記のコマンドで生成した安全なキーを使用してください。デフォルト値のままではアプリケーションが起動しません。
 
 ## systemd サービス設定
 
@@ -143,6 +150,10 @@ sudo journalctl -u minecraft-dashboard -n 50 --no-pager
 # 手動での動作確認
 cd /opt/mcs-dashboard
 .venv/bin/python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
+
+# よくあるエラー: SECRET_KEY validation error
+# 解決方法: .envファイルのSECRET_KEYを安全な値に変更
+python3 -c "import secrets; print('SECRET_KEY=' + secrets.token_urlsafe(32))"
 
 # サービスの制御コマンド
 sudo systemctl stop minecraft-dashboard     # サービス停止
