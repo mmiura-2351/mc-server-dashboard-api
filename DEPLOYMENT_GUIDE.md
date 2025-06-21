@@ -16,8 +16,7 @@
 ### 必要なソフトウェア
 - **Python 3.13+** (uv package manager で自動インストール)
 - **Java** (複数バージョンのMinecraft サーバーサポートのため)
-  - Java 8, 16, 17, 21 (Minecraft バージョンに応じて)
-  - Java 16: Minecraft 1.17.0~1.17.1 対応
+  - Java 8, 17, 21 (Minecraft バージョンに応じて)
 
 ### ネットワーク要件
 - API アプリケーション用ポート (デフォルト: 8000)
@@ -36,7 +35,7 @@ sudo apt install -y git curl
 
 ```bash
 # 複数のJavaバージョンをインストール（Minecraftバージョン対応）
-sudo apt install -y openjdk-8-jdk openjdk-16-jdk openjdk-17-jdk openjdk-21-jdk
+sudo apt install -y openjdk-8-jdk openjdk-17-jdk openjdk-21-jdk
 
 # インストール確認
 java -version
@@ -84,7 +83,6 @@ ENVIRONMENT=production
 
 # Java パス設定（必要な場合）
 JAVA_8_PATH=/usr/lib/jvm/java-8-openjdk-amd64/bin/java
-JAVA_16_PATH=/usr/lib/jvm/java-16-openjdk-amd64/bin/java
 JAVA_17_PATH=/usr/lib/jvm/java-17-openjdk-amd64/bin/java
 JAVA_21_PATH=/usr/lib/jvm/java-21-openjdk-amd64/bin/java
 ```
@@ -223,13 +221,11 @@ update-alternatives --list java
 
 # Java パスの設定確認
 echo $JAVA_8_PATH
-echo $JAVA_16_PATH
 echo $JAVA_17_PATH
 echo $JAVA_21_PATH
 
 # Java バージョンの手動テスト
 /usr/lib/jvm/java-8-openjdk-amd64/bin/java -version
-/usr/lib/jvm/java-16-openjdk-amd64/bin/java -version
 /usr/lib/jvm/java-17-openjdk-amd64/bin/java -version
 /usr/lib/jvm/java-21-openjdk-amd64/bin/java -version
 ```
