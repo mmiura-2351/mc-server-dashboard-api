@@ -202,7 +202,16 @@ deploy_application() {
     fi
 
     # Create necessary directories
-    mkdir -p servers backups templates file_history logs
+    mkdir -p servers backups templates file_history logs .cache/uv .venv
+
+    # Set proper permissions for uv cache and venv directories
+    if [[ $EUID -eq 0 ]]; then
+        # If running as root, ensure directories are accessible
+        chmod -R 755 .cache .venv
+    else
+        # If running with sudo, ensure user ownership
+        $SUDO_CMD chown -R $USER:$USER .cache .venv
+    fi
 
     log_success "Application deployed successfully"
 }
@@ -247,6 +256,8 @@ WorkingDirectory=/opt/mcs-dashboard/api
 Environment=PATH=/root/.local/bin:/root/.cargo/bin:/usr/local/bin:/usr/bin:/bin
 Environment=PYTHONPATH=/opt/mcs-dashboard/api
 Environment=NODE_ENV=production
+Environment=UV_CACHE_DIR=/opt/mcs-dashboard/api/.cache/uv
+Environment=UV_PROJECT_ENVIRONMENT=/opt/mcs-dashboard/api/.venv
 EnvironmentFile=-/opt/mcs-dashboard/api/.env
 
 # Main process
@@ -265,7 +276,7 @@ RestartSec=10
 # Security hardening
 NoNewPrivileges=true
 ProtectSystem=strict
-ProtectHome=read-only
+ProtectHome=false
 ProtectKernelTunables=true
 ProtectKernelModules=true
 ProtectControlGroups=true
@@ -284,6 +295,8 @@ ReadWritePaths=/opt/mcs-dashboard/api/backups
 ReadWritePaths=/opt/mcs-dashboard/api/templates
 ReadWritePaths=/opt/mcs-dashboard/api/file_history
 ReadWritePaths=/opt/mcs-dashboard/api/logs
+ReadWritePaths=/opt/mcs-dashboard/api/.cache
+ReadWritePaths=/opt/mcs-dashboard/api/.venv
 ReadWritePaths=/tmp
 PrivateTmp=true
 PrivateDevices=true
