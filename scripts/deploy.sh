@@ -198,7 +198,17 @@ deploy_application() {
 
         log_warning "Please review and update .env file with your production settings"
     else
-        log_info "Environment file already exists, keeping current configuration"
+        log_info "Environment file already exists, checking configuration..."
+
+        # Check if SECRET_KEY is still default value
+        if grep -q "SECRET_KEY=your-secret-key" .env || grep -q "SECRET_KEY=your-secret-key-here" .env; then
+            log_warning "Default SECRET_KEY detected, generating secure key..."
+            local secret_key=$(cd "$DEPLOY_DIR" && uv run python -c "import secrets; print(secrets.token_urlsafe(32))")
+            sed -i "s/SECRET_KEY=.*/SECRET_KEY=$secret_key/" .env
+            log_success "Secure SECRET_KEY generated and updated"
+        else
+            log_info "Custom SECRET_KEY found, keeping existing configuration"
+        fi
     fi
 
     # Create necessary directories
