@@ -9,13 +9,11 @@ Tests the Phase 2 visibility system with all visibility patterns:
 """
 
 import pytest
-from unittest.mock import Mock
-from sqlalchemy.orm import Session
 
 from app.core.visibility import (
     ResourceType,
-    ResourceVisibility,
     ResourceUserAccess,
+    ResourceVisibility,
     VisibilityType,
 )
 from app.services.visibility_service import VisibilityService

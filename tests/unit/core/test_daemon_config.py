@@ -6,7 +6,7 @@ Tests configuration loading, validation, and error handling
 import os
 import tempfile
 from pathlib import Path
-from unittest.mock import patch, Mock
+from unittest.mock import patch
 
 import pytest
 from pydantic import ValidationError
@@ -14,12 +14,12 @@ from pydantic import ValidationError
 from app.core.daemon_config import (
     DaemonConfig,
     DaemonMode,
-    LogLevel,
     DaemonProcessLimits,
+    LogLevel,
     get_daemon_config,
+    reset_daemon_config,
     set_daemon_config,
     validate_daemon_configuration,
-    reset_daemon_config,
 )
 
 

@@ -1,5 +1,5 @@
-import pytest
 from fastapi import status
+
 from app.auth.auth import create_access_token
 
 

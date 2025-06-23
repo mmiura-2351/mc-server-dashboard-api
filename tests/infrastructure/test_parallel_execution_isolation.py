@@ -4,6 +4,7 @@
 
 import os
 import tempfile
+
 from tests.conftest import get_worker_db_path
 
 
@@ -34,8 +35,9 @@ def test_database_file_creation(db):
 
 def test_test_isolation_simple_data(db):
     """テスト間でのデータ分離を確認（シンプルテスト1）"""
-    from app.users.models import User, Role
     from passlib.context import CryptContext
+
+    from app.users.models import Role, User
 
     pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto", bcrypt__rounds=4)
 
@@ -58,8 +60,9 @@ def test_test_isolation_simple_data(db):
 
 def test_test_isolation_different_data(db):
     """テスト間でのデータ分離を確認（シンプルテスト2）"""
-    from app.users.models import User, Role
     from passlib.context import CryptContext
+
+    from app.users.models import Role, User
 
     pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto", bcrypt__rounds=4)
 

@@ -5,9 +5,8 @@ Consolidates all backup service related tests for better organization
 
 import tarfile
 import tempfile
-from datetime import datetime
 from pathlib import Path
-from unittest.mock import AsyncMock, Mock, patch, MagicMock
+from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 from sqlalchemy.exc import DatabaseError
@@ -849,9 +848,10 @@ class TestMemoryExhaustionPrevention:
     @pytest.mark.asyncio
     async def test_async_directory_size_calculation_memory_efficiency(self):
         """Test that async directory size calculation doesn't block event loop"""
-        from app.services.backup_service import BackupFileService
-        import tempfile
         import asyncio
+        import tempfile
+
+        from app.services.backup_service import BackupFileService
 
         # Create temporary directory with files
         with tempfile.TemporaryDirectory() as temp_dir:

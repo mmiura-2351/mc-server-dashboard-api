@@ -1,10 +1,6 @@
-import pytest
-from unittest.mock import Mock, patch
-
-from app.services.server_properties_generator import ServerPropertiesGenerator
 from app.servers.models import Server, ServerType
 from app.servers.schemas import ServerCreateRequest
-from app.users.models import User
+from app.services.server_properties_generator import ServerPropertiesGenerator
 
 
 class TestServerPropertiesGenerator:

@@ -6,15 +6,15 @@ Tests validation logic and edge cases for 100% coverage
 import pytest
 from pydantic import ValidationError
 
+from app.servers.models import ServerStatus, ServerType
 from app.servers.schemas import (
-    ServerCreateRequest,
-    ServerUpdateRequest,
-    ServerResponse,
-    ServerImportRequest,
-    SupportedVersionsResponse,
     MinecraftVersionInfo,
+    ServerCreateRequest,
+    ServerImportRequest,
+    ServerResponse,
+    ServerUpdateRequest,
+    SupportedVersionsResponse,
 )
-from app.servers.models import ServerType, ServerStatus
 
 
 class TestServerCreateRequest:

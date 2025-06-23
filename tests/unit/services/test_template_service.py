@@ -3,25 +3,22 @@ Comprehensive test coverage for TemplateService
 Covers template management operations, error handling, and edge cases
 """
 
-import pytest
-import tempfile
-import json
-import shutil
 import tarfile
+import tempfile
 from pathlib import Path
-from unittest.mock import Mock, patch, mock_open, AsyncMock
+from unittest.mock import Mock, patch
+
+import pytest
 from sqlalchemy.orm import Session
 
+from app.servers.models import Server, ServerType, Template
 from app.services.template_service import (
-    TemplateService,
-    TemplateError,
-    TemplateNotFoundError,
     TemplateCreationError,
-    TemplateAccessError,
+    TemplateError,
+    TemplateService,
     template_service,
 )
-from app.servers.models import Server, ServerType, Template
-from app.users.models import User, Role
+from app.users.models import Role, User
 
 
 class TestTemplateServiceEnhancedCoverage:

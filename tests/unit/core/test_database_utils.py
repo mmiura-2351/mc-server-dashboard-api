@@ -3,9 +3,9 @@ Test coverage for app/core/database_utils.py
 Tests focus on transaction management, retry logic, and utility functions
 """
 
+from unittest.mock import Mock, patch
+
 import pytest
-import time
-from unittest.mock import Mock, patch, MagicMock
 from sqlalchemy.exc import (
     DatabaseError,
     DisconnectionError,
@@ -16,12 +16,12 @@ from sqlalchemy.orm import Session
 
 from app.core.database_utils import (
     DatabaseException,
-    TransactionException,
     RetryExhaustedException,
-    with_transaction,
-    transactional,
+    TransactionException,
     batch_query,
     safe_commit,
+    transactional,
+    with_transaction,
 )
 
 

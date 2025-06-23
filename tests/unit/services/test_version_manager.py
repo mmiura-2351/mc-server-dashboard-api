@@ -1,9 +1,10 @@
-import pytest
-from unittest.mock import Mock, patch, AsyncMock
 from datetime import datetime, timedelta
+from unittest.mock import AsyncMock, Mock, patch
 
-from app.services.version_manager import MinecraftVersionManager, VersionInfo
+import pytest
+
 from app.servers.models import ServerType
+from app.services.version_manager import MinecraftVersionManager, VersionInfo
 from tests.infrastructure.test_aiohttp_mocks import (
     MockAiohttpResponse,
     MockAiohttpSession,

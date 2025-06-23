@@ -1,9 +1,7 @@
-import pytest
 from fastapi import status
 from fastapi.testclient import TestClient
 
 from app.servers.models import Server, ServerStatus, ServerType
-from app.users.models import Role
 
 
 class TestServerPortConflicts:

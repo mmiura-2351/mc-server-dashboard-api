@@ -1,10 +1,8 @@
 """Test bidirectional synchronization between database and server.properties"""
 
 import tempfile
-from datetime import datetime, timezone
 from pathlib import Path
-from unittest.mock import MagicMock, patch
-from time import sleep
+from unittest.mock import patch
 
 import pytest
 from sqlalchemy import create_engine
@@ -15,7 +13,7 @@ from app.servers.models import Server, ServerStatus, ServerType
 from app.servers.schemas import ServerUpdateRequest
 from app.servers.service import server_service
 from app.services.simplified_sync import simplified_sync_service
-from app.users.models import User, Role
+from app.users.models import Role, User
 
 
 @pytest.fixture

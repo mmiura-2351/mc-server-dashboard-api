@@ -4,21 +4,22 @@ Tests all FastAPI endpoints for server control operations
 """
 
 import asyncio
+from unittest.mock import AsyncMock, Mock, patch
+
 import pytest
-from unittest.mock import Mock, patch, AsyncMock
 from fastapi import HTTPException, Request
 
+from app.servers.models import ServerStatus
 from app.servers.routers.control import (
+    get_server_logs,
+    get_server_status,
+    restart_server,
+    send_server_command,
     start_server,
     stop_server,
-    restart_server,
-    get_server_status,
-    send_server_command,
-    get_server_logs,
 )
-from app.servers.models import ServerStatus
 from app.servers.schemas import ServerCommandRequest
-from app.users.models import User, Role
+from app.users.models import Role, User
 
 
 class TestServerControlRouter:

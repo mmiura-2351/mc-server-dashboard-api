@@ -5,7 +5,6 @@ Does not test actual API functionality - use integration tests for that
 """
 
 import pytest
-from unittest.mock import Mock, patch
 from fastapi.testclient import TestClient
 
 from app.main import app
@@ -23,10 +22,10 @@ class TestTemplatesRouterConfiguration:
     def test_router_imports(self):
         """Test basic router imports and initialization"""
         from app.templates.router import (
-            router,
-            template_service,
             get_current_user,
             get_db,
+            router,
+            template_service,
         )
 
         assert router is not None
@@ -120,8 +119,8 @@ class TestTemplatesRouterDependencies:
                 APIRouter,
                 Depends,
                 HTTPException,
-                status,
                 Query,
+                status,
             )
 
             assert APIRouter is not None
@@ -211,8 +210,9 @@ class TestTemplatesRouterStructure:
 
     def test_api_router_instance(self):
         """Test that router is an APIRouter instance"""
-        from app.templates.router import router
         from fastapi import APIRouter
+
+        from app.templates.router import router
 
         assert isinstance(router, APIRouter)
 
@@ -268,7 +268,7 @@ class TestTemplatesRouterErrorHandling:
 
     def test_exception_handling_components(self):
         """Test that exception handling components are available"""
-        from app.templates.router import HTTPException, status
+        from app.templates.router import HTTPException
 
         # Test that we can create an HTTPException
         exc = HTTPException(status_code=404, detail="Test")

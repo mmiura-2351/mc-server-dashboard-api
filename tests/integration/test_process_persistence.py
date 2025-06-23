@@ -11,17 +11,15 @@ Tests the core Issue #44 implementation:
 
 import asyncio
 import json
-import os
 import tempfile
 import time
 from datetime import datetime
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import pytest
 import psutil
+import pytest
 
-from app.core.config import settings
 from app.servers.models import ServerStatus
 from app.services.minecraft_server import MinecraftServerManager, ServerProcess
 

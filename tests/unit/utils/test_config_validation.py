@@ -1,6 +1,7 @@
 """Test configuration validation for security enhancements"""
 
 import os
+
 import pytest
 from pydantic import ValidationError
 

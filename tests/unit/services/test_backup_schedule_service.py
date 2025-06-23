@@ -1,11 +1,11 @@
-import pytest
 from datetime import datetime, timedelta, timezone
+
+import pytest
 from sqlalchemy.orm import Session
-from sqlalchemy.exc import IntegrityError
 
 from app.backups.models import BackupSchedule, BackupScheduleLog, ScheduleAction
 from app.servers.models import Server
-from app.users.models import User, Role
+from app.users.models import Role, User
 
 
 class TestBackupScheduleService:

@@ -11,7 +11,6 @@ from pathlib import Path
 from unittest.mock import Mock, patch
 
 import pytest
-from sqlalchemy.orm import Session
 
 from app.core.security import (
     FileOperationValidator,
@@ -19,12 +18,10 @@ from app.core.security import (
     SecurityError,
     TarExtractor,
 )
-from app.servers.models import ServerType
-from app.servers.schemas import ServerCreateRequest
 from app.servers.service import (
     ServerFileSystemService,
-    ServerValidationService,
     ServerSecurityValidator,
+    ServerValidationService,
 )
 from app.services.backup_service import BackupFileService
 
@@ -513,9 +510,10 @@ class TestBackupServiceSecurity:
     @pytest.mark.asyncio
     async def test_backup_upload_security_validation(self):
         """Test that backup upload validates security correctly."""
-        from app.services.backup_service import BackupService
-        from app.core.exceptions import FileOperationException
         from unittest.mock import AsyncMock, Mock
+
+        from app.core.exceptions import FileOperationException
+        from app.services.backup_service import BackupService
 
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_path = Path(temp_dir)
@@ -796,10 +794,11 @@ class TestCommandInjectionSecurity:
     @pytest.mark.asyncio
     async def test_startup_script_generation_command_injection_protection(self):
         """Test that startup script generation prevents command injection."""
-        from app.servers.service import ServerFileSystemService
-        from app.servers.models import Server
-        from unittest.mock import Mock
         import tempfile
+        from unittest.mock import Mock
+
+        from app.servers.models import Server
+        from app.servers.service import ServerFileSystemService
 
         with tempfile.TemporaryDirectory() as temp_dir:
             server_dir = Path(temp_dir)
@@ -882,11 +881,12 @@ class TestCommandInjectionSecurity:
     @pytest.mark.asyncio
     async def test_startup_script_security_features(self):
         """Test that generated startup scripts have security features."""
-        from app.servers.service import ServerFileSystemService
-        from app.servers.models import Server
-        from unittest.mock import Mock
-        import tempfile
         import stat
+        import tempfile
+        from unittest.mock import Mock
+
+        from app.servers.models import Server
+        from app.servers.service import ServerFileSystemService
 
         with tempfile.TemporaryDirectory() as temp_dir:
             server_dir = Path(temp_dir)
@@ -926,7 +926,7 @@ class TestCommandInjectionSecurity:
 
 # Patch imports that might not exist during testing
 try:
-    from app.core.exceptions import InvalidRequestException, FileOperationException
+    from app.core.exceptions import FileOperationException, InvalidRequestException
 except ImportError:
     # Create mock exceptions for testing
     class InvalidRequestException(Exception):

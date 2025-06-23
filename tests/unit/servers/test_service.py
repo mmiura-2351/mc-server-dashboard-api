@@ -3,27 +3,26 @@ Test coverage for app/servers/service.py
 Focus on critical methods to improve coverage toward 100%
 """
 
-import pytest
-from unittest.mock import Mock, patch, AsyncMock, MagicMock
 from pathlib import Path
-import tempfile
-import shutil
+from unittest.mock import AsyncMock, Mock, patch
+
+import pytest
 
 from app.core.exceptions import (
-    InvalidRequestException,
     ConflictException,
+    InvalidRequestException,
     ServerNotFoundException,
 )
-from app.servers.models import Server, ServerType, ServerStatus, Template
+from app.servers.models import Server, ServerType
 from app.servers.schemas import ServerCreateRequest, ServerUpdateRequest
 from app.servers.service import (
-    ServerSecurityValidator,
-    ServerValidationService,
-    ServerJarService,
-    ServerFileSystemService,
     ServerDatabaseService,
-    ServerTemplateService,
+    ServerFileSystemService,
+    ServerJarService,
+    ServerSecurityValidator,
     ServerService,
+    ServerTemplateService,
+    ServerValidationService,
 )
 from app.users.models import Role, User
 

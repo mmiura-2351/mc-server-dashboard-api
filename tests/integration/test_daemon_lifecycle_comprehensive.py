@@ -7,10 +7,9 @@ import asyncio
 import json
 from datetime import datetime
 from pathlib import Path
-from unittest.mock import Mock, patch, AsyncMock, MagicMock
+from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
-import pytest_asyncio
 
 from app.servers.models import Server, ServerStatus, ServerType
 from app.services.minecraft_server import MinecraftServerManager, ServerProcess

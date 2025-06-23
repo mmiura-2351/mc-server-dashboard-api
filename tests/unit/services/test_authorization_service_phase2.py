@@ -7,14 +7,12 @@ Tests the new visibility-based access control patterns:
 - SPECIFIC_USERS visibility (explicit user grants)
 """
 
-import pytest
-from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.core.visibility import (
     ResourceType,
-    ResourceVisibility,
     ResourceUserAccess,
+    ResourceVisibility,
     VisibilityType,
 )
 from app.services.authorization_service import AuthorizationService
@@ -341,5 +339,7 @@ class TestAuthorizationServicePhase2Visibility:
         assert result.id == sample_server.id
 
         # Regular user SHOULD have access (new permission model: all users can access all servers)
-        result = AuthorizationService.check_server_access(sample_server.id, regular_user, db)
+        result = AuthorizationService.check_server_access(
+            sample_server.id, regular_user, db
+        )
         assert result.id == sample_server.id

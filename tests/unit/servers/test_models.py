@@ -3,9 +3,10 @@ Comprehensive test coverage for servers models
 Tests all model methods and properties for 100% coverage
 """
 
-import pytest
 import json
 from datetime import datetime
+
+import pytest
 
 from app.servers.models import ServerStatus, ServerType, Template
 
@@ -16,7 +17,6 @@ class TestTemplate:
     @pytest.fixture
     def template_instance(self):
         """Create a Template instance for testing"""
-        from app.servers.models import ServerType
 
         template = Template()
         template.id = 1
@@ -194,7 +194,6 @@ class TestServerType:
 
     def test_server_type_values(self):
         """Test ServerType enum has expected values"""
-        from app.servers.models import ServerType
 
         # Verify enum exists and has values
         assert hasattr(ServerType, "vanilla")

@@ -3,10 +3,11 @@ Simple test coverage for EncodingHandler service
 Focus on basic functionality to improve coverage
 """
 
-import pytest
-import tempfile
 import os
-from unittest.mock import patch, mock_open
+import tempfile
+from unittest.mock import patch
+
+import pytest
 
 from app.services.encoding_handler import EncodingHandler
 

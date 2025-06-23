@@ -1,10 +1,11 @@
 """Comprehensive tests for main application startup and lifecycle"""
 
+from unittest.mock import AsyncMock, patch
+
 import pytest
-from unittest.mock import Mock, patch, AsyncMock
 from fastapi.testclient import TestClient
 
-from app.main import ServiceStatus, service_status, app
+from app.main import ServiceStatus, app, service_status
 
 
 class TestServiceStatusComprehensive:
@@ -495,9 +496,9 @@ class TestServiceIntegrationBasic:
 
     def test_service_instances_have_required_methods(self):
         """Test that service instances have required methods"""
+        from app.services.backup_scheduler import backup_scheduler
         from app.services.database_integration import database_integration_service
         from app.services.websocket_service import websocket_service
-        from app.services.backup_scheduler import backup_scheduler
 
         # Database integration service methods
         assert hasattr(database_integration_service, "initialize")

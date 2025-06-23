@@ -3,12 +3,12 @@ Simplified test coverage for servers utilities router
 Tests core functionality with proper async mocking
 """
 
+from unittest.mock import AsyncMock, Mock, patch
+
 import pytest
-from unittest.mock import Mock, patch, AsyncMock
 from fastapi import HTTPException
 
 from app.servers.models import ServerType
-from app.users.models import Role, User
 
 
 class TestUtilitiesRouterSimple:

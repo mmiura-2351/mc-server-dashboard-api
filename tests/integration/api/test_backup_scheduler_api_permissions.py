@@ -1,13 +1,12 @@
 import pytest
-from datetime import datetime, timedelta
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
-from app.main import app
-from app.users.models import User, Role
-from app.servers.models import Server
-from app.backups.models import BackupSchedule, ScheduleAction
 from app.auth.auth import create_access_token
+from app.backups.models import BackupSchedule
+from app.main import app
+from app.servers.models import Server
+from app.users.models import Role, User
 
 
 class TestBackupSchedulerAPIPermissions:

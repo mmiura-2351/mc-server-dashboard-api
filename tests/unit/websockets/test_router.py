@@ -3,18 +3,19 @@ Comprehensive test coverage for WebSocket router
 Tests WebSocket endpoints and error handling
 """
 
-import pytest
 import json
-from unittest.mock import Mock, patch, AsyncMock
-from fastapi import HTTPException, WebSocket
 from datetime import datetime
+from unittest.mock import AsyncMock, Mock, patch
 
+import pytest
+from fastapi import HTTPException, WebSocket
+
+from app.users.models import Role, User
 from app.websockets.router import (
+    websocket_notifications,
     websocket_server_logs,
     websocket_server_status,
-    websocket_notifications,
 )
-from app.users.models import User, Role
 
 
 class TestWebSocketRouter:

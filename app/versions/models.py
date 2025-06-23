@@ -65,8 +65,23 @@ class MinecraftVersion(Base):
     def version_tuple(self) -> tuple:
         """Convert version string to tuple for sorting"""
         try:
+            # Split by dots and handle pre-release suffixes
             parts = self.version.split(".")
-            return tuple(int(part) for part in parts if part.isdigit())
+            numeric_parts = []
+
+            for part in parts:
+                # Extract numeric part before any non-numeric characters (e.g., "6-pre1" -> "6")
+                numeric_part = ""
+                for char in part:
+                    if char.isdigit():
+                        numeric_part += char
+                    else:
+                        break
+
+                if numeric_part:
+                    numeric_parts.append(int(numeric_part))
+
+            return tuple(numeric_parts) if numeric_parts else (0, 0, 0)
         except (ValueError, AttributeError):
             return (0, 0, 0)
 

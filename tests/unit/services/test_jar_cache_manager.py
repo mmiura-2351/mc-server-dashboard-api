@@ -1,13 +1,13 @@
-import pytest
-from unittest.mock import Mock, patch, AsyncMock, mock_open
-from pathlib import Path
-from datetime import datetime, timedelta
 import json
 import zipfile
-import tempfile
+from datetime import datetime, timedelta
+from pathlib import Path
+from unittest.mock import patch
 
-from app.services.jar_cache_manager import JarCacheManager
+import pytest
+
 from app.servers.models import ServerType
+from app.services.jar_cache_manager import JarCacheManager
 from tests.infrastructure.test_aiohttp_mocks import (
     MockAiohttpResponse,
     MockAiohttpSession,

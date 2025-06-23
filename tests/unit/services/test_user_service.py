@@ -1,7 +1,8 @@
 import pytest
 from fastapi import HTTPException
-from app.users.schemas import UserCreate
+
 from app.users.models import Role
+from app.users.schemas import UserCreate
 
 
 class TestUserService:

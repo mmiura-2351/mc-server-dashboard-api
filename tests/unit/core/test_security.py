@@ -3,17 +3,18 @@ Test coverage for app/core/security.py
 Tests focus on path validation, tar extraction security, and file operation validation
 """
 
-import pytest
 import tarfile
 import tempfile
 from pathlib import Path
-from unittest.mock import Mock, patch, mock_open
+from unittest.mock import Mock, patch
+
+import pytest
 
 from app.core.security import (
-    SecurityError,
-    PathValidator,
-    TarExtractor,
     FileOperationValidator,
+    PathValidator,
+    SecurityError,
+    TarExtractor,
 )
 
 

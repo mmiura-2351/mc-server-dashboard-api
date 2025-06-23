@@ -1,17 +1,13 @@
 import io
 import json
-import tempfile
 import zipfile
 from pathlib import Path
 from unittest.mock import Mock, patch
 
-import pytest
 from fastapi import status
 from fastapi.testclient import TestClient
 
-from app.main import app
 from app.servers.models import ServerStatus, ServerType
-from app.users.models import Role
 
 
 class TestServerExportImport:
@@ -256,7 +252,6 @@ class TestServerExportImport:
     def test_import_server_file_too_large(self, client: TestClient, admin_headers):
         """Test import with file exceeding size limit"""
         # Create a mock file with large size attribute
-        from unittest.mock import Mock
 
         zip_buffer = io.BytesIO()
         mock_file = Mock()
@@ -329,7 +324,7 @@ class TestServerExportImport:
     ):
         """Test that import allows port conflicts with stopped servers"""
         # Create a stopped server with port 25565
-        from app.servers.models import Server, ServerType, ServerStatus
+        from app.servers.models import Server
 
         stopped_server = Server(
             name="Stopped Server",

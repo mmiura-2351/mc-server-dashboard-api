@@ -4,24 +4,18 @@ Tests server startup, shutdown, monitoring, and process management workflows
 """
 
 import asyncio
-import os
-import signal
 import socket
-import subprocess
-import tempfile
-import time
 from datetime import datetime
 from pathlib import Path
-from unittest.mock import Mock, patch, AsyncMock, MagicMock
-from typing import Optional
+from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 import pytest_asyncio
 from sqlalchemy.orm import Session
 
 from app.servers.models import Server, ServerStatus, ServerType
-from app.services.minecraft_server import MinecraftServerManager, ServerProcess
 from app.services.java_compatibility import JavaVersionInfo
+from app.services.minecraft_server import MinecraftServerManager, ServerProcess
 
 
 class MockJavaCompatibilityServiceFullWorkflow:
