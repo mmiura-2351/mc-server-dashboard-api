@@ -33,6 +33,11 @@ class MinecraftVersionManager:
         self._cache_duration = timedelta(hours=6)  # Cache for 6 hours
         self.minimum_version = version.Version("1.8.0")
 
+        # Timeout configuration
+        self._request_timeout = 10  # Individual request timeout in seconds
+        self._total_timeout = 25  # Total operation timeout in seconds
+        self._client_timeout = aiohttp.ClientTimeout(total=self._request_timeout)
+
     async def get_supported_versions(self, server_type: ServerType) -> List[VersionInfo]:
         """Get supported versions for a server type"""
         cache_key = f"versions_{server_type.value}"
@@ -41,28 +46,35 @@ class MinecraftVersionManager:
             return self._cache[cache_key]
 
         try:
-            if server_type == ServerType.vanilla:
-                versions = await self._get_vanilla_versions()
-            elif server_type == ServerType.paper:
-                versions = await self._get_paper_versions()
-            elif server_type == ServerType.forge:
-                versions = await self._get_forge_versions()
-            else:
-                raise ValueError(f"Unsupported server type: {server_type}")
+            # Wrap the entire API operation with overall timeout
+            async with asyncio.timeout(self._total_timeout):
+                if server_type == ServerType.vanilla:
+                    versions = await self._get_vanilla_versions()
+                elif server_type == ServerType.paper:
+                    versions = await self._get_paper_versions()
+                elif server_type == ServerType.forge:
+                    versions = await self._get_forge_versions()
+                else:
+                    raise ValueError(f"Unsupported server type: {server_type}")
 
-            # Filter versions >= 1.8
-            filtered_versions = [
-                v for v in versions if self._is_version_supported(v.version)
-            ]
+                # Filter versions >= 1.8
+                filtered_versions = [
+                    v for v in versions if self._is_version_supported(v.version)
+                ]
 
-            self._cache[cache_key] = filtered_versions
-            self._cache_expiry[cache_key] = datetime.now() + self._cache_duration
+                self._cache[cache_key] = filtered_versions
+                self._cache_expiry[cache_key] = datetime.now() + self._cache_duration
 
-            logger.info(
-                f"Loaded {len(filtered_versions)} supported versions for {server_type.value}"
+                logger.info(
+                    f"Loaded {len(filtered_versions)} supported versions for {server_type.value}"
+                )
+                return filtered_versions
+
+        except asyncio.TimeoutError:
+            logger.error(
+                f"Timeout getting versions for {server_type.value} after {self._total_timeout}s"
             )
-            return filtered_versions
-
+            return self._get_fallback_versions(server_type)
         except Exception as e:
             logger.error(f"Failed to get versions for {server_type.value}: {e}")
             # Return fallback versions if API fails
@@ -91,41 +103,65 @@ class MinecraftVersionManager:
 
     async def _get_vanilla_versions(self) -> List[VersionInfo]:
         """Get vanilla server versions from Mojang API with parallel processing"""
-        async with aiohttp.ClientSession() as session:
-            # Get version manifest
-            async with session.get(
-                "https://piston-meta.mojang.com/mc/game/version_manifest.json"
-            ) as response:
-                response.raise_for_status()
-                manifest = await response.json()
+        async with aiohttp.ClientSession(timeout=self._client_timeout) as session:
+            try:
+                # Get version manifest with timeout
+                async with session.get(
+                    "https://piston-meta.mojang.com/mc/game/version_manifest.json"
+                ) as response:
+                    response.raise_for_status()
+                    manifest = await response.json()
 
-            # Prepare tasks for parallel processing
-            release_versions = [
-                version_data
-                for version_data in manifest["versions"]
-                if version_data["type"] == "release"
-            ]
+                # Prepare tasks for parallel processing
+                release_versions = [
+                    version_data
+                    for version_data in manifest["versions"]
+                    if version_data["type"] == "release"
+                ]
 
-            # Create tasks for parallel execution
-            tasks = [
-                self._fetch_vanilla_version_info(session, version_data)
-                for version_data in release_versions
-            ]
+                logger.info(
+                    f"Found {len(release_versions)} vanilla release versions to process"
+                )
 
-            # Execute all requests in parallel
-            version_results = await asyncio.gather(*tasks, return_exceptions=True)
+                # Create tasks for parallel execution
+                tasks = [
+                    self._fetch_vanilla_version_info(session, version_data)
+                    for version_data in release_versions
+                ]
 
-            # Filter successful results
-            versions = []
-            for result in version_results:
-                if isinstance(result, VersionInfo):
-                    versions.append(result)
-                elif isinstance(result, Exception):
-                    logger.warning(f"Failed to fetch vanilla version: {result}")
+                # Execute all requests in parallel with timeout control
+                try:
+                    version_results = await asyncio.wait_for(
+                        asyncio.gather(*tasks, return_exceptions=True),
+                        timeout=self._total_timeout - 5,  # Reserve 5s for manifest fetch
+                    )
+                except asyncio.TimeoutError:
+                    logger.error("Timeout during vanilla version parallel processing")
+                    raise
 
-            return sorted(
-                versions, key=lambda x: version.Version(x.version), reverse=True
-            )
+                # Filter successful results
+                versions = []
+                failed_count = 0
+                for result in version_results:
+                    if isinstance(result, VersionInfo):
+                        versions.append(result)
+                    elif isinstance(result, Exception):
+                        failed_count += 1
+                        logger.warning(f"Failed to fetch vanilla version: {result}")
+
+                logger.info(
+                    f"Successfully processed {len(versions)} vanilla versions, {failed_count} failed"
+                )
+                return sorted(
+                    versions, key=lambda x: version.Version(x.version), reverse=True
+                )
+
+            except aiohttp.ClientError as e:
+                logger.error(f"HTTP client error fetching vanilla versions: {e}")
+                raise
+            except asyncio.TimeoutError:
+                logger.error("Timeout fetching vanilla version manifest")
+                raise
 
     async def _fetch_vanilla_version_info(
         self, session: aiohttp.ClientSession, version_data: dict
@@ -134,7 +170,7 @@ class MinecraftVersionManager:
         try:
             version_id = version_data["id"]
 
-            # Get specific version info for download URL
+            # Get specific version info for download URL with timeout
             async with session.get(version_data["url"]) as version_response:
                 version_response.raise_for_status()
                 version_info = await version_response.json()
@@ -152,6 +188,16 @@ class MinecraftVersionManager:
                         release_date=release_date,
                         is_stable=True,
                     )
+        except aiohttp.ClientError as e:
+            logger.warning(
+                f"HTTP error fetching vanilla version {version_data.get('id', 'unknown')}: {e}"
+            )
+            return None
+        except asyncio.TimeoutError:
+            logger.warning(
+                f"Timeout fetching vanilla version {version_data.get('id', 'unknown')}"
+            )
+            return None
         except Exception as e:
             logger.warning(
                 f"Failed to fetch vanilla version {version_data.get('id', 'unknown')}: {e}"
@@ -160,39 +206,64 @@ class MinecraftVersionManager:
 
     async def _get_paper_versions(self) -> List[VersionInfo]:
         """Get Paper server versions from PaperMC API with parallel processing"""
-        async with aiohttp.ClientSession() as session:
-            # Get available versions
-            async with session.get(
-                "https://api.papermc.io/v2/projects/paper"
-            ) as response:
-                response.raise_for_status()
-                project_info = await response.json()
+        async with aiohttp.ClientSession(timeout=self._client_timeout) as session:
+            try:
+                # Get available versions with timeout
+                async with session.get(
+                    "https://api.papermc.io/v2/projects/paper"
+                ) as response:
+                    response.raise_for_status()
+                    project_info = await response.json()
 
-            # Create tasks for parallel execution
-            tasks = [
-                self._fetch_paper_version_info(session, version_id)
-                for version_id in project_info["versions"]
-            ]
+                logger.info(
+                    f"Found {len(project_info['versions'])} paper versions to process"
+                )
 
-            # Execute all requests in parallel with semaphore to limit concurrent requests
-            semaphore = asyncio.Semaphore(10)  # Limit to 10 concurrent requests
-            limited_tasks = [
-                self._fetch_with_semaphore(semaphore, task) for task in tasks
-            ]
+                # Create tasks for parallel execution
+                tasks = [
+                    self._fetch_paper_version_info(session, version_id)
+                    for version_id in project_info["versions"]
+                ]
 
-            version_results = await asyncio.gather(*limited_tasks, return_exceptions=True)
+                # Execute all requests in parallel with semaphore to limit concurrent requests
+                semaphore = asyncio.Semaphore(10)  # Limit to 10 concurrent requests
+                limited_tasks = [
+                    self._fetch_with_semaphore(semaphore, task) for task in tasks
+                ]
 
-            # Filter successful results
-            versions = []
-            for result in version_results:
-                if isinstance(result, VersionInfo):
-                    versions.append(result)
-                elif isinstance(result, Exception):
-                    logger.warning(f"Failed to fetch paper version: {result}")
+                try:
+                    version_results = await asyncio.wait_for(
+                        asyncio.gather(*limited_tasks, return_exceptions=True),
+                        timeout=self._total_timeout
+                        - 5,  # Reserve 5s for project info fetch
+                    )
+                except asyncio.TimeoutError:
+                    logger.error("Timeout during paper version parallel processing")
+                    raise
 
-            return sorted(
-                versions, key=lambda x: version.Version(x.version), reverse=True
-            )
+                # Filter successful results
+                versions = []
+                failed_count = 0
+                for result in version_results:
+                    if isinstance(result, VersionInfo):
+                        versions.append(result)
+                    elif isinstance(result, Exception):
+                        failed_count += 1
+                        logger.warning(f"Failed to fetch paper version: {result}")
+
+                logger.info(
+                    f"Successfully processed {len(versions)} paper versions, {failed_count} failed"
+                )
+                return sorted(
+                    versions, key=lambda x: version.Version(x.version), reverse=True
+                )
+
+            except aiohttp.ClientError as e:
+                logger.error(f"HTTP client error fetching paper versions: {e}")
+                raise
+            except asyncio.TimeoutError:
+                logger.error("Timeout fetching paper project info")
+                raise
 
     async def _fetch_with_semaphore(self, semaphore: asyncio.Semaphore, task):
         """Execute task with semaphore to limit concurrent requests"""
@@ -204,7 +275,7 @@ class MinecraftVersionManager:
     ) -> Optional[VersionInfo]:
         """Fetch individual Paper version info"""
         try:
-            # Get builds for this version
+            # Get builds for this version with timeout
             builds_url = (
                 f"https://api.papermc.io/v2/projects/paper/versions/{version_id}/builds"
             )
@@ -230,6 +301,14 @@ class MinecraftVersionManager:
                     is_stable=True,
                     build_number=latest_build["build"],
                 )
+        except aiohttp.ClientError as e:
+            logger.warning(
+                f"HTTP error fetching Paper build for version {version_id}: {e}"
+            )
+            return None
+        except asyncio.TimeoutError:
+            logger.warning(f"Timeout fetching Paper build for version {version_id}")
+            return None
         except Exception as e:
             logger.warning(f"Failed to get Paper build for version {version_id}: {e}")
             return None
