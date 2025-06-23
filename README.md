@@ -102,10 +102,10 @@ All configuration options are documented in the respective architecture guides:
 
 | Command | Description |
 |---------|-------------|
-| `uv run dev start` | Start development server with auto-reload |
-| `uv run dev test` | Run test suite |
-| `uv run dev lint` | Check code quality |
-| `uv run dev format` | Format code |
+| `uv run python -m app.scripts.dev start` | Start development server with auto-reload |
+| `uv run python -m app.scripts.dev test` | Run test suite |
+| `uv run python -m app.scripts.dev lint` | Check code quality |
+| `uv run python -m app.scripts.dev format` | Format code |
 | `uv sync --group dev` | Install dependencies and setup environment |
 
 ### Alternative Commands (Make)
@@ -133,11 +133,11 @@ All configuration options are documented in the respective architecture guides:
 
 | Script | Description |
 |--------|-------------|
-| `uv run dev start` | Start development server with monitoring |
-| `uv run dev stop` | Stop development server |
-| `uv run dev status` | Show development server status |
-| `uv run dev logs` | View development logs |
-| `uv run dev logs-follow` | Follow development logs in real-time |
+| `uv run python -m app.scripts.dev start` | Start development server with monitoring |
+| `uv run python -m app.scripts.dev stop` | Stop development server |
+| `uv run python -m app.scripts.dev status` | Show development server status |
+| `uv run python -m app.scripts.dev logs` | View development logs |
+| `uv run python -m app.scripts.dev logs-follow` | Follow development logs in real-time |
 
 ### Development Scripts (Direct)
 
@@ -154,7 +154,7 @@ All configuration options are documented in the respective architecture guides:
 
 ```bash
 # Using uv run (recommended)
-uv run deploy
+uv run python -m app.scripts.deploy
 
 # Or direct script execution
 ./scripts/deploy.sh
@@ -167,14 +167,14 @@ make deploy
 
 | Command | Description |
 |---------|-------------|
-| `uv run service start` | Start production service |
-| `uv run service stop` | Stop production service |
-| `uv run service restart` | Restart production service |
-| `uv run service status` | Show service status |
-| `uv run service logs` | View service logs |
-| `uv run service logs-follow` | Follow service logs in real-time |
-| `uv run service enable` | Enable auto-start on boot |
-| `uv run service disable` | Disable auto-start on boot |
+| `uv run python -m app.scripts.service start` | Start production service |
+| `uv run python -m app.scripts.service stop` | Stop production service |
+| `uv run python -m app.scripts.service restart` | Restart production service |
+| `uv run python -m app.scripts.service status` | Show service status |
+| `uv run python -m app.scripts.service logs` | View service logs |
+| `uv run python -m app.scripts.service logs-follow` | Follow service logs in real-time |
+| `uv run python -m app.scripts.service enable` | Enable auto-start on boot |
+| `uv run python -m app.scripts.service disable` | Disable auto-start on boot |
 
 ### Production Management (Alternative)
 
