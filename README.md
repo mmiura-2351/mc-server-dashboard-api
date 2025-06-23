@@ -98,17 +98,7 @@ All configuration options are documented in the respective architecture guides:
 
 ## Development
 
-### Quick Commands (uv run)
-
-| Command | Description |
-|---------|-------------|
-| `uv run python -m app.scripts.dev start` | Start development server with auto-reload |
-| `uv run python -m app.scripts.dev test` | Run test suite |
-| `uv run python -m app.scripts.dev lint` | Check code quality |
-| `uv run python -m app.scripts.dev format` | Format code |
-| `uv sync --group dev` | Install dependencies and setup environment |
-
-### Alternative Commands (Make)
+### Quick Commands
 
 | Command | Description |
 |---------|-------------|
@@ -129,17 +119,16 @@ All configuration options are documented in the respective architecture guides:
 | `uv run ruff format app/` | Format code |
 | `uv run coverage run -m pytest && uv run coverage report` | Generate coverage report |
 
-### Development Scripts (uv run)
+### Development Scripts
 
 | Script | Description |
 |--------|-------------|
-| `uv run python -m app.scripts.dev start` | Start development server with monitoring |
-| `uv run python -m app.scripts.dev stop` | Stop development server |
-| `uv run python -m app.scripts.dev status` | Show development server status |
-| `uv run python -m app.scripts.dev logs` | View development logs |
-| `uv run python -m app.scripts.dev logs-follow` | Follow development logs in real-time |
+| `make dev-start` | Start development server with monitoring |
+| `make dev-stop` | Stop development server |
+| `make dev-status` | Show development server status |
+| `make dev-logs` | View development logs |
 
-### Development Scripts (Direct)
+### Alternative: Direct Script Execution
 
 | Script | Description |
 |--------|-------------|
@@ -153,30 +142,14 @@ All configuration options are documented in the respective architecture guides:
 ### Quick Deployment
 
 ```bash
-# Using uv run (recommended)
-uv run python -m app.scripts.deploy
+# Using make (recommended)
+make deploy
 
 # Or direct script execution
 ./scripts/deploy.sh
-
-# Or using make
-make deploy
 ```
 
-### Production Management (uv run)
-
-| Command | Description |
-|---------|-------------|
-| `uv run python -m app.scripts.service start` | Start production service |
-| `uv run python -m app.scripts.service stop` | Stop production service |
-| `uv run python -m app.scripts.service restart` | Restart production service |
-| `uv run python -m app.scripts.service status` | Show service status |
-| `uv run python -m app.scripts.service logs` | View service logs |
-| `uv run python -m app.scripts.service logs-follow` | Follow service logs in real-time |
-| `uv run python -m app.scripts.service enable` | Enable auto-start on boot |
-| `uv run python -m app.scripts.service disable` | Disable auto-start on boot |
-
-### Production Management (Alternative)
+### Production Management
 
 | Command | Description |
 |---------|-------------|
@@ -185,6 +158,18 @@ make deploy
 | `make service-restart` | Restart production service |
 | `make service-status` | Show service status |
 | `make service-logs` | View service logs |
+| `make service-enable` | Enable auto-start on boot |
+| `make service-disable` | Disable auto-start on boot |
+
+### Alternative: Direct Script Execution
+
+| Command | Description |
+|---------|-------------|
+| `./scripts/service-manager.sh start` | Start production service |
+| `./scripts/service-manager.sh stop` | Stop production service |
+| `./scripts/service-manager.sh restart` | Restart production service |
+| `./scripts/service-manager.sh status` | Show service status |
+| `./scripts/service-manager.sh logs` | View service logs |
 
 ### Manual Production Setup
 

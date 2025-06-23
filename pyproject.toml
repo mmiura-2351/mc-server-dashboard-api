@@ -5,23 +5,9 @@ description = "Minecraft server management dashboard API"
 readme = "README.md"
 requires-python = ">=3.13"
 
-# Note: uv run scripts are defined in app/scripts/ directory
-# Use the following commands:
-#   uv run python -m app.scripts.dev <command>
-#   uv run python -m app.scripts.deploy
-#   uv run python -m app.scripts.service <command>
-#
-# Or use direct script execution:
-#   ./scripts/deploy.sh
-#   ./scripts/service-manager.sh <command>
-#   ./scripts/dev-start.sh <command>
-
-[build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
-
-[tool.hatch.build.targets.wheel]
-packages = ["app"]
+# Deployment scripts are available via Makefile commands
+# Use: make deploy, make dev, make service-status, etc.
+# Or directly: ./scripts/deploy.sh
 
 dependencies = [
     "annotated-types==0.7.0",
