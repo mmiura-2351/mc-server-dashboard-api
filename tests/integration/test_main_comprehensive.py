@@ -20,6 +20,7 @@ class TestServiceStatusComprehensive:
         assert status.database_integration_ready is False
         assert status.backup_scheduler_ready is False
         assert status.websocket_service_ready is False
+        assert status.version_update_scheduler_ready is False
         assert status.failed_services == []
 
     def test_service_status_all_services_ready(self):
@@ -29,6 +30,7 @@ class TestServiceStatusComprehensive:
         status.database_integration_ready = True
         status.backup_scheduler_ready = True
         status.websocket_service_ready = True
+        status.version_update_scheduler_ready = True
 
         assert status.is_healthy() is True
 
@@ -39,6 +41,7 @@ class TestServiceStatusComprehensive:
         status.database_integration_ready = True
         status.backup_scheduler_ready = True
         status.websocket_service_ready = True
+        status.version_update_scheduler_ready = True
 
         # Database is critical - should not be healthy
         assert status.is_healthy() is False
@@ -127,6 +130,7 @@ class TestHealthEndpointComprehensive:
                 "database_integration": True,
                 "backup_scheduler": True,
                 "websocket_service": True,
+                "version_update_scheduler": True,
                 "failed_services": [],
                 "healthy": True,
             }
@@ -148,6 +152,7 @@ class TestHealthEndpointComprehensive:
                 "database_integration": True,
                 "backup_scheduler": True,
                 "websocket_service": True,
+                "version_update_scheduler": True,
                 "failed_services": ["database"],
                 "healthy": False,
             }
@@ -169,6 +174,7 @@ class TestHealthEndpointComprehensive:
                 "database_integration": False,
                 "backup_scheduler": False,
                 "websocket_service": True,
+                "version_update_scheduler": True,
                 "failed_services": ["database_integration", "backup_scheduler"],
                 "healthy": True,
             }
@@ -192,6 +198,7 @@ class TestHealthEndpointComprehensive:
                 "database_integration": True,
                 "backup_scheduler": True,
                 "websocket_service": True,
+                "version_update_scheduler": True,
                 "failed_services": [],
                 "healthy": True,
             }
@@ -219,6 +226,7 @@ class TestHealthEndpointComprehensive:
                 "database_integration": False,
                 "backup_scheduler": True,
                 "websocket_service": False,
+                "version_update_scheduler": True,
                 "failed_services": ["database_integration", "websocket_service"],
                 "healthy": True,
             }

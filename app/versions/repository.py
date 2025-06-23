@@ -271,3 +271,101 @@ class VersionRepository:
             query = query.filter(VersionUpdateLog.update_type == update_type)
 
         return query.order_by(desc(VersionUpdateLog.started_at)).limit(limit).all()
+
+    # ===================
+    # Non-async convenience methods for management
+    # ===================
+
+    def get_all_versions(self, limit: Optional[int] = None) -> List[MinecraftVersion]:
+        """
+        Get all versions, sorted by last_updated (newest first).
+
+        Args:
+            limit: Maximum number of versions to return
+
+        Returns:
+            List of MinecraftVersion objects
+        """
+        query = self.db.query(MinecraftVersion).order_by(
+            MinecraftVersion.last_updated.desc()
+        )
+
+        if limit:
+            query = query.limit(limit)
+
+        return query.all()
+
+    def get_versions_by_server_type(self, server_type: str) -> List[MinecraftVersion]:
+        """
+        Get all versions for a specific server type, sorted by last_updated.
+
+        Args:
+            server_type: Server type string (vanilla, paper, fabric, forge)
+
+        Returns:
+            List of MinecraftVersion objects
+        """
+        return (
+            self.db.query(MinecraftVersion)
+            .filter(MinecraftVersion.server_type == server_type)
+            .order_by(MinecraftVersion.last_updated.desc())
+            .all()
+        )
+
+    def delete_version(self, version_id: int) -> bool:
+        """
+        Delete a version by ID.
+
+        Args:
+            version_id: ID of version to delete
+
+        Returns:
+            True if deleted, False if not found
+        """
+        version = (
+            self.db.query(MinecraftVersion)
+            .filter(MinecraftVersion.id == version_id)
+            .first()
+        )
+        if not version:
+            return False
+
+        self.db.delete(version)
+        return True
+
+    def find_duplicate_versions(self) -> List[tuple]:
+        """
+        Find duplicate version entries (same server_type and version).
+
+        Returns:
+            List of tuples (server_type, version, count) for duplicates
+        """
+        duplicates = (
+            self.db.query(
+                MinecraftVersion.server_type,
+                MinecraftVersion.version,
+                func.count(MinecraftVersion.id).label("count"),
+            )
+            .group_by(MinecraftVersion.server_type, MinecraftVersion.version)
+            .having(func.count(MinecraftVersion.id) > 1)
+            .all()
+        )
+
+        return [(d.server_type, d.version, d.count) for d in duplicates]
+
+    def get_versions_older_than(self, cutoff_date: datetime) -> List[MinecraftVersion]:
+        """
+        Get versions older than the specified date.
+
+        Args:
+            cutoff_date: Cutoff date for "old" versions
+
+        Returns:
+            List of MinecraftVersion objects older than cutoff_date
+        """
+        return (
+            self.db.query(MinecraftVersion)
+            .filter(MinecraftVersion.last_updated < cutoff_date)
+            .order_by(MinecraftVersion.last_updated.asc())
+            .all()
+        )
