@@ -27,6 +27,7 @@ from app.templates.router import router as templates_router
 
 # Import all models to ensure they are registered with SQLAlchemy
 from app.users.router import router as users_router
+from app.versions.router import router as versions_router
 from app.websockets.router import router as websockets_router
 
 logger = logging.getLogger(__name__)
@@ -361,5 +362,6 @@ app.include_router(
 app.include_router(backups_router, prefix="/api/v1/backups", tags=["backups"])
 app.include_router(templates_router, prefix="/api/v1/templates", tags=["templates"])
 app.include_router(files_router, prefix="/api/v1/files", tags=["files"])
+app.include_router(versions_router, prefix="/api/v1/versions", tags=["versions"])
 app.include_router(websockets_router, prefix="/api/v1/ws", tags=["websockets"])
 app.include_router(audit_router, tags=["audit"])
