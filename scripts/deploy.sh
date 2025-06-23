@@ -328,7 +328,7 @@ MemoryMax=2G
 TasksMax=4096
 
 # Health check
-ExecStartPost=/bin/bash -c 'for i in {1..30}; do if curl -sf http://localhost:8000/health >/dev/null 2>&1; then exit 0; fi; sleep 2; done; exit 1'
+ExecStartPost=/bin/bash -c 'for i in {1..60}; do if curl -sf http://localhost:8000/health >/dev/null 2>&1; then exit 0; fi; sleep 4; done; exit 1'
 
 [Install]
 WantedBy=multi-user.target
@@ -370,9 +370,9 @@ start_and_validate() {
         error_exit "Service startup failed"
     fi
 
-    # Health check
+    # Health check with extended timeout for auto-restart scenarios
     log_info "Performing health check..."
-    local max_attempts=30
+    local max_attempts=60
     local attempt=1
 
     while [[ $attempt -le $max_attempts ]]; do
@@ -386,7 +386,7 @@ start_and_validate() {
         fi
 
         log_info "Waiting for service to be ready... (attempt $attempt/$max_attempts)"
-        sleep 2
+        sleep 4
         ((attempt++))
     done
 
