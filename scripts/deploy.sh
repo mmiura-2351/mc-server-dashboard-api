@@ -59,15 +59,8 @@ check_prerequisites() {
         SUDO_CMD="sudo"
     fi
 
-    # Check Python version
-    if ! command -v python3 &> /dev/null; then
-        error_exit "Python 3 is not installed. Please install Python ${REQUIRED_PYTHON_VERSION}+"
-    fi
-
-    local python_version=$(python3 -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')")
-    if ! python3 -c "import sys; sys.exit(0 if sys.version_info >= (3, 13) else 1)" 2>/dev/null; then
-        error_exit "Python ${REQUIRED_PYTHON_VERSION}+ is required. Current version: ${python_version}"
-    fi
+    # Python version is managed by uv - no explicit check needed
+    # uv will automatically handle Python version requirements per pyproject.toml
 
     # Check uv package manager
     if ! command -v uv &> /dev/null; then
@@ -199,8 +192,8 @@ deploy_application() {
         log_info "Creating environment configuration..."
         cp .env.example .env
 
-        # Generate secure SECRET_KEY
-        local secret_key=$(python3 -c "import secrets; print(secrets.token_urlsafe(32))")
+        # Generate secure SECRET_KEY using uv-managed Python
+        local secret_key=$(cd "$DEPLOY_DIR" && uv run python -c "import secrets; print(secrets.token_urlsafe(32))")
         sed -i "s/SECRET_KEY=.*/SECRET_KEY=$secret_key/" .env
 
         log_warning "Please review and update .env file with your production settings"
@@ -285,7 +278,7 @@ start_and_validate() {
     $SUDO_CMD systemctl status "$SERVICE_NAME" --no-pager -l
     echo
     log_info "API Health Check:"
-    curl -s http://localhost:8000/health | python3 -m json.tool 2>/dev/null || echo "API is responding"
+    curl -s http://localhost:8000/health | (cd "$DEPLOY_DIR" && uv run python -m json.tool) 2>/dev/null || echo "API is responding"
     echo
     log_info "Useful commands:"
     if [[ $EUID -eq 0 ]]; then

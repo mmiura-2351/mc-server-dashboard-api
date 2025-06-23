@@ -31,8 +31,7 @@ A comprehensive FastAPI-based backend system for managing multiple Minecraft ser
 ## Quick Start
 
 ### Prerequisites
-- Python 3.13+
-- uv package manager
+- uv package manager (automatically manages Python 3.13+ requirement)
 - Java Runtime Environment (for Minecraft servers)
   - Supports multiple Java versions for different Minecraft versions
   - OpenJDK 8, 16, 17, or 21 recommended

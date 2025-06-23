@@ -8,13 +8,13 @@ Wants=network-online.target
 Type=simple
 # User and Group will be dynamically set during deployment
 WorkingDirectory=/opt/mcs-dashboard/api
-Environment=PATH=/opt/mcs-dashboard/api/.venv/bin:/usr/local/bin:/usr/bin:/bin
+Environment=PATH=/root/.cargo/bin:/usr/local/bin:/usr/bin:/bin
 Environment=PYTHONPATH=/opt/mcs-dashboard/api
 Environment=NODE_ENV=production
 EnvironmentFile=-/opt/mcs-dashboard/api/.env
 
 # Main process
-ExecStart=/opt/mcs-dashboard/api/.venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 1
+ExecStart=/root/.cargo/bin/uv run uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 1
 ExecReload=/bin/kill -HUP $MAINPID
 ExecStop=/bin/kill -TERM $MAINPID
 

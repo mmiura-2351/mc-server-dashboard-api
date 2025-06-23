@@ -37,7 +37,7 @@ The deployment script will:
 ### System Requirements
 
 - **Operating System**: Ubuntu 20.04+ or similar Linux distribution
-- **Python**: 3.13 or higher
+- **uv package manager**: Automatically handles Python 3.13+ requirement
 - **Memory**: Minimum 2GB RAM (4GB+ recommended for multiple servers)
 - **Disk Space**: 10GB+ (depends on number of Minecraft servers and backups)
 - **Network**: Open ports for API (8000) and Minecraft servers (25565+)
@@ -54,13 +54,7 @@ sudo apt install -y curl git build-essential
 # Install Java (multiple versions for Minecraft compatibility)
 sudo apt install -y openjdk-8-jdk openjdk-17-jdk openjdk-21-jdk
 
-# Install Python 3.13+ (if not available from apt)
-sudo apt install -y software-properties-common
-sudo add-apt-repository ppa:deadsnakes/ppa
-sudo apt update
-sudo apt install -y python3.13 python3.13-venv python3.13-dev
-
-# Install uv package manager
+# Install uv package manager (handles Python automatically)
 curl -LsSf https://astral.sh/uv/install.sh | sh
 source ~/.bashrc
 ```
@@ -147,7 +141,7 @@ LOG_LEVEL=INFO
 
 **Important**: Generate a secure SECRET_KEY:
 ```bash
-python3 -c "import secrets; print('SECRET_KEY=' + secrets.token_urlsafe(32))"
+uv run python -c "import secrets; print('SECRET_KEY=' + secrets.token_urlsafe(32))"
 ```
 
 #### 4. Configure Systemd Service

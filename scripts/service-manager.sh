@@ -81,7 +81,7 @@ show_status() {
 
             # Try to get health details
             local health_response=$(curl -s "$HEALTH_ENDPOINT" 2>/dev/null || echo '{"status": "unknown"}')
-            echo "Health Response: $health_response" | python3 -m json.tool 2>/dev/null || echo "$health_response"
+            echo "Health Response: $health_response" | (cd /opt/mcs-dashboard/api && uv run python -m json.tool) 2>/dev/null || echo "$health_response"
         else
             log_warning "API is NOT responding on $API_URL"
             log_info "This might indicate a startup issue or port conflict"

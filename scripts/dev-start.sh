@@ -81,15 +81,8 @@ trap cleanup EXIT INT TERM
 check_prerequisites() {
     log_info "Checking development environment prerequisites..."
 
-    # Check Python version
-    if ! command -v python3 &> /dev/null; then
-        error_exit "Python 3 is not installed. Please install Python ${REQUIRED_PYTHON_VERSION}+"
-    fi
-
-    local python_version=$(python3 -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')")
-    if ! python3 -c "import sys; sys.exit(0 if sys.version_info >= (3, 13) else 1)" 2>/dev/null; then
-        error_exit "Python ${REQUIRED_PYTHON_VERSION}+ is required. Current version: ${python_version}"
-    fi
+    # Python version is managed by uv - no explicit check needed
+    # uv will automatically handle Python version requirements per pyproject.toml
 
     # Check uv package manager
     if ! command -v uv &> /dev/null; then
@@ -144,7 +137,7 @@ setup_dev_environment() {
         cp .env.example .env
 
         # Generate secure SECRET_KEY for development
-        local secret_key=$(python3 -c "import secrets; print(secrets.token_urlsafe(32))")
+        local secret_key=$(uv run python -c "import secrets; print(secrets.token_urlsafe(32))")
         sed -i "s/SECRET_KEY=.*/SECRET_KEY=$secret_key/" .env
 
         log_success "Development .env file created"

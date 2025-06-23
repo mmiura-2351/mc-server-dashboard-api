@@ -5,8 +5,7 @@ Complete guide for developing, testing, and deploying the Minecraft Server Dashb
 ## Environment Setup
 
 ### Prerequisites
-- Python 3.13+
-- uv package manager
+- uv package manager (automatically manages Python 3.13+ requirement)
 - Java Runtime Environment (for Minecraft servers)
 - Git for version control
 
