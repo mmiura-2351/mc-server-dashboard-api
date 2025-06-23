@@ -46,14 +46,17 @@ error_exit() {
 check_prerequisites() {
     log_info "Checking deployment prerequisites..."
 
-    # Check if running as root
+    # Check execution privileges - allow both root and sudo users
     if [[ $EUID -eq 0 ]]; then
-        error_exit "This script should not be run as root. Please run as a regular user with sudo privileges."
-    fi
-
-    # Check sudo privileges
-    if ! sudo -n true 2>/dev/null; then
-        error_exit "This script requires sudo privileges. Please ensure you have sudo access."
+        log_info "Running as root - deployment will proceed with root privileges"
+        SUDO_CMD=""
+    else
+        # Check sudo privileges for non-root users
+        if ! sudo -n true 2>/dev/null; then
+            error_exit "This script requires sudo privileges. Please ensure you have sudo access or run as root."
+        fi
+        log_info "Running as user with sudo privileges"
+        SUDO_CMD="sudo"
     fi
 
     # Check Python version
@@ -80,8 +83,8 @@ check_prerequisites() {
     # Check Java installation
     if ! command -v java &> /dev/null; then
         log_warning "Java not found. Installing required Java versions..."
-        sudo apt update
-        sudo apt install -y openjdk-8-jdk openjdk-17-jdk openjdk-21-jdk
+        $SUDO_CMD apt update
+        $SUDO_CMD apt install -y openjdk-8-jdk openjdk-17-jdk openjdk-21-jdk
     fi
 
     # Check git
@@ -99,29 +102,36 @@ backup_deployment() {
         local timestamp=$(date +%Y%m%d_%H%M%S)
         local backup_path="$BACKUP_DIR/pre-deploy-$timestamp"
 
-        sudo mkdir -p "$backup_path"
+        $SUDO_CMD mkdir -p "$backup_path"
 
         # Backup application files
         if [[ -f "$DEPLOY_DIR/app.db" ]]; then
-            sudo cp "$DEPLOY_DIR/app.db" "$backup_path/"
+            $SUDO_CMD cp "$DEPLOY_DIR/app.db" "$backup_path/"
             log_info "Database backed up"
         fi
 
         # Backup important directories
         for dir in servers backups templates file_history; do
             if [[ -d "$DEPLOY_DIR/$dir" ]]; then
-                sudo tar -czf "$backup_path/${dir}.tar.gz" -C "$DEPLOY_DIR" "$dir"
+                $SUDO_CMD tar -czf "$backup_path/${dir}.tar.gz" -C "$DEPLOY_DIR" "$dir"
                 log_info "Directory $dir backed up"
             fi
         done
 
         # Backup configuration
         if [[ -f "$DEPLOY_DIR/.env" ]]; then
-            sudo cp "$DEPLOY_DIR/.env" "$backup_path/"
+            $SUDO_CMD cp "$DEPLOY_DIR/.env" "$backup_path/"
             log_info "Environment configuration backed up"
         fi
 
-        sudo chown -R $USER:$USER "$backup_path"
+        # Set appropriate ownership for backup files
+        if [[ $EUID -eq 0 ]]; then
+            # If running as root, keep root ownership but make readable
+            chmod -R 755 "$backup_path"
+        else
+            # If running with sudo, change ownership back to user
+            $SUDO_CMD chown -R $USER:$USER "$backup_path"
+        fi
         log_success "Backup created at: $backup_path"
     fi
 }
@@ -132,7 +142,7 @@ stop_service() {
 
     if systemctl is-active --quiet "$SERVICE_NAME" 2>/dev/null; then
         log_info "Stopping $SERVICE_NAME service..."
-        sudo systemctl stop "$SERVICE_NAME"
+        $SUDO_CMD systemctl stop "$SERVICE_NAME"
 
         # Wait for graceful shutdown
         local timeout=30
@@ -143,7 +153,7 @@ stop_service() {
 
         if systemctl is-active --quiet "$SERVICE_NAME"; then
             log_warning "Service did not stop gracefully, forcing stop..."
-            sudo systemctl kill "$SERVICE_NAME"
+            $SUDO_CMD systemctl kill "$SERVICE_NAME"
         fi
 
         log_success "Service stopped"
@@ -157,8 +167,16 @@ deploy_application() {
     log_info "Deploying application to $DEPLOY_DIR..."
 
     # Create deployment directory
-    sudo mkdir -p "$DEPLOY_DIR"
-    sudo chown $USER:$USER "$DEPLOY_DIR"
+    $SUDO_CMD mkdir -p "$DEPLOY_DIR"
+
+    # Set appropriate ownership
+    if [[ $EUID -eq 0 ]]; then
+        # If running as root, keep root ownership for security
+        log_info "Setting root ownership for deployment directory"
+    else
+        # If running with sudo, change ownership to user
+        $SUDO_CMD chown $USER:$USER "$DEPLOY_DIR"
+    fi
 
     # Clone or update repository
     if [[ -d "$DEPLOY_DIR/.git" ]]; then
@@ -202,15 +220,23 @@ configure_service() {
 
     # Copy and configure service file
     local service_file="/etc/systemd/system/$SERVICE_NAME.service"
-    sudo cp "$DEPLOY_DIR/deployment/minecraft-dashboard.service" "$service_file"
+    $SUDO_CMD cp "$DEPLOY_DIR/deployment/minecraft-dashboard.service" "$service_file"
 
-    # Update service file with current user
-    sudo sed -i "/\[Service\]/a User=$USER" "$service_file"
-    sudo sed -i "/User=$USER/a Group=$USER" "$service_file"
+    # Update service file with appropriate user
+    if [[ $EUID -eq 0 ]]; then
+        # If running as root, set a dedicated service user or root
+        log_info "Configuring service to run as root"
+        $SUDO_CMD sed -i "/\[Service\]/a User=root" "$service_file"
+        $SUDO_CMD sed -i "/User=root/a Group=root" "$service_file"
+    else
+        # If running with sudo, use current user
+        $SUDO_CMD sed -i "/\[Service\]/a User=$USER" "$service_file"
+        $SUDO_CMD sed -i "/User=$USER/a Group=$USER" "$service_file"
+    fi
 
     # Reload systemd and enable service
-    sudo systemctl daemon-reload
-    sudo systemctl enable "$SERVICE_NAME"
+    $SUDO_CMD systemctl daemon-reload
+    $SUDO_CMD systemctl enable "$SERVICE_NAME"
 
     log_success "Service configured and enabled"
 }
@@ -220,7 +246,7 @@ start_and_validate() {
     log_info "Starting service and validating deployment..."
 
     # Start service
-    sudo systemctl start "$SERVICE_NAME"
+    $SUDO_CMD systemctl start "$SERVICE_NAME"
 
     # Wait for service to start
     sleep 5
@@ -228,7 +254,7 @@ start_and_validate() {
     # Check service status
     if ! systemctl is-active --quiet "$SERVICE_NAME"; then
         log_error "Service failed to start. Checking logs..."
-        sudo journalctl -u "$SERVICE_NAME" -n 20 --no-pager
+        $SUDO_CMD journalctl -u "$SERVICE_NAME" -n 20 --no-pager
         error_exit "Service startup failed"
     fi
 
@@ -256,16 +282,23 @@ start_and_validate() {
     log_success "Deployment completed successfully!"
     echo
     log_info "Service Status:"
-    sudo systemctl status "$SERVICE_NAME" --no-pager -l
+    $SUDO_CMD systemctl status "$SERVICE_NAME" --no-pager -l
     echo
     log_info "API Health Check:"
     curl -s http://localhost:8000/health | python3 -m json.tool 2>/dev/null || echo "API is responding"
     echo
     log_info "Useful commands:"
-    echo "  View logs: sudo journalctl -u $SERVICE_NAME -f"
-    echo "  Check status: sudo systemctl status $SERVICE_NAME"
-    echo "  Restart: sudo systemctl restart $SERVICE_NAME"
-    echo "  Stop: sudo systemctl stop $SERVICE_NAME"
+    if [[ $EUID -eq 0 ]]; then
+        echo "  View logs: journalctl -u $SERVICE_NAME -f"
+        echo "  Check status: systemctl status $SERVICE_NAME"
+        echo "  Restart: systemctl restart $SERVICE_NAME"
+        echo "  Stop: systemctl stop $SERVICE_NAME"
+    else
+        echo "  View logs: sudo journalctl -u $SERVICE_NAME -f"
+        echo "  Check status: sudo systemctl status $SERVICE_NAME"
+        echo "  Restart: sudo systemctl restart $SERVICE_NAME"
+        echo "  Stop: sudo systemctl stop $SERVICE_NAME"
+    fi
 }
 
 # Function to display deployment summary
