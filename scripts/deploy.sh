@@ -211,15 +211,11 @@ deploy_application() {
 configure_service() {
     log_info "Configuring systemd service..."
 
-    # Copy and configure service file
-    local service_file="/etc/systemd/system/$SERVICE_NAME.service"
-    $SUDO_CMD cp "$DEPLOY_DIR/deployment/minecraft-dashboard.service" "$service_file"
-
-    # Find uv executable path and update service file
+    # Find uv executable path first
     local uv_path=$(which uv 2>/dev/null || echo "")
     if [[ -z "$uv_path" ]]; then
         # Try common installation paths
-        for path in /root/.cargo/bin/uv /usr/local/bin/uv ~/.local/bin/uv; do
+        for path in /root/.cargo/bin/uv /usr/local/bin/uv ~/.local/bin/uv /home/*/.*cargo/bin/uv; do
             if [[ -x "$path" ]]; then
                 uv_path="$path"
                 break
@@ -227,12 +223,93 @@ configure_service() {
         done
     fi
 
-    if [[ -n "$uv_path" ]]; then
-        log_info "Found uv at: $uv_path"
-        $SUDO_CMD sed -i "s|which uv >/dev/null 2>&1 && uv run|$uv_path run|g" "$service_file"
-    else
-        log_warning "uv not found in common paths, service may fail to start"
+    if [[ -z "$uv_path" ]]; then
+        log_error "uv executable not found. Please ensure uv is installed."
+        log_info "Install uv with: curl -LsSf https://astral.sh/uv/install.sh | sh"
+        error_exit "uv is required for deployment"
     fi
+
+    log_info "Found uv at: $uv_path"
+
+    # Create service file dynamically with correct uv path
+    local service_file="/etc/systemd/system/$SERVICE_NAME.service"
+    $SUDO_CMD tee "$service_file" > /dev/null << EOF
+[Unit]
+Description=Minecraft Dashboard API
+Documentation=https://github.com/mmiura-2351/mc-server-dashboard-api
+After=network.target network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# User and Group will be dynamically set during deployment
+WorkingDirectory=/opt/mcs-dashboard/api
+Environment=PATH=/root/.local/bin:/root/.cargo/bin:/usr/local/bin:/usr/bin:/bin
+Environment=PYTHONPATH=/opt/mcs-dashboard/api
+Environment=NODE_ENV=production
+EnvironmentFile=-/opt/mcs-dashboard/api/.env
+
+# Main process
+ExecStart=$uv_path run --directory /opt/mcs-dashboard/api uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 1
+ExecReload=/bin/kill -HUP \$MAINPID
+ExecStop=/bin/kill -TERM \$MAINPID
+
+# Process management
+KillMode=mixed
+KillSignal=SIGTERM
+TimeoutStartSec=60
+TimeoutStopSec=30
+Restart=always
+RestartSec=10
+
+# Security hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryDenyWriteExecute=false
+RestrictNamespaces=true
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+
+# File system restrictions
+ReadWritePaths=/opt/mcs-dashboard/api
+ReadWritePaths=/opt/mcs-dashboard/api/servers
+ReadWritePaths=/opt/mcs-dashboard/api/backups
+ReadWritePaths=/opt/mcs-dashboard/api/templates
+ReadWritePaths=/opt/mcs-dashboard/api/file_history
+ReadWritePaths=/opt/mcs-dashboard/api/logs
+ReadWritePaths=/tmp
+PrivateTmp=true
+PrivateDevices=true
+
+# Network restrictions
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+IPAddressDeny=any
+IPAddressAllow=localhost
+IPAddressAllow=127.0.0.0/8
+IPAddressAllow=::1/128
+IPAddressAllow=10.0.0.0/8
+IPAddressAllow=172.16.0.0/12
+IPAddressAllow=192.168.0.0/16
+
+# Resource limits
+LimitNOFILE=65536
+LimitNPROC=4096
+MemoryMax=2G
+TasksMax=4096
+
+# Health check
+ExecStartPost=/bin/bash -c 'for i in {1..30}; do if curl -sf http://localhost:8000/health >/dev/null 2>&1; then exit 0; fi; sleep 2; done; exit 1'
+
+[Install]
+WantedBy=multi-user.target
+EOF
 
     # Update service file with appropriate user
     if [[ $EUID -eq 0 ]]; then
