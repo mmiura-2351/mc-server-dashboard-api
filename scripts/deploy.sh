@@ -215,6 +215,25 @@ configure_service() {
     local service_file="/etc/systemd/system/$SERVICE_NAME.service"
     $SUDO_CMD cp "$DEPLOY_DIR/deployment/minecraft-dashboard.service" "$service_file"
 
+    # Find uv executable path and update service file
+    local uv_path=$(which uv 2>/dev/null || echo "")
+    if [[ -z "$uv_path" ]]; then
+        # Try common installation paths
+        for path in /root/.cargo/bin/uv /usr/local/bin/uv ~/.local/bin/uv; do
+            if [[ -x "$path" ]]; then
+                uv_path="$path"
+                break
+            fi
+        done
+    fi
+
+    if [[ -n "$uv_path" ]]; then
+        log_info "Found uv at: $uv_path"
+        $SUDO_CMD sed -i "s|which uv >/dev/null 2>&1 && uv run|$uv_path run|g" "$service_file"
+    else
+        log_warning "uv not found in common paths, service may fail to start"
+    fi
+
     # Update service file with appropriate user
     if [[ $EUID -eq 0 ]]; then
         # If running as root, set a dedicated service user or root
