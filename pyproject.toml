@@ -5,6 +5,13 @@ description = "Minecraft server management dashboard API"
 readme = "README.md"
 requires-python = ">=3.13"
 
+[project.scripts]
+# Development commands
+dev = "app.scripts.dev:main"
+# Production commands
+deploy = "app.scripts.deploy:main"
+service = "app.scripts.service:main"
+
 dependencies = [
     "annotated-types==0.7.0",
     "anyio==4.9.0",

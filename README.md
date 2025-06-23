@@ -98,14 +98,114 @@ All configuration options are documented in the respective architecture guides:
 
 ## Development
 
+### Quick Commands (uv run)
+
+| Command | Description |
+|---------|-------------|
+| `uv run dev start` | Start development server with auto-reload |
+| `uv run dev test` | Run test suite |
+| `uv run dev lint` | Check code quality |
+| `uv run dev format` | Format code |
+| `uv sync --group dev` | Install dependencies and setup environment |
+
+### Alternative Commands (Make)
+
+| Command | Description |
+|---------|-------------|
+| `make dev` | Start development server with auto-reload |
+| `make test` | Run test suite |
+| `make lint` | Check code quality |
+| `make format` | Format code |
+| `make install` | Install dependencies and setup environment |
+
+### Direct Commands
+
 | Command | Description |
 |---------|-------------|
 | `uv run fastapi dev` | Start development server |
 | `uv run pytest` | Run tests |
 | `uv run pytest --timeout=300000` | Run full test suite with extended timeout |
 | `uv run ruff check app/` | Check code quality |
-| `uv run black app/` | Format code |
+| `uv run ruff format app/` | Format code |
 | `uv run coverage run -m pytest && uv run coverage report` | Generate coverage report |
+
+### Development Scripts (uv run)
+
+| Script | Description |
+|--------|-------------|
+| `uv run dev start` | Start development server with monitoring |
+| `uv run dev stop` | Stop development server |
+| `uv run dev status` | Show development server status |
+| `uv run dev logs` | View development logs |
+| `uv run dev logs-follow` | Follow development logs in real-time |
+
+### Development Scripts (Direct)
+
+| Script | Description |
+|--------|-------------|
+| `./scripts/dev-start.sh start` | Start development server with monitoring |
+| `./scripts/dev-start.sh stop` | Stop development server |
+| `./scripts/dev-start.sh status` | Show development server status |
+| `./scripts/dev-start.sh logs` | View development logs |
+
+## Production Deployment
+
+### Quick Deployment
+
+```bash
+# Using uv run (recommended)
+uv run deploy
+
+# Or direct script execution
+./scripts/deploy.sh
+
+# Or using make
+make deploy
+```
+
+### Production Management (uv run)
+
+| Command | Description |
+|---------|-------------|
+| `uv run service start` | Start production service |
+| `uv run service stop` | Stop production service |
+| `uv run service restart` | Restart production service |
+| `uv run service status` | Show service status |
+| `uv run service logs` | View service logs |
+| `uv run service logs-follow` | Follow service logs in real-time |
+| `uv run service enable` | Enable auto-start on boot |
+| `uv run service disable` | Disable auto-start on boot |
+
+### Production Management (Alternative)
+
+| Command | Description |
+|---------|-------------|
+| `make service-start` | Start production service |
+| `make service-stop` | Stop production service |
+| `make service-restart` | Restart production service |
+| `make service-status` | Show service status |
+| `make service-logs` | View service logs |
+
+### Manual Production Setup
+
+See [comprehensive deployment guide](deployment/docs/en/DEPLOYMENT.md) for detailed production setup instructions including:
+
+- Prerequisites and system requirements
+- Nginx reverse proxy configuration
+- SSL/TLS setup with Let's Encrypt
+- Security hardening
+- Monitoring and maintenance
+- Troubleshooting guide
+
+## Integration with Frontend
+
+This API is designed to work with the [Minecraft Server Dashboard UI](../mc-server-dashboard-ui/) frontend. For complete setup:
+
+1. Deploy this API backend
+2. Deploy the frontend UI
+3. Configure nginx reverse proxy (optional but recommended)
+
+The deployment scripts and documentation are aligned with the frontend for seamless integration.
 
 ## License
 
