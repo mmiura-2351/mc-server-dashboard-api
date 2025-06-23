@@ -5,6 +5,10 @@ description = "Minecraft server management dashboard API"
 readme = "README.md"
 requires-python = ">=3.13"
 
+# Deployment scripts are available via Makefile commands
+# Use: make deploy, make dev, make service-status, etc.
+# Or directly: ./scripts/deploy.sh
+
 dependencies = [
     "annotated-types==0.7.0",
     "anyio==4.9.0",
