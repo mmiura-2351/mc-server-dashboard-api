@@ -500,13 +500,27 @@ class TestMinecraftVersionManagerMissingCoverage:
         assert result is None
 
     @pytest.mark.asyncio
-    async def test_get_forge_versions_fallback(self, manager):
-        """Test _get_forge_versions returns fallback versions (line 241)"""
-        with patch.object(manager, "_get_fallback_versions") as mock_fallback:
-            fallback_versions = [VersionInfo("1.20.1", ServerType.forge, "forge_url")]
-            mock_fallback.return_value = fallback_versions
+    async def test_get_forge_versions_success(self, manager):
+        """Test _get_forge_versions returns real API versions"""
+        result = await manager._get_forge_versions()
 
-            result = await manager._get_forge_versions()
+        # Should return real versions from Forge API, not fallback
+        assert len(result) > 3  # More than the 3 fallback versions
+        assert all(v.server_type == ServerType.forge for v in result)
+        assert all(v.download_url.startswith("https://maven.minecraftforge.net") for v in result)
 
-            assert result == fallback_versions
-            mock_fallback.assert_called_once_with(ServerType.forge)
+    @pytest.mark.asyncio
+    async def test_get_forge_versions_fallback_on_error(self, manager):
+        """Test _get_forge_versions returns fallback when API fails"""
+        with patch("aiohttp.ClientSession") as mock_session:
+            # Mock session to raise an exception
+            mock_session.return_value.__aenter__.return_value.get.side_effect = Exception("API Error")
+
+            with patch.object(manager, "_get_fallback_versions") as mock_fallback:
+                fallback_versions = [VersionInfo("1.20.1", ServerType.forge, "forge_url")]
+                mock_fallback.return_value = fallback_versions
+
+                result = await manager._get_forge_versions()
+
+                assert result == fallback_versions
+                mock_fallback.assert_called_once_with(ServerType.forge)

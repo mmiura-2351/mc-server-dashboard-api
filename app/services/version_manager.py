@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import List, Optional, Tuple
@@ -314,10 +315,75 @@ class MinecraftVersionManager:
             return None
 
     async def _get_forge_versions(self) -> List[VersionInfo]:
-        """Get Forge server versions"""
-        # Note: Forge API is more complex, using fallback for now
-        # In production, would integrate with Forge's promotion API
-        return self._get_fallback_versions(ServerType.forge)
+        """Get Forge server versions from Maven metadata"""
+        async with aiohttp.ClientSession(timeout=self._client_timeout) as session:
+            try:
+                # Get Forge Maven metadata
+                url = "https://maven.minecraftforge.net/net/minecraftforge/forge/maven-metadata.xml"
+                async with session.get(url) as response:
+                    response.raise_for_status()
+                    xml_content = await response.text()
+
+                # Parse XML
+                root = ET.fromstring(xml_content)
+
+                # Extract versions
+                versions = []
+                for version_elem in root.findall(".//version"):
+                    version_text = version_elem.text
+                    if version_text and "-" in version_text:
+                        # Forge versions are in format like '1.20.1-47.2.0'
+                        mc_version = version_text.split("-")[0]
+
+                        # Only include versions >= 1.8 (matching our minimum requirement)
+                        if self._is_version_supported(mc_version):
+                            download_url = f"https://maven.minecraftforge.net/net/minecraftforge/forge/{version_text}/forge-{version_text}-installer.jar"
+
+                            try:
+                                build_number = int(
+                                    version_text.split("-")[1].split(".")[0]
+                                )
+                            except (IndexError, ValueError):
+                                build_number = None
+
+                            version_info = VersionInfo(
+                                version=mc_version,
+                                server_type=ServerType.forge,
+                                download_url=download_url,
+                                release_date=datetime.now(),
+                                is_stable=True,
+                                build_number=build_number,
+                            )
+                            versions.append(version_info)
+
+                # Remove duplicates and keep the highest build number for each MC version
+                unique_versions = {}
+                for v in versions:
+                    if v.version not in unique_versions:
+                        unique_versions[v.version] = v
+                    else:
+                        # Keep the one with higher build number
+                        if v.build_number and (
+                            not unique_versions[v.version].build_number
+                            or v.build_number > unique_versions[v.version].build_number
+                        ):
+                            unique_versions[v.version] = v
+
+                final_versions = sorted(
+                    unique_versions.values(),
+                    key=lambda x: version.Version(x.version),
+                    reverse=True,
+                )
+
+                logger.info(f"Found {len(final_versions)} forge versions to process")
+                return final_versions
+
+            except aiohttp.ClientError as e:
+                logger.error(f"HTTP client error fetching forge versions: {e}")
+                return self._get_fallback_versions(ServerType.forge)
+            except Exception as e:
+                logger.error(f"Error parsing forge versions: {e}")
+                return self._get_fallback_versions(ServerType.forge)
 
     def _get_fallback_versions(self, server_type: ServerType) -> List[VersionInfo]:
         """Fallback versions when API is unavailable"""
