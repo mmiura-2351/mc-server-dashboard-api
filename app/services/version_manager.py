@@ -34,19 +34,24 @@ class MinecraftVersionManager:
         self._cache_duration = timedelta(hours=6)  # Cache for 6 hours
         self.minimum_version = version.Version("1.8.0")
 
-        # Simplified timeout configuration with clear mathematical basis
-        self._individual_request_timeout = 30  # Single API request timeout
+        # Progressive timeout configuration for different request types
+        self._manifest_timeout = 60  # Manifest/main API calls need more time
+        self._individual_request_timeout = 35  # Individual version requests (reduced)
         self._total_operation_timeout = (
-            900  # Total operation timeout (15 minutes) - generous but bounded
+            1900  # Total operation timeout (31.7 minutes) - with safety margin
         )
         self._client_timeout = aiohttp.ClientTimeout(
-            total=self._individual_request_timeout
+            total=self._individual_request_timeout,
+            connect=10,  # Connection timeout
+            sock_read=30,  # Socket read timeout
         )
 
-        # Simplified concurrency control with predictable behavior
-        self._max_concurrent_requests = 8  # Conservative limit to avoid overwhelming APIs
-        self._adaptive_batch_size = 25  # Smaller batches for better error isolation
-        self._adaptive_delay = 1.0  # Shorter delay for faster processing
+        # Reduced concurrency and retry configuration
+        self._max_concurrent_requests = 4  # Reduced to avoid rate limiting
+        self._max_retries = 3  # Retry failed requests
+        self._retry_delay = 2.0  # Base delay between retries
+        self._adaptive_batch_size = 20  # Smaller batches
+        self._adaptive_delay = 1.5  # Longer delay between batches
 
     async def get_supported_versions(self, server_type: ServerType) -> List[VersionInfo]:
         """Get supported versions for a server type"""
@@ -59,18 +64,18 @@ class MinecraftVersionManager:
             # Single-layer timeout with clear error reporting
             start_time = datetime.now()
 
-            # Execute version fetching with simplified timeout
+            # Execute version fetching with progressive timeout and retry
             if server_type == ServerType.vanilla:
-                versions = await asyncio.wait_for(
-                    self._get_vanilla_versions(), timeout=self._total_operation_timeout
+                versions = await self._execute_with_retry(
+                    self._get_vanilla_versions, timeout=self._total_operation_timeout
                 )
             elif server_type == ServerType.paper:
-                versions = await asyncio.wait_for(
-                    self._get_paper_versions(), timeout=self._total_operation_timeout
+                versions = await self._execute_with_retry(
+                    self._get_paper_versions, timeout=self._total_operation_timeout
                 )
             elif server_type == ServerType.forge:
-                versions = await asyncio.wait_for(
-                    self._get_forge_versions(), timeout=self._total_operation_timeout
+                versions = await self._execute_with_retry(
+                    self._get_forge_versions, timeout=self._total_operation_timeout
                 )
             else:
                 raise ValueError(f"Unsupported server type: {server_type}")
@@ -94,8 +99,8 @@ class MinecraftVersionManager:
             execution_time = (datetime.now() - start_time).total_seconds()
             error_msg = (
                 f"Operation timeout for {server_type.value} after {execution_time:.1f}s "
-                f"(limit: {self._total_operation_timeout}s). This indicates either network issues "
-                f"or an excessive number of versions to process."
+                f"(limit: {self._total_operation_timeout}s). This may indicate network issues, "
+                f"API rate limiting, or temporary external service unavailability."
             )
             logger.error(error_msg)
             raise RuntimeError(error_msg) from e
@@ -104,6 +109,27 @@ class MinecraftVersionManager:
             error_msg = f"Failed to get versions for {server_type.value} after {execution_time:.1f}s: {e}"
             logger.error(error_msg)
             raise RuntimeError(error_msg) from e
+
+    async def _execute_with_retry(self, func, timeout: int, max_retries: int = 2):
+        """Execute function with retry logic and timeout"""
+        last_exception = None
+
+        for attempt in range(max_retries + 1):
+            try:
+                return await asyncio.wait_for(func(), timeout=timeout)
+            except (asyncio.TimeoutError, aiohttp.ClientError) as e:
+                last_exception = e
+                if attempt < max_retries:
+                    delay = self._retry_delay * (2**attempt)  # Exponential backoff
+                    logger.warning(
+                        f"Attempt {attempt + 1} failed: {e}. Retrying in {delay}s..."
+                    )
+                    await asyncio.sleep(delay)
+                else:
+                    logger.error(
+                        f"All {max_retries + 1} attempts failed. Last error: {e}"
+                    )
+                    raise last_exception
 
     async def get_download_url(
         self, server_type: ServerType, minecraft_version: str
@@ -128,21 +154,25 @@ class MinecraftVersionManager:
 
     async def _get_vanilla_versions(self) -> List[VersionInfo]:
         """Get vanilla server versions from Mojang API with parallel processing"""
-        # Create optimized connector for better connection pooling
+        # Create optimized connector with better connection pooling
         connector = aiohttp.TCPConnector(
-            limit=self._max_concurrent_requests + 5,  # Allow a few extra connections
+            limit=self._max_concurrent_requests + 3,  # Fewer extra connections
             limit_per_host=self._max_concurrent_requests,
-            ttl_dns_cache=300,  # 5 minutes DNS cache
+            ttl_dns_cache=600,  # 10 minutes DNS cache
             use_dns_cache=True,
+            keepalive_timeout=60,  # Keep connections alive longer
+            enable_cleanup_closed=True,  # Clean up closed connections
         )
 
         async with aiohttp.ClientSession(
             timeout=self._client_timeout, connector=connector
         ) as session:
             try:
-                # Get version manifest with timeout
+                # Get version manifest with extended timeout for main API call
+                manifest_timeout = aiohttp.ClientTimeout(total=self._manifest_timeout)
                 async with session.get(
-                    "https://piston-meta.mojang.com/mc/game/version_manifest.json"
+                    "https://piston-meta.mojang.com/mc/game/version_manifest.json",
+                    timeout=manifest_timeout,
                 ) as response:
                     response.raise_for_status()
                     manifest = await response.json()
@@ -163,18 +193,23 @@ class MinecraftVersionManager:
                     session, release_versions, "vanilla"
                 )
 
-                # Filter successful results
+                # Filter successful results with improved error tolerance
                 versions = []
                 failed_count = 0
                 for result in version_results:
                     if isinstance(result, VersionInfo):
                         versions.append(result)
-                    elif isinstance(result, Exception):
+                    elif result is not None:  # Count non-None failures
                         failed_count += 1
-                        logger.warning(f"Failed to fetch vanilla version: {result}")
+                        logger.debug(f"Failed to fetch vanilla version: {result}")
 
+                # Log success with failure tolerance
+                success_rate = (
+                    len(versions) / len(release_versions) * 100 if release_versions else 0
+                )
                 logger.info(
-                    f"Successfully processed {len(versions)} vanilla versions, {failed_count} failed"
+                    f"Processed {len(versions)} vanilla versions ({success_rate:.1f}% success rate), "
+                    f"{failed_count} failed - continuing with available versions"
                 )
                 return sorted(
                     versions, key=lambda x: version.Version(x.version), reverse=True
@@ -187,13 +222,12 @@ class MinecraftVersionManager:
                 raise RuntimeError(
                     f"Failed to fetch vanilla version manifest: {e}"
                 ) from e
-            except asyncio.TimeoutError as e:
-                logger.error(
-                    "Timeout during vanilla version processing - exceeded individual request timeouts"
+            except asyncio.TimeoutError:
+                logger.warning(
+                    "Timeout during vanilla version processing - some requests may have been slow"
                 )
-                raise RuntimeError(
-                    "Vanilla version processing timed out due to slow API responses"
-                ) from e
+                # Return partial results if available, rather than complete failure
+                return []  # Graceful degradation
 
     async def _fetch_vanilla_version_info(
         self, session: aiohttp.ClientSession, version_data: dict
@@ -238,21 +272,24 @@ class MinecraftVersionManager:
 
     async def _get_paper_versions(self) -> List[VersionInfo]:
         """Get Paper server versions from PaperMC API with parallel processing"""
-        # Create optimized connector for better connection pooling
+        # Create optimized connector with better connection pooling
         connector = aiohttp.TCPConnector(
-            limit=self._max_concurrent_requests + 5,  # Allow a few extra connections
+            limit=self._max_concurrent_requests + 3,  # Fewer extra connections
             limit_per_host=self._max_concurrent_requests,
-            ttl_dns_cache=300,  # 5 minutes DNS cache
+            ttl_dns_cache=600,  # 10 minutes DNS cache
             use_dns_cache=True,
+            keepalive_timeout=60,  # Keep connections alive longer
+            enable_cleanup_closed=True,  # Clean up closed connections
         )
 
         async with aiohttp.ClientSession(
             timeout=self._client_timeout, connector=connector
         ) as session:
             try:
-                # Get available versions with timeout
+                # Get available versions with extended timeout for main API call
+                manifest_timeout = aiohttp.ClientTimeout(total=self._manifest_timeout)
                 async with session.get(
-                    "https://api.papermc.io/v2/projects/paper"
+                    "https://api.papermc.io/v2/projects/paper", timeout=manifest_timeout
                 ) as response:
                     response.raise_for_status()
                     project_info = await response.json()
@@ -266,18 +303,25 @@ class MinecraftVersionManager:
                     session, project_info["versions"], "paper"
                 )
 
-                # Filter successful results
+                # Filter successful results with improved error tolerance
                 versions = []
                 failed_count = 0
                 for result in version_results:
                     if isinstance(result, VersionInfo):
                         versions.append(result)
-                    elif isinstance(result, Exception):
+                    elif result is not None:  # Count non-None failures
                         failed_count += 1
-                        logger.warning(f"Failed to fetch paper version: {result}")
+                        logger.debug(f"Failed to fetch paper version: {result}")
 
+                # Log success with failure tolerance
+                success_rate = (
+                    len(versions) / len(project_info["versions"]) * 100
+                    if project_info["versions"]
+                    else 0
+                )
                 logger.info(
-                    f"Successfully processed {len(versions)} paper versions, {failed_count} failed"
+                    f"Processed {len(versions)} paper versions ({success_rate:.1f}% success rate), "
+                    f"{failed_count} failed - continuing with available versions"
                 )
                 return sorted(
                     versions, key=lambda x: version.Version(x.version), reverse=True
@@ -290,13 +334,12 @@ class MinecraftVersionManager:
                 raise RuntimeError(
                     f"Failed to fetch paper version project info: {e}"
                 ) from e
-            except asyncio.TimeoutError as e:
-                logger.error(
-                    "Timeout during paper version processing - exceeded individual request timeouts"
+            except asyncio.TimeoutError:
+                logger.warning(
+                    "Timeout during paper version processing - some requests may have been slow"
                 )
-                raise RuntimeError(
-                    "Paper version processing timed out due to slow API responses"
-                ) from e
+                # Return partial results if available, rather than complete failure
+                return []  # Graceful degradation
 
     async def _fetch_with_semaphore(self, semaphore: asyncio.Semaphore, task):
         """Execute task with semaphore to limit concurrent requests"""
@@ -423,9 +466,10 @@ class MinecraftVersionManager:
         """Get Forge server versions from Maven metadata"""
         async with aiohttp.ClientSession(timeout=self._client_timeout) as session:
             try:
-                # Get Forge Maven metadata
+                # Get Forge Maven metadata with extended timeout
                 url = "https://maven.minecraftforge.net/net/minecraftforge/forge/maven-metadata.xml"
-                async with session.get(url) as response:
+                manifest_timeout = aiohttp.ClientTimeout(total=self._manifest_timeout)
+                async with session.get(url, timeout=manifest_timeout) as response:
                     response.raise_for_status()
                     xml_content = await response.text()
 

@@ -34,8 +34,10 @@ class VersionUpdateSchedulerService:
         self._update_interval_hours = 24  # Default: daily updates
         self._max_retry_attempts = 3
         self._retry_delay_base = 300  # 5 minutes base delay
+        self._startup_delay_minutes = 30  # Wait 30 minutes after startup
         self._last_successful_update: Optional[datetime] = None
         self._last_error: Optional[str] = None
+        self._startup_time = datetime.utcnow()  # Track when scheduler started
 
     # ===================
     # Scheduler control
@@ -85,8 +87,13 @@ class VersionUpdateSchedulerService:
         """
         logger.info("Version update scheduler loop started")
 
-        # Initial delay to allow application to fully start
-        await asyncio.sleep(60)  # Wait 1 minute after startup
+        # Extended initial delay to allow application to fully start and avoid immediate updates
+        logger.info(
+            f"Waiting {self._startup_delay_minutes} minutes before first version update check"
+        )
+        await asyncio.sleep(
+            self._startup_delay_minutes * 60
+        )  # Wait 30 minutes after startup
 
         while self._running:
             try:
@@ -99,8 +106,8 @@ class VersionUpdateSchedulerService:
                     next_update = self._get_next_update_time()
                     logger.debug(f"Next version update scheduled for: {next_update}")
 
-                # Wait for the next check (1 hour intervals for checking)
-                await asyncio.sleep(3600)  # Check every hour
+                # Wait for the next check (2 hour intervals for checking to reduce load)
+                await asyncio.sleep(7200)  # Check every 2 hours
 
             except asyncio.CancelledError:
                 logger.info("Version update scheduler loop cancelled")
@@ -112,18 +119,32 @@ class VersionUpdateSchedulerService:
                 await asyncio.sleep(300)  # Wait 5 minutes on error
 
     def _is_update_due(self) -> bool:
-        """Check if a version update is due"""
+        """Check if a version update is due with startup grace period"""
+        now = datetime.utcnow()
+
+        # Don't update immediately after startup - give grace period
+        time_since_startup = now - self._startup_time
+        if time_since_startup < timedelta(minutes=self._startup_delay_minutes):
+            logger.debug("Still in startup grace period, skipping update check")
+            return False
+
         if self._last_successful_update is None:
-            # No previous update, update is due
+            # No previous update, but respect startup delay
             return True
 
-        time_since_last_update = datetime.utcnow() - self._last_successful_update
+        time_since_last_update = now - self._last_successful_update
         return time_since_last_update >= timedelta(hours=self._update_interval_hours)
 
     def _get_next_update_time(self) -> datetime:
-        """Calculate the next scheduled update time"""
+        """Calculate the next scheduled update time with startup grace period"""
+        now = datetime.utcnow()
+
         if self._last_successful_update is None:
-            return datetime.utcnow()
+            # If no previous update, schedule after startup delay
+            startup_deadline = self._startup_time + timedelta(
+                minutes=self._startup_delay_minutes
+            )
+            return max(now, startup_deadline)
 
         return self._last_successful_update + timedelta(hours=self._update_interval_hours)
 
@@ -264,6 +285,23 @@ class VersionUpdateSchedulerService:
 
         logger.info(f"Version update interval changed from {old_interval}h to {hours}h")
 
+    def set_startup_delay(self, minutes: int) -> None:
+        """
+        Set the startup delay in minutes.
+
+        Args:
+            minutes: Startup delay (minimum 5 minutes, maximum 120 minutes/2 hours)
+        """
+        if not 5 <= minutes <= 120:
+            raise ValueError("Startup delay must be between 5 and 120 minutes")
+
+        old_delay = self._startup_delay_minutes
+        self._startup_delay_minutes = minutes
+
+        logger.info(
+            f"Version update startup delay changed from {old_delay}m to {minutes}m"
+        )
+
     def set_retry_config(self, max_attempts: int, base_delay_seconds: int) -> None:
         """
         Configure retry behavior.
@@ -317,9 +355,18 @@ class VersionUpdateSchedulerService:
 
     def get_status(self) -> dict:
         """Get comprehensive scheduler status"""
+        now = datetime.utcnow()
+        time_since_startup = now - self._startup_time
+        in_startup_grace = time_since_startup < timedelta(
+            minutes=self._startup_delay_minutes
+        )
+
         return {
             "running": self._running,
             "update_interval_hours": self._update_interval_hours,
+            "startup_delay_minutes": self._startup_delay_minutes,
+            "startup_time": self._startup_time.isoformat(),
+            "in_startup_grace_period": in_startup_grace,
             "last_successful_update": self._last_successful_update.isoformat()
             if self._last_successful_update
             else None,

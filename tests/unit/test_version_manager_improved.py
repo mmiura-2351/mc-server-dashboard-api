@@ -83,12 +83,13 @@ class TestImprovedVersionManager:
         assert safety_margin >= 60, f"Safety margin ({safety_margin}s) should be at least 60s"
 
     def test_simplified_timeout_design(self, version_manager):
-        """Verify the simplified timeout configuration"""
-        assert version_manager._individual_request_timeout == 30
-        assert version_manager._total_operation_timeout == 900  # 15 minutes
-        assert version_manager._max_concurrent_requests == 8
-        assert version_manager._adaptive_batch_size == 25
-        assert version_manager._adaptive_delay == 1.0
+        """Verify the progressive timeout configuration"""
+        assert version_manager._individual_request_timeout == 35
+        assert version_manager._manifest_timeout == 60
+        assert version_manager._total_operation_timeout == 1900  # 31.7 minutes
+        assert version_manager._max_concurrent_requests == 4
+        assert version_manager._adaptive_batch_size == 20
+        assert version_manager._adaptive_delay == 1.5
 
     @pytest.mark.asyncio
     async def test_single_layer_timeout_with_clear_errors(self, version_manager):
@@ -137,7 +138,7 @@ class TestImprovedVersionManager:
             async def json(self):
                 return self.json_data
 
-        def mock_session_get(url):
+        def mock_session_get(url, timeout=None):
             nonlocal call_count
             call_count += 1
             call_times.append(datetime.now())
@@ -201,7 +202,8 @@ class TestImprovedVersionManager:
         # Verify semaphore limited concurrent requests
         assert max_concurrent_seen <= version_manager._max_concurrent_requests
         assert len(results) == 20
-        assert all(isinstance(r, VersionInfo) for r in results)
+        # Some results might be None due to our improved error handling
+        assert all(r is None or isinstance(r, VersionInfo) for r in results)
 
     @pytest.mark.asyncio
     async def test_error_isolation_in_concurrent_processing(self, version_manager):

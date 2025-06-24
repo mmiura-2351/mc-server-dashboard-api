@@ -142,7 +142,9 @@ class TestVersionUpdateSchedulerService:
     # ===================
 
     def test_is_update_due_no_previous_update(self, scheduler):
-        """Test update due logic when no previous update exists"""
+        """Test update due logic when no previous update exists (with startup grace period)"""
+        # Simulate that startup grace period has passed
+        scheduler._startup_time = datetime.utcnow() - timedelta(minutes=31)
         assert scheduler._is_update_due()
 
     def test_is_update_due_recent_update(self, scheduler):
@@ -155,6 +157,8 @@ class TestVersionUpdateSchedulerService:
 
     def test_is_update_due_old_update(self, scheduler):
         """Test update due logic with old update"""
+        # Simulate that startup grace period has passed
+        scheduler._startup_time = datetime.utcnow() - timedelta(minutes=31)
         # Set last update to 25 hours ago
         scheduler._last_successful_update = datetime.utcnow() - timedelta(hours=25)
         scheduler.set_update_interval(24)
@@ -162,10 +166,11 @@ class TestVersionUpdateSchedulerService:
         assert scheduler._is_update_due()
 
     def test_get_next_update_time(self, scheduler):
-        """Test next update time calculation"""
-        # No previous update
+        """Test next update time calculation with startup grace period"""
+        # No previous update - should honor startup delay
         next_time = scheduler._get_next_update_time()
-        assert next_time <= datetime.utcnow()
+        startup_deadline = scheduler._startup_time + timedelta(minutes=scheduler._startup_delay_minutes)
+        assert next_time >= startup_deadline
 
         # With previous update
         last_update = datetime.utcnow() - timedelta(hours=12)
