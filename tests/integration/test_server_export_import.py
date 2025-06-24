@@ -341,7 +341,7 @@ class TestServerExportImport:
         # First, create a version in the database to ensure it's supported
         from app.versions.models import MinecraftVersion
         from datetime import datetime
-        
+
         version = MinecraftVersion(
             server_type="vanilla",
             version="1.21.6",
@@ -352,7 +352,7 @@ class TestServerExportImport:
         )
         db.add(version)
         db.commit()
-        
+
         # Create a stopped server with port 25565
         from app.servers.models import Server
 

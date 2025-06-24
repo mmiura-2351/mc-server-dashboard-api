@@ -74,7 +74,7 @@ class TestServerPortConflicts:
         # First, create a version in the database to ensure it's supported
         from app.versions.models import MinecraftVersion
         from datetime import datetime
-        
+
         version = MinecraftVersion(
             server_type="vanilla",
             version="1.21.6",
@@ -85,7 +85,7 @@ class TestServerPortConflicts:
         )
         db.add(version)
         db.commit()
-        
+
         # Create a stopped server with port 25566
         stopped_server = Server(
             name="Stopped Server",
@@ -137,7 +137,7 @@ class TestServerPortConflicts:
         # First, create a version in the database to ensure it's supported
         from app.versions.models import MinecraftVersion
         from datetime import datetime
-        
+
         version = MinecraftVersion(
             server_type="vanilla",
             version="1.21.6",
@@ -148,7 +148,7 @@ class TestServerPortConflicts:
         )
         db.add(version)
         db.commit()
-        
+
         # Create a starting server with port 25567
         starting_server = Server(
             name="Starting Server",
