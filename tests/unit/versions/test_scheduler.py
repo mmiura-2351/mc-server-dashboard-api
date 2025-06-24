@@ -3,9 +3,10 @@ Unit tests for VersionUpdateSchedulerService
 """
 
 import asyncio
-import pytest
 from datetime import datetime, timedelta
-from unittest.mock import Mock, patch, AsyncMock
+from unittest.mock import AsyncMock, Mock, patch
+
+import pytest
 
 from app.versions.scheduler import VersionUpdateSchedulerService
 from app.versions.schemas import VersionUpdateResult

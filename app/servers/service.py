@@ -214,11 +214,11 @@ class ServerJarService:
             db_version = await repo.get_version_by_type_and_version(server_type, version)
             if db_version is not None and db_version.is_active:
                 return True
-            # Fallback to external API if not found in database
-            return self.version_manager.is_version_supported(server_type, version)
+            # If not found in database, external API won't have fallback either
+            return False
         except Exception:
-            # Fallback to external API if database fails
-            return self.version_manager.is_version_supported(server_type, version)
+            # If database fails, we cannot reliably validate
+            return False
 
     async def _get_download_url_db(
         self, db: Session, server_type: ServerType, version: str
@@ -229,11 +229,11 @@ class ServerJarService:
             db_version = await repo.get_version_by_type_and_version(server_type, version)
             if db_version and db_version.is_active and db_version.download_url:
                 return db_version.download_url
-            # Fallback to external API if not found in database
-            return await self.version_manager.get_download_url(server_type, version)
+            # If not found in database, external API won't have fallback either
+            return None
         except Exception:
-            # Fallback to external API if database fails
-            return await self.version_manager.get_download_url(server_type, version)
+            # If database fails, we cannot reliably get download URL
+            return None
 
     async def get_server_jar(
         self,
@@ -612,11 +612,36 @@ class ServerService:
             db_version = await repo.get_version_by_type_and_version(server_type, version)
             if db_version is not None and db_version.is_active:
                 return True
-            # Fallback to external API if not found in database
-            return minecraft_version_manager.is_version_supported(server_type, version)
-        except Exception:
-            # Fallback to external API if database fails
-            return minecraft_version_manager.is_version_supported(server_type, version)
+            # If not found in database, check with external API but don't use fallback
+            try:
+                return minecraft_version_manager.is_version_supported(
+                    server_type, version
+                )
+            except Exception as api_error:
+                logger.error(
+                    f"External API validation failed for {server_type.value} {version}: {api_error}"
+                )
+                raise InvalidRequestException(
+                    f"Unable to validate version {version} for {server_type.value}. "
+                    f"Version not found in database and external API is unavailable."
+                )
+        except InvalidRequestException:
+            raise  # Re-raise our custom exception
+        except Exception as db_error:
+            logger.error(
+                f"Database validation failed for {server_type.value} {version}: {db_error}"
+            )
+            # If database fails, try external API once
+            try:
+                return minecraft_version_manager.is_version_supported(
+                    server_type, version
+                )
+            except Exception as api_error:
+                logger.error(f"Both database and API validation failed: {api_error}")
+                raise InvalidRequestException(
+                    f"Unable to validate version {version} for {server_type.value}. "
+                    f"Both database and external API are unavailable."
+                )
 
     async def create_server(
         self, request: ServerCreateRequest, owner: User, db: Session

@@ -8,8 +8,6 @@ from unittest.mock import AsyncMock, Mock, patch
 import pytest
 from fastapi import HTTPException
 
-from app.servers.models import ServerType
-
 
 class TestUtilitiesRouterSimple:
     """Simplified test cases for utilities router endpoints"""

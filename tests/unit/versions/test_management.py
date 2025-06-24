@@ -2,13 +2,13 @@
 Unit tests for VersionManagementService
 """
 
-import pytest
-from unittest.mock import Mock, patch, AsyncMock
 from datetime import datetime, timedelta
+from unittest.mock import AsyncMock, Mock, patch
+
+import pytest
 
 from app.versions.management import VersionManagementService
 from app.versions.schemas import VersionUpdateResult
-from app.versions.models import MinecraftVersion
 
 
 class TestVersionManagementService:

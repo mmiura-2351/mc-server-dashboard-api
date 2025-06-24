@@ -5,18 +5,18 @@ Tests that server creation now uses fast database queries instead of slow extern
 """
 
 import asyncio
-import pytest
 from pathlib import Path
-from unittest.mock import patch, AsyncMock
+from unittest.mock import patch
+
+import pytest
 from sqlalchemy.orm import Session
 
-from app.core.exceptions import InvalidRequestException, FileOperationException
+from app.core.exceptions import FileOperationException
 from app.servers.models import ServerType
 from app.servers.schemas import ServerCreateRequest
-from app.servers.service import ServerService, ServerJarService
+from app.servers.service import ServerJarService, ServerService
 from app.users.models import Role, User
 from app.versions.models import MinecraftVersion
-from app.versions.repository import VersionRepository
 
 
 class TestDatabaseVersionIntegration:
@@ -57,8 +57,6 @@ class TestDatabaseVersionIntegration:
     @pytest.fixture
     def sample_db_version(self, db: Session):
         """Create a sample version in database"""
-        from app.versions.models import MinecraftVersion
-        from datetime import datetime
 
         # Create version directly using SQLAlchemy model
         db_version = MinecraftVersion(
@@ -136,38 +134,15 @@ class TestDatabaseVersionIntegration:
             )
 
     @pytest.mark.asyncio
-    async def test_jar_service_fallback_to_external_api(
+    async def test_jar_service_error_on_unsupported_version(
         self, jar_service, db
     ):
-        """Test that JAR service falls back to external API when version not in database"""
+        """Test that JAR service raises error when version not supported"""
 
-        # Mock external dependencies
-        with patch.object(jar_service.version_manager, 'is_version_supported') as mock_is_supported, \
-             patch.object(jar_service.version_manager, 'get_download_url') as mock_get_url, \
-             patch.object(jar_service.cache_manager, 'get_or_download_jar') as mock_cache, \
-             patch.object(jar_service.cache_manager, 'copy_jar_to_server') as mock_copy:
-
-            # Setup fallback mocks
-            mock_is_supported.return_value = True
-            mock_get_url.return_value = "https://external-api.com/version.jar"
-            mock_cache.return_value = "/cache/vanilla-1.20.0.jar"
-            mock_copy.return_value = "/server/server.jar"
-
-            # Call with version not in database - should fallback to external API
-            result = await jar_service.get_server_jar(
+        # Call with version not in database - should raise error instead of fallback
+        with pytest.raises(FileOperationException, match="Version 1.20.0 is not supported"):
+            await jar_service.get_server_jar(
                 ServerType.vanilla, "1.20.0", "/tmp/test-server", db
-            )
-
-            # Verify result
-            assert result == "/server/server.jar"
-
-            # Verify fallback was used
-            mock_is_supported.assert_called_once_with(ServerType.vanilla, "1.20.0")
-            mock_get_url.assert_called_once_with(ServerType.vanilla, "1.20.0")
-            mock_cache.assert_called_once_with(
-                ServerType.vanilla,
-                "1.20.0",
-                "https://external-api.com/version.jar"
             )
 
     @pytest.mark.asyncio
@@ -208,10 +183,10 @@ class TestDatabaseVersionIntegration:
             assert "not supported" in str(exc_info.value.detail).lower()
 
     @pytest.mark.asyncio
-    async def test_performance_comparison_database_vs_external_api(
+    async def test_database_only_performance(
         self, jar_service, db, sample_db_version
     ):
-        """Test performance difference between database and external API calls"""
+        """Test that database-only approach provides fast performance"""
         import time
 
         # Test database path timing
@@ -230,30 +205,18 @@ class TestDatabaseVersionIntegration:
 
             # Database path should be very fast (< 50ms typically)
             assert db_time < 0.1  # 100ms threshold for CI environments
+            print(f"Database performance: {db_time*1000:.1f}ms")
 
-        # Test external API fallback timing
-        with patch.object(jar_service.version_manager, 'is_version_supported') as mock_is_supported, \
-             patch.object(jar_service.version_manager, 'get_download_url') as mock_get_url, \
-             patch.object(jar_service.cache_manager, 'get_or_download_jar') as mock_cache, \
-             patch.object(jar_service.cache_manager, 'copy_jar_to_server') as mock_copy:
-
-            # Simulate slower external API calls
-            async def slow_get_url(*args):
-                await asyncio.sleep(0.05)  # Simulate 50ms API call
-                return "https://example.com/test.jar"
-
-            mock_is_supported.return_value = True
-            mock_get_url.side_effect = slow_get_url
-            mock_cache.return_value = "/cache/test.jar"
-            mock_copy.return_value = "/server/server.jar"
-
-            # Measure external API path
-            start_time = time.time()
+        # Test that unsupported versions fail fast
+        start_time = time.time()
+        try:
             await jar_service.get_server_jar(
                 ServerType.vanilla, "1.19.0", "/tmp/test", db  # Version not in DB
             )
-            api_time = time.time() - start_time
+        except FileOperationException:
+            pass  # Expected error
+        error_time = time.time() - start_time
 
-            # External API path should be slower
-            assert api_time > db_time
-            print(f"Performance comparison - Database: {db_time*1000:.1f}ms, External API: {api_time*1000:.1f}ms")
+        # Error should also be fast
+        assert error_time < 0.1  # 100ms threshold for CI environments
+        print(f"Error handling performance: {error_time*1000:.1f}ms")

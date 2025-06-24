@@ -71,15 +71,14 @@ class MinecraftVersionManager:
                 )
                 return filtered_versions
 
-        except asyncio.TimeoutError:
-            logger.error(
-                f"Timeout getting versions for {server_type.value} after {self._total_timeout}s"
-            )
-            return self._get_fallback_versions(server_type)
+        except asyncio.TimeoutError as e:
+            error_msg = f"Timeout getting versions for {server_type.value} after {self._total_timeout}s"
+            logger.error(error_msg)
+            raise RuntimeError(error_msg) from e
         except Exception as e:
-            logger.error(f"Failed to get versions for {server_type.value}: {e}")
-            # Return fallback versions if API fails
-            return self._get_fallback_versions(server_type)
+            error_msg = f"Failed to get versions for {server_type.value}: {e}"
+            logger.error(error_msg)
+            raise RuntimeError(error_msg) from e
 
     async def get_download_url(
         self, server_type: ServerType, minecraft_version: str
@@ -379,79 +378,13 @@ class MinecraftVersionManager:
                 return final_versions
 
             except aiohttp.ClientError as e:
-                logger.error(f"HTTP client error fetching forge versions: {e}")
-                return self._get_fallback_versions(ServerType.forge)
+                error_msg = f"HTTP client error fetching forge versions: {e}"
+                logger.error(error_msg)
+                raise RuntimeError(error_msg) from e
             except Exception as e:
-                logger.error(f"Error parsing forge versions: {e}")
-                return self._get_fallback_versions(ServerType.forge)
-
-    def _get_fallback_versions(self, server_type: ServerType) -> List[VersionInfo]:
-        """Fallback versions when API is unavailable"""
-        fallback_data = {
-            ServerType.vanilla: [
-                (
-                    "1.20.4",
-                    "https://piston-data.mojang.com/v1/objects/8dd1a28015f51b1803213892b50b7b4fc76e594d/server.jar",
-                ),
-                (
-                    "1.20.1",
-                    "https://piston-data.mojang.com/v1/objects/84194a2f286ef7c14ed7ce0090dba59902951553/server.jar",
-                ),
-                (
-                    "1.19.4",
-                    "https://piston-data.mojang.com/v1/objects/8f3112a1049751cc472ec13e397eade5336ca7ae/server.jar",
-                ),
-                (
-                    "1.18.2",
-                    "https://piston-data.mojang.com/v1/objects/c8f83c5655308435b3dcf03c06d9fe8740a77469/server.jar",
-                ),
-            ],
-            ServerType.paper: [
-                (
-                    "1.20.4",
-                    "https://api.papermc.io/v2/projects/paper/versions/1.20.4/builds/497/downloads/paper-1.20.4-497.jar",
-                ),
-                (
-                    "1.20.1",
-                    "https://api.papermc.io/v2/projects/paper/versions/1.20.1/builds/196/downloads/paper-1.20.1-196.jar",
-                ),
-                (
-                    "1.19.4",
-                    "https://api.papermc.io/v2/projects/paper/versions/1.19.4/builds/550/downloads/paper-1.19.4-550.jar",
-                ),
-                (
-                    "1.18.2",
-                    "https://api.papermc.io/v2/projects/paper/versions/1.18.2/builds/388/downloads/paper-1.18.2-388.jar",
-                ),
-            ],
-            ServerType.forge: [
-                (
-                    "1.20.1",
-                    "https://maven.minecraftforge.net/net/minecraftforge/forge/1.20.1-47.2.0/forge-1.20.1-47.2.0-installer.jar",
-                ),
-                (
-                    "1.19.4",
-                    "https://maven.minecraftforge.net/net/minecraftforge/forge/1.19.4-45.2.0/forge-1.19.4-45.2.0-installer.jar",
-                ),
-                (
-                    "1.18.2",
-                    "https://maven.minecraftforge.net/net/minecraftforge/forge/1.18.2-40.2.0/forge-1.18.2-40.2.0-installer.jar",
-                ),
-            ],
-        }
-
-        versions = []
-        for version_str, url in fallback_data.get(server_type, []):
-            versions.append(
-                VersionInfo(
-                    version=version_str,
-                    server_type=server_type,
-                    download_url=url,
-                    is_stable=True,
-                )
-            )
-
-        return versions
+                error_msg = f"Error parsing forge versions: {e}"
+                logger.error(error_msg)
+                raise RuntimeError(error_msg) from e
 
     def _is_version_supported(self, minecraft_version: str) -> bool:
         """Check if version meets minimum requirement (1.8+)"""

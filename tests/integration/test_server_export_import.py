@@ -90,10 +90,25 @@ class TestServerExportImport:
         # Create test ZIP file
         zip_buffer = io.BytesIO()
 
+        # First, create a version in the database to ensure it's supported
+        from app.versions.models import MinecraftVersion
+        from datetime import datetime
+
+        version = MinecraftVersion(
+            server_type="vanilla",
+            version="1.21.6",
+            download_url="https://launcher.mojang.com/v1/objects/test.jar",
+            release_date=datetime.utcnow(),
+            is_stable=True,
+            is_active=True
+        )
+        db.add(version)
+        db.commit()
+
         metadata = {
             "server_name": "Imported Server",
             "description": "Test import",
-            "minecraft_version": "1.20.1",
+            "minecraft_version": "1.21.6",  # Use supported version
             "server_type": "vanilla",
             "max_memory": 2048,
             "max_players": 30,
@@ -122,7 +137,7 @@ class TestServerExportImport:
         server_data = response.json()
         assert server_data["name"] == unique_name
         assert server_data["description"] == "Server imported from ZIP"
-        assert server_data["minecraft_version"] == "1.20.1"
+        assert server_data["minecraft_version"] == "1.21.6"
         assert server_data["server_type"] == "vanilla"
         assert server_data["max_memory"] == 2048
         assert server_data["max_players"] == 30
@@ -208,7 +223,7 @@ class TestServerExportImport:
         # Missing required fields
         metadata = {
             "server_name": "Test Server",
-            "minecraft_version": "1.20.1",
+            "minecraft_version": "1.21.6",
             # Missing server_type, max_memory, max_players
         }
 
@@ -230,7 +245,7 @@ class TestServerExportImport:
         zip_buffer = io.BytesIO()
 
         metadata = {
-            "minecraft_version": "1.20.1",
+            "minecraft_version": "1.21.6",
             "server_type": "vanilla",
             "max_memory": 1024,
             "max_players": 20,
@@ -323,13 +338,28 @@ class TestServerExportImport:
         self, client: TestClient, admin_headers, admin_user, db
     ):
         """Test that import allows port conflicts with stopped servers"""
+        # First, create a version in the database to ensure it's supported
+        from app.versions.models import MinecraftVersion
+        from datetime import datetime
+        
+        version = MinecraftVersion(
+            server_type="vanilla",
+            version="1.21.6",
+            download_url="https://launcher.mojang.com/v1/objects/test.jar",
+            release_date=datetime.utcnow(),
+            is_stable=True,
+            is_active=True
+        )
+        db.add(version)
+        db.commit()
+        
         # Create a stopped server with port 25565
         from app.servers.models import Server
 
         stopped_server = Server(
             name="Stopped Server",
             description="A stopped server",
-            minecraft_version="1.20.1",
+            minecraft_version="1.21.6",
             server_type=ServerType.vanilla,
             status=ServerStatus.stopped,
             directory_path="./servers/stopped_server",
@@ -344,7 +374,7 @@ class TestServerExportImport:
         # Create test ZIP file
         zip_buffer = io.BytesIO()
         metadata = {
-            "minecraft_version": "1.20.1",
+            "minecraft_version": "1.21.6",
             "server_type": "vanilla",
             "max_memory": 1024,
             "max_players": 20,
