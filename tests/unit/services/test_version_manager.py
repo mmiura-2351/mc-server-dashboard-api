@@ -471,9 +471,15 @@ class TestMinecraftVersionManagerMissingCoverage:
             mock_session = AsyncMock()
             mock_session_class.return_value.__aenter__.return_value = mock_session
 
-            # Make session.get() raise an aiohttp.ClientError
-            from aiohttp import ClientError
-            mock_session.get.side_effect = ClientError("API Error")
+            # Create a proper mock response context manager
+            class MockResponse:
+                async def __aenter__(self):
+                    raise aiohttp.ClientError("API Error")
 
-            with pytest.raises(RuntimeError, match="Error parsing forge versions"):
+                async def __aexit__(self, *args):
+                    pass
+
+            mock_session.get.return_value = MockResponse()
+
+            with pytest.raises(RuntimeError, match="Unexpected error processing forge versions"):
                 await manager._get_forge_versions()
