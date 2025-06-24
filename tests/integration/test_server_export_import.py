@@ -122,37 +122,44 @@ class TestServerExportImport:
 
         zip_buffer.seek(0)
 
-        # Test import
-        files = {"file": ("test_export.zip", zip_buffer, "application/zip")}
-        import uuid
+        # Mock JAR download and caching to avoid actual network calls
+        with patch("app.services.jar_cache_manager.jar_cache_manager.get_or_download_jar") as mock_cache, \
+             patch("app.services.jar_cache_manager.jar_cache_manager.copy_jar_to_server") as mock_copy:
 
-        unique_name = f"My Imported Server {uuid.uuid4().hex[:8]}"
-        data = {"name": unique_name, "description": "Server imported from ZIP"}
+            mock_cache.return_value = "/cache/test-vanilla-1.21.6.jar"
+            mock_copy.return_value = "/server/server.jar"
 
-        response = client.post(
-            "/api/v1/servers/import", headers=admin_headers, files=files, data=data
-        )
+            # Test import
+            files = {"file": ("test_export.zip", zip_buffer, "application/zip")}
+            import uuid
 
-        assert response.status_code == status.HTTP_201_CREATED
-        server_data = response.json()
-        assert server_data["name"] == unique_name
-        assert server_data["description"] == "Server imported from ZIP"
-        assert server_data["minecraft_version"] == "1.21.6"
-        assert server_data["server_type"] == "vanilla"
-        assert server_data["max_memory"] == 2048
-        assert server_data["max_players"] == 30
+            unique_name = f"My Imported Server {uuid.uuid4().hex[:8]}"
+            data = {"name": unique_name, "description": "Server imported from ZIP"}
 
-        # Verify server directory was created
-        server_dir = Path(server_data["directory_path"])
-        assert server_dir.exists()
-        assert (server_dir / "server.properties").exists()
-        assert (server_dir / "world" / "level.dat").exists()
+            response = client.post(
+                "/api/v1/servers/import", headers=admin_headers, files=files, data=data
+            )
 
-        # Cleanup
-        import shutil
+            assert response.status_code == status.HTTP_201_CREATED
+            server_data = response.json()
+            assert server_data["name"] == unique_name
+            assert server_data["description"] == "Server imported from ZIP"
+            assert server_data["minecraft_version"] == "1.21.6"
+            assert server_data["server_type"] == "vanilla"
+            assert server_data["max_memory"] == 2048
+            assert server_data["max_players"] == 30
 
-        if server_dir.exists():
-            shutil.rmtree(server_dir)
+            # Verify server directory was created
+            server_dir = Path(server_data["directory_path"])
+            assert server_dir.exists()
+            assert (server_dir / "server.properties").exists()
+            assert (server_dir / "world" / "level.dat").exists()
+
+            # Cleanup
+            import shutil
+
+            if server_dir.exists():
+                shutil.rmtree(server_dir)
 
     def test_import_server_authorized_for_regular_user(
         self, client: TestClient, user_headers
@@ -385,20 +392,27 @@ class TestServerExportImport:
             zipf.writestr("server.properties", "server-port=25565")
         zip_buffer.seek(0)
 
-        # Test import - should succeed because stopped server doesn't conflict
-        files = {"file": ("test.zip", zip_buffer, "application/zip")}
-        import uuid
+        # Mock JAR download and caching to avoid actual network calls
+        with patch("app.services.jar_cache_manager.jar_cache_manager.get_or_download_jar") as mock_cache, \
+             patch("app.services.jar_cache_manager.jar_cache_manager.copy_jar_to_server") as mock_copy:
 
-        unique_name = f"Imported Server {uuid.uuid4().hex[:8]}"
-        data = {"name": unique_name}
+            mock_cache.return_value = "/cache/test-vanilla-1.21.6.jar"
+            mock_copy.return_value = "/server/server.jar"
 
-        response = client.post(
-            "/api/v1/servers/import", headers=admin_headers, files=files, data=data
-        )
+            # Test import - should succeed because stopped server doesn't conflict
+            files = {"file": ("test.zip", zip_buffer, "application/zip")}
+            import uuid
 
-        assert response.status_code == status.HTTP_201_CREATED
-        server_data = response.json()
-        assert server_data["port"] == 25565  # Should get the same port as stopped server
+            unique_name = f"Imported Server {uuid.uuid4().hex[:8]}"
+            data = {"name": unique_name}
+
+            response = client.post(
+                "/api/v1/servers/import", headers=admin_headers, files=files, data=data
+            )
+
+            assert response.status_code == status.HTTP_201_CREATED
+            server_data = response.json()
+            assert server_data["port"] == 25565  # Should get the same port as stopped server
 
         # Cleanup
         import shutil

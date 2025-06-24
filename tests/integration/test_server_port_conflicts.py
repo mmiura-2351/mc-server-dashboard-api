@@ -1,3 +1,5 @@
+from unittest.mock import patch
+
 from fastapi import status
 from fastapi.testclient import TestClient
 
@@ -39,25 +41,32 @@ class TestServerPortConflicts:
         db.add(first_server)
         db.commit()
 
-        # Try to create another server with the same port - this should now succeed
-        server_data = {
-            "name": "Second Server",
-            "description": "Another server with same port",
-            "minecraft_version": "1.21.6",
-            "server_type": "vanilla",
-            "port": 25565,
-            "max_memory": 1024,
-            "max_players": 20,
-        }
+        # Mock JAR download and caching to avoid actual network calls
+        with patch("app.services.jar_cache_manager.jar_cache_manager.get_or_download_jar") as mock_cache, \
+             patch("app.services.jar_cache_manager.jar_cache_manager.copy_jar_to_server") as mock_copy:
 
-        response = client.post(
-            "/api/v1/servers/", headers=admin_headers, json=server_data
-        )
+            mock_cache.return_value = "/cache/test-vanilla-1.21.6.jar"
+            mock_copy.return_value = "/server/server.jar"
 
-        assert response.status_code == status.HTTP_201_CREATED
-        server_response = response.json()
-        assert server_response["port"] == 25565
-        assert server_response["name"] == "Second Server"
+            # Try to create another server with the same port - this should now succeed
+            server_data = {
+                "name": "Second Server",
+                "description": "Another server with same port",
+                "minecraft_version": "1.21.6",
+                "server_type": "vanilla",
+                "port": 25565,
+                "max_memory": 1024,
+                "max_players": 20,
+            }
+
+            response = client.post(
+                "/api/v1/servers/", headers=admin_headers, json=server_data
+            )
+
+            assert response.status_code == status.HTTP_201_CREATED
+            server_response = response.json()
+            assert server_response["port"] == 25565
+            assert server_response["name"] == "Second Server"
 
         # Cleanup
         import shutil
@@ -102,25 +111,32 @@ class TestServerPortConflicts:
         db.add(stopped_server)
         db.commit()
 
-        # Try to create another server with the same port as stopped server
-        server_data = {
-            "name": "New Server",
-            "description": "This should succeed",
-            "minecraft_version": "1.21.6",
-            "server_type": "vanilla",
-            "port": 25566,
-            "max_memory": 1024,
-            "max_players": 20,
-        }
+        # Mock JAR download and caching to avoid actual network calls
+        with patch("app.services.jar_cache_manager.jar_cache_manager.get_or_download_jar") as mock_cache, \
+             patch("app.services.jar_cache_manager.jar_cache_manager.copy_jar_to_server") as mock_copy:
 
-        response = client.post(
-            "/api/v1/servers/", headers=admin_headers, json=server_data
-        )
+            mock_cache.return_value = "/cache/test-vanilla-1.21.6.jar"
+            mock_copy.return_value = "/server/server.jar"
 
-        assert response.status_code == status.HTTP_201_CREATED
-        server_response = response.json()
-        assert server_response["port"] == 25566
-        assert server_response["name"] == "New Server"
+            # Try to create another server with the same port as stopped server
+            server_data = {
+                "name": "New Server",
+                "description": "This should succeed",
+                "minecraft_version": "1.21.6",
+                "server_type": "vanilla",
+                "port": 25566,
+                "max_memory": 1024,
+                "max_players": 20,
+            }
+
+            response = client.post(
+                "/api/v1/servers/", headers=admin_headers, json=server_data
+            )
+
+            assert response.status_code == status.HTTP_201_CREATED
+            server_response = response.json()
+            assert server_response["port"] == 25566
+            assert server_response["name"] == "New Server"
 
         # Cleanup
         import shutil
@@ -165,25 +181,32 @@ class TestServerPortConflicts:
         db.add(starting_server)
         db.commit()
 
-        # Try to create another server with the same port - this should now succeed
-        server_data = {
-            "name": "New Server",
-            "description": "This should succeed",
-            "minecraft_version": "1.21.6",
-            "server_type": "vanilla",
-            "port": 25567,
-            "max_memory": 1024,
-            "max_players": 20,
-        }
+        # Mock JAR download and caching to avoid actual network calls
+        with patch("app.services.jar_cache_manager.jar_cache_manager.get_or_download_jar") as mock_cache, \
+             patch("app.services.jar_cache_manager.jar_cache_manager.copy_jar_to_server") as mock_copy:
 
-        response = client.post(
-            "/api/v1/servers/", headers=admin_headers, json=server_data
-        )
+            mock_cache.return_value = "/cache/test-vanilla-1.21.6.jar"
+            mock_copy.return_value = "/server/server.jar"
 
-        assert response.status_code == status.HTTP_201_CREATED
-        server_response = response.json()
-        assert server_response["port"] == 25567
-        assert server_response["name"] == "New Server"
+            # Try to create another server with the same port - this should now succeed
+            server_data = {
+                "name": "New Server",
+                "description": "This should succeed",
+                "minecraft_version": "1.21.6",
+                "server_type": "vanilla",
+                "port": 25567,
+                "max_memory": 1024,
+                "max_players": 20,
+            }
+
+            response = client.post(
+                "/api/v1/servers/", headers=admin_headers, json=server_data
+            )
+
+            assert response.status_code == status.HTTP_201_CREATED
+            server_response = response.json()
+            assert server_response["port"] == 25567
+            assert server_response["name"] == "New Server"
 
         # Cleanup
         import shutil
