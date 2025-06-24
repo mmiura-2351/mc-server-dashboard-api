@@ -35,8 +35,8 @@ class MinecraftVersionManager:
         self.minimum_version = version.Version("1.8.0")
 
         # Timeout configuration
-        self._request_timeout = 10  # Individual request timeout in seconds
-        self._total_timeout = 25  # Total operation timeout in seconds
+        self._request_timeout = 30  # Individual request timeout in seconds
+        self._total_timeout = 90  # Total operation timeout in seconds
         self._client_timeout = aiohttp.ClientTimeout(total=self._request_timeout)
 
     async def get_supported_versions(self, server_type: ServerType) -> List[VersionInfo]:
