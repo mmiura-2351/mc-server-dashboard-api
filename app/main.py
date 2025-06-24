@@ -4,6 +4,7 @@ from typing import Any, Dict
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.trustedhost import TrustedHostMiddleware
 
 from app.audit.router import router as audit_router
 from app.auth.router import router as auth_router
@@ -231,7 +232,12 @@ async def _cleanup_services():
         logger.info("All services shut down cleanly")
 
 
-app = FastAPI(lifespan=lifespan)
+app = FastAPI(
+    lifespan=lifespan,
+    # Configure app to trust proxy headers when behind reverse proxy
+    root_path=settings.api_prefix if hasattr(settings, "api_prefix") else "",
+    root_path_in_servers=True,
+)
 
 
 @app.get("/health", tags=["health"])
@@ -290,6 +296,13 @@ async def get_metrics():
         "message": "Performance metrics collected successfully",
     }
 
+
+# Add TrustedHostMiddleware to handle proxy headers correctly
+# This should be one of the first middlewares
+app.add_middleware(
+    TrustedHostMiddleware,
+    allowed_hosts=["*"],  # Configure with actual domains in production
+)
 
 # Add audit middleware (before performance monitoring for complete request tracking)
 app.add_middleware(
