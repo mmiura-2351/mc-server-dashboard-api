@@ -34,10 +34,17 @@ class MinecraftVersionManager:
         self._cache_duration = timedelta(hours=6)  # Cache for 6 hours
         self.minimum_version = version.Version("1.8.0")
 
-        # Timeout configuration
-        self._request_timeout = 30  # Individual request timeout in seconds
-        self._total_timeout = 90  # Total operation timeout in seconds
+        # Timeout configuration (increased for stability)
+        self._request_timeout = 45  # Individual request timeout in seconds
+        self._total_timeout = 180  # Total operation timeout in seconds (3 minutes)
         self._client_timeout = aiohttp.ClientTimeout(total=self._request_timeout)
+
+        # Concurrency control
+        self._max_concurrent_requests = (
+            10  # Limit concurrent requests for all server types
+        )
+        self._batch_size = 50  # Process versions in batches to avoid overwhelming APIs
+        self._batch_delay = 2  # Delay between batches in seconds
 
     async def get_supported_versions(self, server_type: ServerType) -> List[VersionInfo]:
         """Get supported versions for a server type"""
@@ -103,7 +110,17 @@ class MinecraftVersionManager:
 
     async def _get_vanilla_versions(self) -> List[VersionInfo]:
         """Get vanilla server versions from Mojang API with parallel processing"""
-        async with aiohttp.ClientSession(timeout=self._client_timeout) as session:
+        # Create optimized connector for better connection pooling
+        connector = aiohttp.TCPConnector(
+            limit=self._max_concurrent_requests + 5,  # Allow a few extra connections
+            limit_per_host=self._max_concurrent_requests,
+            ttl_dns_cache=300,  # 5 minutes DNS cache
+            use_dns_cache=True,
+        )
+
+        async with aiohttp.ClientSession(
+            timeout=self._client_timeout, connector=connector
+        ) as session:
             try:
                 # Get version manifest with timeout
                 async with session.get(
@@ -123,21 +140,10 @@ class MinecraftVersionManager:
                     f"Found {len(release_versions)} vanilla release versions to process"
                 )
 
-                # Create tasks for parallel execution
-                tasks = [
-                    self._fetch_vanilla_version_info(session, version_data)
-                    for version_data in release_versions
-                ]
-
-                # Execute all requests in parallel with timeout control
-                try:
-                    version_results = await asyncio.wait_for(
-                        asyncio.gather(*tasks, return_exceptions=True),
-                        timeout=self._total_timeout - 5,  # Reserve 5s for manifest fetch
-                    )
-                except asyncio.TimeoutError:
-                    logger.error("Timeout during vanilla version parallel processing")
-                    raise
+                # Process versions in batches to prevent overwhelming the API
+                version_results = await self._process_versions_in_batches(
+                    session, release_versions, "vanilla"
+                )
 
                 # Filter successful results
                 versions = []
@@ -206,7 +212,17 @@ class MinecraftVersionManager:
 
     async def _get_paper_versions(self) -> List[VersionInfo]:
         """Get Paper server versions from PaperMC API with parallel processing"""
-        async with aiohttp.ClientSession(timeout=self._client_timeout) as session:
+        # Create optimized connector for better connection pooling
+        connector = aiohttp.TCPConnector(
+            limit=self._max_concurrent_requests + 5,  # Allow a few extra connections
+            limit_per_host=self._max_concurrent_requests,
+            ttl_dns_cache=300,  # 5 minutes DNS cache
+            use_dns_cache=True,
+        )
+
+        async with aiohttp.ClientSession(
+            timeout=self._client_timeout, connector=connector
+        ) as session:
             try:
                 # Get available versions with timeout
                 async with session.get(
@@ -219,27 +235,10 @@ class MinecraftVersionManager:
                     f"Found {len(project_info['versions'])} paper versions to process"
                 )
 
-                # Create tasks for parallel execution
-                tasks = [
-                    self._fetch_paper_version_info(session, version_id)
-                    for version_id in project_info["versions"]
-                ]
-
-                # Execute all requests in parallel with semaphore to limit concurrent requests
-                semaphore = asyncio.Semaphore(10)  # Limit to 10 concurrent requests
-                limited_tasks = [
-                    self._fetch_with_semaphore(semaphore, task) for task in tasks
-                ]
-
-                try:
-                    version_results = await asyncio.wait_for(
-                        asyncio.gather(*limited_tasks, return_exceptions=True),
-                        timeout=self._total_timeout
-                        - 5,  # Reserve 5s for project info fetch
-                    )
-                except asyncio.TimeoutError:
-                    logger.error("Timeout during paper version parallel processing")
-                    raise
+                # Process versions in batches to prevent overwhelming the API
+                version_results = await self._process_versions_in_batches(
+                    session, project_info["versions"], "paper"
+                )
 
                 # Filter successful results
                 versions = []
@@ -269,6 +268,111 @@ class MinecraftVersionManager:
         """Execute task with semaphore to limit concurrent requests"""
         async with semaphore:
             return await task
+
+    async def _process_versions_in_batches(
+        self,
+        session: aiohttp.ClientSession,
+        version_data_list: list,
+        server_type_name: str,
+    ) -> list:
+        """
+        Process versions in batches to prevent API overwhelming and timeouts.
+
+        Args:
+            session: aiohttp session for making requests
+            version_data_list: List of version data to process
+            server_type_name: Name of server type for logging
+
+        Returns:
+            List of results from all batches
+        """
+        all_results = []
+        total_batches = (
+            len(version_data_list) + self._batch_size - 1
+        ) // self._batch_size
+
+        logger.info(
+            f"Processing {len(version_data_list)} {server_type_name} versions in "
+            f"{total_batches} batches of {self._batch_size}"
+        )
+
+        for batch_num in range(total_batches):
+            start_idx = batch_num * self._batch_size
+            end_idx = min(start_idx + self._batch_size, len(version_data_list))
+            batch = version_data_list[start_idx:end_idx]
+
+            logger.info(
+                f"Processing {server_type_name} batch {batch_num + 1}/{total_batches} "
+                f"({len(batch)} versions)"
+            )
+
+            # Create tasks for this batch
+            if server_type_name == "vanilla":
+                tasks = [
+                    self._fetch_vanilla_version_info(session, version_data)
+                    for version_data in batch
+                ]
+            elif server_type_name == "paper":
+                tasks = [
+                    self._fetch_paper_version_info(session, version_id)
+                    for version_id in batch
+                ]
+            else:
+                logger.warning(
+                    f"Unknown server type for batch processing: {server_type_name}"
+                )
+                continue
+
+            # Execute batch with semaphore control
+            semaphore = asyncio.Semaphore(self._max_concurrent_requests)
+            limited_tasks = [
+                self._fetch_with_semaphore(semaphore, task) for task in tasks
+            ]
+
+            try:
+                # Calculate timeout per batch (with some buffer)
+                batch_timeout = min(
+                    self._total_timeout // total_batches
+                    + 30,  # Per-batch timeout with buffer
+                    self._total_timeout - 20,  # Never exceed total timeout minus buffer
+                )
+
+                batch_results = await asyncio.wait_for(
+                    asyncio.gather(*limited_tasks, return_exceptions=True),
+                    timeout=batch_timeout,
+                )
+
+                all_results.extend(batch_results)
+
+                # Log batch completion
+                successful_in_batch = sum(
+                    1 for result in batch_results if isinstance(result, VersionInfo)
+                )
+                logger.info(
+                    f"Completed {server_type_name} batch {batch_num + 1}/{total_batches}: "
+                    f"{successful_in_batch}/{len(batch)} successful"
+                )
+
+                # Delay between batches (except for the last batch)
+                if batch_num < total_batches - 1:
+                    logger.debug(f"Waiting {self._batch_delay}s before next batch...")
+                    await asyncio.sleep(self._batch_delay)
+
+            except asyncio.TimeoutError:
+                logger.error(
+                    f"Timeout during {server_type_name} batch {batch_num + 1}/{total_batches}"
+                )
+                # Add None results for this batch to maintain structure
+                all_results.extend([None] * len(batch))
+
+            except Exception as e:
+                logger.error(
+                    f"Error during {server_type_name} batch {batch_num + 1}/{total_batches}: {e}"
+                )
+                # Add exception results for this batch
+                all_results.extend([e] * len(batch))
+
+        return all_results
 
     async def _fetch_paper_version_info(
         self, session: aiohttp.ClientSession, version_id: str
