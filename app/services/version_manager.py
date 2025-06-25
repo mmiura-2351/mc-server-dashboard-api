@@ -34,11 +34,11 @@ class MinecraftVersionManager:
         self._cache_duration = timedelta(hours=6)  # Cache for 6 hours
         self.minimum_version = version.Version("1.8.0")
 
-        # Simple timeout configuration
-        self._request_timeout = 30  # Individual request timeout in seconds
-        self._total_timeout = 60  # Total operation timeout in seconds
+        # Timeout configuration - reduced from workaround values
+        self._request_timeout = 15  # Individual request timeout in seconds
+        self._total_timeout = 30  # Total operation timeout in seconds
         self._client_timeout = aiohttp.ClientTimeout(
-            total=self._request_timeout, connect=10, sock_read=10
+            total=self._request_timeout, connect=5, sock_read=5
         )
 
     async def get_supported_versions(self, server_type: ServerType) -> List[VersionInfo]:
