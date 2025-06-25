@@ -5,14 +5,15 @@ Coverage target: 34.91% → 80%
 Security critical service - comprehensive testing required
 """
 
+from unittest.mock import Mock
+
 import pytest
 from fastapi import HTTPException, status
-from unittest.mock import Mock, AsyncMock
 from sqlalchemy.orm import Session
 
+from app.servers.models import Backup, Server, ServerStatus, ServerType
 from app.services.authorization_service import AuthorizationService, authorization_service
-from app.users.models import User, Role
-from app.servers.models import Server, ServerType, ServerStatus, Backup
+from app.users.models import Role, User
 
 
 @pytest.fixture
@@ -85,7 +86,9 @@ class TestAuthorizationServiceServerAccess:
         assert sample_server.owner_id != operator_user.id
 
         # All authenticated users can access all servers
-        result = AuthorizationService.check_server_access(sample_server.id, operator_user, db)
+        result = AuthorizationService.check_server_access(
+            sample_server.id, operator_user, db
+        )
         assert result == sample_server
 
 
@@ -723,7 +726,9 @@ class TestAuthorizationServiceIntegration:
         # Test deletion permissions: only admin and owner can delete
         assert AuthorizationService.can_delete_server(server, admin_user) is True
         assert AuthorizationService.can_delete_server(server, test_user) is True  # owner
-        assert AuthorizationService.can_delete_server(server, operator_user) is False  # not owner, not admin
+        assert (
+            AuthorizationService.can_delete_server(server, operator_user) is False
+        )  # not owner, not admin
 
     def test_backup_access_through_server_ownership(
         self, db: Session, test_user, admin_user
@@ -879,32 +884,44 @@ class TestAuthorizationServiceDeletionPermissions:
 
         return server, backup
 
-    def test_can_delete_server_admin_can_delete_any(self, admin_user, test_server_with_backup):
+    def test_can_delete_server_admin_can_delete_any(
+        self, admin_user, test_server_with_backup
+    ):
         """Test admin can delete any server"""
         server, _ = test_server_with_backup
         assert AuthorizationService.can_delete_server(server, admin_user) is True
 
-    def test_can_delete_server_owner_can_delete_own(self, test_user, test_server_with_backup):
+    def test_can_delete_server_owner_can_delete_own(
+        self, test_user, test_server_with_backup
+    ):
         """Test server owner can delete their own server"""
         server, _ = test_server_with_backup
         assert AuthorizationService.can_delete_server(server, test_user) is True
 
-    def test_can_delete_server_non_owner_cannot_delete(self, operator_user, test_server_with_backup):
+    def test_can_delete_server_non_owner_cannot_delete(
+        self, operator_user, test_server_with_backup
+    ):
         """Test non-owner user cannot delete server"""
         server, _ = test_server_with_backup
         assert AuthorizationService.can_delete_server(server, operator_user) is False
 
-    def test_can_delete_backup_admin_can_delete_any(self, admin_user, test_server_with_backup):
+    def test_can_delete_backup_admin_can_delete_any(
+        self, admin_user, test_server_with_backup
+    ):
         """Test admin can delete any backup"""
         _, backup = test_server_with_backup
         assert AuthorizationService.can_delete_backup(backup, admin_user) is True
 
-    def test_can_delete_backup_server_owner_can_delete(self, test_user, test_server_with_backup):
+    def test_can_delete_backup_server_owner_can_delete(
+        self, test_user, test_server_with_backup
+    ):
         """Test server owner can delete backup of their server"""
         _, backup = test_server_with_backup
         assert AuthorizationService.can_delete_backup(backup, test_user) is True
 
-    def test_can_delete_backup_non_owner_cannot_delete(self, operator_user, test_server_with_backup):
+    def test_can_delete_backup_non_owner_cannot_delete(
+        self, operator_user, test_server_with_backup
+    ):
         """Test non-server-owner cannot delete backup"""
         _, backup = test_server_with_backup
         assert AuthorizationService.can_delete_backup(backup, operator_user) is False

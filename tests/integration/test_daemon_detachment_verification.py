@@ -5,18 +5,13 @@ Tests that verify proper daemon process detachment from parent processes
 
 import asyncio
 import os
-import signal
 import subprocess
-import tempfile
-import time
 from datetime import datetime
 from pathlib import Path
-from unittest.mock import Mock, patch, AsyncMock, MagicMock
-from typing import Optional
+from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
-import pytest
-import pytest_asyncio
 import psutil
+import pytest
 
 from app.servers.models import Server, ServerStatus, ServerType
 from app.services.minecraft_server import MinecraftServerManager, ServerProcess

@@ -4,9 +4,8 @@ import time
 from unittest.mock import Mock, patch
 
 import pytest
-from sqlalchemy import create_engine
-from sqlalchemy.exc import OperationalError, IntegrityError, DisconnectionError
-from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.exc import IntegrityError, OperationalError
+from sqlalchemy.orm import Session
 
 from app.core.database_utils import (
     RetryExhaustedException,
@@ -15,7 +14,7 @@ from app.core.database_utils import (
     transactional,
     with_transaction,
 )
-from app.servers.models import Server, ServerStatus
+from app.servers.models import Server
 
 
 class TestWithTransaction:

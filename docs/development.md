@@ -41,7 +41,7 @@ Complete guide for developing, testing, and deploying the Minecraft Server Dashb
 | `uv run pytest` | Run tests |
 | `uv run pytest --timeout=300000` | Run full test suite with extended timeout |
 | `uv run ruff check app/` | Code quality checks |
-| `uv run black app/` | Format code |
+| `uv run ruff format app/` | Format code |
 | `uv run coverage run -m pytest && uv run coverage report` | Generate coverage report |
 | `uv run coverage html` | Generate HTML coverage report |
 
@@ -191,14 +191,6 @@ precision = 2
 
 ### Formatting and Linting
 
-**Black Configuration** (pyproject.toml):
-```toml
-[tool.black]
-line-length = 90
-target-version = ["py313"]
-skip-string-normalization = false
-```
-
 **Ruff Configuration** (pyproject.toml):
 ```toml
 [tool.ruff]
@@ -209,6 +201,9 @@ fix = true
 
 [tool.ruff.lint]
 extend-select = ["I"]  # Enable import sorting
+
+[tool.ruff.format]
+# Ruff handles both linting and formatting
 ```
 
 ### Code Standards
@@ -223,7 +218,7 @@ extend-select = ["I"]  # Enable import sorting
 
 ```bash
 # Format code
-uv run black app/
+uv run ruff format app/
 
 # Check code quality
 uv run ruff check app/
@@ -253,7 +248,7 @@ uv run pytest
 
 3. **Quality Checks**:
    ```bash
-   uv run black app/
+   uv run ruff format app/
    uv run ruff check app/
    uv run pytest
    ```

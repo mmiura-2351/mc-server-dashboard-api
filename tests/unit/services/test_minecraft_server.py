@@ -3,12 +3,10 @@ Simple test coverage for MinecraftServerManager to achieve coverage targets
 """
 
 import asyncio
-import os
-import subprocess
 import tempfile
 from datetime import datetime
 from pathlib import Path
-from unittest.mock import AsyncMock, Mock, patch, mock_open
+from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 

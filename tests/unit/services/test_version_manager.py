@@ -1,9 +1,10 @@
-import pytest
-from unittest.mock import Mock, patch, AsyncMock
 from datetime import datetime, timedelta
+from unittest.mock import AsyncMock, Mock, patch
 
-from app.services.version_manager import MinecraftVersionManager, VersionInfo
+import pytest
+
 from app.servers.models import ServerType
+from app.services.version_manager import MinecraftVersionManager, VersionInfo
 from tests.infrastructure.test_aiohttp_mocks import (
     MockAiohttpResponse,
     MockAiohttpSession,
@@ -125,32 +126,6 @@ class TestMinecraftVersionManager:
             assert all(v.server_type == ServerType.paper for v in versions)
             assert versions[0].build_number == 196
 
-    def test_get_fallback_versions_vanilla(self):
-        """Test getting fallback versions for vanilla"""
-        manager = MinecraftVersionManager()
-        versions = manager._get_fallback_versions(ServerType.vanilla)
-
-        assert len(versions) > 0
-        assert all(v.server_type == ServerType.vanilla for v in versions)
-        assert all(v.version and v.download_url for v in versions)
-
-    def test_get_fallback_versions_paper(self):
-        """Test getting fallback versions for Paper"""
-        manager = MinecraftVersionManager()
-        versions = manager._get_fallback_versions(ServerType.paper)
-
-        assert len(versions) > 0
-        assert all(v.server_type == ServerType.paper for v in versions)
-        assert all(v.version and v.download_url for v in versions)
-
-    def test_get_fallback_versions_forge(self):
-        """Test getting fallback versions for Forge"""
-        manager = MinecraftVersionManager()
-        versions = manager._get_fallback_versions(ServerType.forge)
-
-        assert len(versions) > 0
-        assert all(v.server_type == ServerType.forge for v in versions)
-        assert all(v.version and v.download_url for v in versions)
 
     @pytest.mark.asyncio
     async def test_get_supported_versions_with_cache(self):
@@ -174,18 +149,15 @@ class TestMinecraftVersionManager:
         assert result == cached_versions
 
     @pytest.mark.asyncio
-    async def test_get_supported_versions_api_failure_fallback(self):
-        """Test getting supported versions when API fails, using fallback"""
+    async def test_get_supported_versions_api_failure_raises_exception(self):
+        """Test getting supported versions when API fails, should raise exception"""
         manager = MinecraftVersionManager()
 
         with patch.object(
             manager, "_get_vanilla_versions", side_effect=Exception("API Error")
         ):
-            versions = await manager.get_supported_versions(ServerType.vanilla)
-
-            # Should return fallback versions
-            assert len(versions) > 0
-            assert all(v.server_type == ServerType.vanilla for v in versions)
+            with pytest.raises(RuntimeError, match="Failed to get versions for vanilla"):
+                await manager.get_supported_versions(ServerType.vanilla)
 
     @pytest.mark.asyncio
     async def test_get_download_url_success(self):
@@ -327,35 +299,18 @@ class TestMinecraftVersionManagerMissingCoverage:
 
         unknown_type = FakeServerType("unknown")
 
-        # The method should catch the ValueError and return fallback
-        with patch.object(manager, "_get_fallback_versions") as mock_fallback:
-            fallback_versions = [
-                VersionInfo("1.20.1", ServerType.vanilla, "fallback_url")
-            ]
-            mock_fallback.return_value = fallback_versions
-
-            result = await manager.get_supported_versions(unknown_type)
-
-            # Should return fallback versions due to exception handling
-            assert result == fallback_versions
-            mock_fallback.assert_called_once_with(unknown_type)
+        # Should raise RuntimeError due to ValueError in get_supported_versions
+        with pytest.raises(RuntimeError, match="Failed to get versions for unknown"):
+            await manager.get_supported_versions(unknown_type)
 
     @pytest.mark.asyncio
-    async def test_get_supported_versions_exception_fallback(self, manager):
-        """Test get_supported_versions exception handling and fallback (lines 66-69)"""
+    async def test_get_supported_versions_exception_raises_error(self, manager):
+        """Test get_supported_versions exception handling raises RuntimeError"""
         with patch.object(
             manager, "_get_vanilla_versions", side_effect=Exception("API Error")
         ):
-            with patch.object(manager, "_get_fallback_versions") as mock_fallback:
-                fallback_versions = [
-                    VersionInfo("1.20.1", ServerType.vanilla, "fallback_url")
-                ]
-                mock_fallback.return_value = fallback_versions
-
-                result = await manager.get_supported_versions(ServerType.vanilla)
-
-                assert result == fallback_versions
-                mock_fallback.assert_called_once_with(ServerType.vanilla)
+            with pytest.raises(RuntimeError, match="Failed to get versions for vanilla"):
+                await manager.get_supported_versions(ServerType.vanilla)
 
     @pytest.mark.asyncio
     async def test_get_download_url_version_not_found(self, manager):
@@ -499,13 +454,32 @@ class TestMinecraftVersionManagerMissingCoverage:
         assert result is None
 
     @pytest.mark.asyncio
-    async def test_get_forge_versions_fallback(self, manager):
-        """Test _get_forge_versions returns fallback versions (line 241)"""
-        with patch.object(manager, "_get_fallback_versions") as mock_fallback:
-            fallback_versions = [VersionInfo("1.20.1", ServerType.forge, "forge_url")]
-            mock_fallback.return_value = fallback_versions
+    async def test_get_forge_versions_success(self, manager):
+        """Test _get_forge_versions returns real API versions"""
+        result = await manager._get_forge_versions()
 
-            result = await manager._get_forge_versions()
+        # Should return real versions from Forge API, not fallback
+        assert len(result) > 3  # More than the 3 fallback versions
+        assert all(v.server_type == ServerType.forge for v in result)
+        assert all(v.download_url.startswith("https://maven.minecraftforge.net") for v in result)
 
-            assert result == fallback_versions
-            mock_fallback.assert_called_once_with(ServerType.forge)
+    @pytest.mark.asyncio
+    async def test_get_forge_versions_raises_error_on_failure(self, manager):
+        """Test _get_forge_versions raises RuntimeError when API fails"""
+        with patch("aiohttp.ClientSession") as mock_session_class:
+            # Create a mock session that raises an exception during get()
+            mock_session = AsyncMock()
+            mock_session_class.return_value.__aenter__.return_value = mock_session
+
+            # Create a proper mock response context manager
+            class MockResponse:
+                async def __aenter__(self):
+                    raise aiohttp.ClientError("API Error")
+
+                async def __aexit__(self, *args):
+                    pass
+
+            mock_session.get.return_value = MockResponse()
+
+            with pytest.raises(RuntimeError, match="Error processing forge versions"):
+                await manager._get_forge_versions()

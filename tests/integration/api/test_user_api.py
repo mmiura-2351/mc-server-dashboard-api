@@ -3,10 +3,9 @@ Comprehensive test coverage for User API endpoints
 Tests HTTP API layer for user management, registration, and administrative operations
 """
 
-import pytest
 from fastapi import status
+
 from app.auth.auth import create_access_token
-from app.users import schemas
 
 
 def get_auth_headers(username: str):

@@ -4,20 +4,17 @@ Focus on testing actual uncovered lines with minimal complexity
 """
 
 import asyncio
-import os
 import socket
-import tempfile
 from datetime import datetime
 from pathlib import Path
-from unittest.mock import Mock, patch, AsyncMock
+from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
-import pytest_asyncio
 from sqlalchemy.orm import Session
 
 from app.servers.models import Server, ServerStatus, ServerType
-from app.services.minecraft_server import MinecraftServerManager, ServerProcess
 from app.services.java_compatibility import JavaVersionInfo
+from app.services.minecraft_server import MinecraftServerManager, ServerProcess
 
 
 class MockJavaService:

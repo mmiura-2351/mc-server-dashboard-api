@@ -7,7 +7,6 @@ from fastapi import UploadFile
 from app.core.exceptions import (
     AccessDeniedException,
     FileOperationException,
-    InvalidRequestException,
     ServerNotFoundException,
 )
 from app.servers.models import Server

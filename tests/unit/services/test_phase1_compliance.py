@@ -12,15 +12,12 @@ Ensures that users with "User" role or higher can perform all specified operatio
 """
 
 import pytest
-from unittest.mock import Mock, AsyncMock
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
+from app.servers.models import Server, ServerStatus, ServerType
 from app.services.authorization_service import AuthorizationService
 from app.users.models import Role, User
-from app.servers.models import Server, ServerStatus, ServerType, Backup, BackupType
-from app.groups.models import Group, GroupType
-from app.core.visibility import ResourceType, VisibilityType
 
 
 class TestPhase1ComplianceBasicOperations:

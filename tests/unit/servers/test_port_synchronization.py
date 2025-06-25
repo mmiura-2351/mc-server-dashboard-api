@@ -1,9 +1,8 @@
 """Test port synchronization between database and server.properties"""
 
-import asyncio
 import tempfile
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 from sqlalchemy import create_engine
@@ -14,7 +13,7 @@ from app.servers.models import Server, ServerStatus, ServerType
 from app.servers.schemas import ServerUpdateRequest
 from app.servers.service import server_service
 from app.services.minecraft_server import minecraft_server_manager
-from app.users.models import User, Role
+from app.users.models import Role, User
 
 
 @pytest.fixture

@@ -3,35 +3,35 @@ Simplified test coverage for servers utilities router
 Tests core functionality with proper async mocking
 """
 
-import pytest
-from unittest.mock import Mock, patch, AsyncMock
-from fastapi import HTTPException
+from unittest.mock import AsyncMock, Mock, patch
 
-from app.servers.models import ServerType
-from app.users.models import Role, User
+import pytest
+from fastapi import HTTPException
 
 
 class TestUtilitiesRouterSimple:
     """Simplified test cases for utilities router endpoints"""
 
     @pytest.mark.asyncio
-    @patch("app.servers.routers.utilities.minecraft_version_manager")
-    async def test_get_supported_versions_success(self, mock_version_manager):
+    @patch("app.versions.repository.VersionRepository")
+    async def test_get_supported_versions_success(self, mock_repo_class):
         """Test successful retrieval of supported versions"""
         from app.servers.routers.utilities import get_supported_versions
 
-        # Mock version info
-        mock_version_info = Mock()
-        mock_version_info.version = "1.20.1"
-        mock_version_info.server_type = ServerType.vanilla
-        mock_version_info.download_url = "https://example.com/server.jar"
-        mock_version_info.release_date = "2023-06-07"
-        mock_version_info.is_stable = True
-        mock_version_info.build_number = None
+        # Mock database version object
+        mock_db_version = Mock()
+        mock_db_version.version = "1.20.1"
+        mock_db_version.server_type = "vanilla"
+        mock_db_version.download_url = "https://example.com/server.jar"
+        mock_db_version.release_date = "2023-06-07"
+        mock_db_version.is_stable = True
+        mock_db_version.build_number = None
+        mock_db_version.is_active = True
 
-        mock_version_manager.get_supported_versions = AsyncMock(
-            return_value=[mock_version_info]
-        )
+        # Mock repository instance
+        mock_repo = Mock()
+        mock_repo.get_all_active_versions = AsyncMock(return_value=[mock_db_version])
+        mock_repo_class.return_value = mock_repo
 
         result = await get_supported_versions()
 
@@ -39,42 +39,48 @@ class TestUtilitiesRouterSimple:
         assert len(result.versions) >= 0
 
     @pytest.mark.asyncio
-    @patch("app.servers.routers.utilities.minecraft_version_manager")
-    async def test_get_supported_versions_error(self, mock_version_manager):
+    @patch("app.versions.repository.VersionRepository")
+    async def test_get_supported_versions_error(self, mock_repo_class):
         """Test getting versions with service error"""
         from app.servers.routers.utilities import get_supported_versions
 
-        # Make it fail for all ServerType values to trigger the outer exception
-        mock_version_manager.get_supported_versions = AsyncMock(
-            side_effect=Exception("Service error")
+        # Mock repository to raise exception
+        mock_repo = Mock()
+        mock_repo.get_all_active_versions = AsyncMock(
+            side_effect=Exception("Database error")
         )
+        mock_repo_class.return_value = mock_repo
 
-        # Actually, let's check the router code - it catches individual errors but may not raise HTTP exception
-        result = await get_supported_versions()
-        # The router catches individual errors per server type, so this should succeed with empty versions
-        assert result.versions is not None
+        # Should raise HTTPException due to database error
+        with pytest.raises(HTTPException) as exc_info:
+            await get_supported_versions()
+
+        assert exc_info.value.status_code == 500
+        assert "Failed to get supported versions" in str(exc_info.value.detail)
 
     @pytest.mark.asyncio
-    @patch("app.servers.routers.utilities.minecraft_version_manager")
     @patch("app.servers.routers.utilities.SupportedVersionsResponse")
+    @patch("app.versions.repository.VersionRepository")
     async def test_get_supported_versions_response_creation_error(
-        self, mock_response_class, mock_version_manager
+        self, mock_repo_class, mock_response_class
     ):
         """Test error during response object creation to trigger outer exception handler"""
         from app.servers.routers.utilities import get_supported_versions
 
-        # Mock version manager to return valid data
-        mock_version_info = Mock()
-        mock_version_info.version = "1.20.1"
-        mock_version_info.server_type = ServerType.vanilla
-        mock_version_info.download_url = "https://example.com/server.jar"
-        mock_version_info.release_date = "2023-06-07"
-        mock_version_info.is_stable = True
-        mock_version_info.build_number = None
+        # Mock database version object
+        mock_db_version = Mock()
+        mock_db_version.version = "1.20.1"
+        mock_db_version.server_type = "vanilla"
+        mock_db_version.download_url = "https://example.com/server.jar"
+        mock_db_version.release_date = "2023-06-07"
+        mock_db_version.is_stable = True
+        mock_db_version.build_number = None
+        mock_db_version.is_active = True
 
-        mock_version_manager.get_supported_versions = AsyncMock(
-            return_value=[mock_version_info]
-        )
+        # Mock repository to return valid data
+        mock_repo = Mock()
+        mock_repo.get_all_active_versions = AsyncMock(return_value=[mock_db_version])
+        mock_repo_class.return_value = mock_repo
 
         # Make the response creation fail to trigger the outer exception handler
         mock_response_class.side_effect = Exception("Response creation failed")

@@ -3,29 +3,29 @@ Test coverage for app/core/exceptions.py
 Tests focus on exception classes, utility functions, and edge cases
 """
 
-import pytest
-import logging
 from unittest.mock import Mock, patch
+
+import pytest
 from fastapi import status
 
 from app.core.exceptions import (
-    APIException,
-    ResourceNotFoundException,
-    ServerNotFoundException,
-    UserNotFoundException,
-    GroupNotFoundException,
-    BackupNotFoundException,
-    TemplateNotFoundException,
     AccessDeniedException,
-    ServerAccessDeniedException,
-    InvalidRequestException,
-    ConflictException,
-    ServerStateException,
-    FileOperationException,
-    DatabaseOperationException,
+    APIException,
     AuthenticationException,
-    UserNotApprovedException,
+    BackupNotFoundException,
+    ConflictException,
+    DatabaseOperationException,
+    FileOperationException,
+    GroupNotFoundException,
+    InvalidRequestException,
     MinecraftServerException,
+    ResourceNotFoundException,
+    ServerAccessDeniedException,
+    ServerNotFoundException,
+    ServerStateException,
+    TemplateNotFoundException,
+    UserNotApprovedException,
+    UserNotFoundException,
     handle_database_error,
     handle_file_error,
     validate_server_access,

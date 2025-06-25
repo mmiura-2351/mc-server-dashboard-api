@@ -3,12 +3,12 @@ Test coverage for servers management router
 Tests key exception handling and access control for improved coverage
 """
 
+from unittest.mock import AsyncMock, Mock, patch
+
 import pytest
-from unittest.mock import Mock, patch, AsyncMock
-from fastapi import HTTPException, BackgroundTasks
+from fastapi import BackgroundTasks, HTTPException
 
 from app.servers.models import ServerType
-from app.users.models import Role, User
 
 
 class TestServerManagementRouter:
@@ -165,9 +165,9 @@ class TestServerManagementRouter:
         self, mock_server_service, mock_auth_service, admin_user
     ):
         """Test create server with ConflictException passthrough (lines 67-68)"""
+        from app.core.exceptions import ConflictException
         from app.servers.routers.management import create_server
         from app.servers.schemas import ServerCreateRequest
-        from app.core.exceptions import ConflictException
 
         # Mock authorization to allow access
         mock_auth_service.can_create_server.return_value = True
@@ -241,9 +241,9 @@ class TestServerManagementRouter:
         self, mock_minecraft_manager, mock_server_service, mock_auth_service, admin_user
     ):
         """Test update server success path (lines 152-176)"""
+        from app.servers.models import ServerStatus
         from app.servers.routers.management import update_server
         from app.servers.schemas import ServerUpdateRequest
-        from app.servers.models import ServerStatus
 
         # Mock authorization to pass
         mock_auth_service.check_server_access.return_value = None
@@ -268,9 +268,9 @@ class TestServerManagementRouter:
         self, mock_minecraft_manager, mock_server_service, mock_auth_service, admin_user
     ):
         """Test update server with memory change while running (lines 157-163)"""
+        from app.servers.models import ServerStatus
         from app.servers.routers.management import update_server
         from app.servers.schemas import ServerUpdateRequest
-        from app.servers.models import ServerStatus
 
         # Mock authorization to pass
         mock_auth_service.check_server_access.return_value = None
@@ -295,9 +295,9 @@ class TestServerManagementRouter:
         self, mock_minecraft_manager, mock_server_service, mock_auth_service, admin_user
     ):
         """Test update server while running with non-restricted changes (lines 158-165)"""
+        from app.servers.models import ServerStatus
         from app.servers.routers.management import update_server
         from app.servers.schemas import ServerUpdateRequest
-        from app.servers.models import ServerStatus
 
         # Mock authorization to pass
         mock_auth_service.check_server_access.return_value = None
@@ -414,7 +414,9 @@ class TestServerManagementRouter:
             await delete_server(server_id=1, current_user=test_user, db=Mock())
 
         assert exc_info.value.status_code == 403
-        assert "Only admins and server owners can delete servers" in str(exc_info.value.detail)
+        assert "Only admins and server owners can delete servers" in str(
+            exc_info.value.detail
+        )
 
     @pytest.mark.asyncio
     @patch("app.servers.routers.management.authorization_service")

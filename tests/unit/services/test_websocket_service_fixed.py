@@ -1,22 +1,21 @@
 """Fixed comprehensive tests for WebSocket service matching actual implementation"""
 
-import pytest
 import asyncio
 import json
-from unittest.mock import Mock, patch, AsyncMock, MagicMock, mock_open
-from datetime import datetime
 from pathlib import Path
+from unittest.mock import AsyncMock, Mock, mock_open, patch
 
+import pytest
 from fastapi import WebSocket, WebSocketDisconnect
 from sqlalchemy.orm import Session
 
+from app.servers.models import Server
 from app.services.websocket_service import (
     ConnectionManager,
     WebSocketService,
     websocket_service,
 )
-from app.users.models import User, Role
-from app.servers.models import Server, ServerStatus
+from app.users.models import Role, User
 
 
 class TestConnectionManagerFixed:

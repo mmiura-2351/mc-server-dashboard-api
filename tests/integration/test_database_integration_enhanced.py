@@ -1,6 +1,7 @@
 """Enhanced tests for database integration service with actual functionality testing"""
 
-from unittest.mock import Mock, patch, AsyncMock
+from unittest.mock import Mock, patch
+
 import pytest
 from sqlalchemy.orm import Session
 

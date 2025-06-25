@@ -3,27 +3,26 @@ Test coverage for app/servers/service.py
 Focus on critical methods to improve coverage toward 100%
 """
 
-import pytest
-from unittest.mock import Mock, patch, AsyncMock, MagicMock
 from pathlib import Path
-import tempfile
-import shutil
+from unittest.mock import AsyncMock, Mock, patch
+
+import pytest
 
 from app.core.exceptions import (
-    InvalidRequestException,
     ConflictException,
+    InvalidRequestException,
     ServerNotFoundException,
 )
-from app.servers.models import Server, ServerType, ServerStatus, Template
+from app.servers.models import Server, ServerType
 from app.servers.schemas import ServerCreateRequest, ServerUpdateRequest
 from app.servers.service import (
-    ServerSecurityValidator,
-    ServerValidationService,
-    ServerJarService,
-    ServerFileSystemService,
     ServerDatabaseService,
-    ServerTemplateService,
+    ServerFileSystemService,
+    ServerJarService,
+    ServerSecurityValidator,
     ServerService,
+    ServerTemplateService,
+    ServerValidationService,
 )
 from app.users.models import Role, User
 
@@ -211,7 +210,7 @@ class TestServerService:
     async def test_create_server_unsupported_version(
         self, server_service, mock_request, mock_user, mock_db
     ):
-        """Test server creation with unsupported version (lines 582-588)"""
+        """Test server creation with unsupported version (database validation)"""
         # Mock validation to pass initial checks
         server_service.validation_service.validate_server_uniqueness = AsyncMock()
 
@@ -219,17 +218,15 @@ class TestServerService:
             mock_validator.validate_server_name.return_value = True
             mock_validator.validate_memory_value.return_value = True
 
-            with patch(
-                "app.servers.service.minecraft_version_manager"
-            ) as mock_version_manager:
-                mock_version_manager.is_version_supported.return_value = False
+            # Mock the database version validation method to return False
+            server_service._is_version_supported_db = AsyncMock(return_value=False)
 
-                with pytest.raises(InvalidRequestException) as exc_info:
-                    await server_service.create_server(mock_request, mock_user, mock_db)
+            with pytest.raises(InvalidRequestException) as exc_info:
+                await server_service.create_server(mock_request, mock_user, mock_db)
 
-                assert "Version 1.20.1 is not supported for vanilla" in str(
-                    exc_info.value
-                )
+            assert "Version 1.20.1 is not supported for vanilla" in str(
+                exc_info.value
+            )
 
     @pytest.mark.asyncio
     async def test_get_server_success(self, server_service, mock_db):
@@ -371,21 +368,21 @@ class TestServerJarServiceExtended:
         return ServerJarService()
 
     @pytest.mark.asyncio
-    async def test_get_server_jar_unsupported_version(self, jar_service):
+    async def test_get_server_jar_unsupported_version(self, jar_service, db):
         """Test JAR service with unsupported version (lines 212-218)"""
         with patch.object(
             jar_service.version_manager, "is_version_supported", return_value=False
         ):
             with patch("app.servers.service.handle_file_error") as mock_handle_error:
                 await jar_service.get_server_jar(
-                    ServerType.vanilla, "1.7.10", Path("/tmp")
+                    ServerType.vanilla, "1.7.10", Path("/tmp"), db
                 )
 
                 # Should call handle_file_error due to InvalidRequestException
                 mock_handle_error.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_get_server_jar_exception_handling(self, jar_service):
+    async def test_get_server_jar_exception_handling(self, jar_service, db):
         """Test JAR service exception handling (lines 240-241)"""
         with patch.object(
             jar_service.version_manager, "is_version_supported", return_value=True
@@ -397,7 +394,7 @@ class TestServerJarServiceExtended:
             ):
                 with patch("app.servers.service.handle_file_error") as mock_handle_error:
                     await jar_service.get_server_jar(
-                        ServerType.vanilla, "1.20.1", Path("/tmp")
+                        ServerType.vanilla, "1.20.1", Path("/tmp"), db
                     )
 
                     mock_handle_error.assert_called_once()

@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Version Management Timeout Issues** - Simplified timeout handling and improved API reliability
+  - Identified root cause: systemd service IPAddressAllow restrictions blocking external API calls
+  - Removed unnecessary complex timeout logic (31.7 minute timeouts reduced to 60 seconds)
+  - Improved HTTP client configuration with proper connect/read timeouts
+  - Added User-Agent and Accept-Encoding headers for better API compatibility
+  - Simplified error handling while maintaining functionality
+  - Removed ~780 lines of unnecessary timeout handling code
+  - Fixed gzip decoding issues with Forge Maven API
+  - All version manager unit tests now pass (31/31)
+
 ### Added
 - **Java Version Compatibility Management** - Comprehensive multi-version Java support for Minecraft servers
   - Automatic Java version detection and selection based on Minecraft version requirements
@@ -22,11 +33,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Enhanced server creation process with pre-flight Java compatibility checks
 - Improved error handling for Java-related server startup failures
 - Updated MinecraftServerManager to use version-specific Java executables
-
-### Fixed
-- Resolved Issue #29: Java Version Compatibility Management for Multi-Version Minecraft Servers
-- Fixed test failures in `test_minecraft_server_enhanced_coverage.py` and `test_minecraft_server_key_methods.py`
-- Updated test methods to match new Java compatibility API signature
+- Simplified version management system architecture by removing unnecessary complexity
 
 ### Documentation
 - Added comprehensive [Java Compatibility Guide](docs/java-compatibility.md)

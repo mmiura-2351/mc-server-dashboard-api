@@ -1,4 +1,5 @@
 import asyncio
+
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -220,8 +221,8 @@ class TestPerformanceMonitoringMiddleware:
         client = TestClient(test_app)
 
         # Clear any existing metrics by creating new instance
-        from app.middleware.performance_monitoring import PerformanceMetrics
         import app.middleware.performance_monitoring
+        from app.middleware.performance_monitoring import PerformanceMetrics
 
         # Store original metrics to restore later
         original_metrics = app.middleware.performance_monitoring.performance_metrics

@@ -5,12 +5,10 @@ from unittest.mock import patch
 from fastapi import HTTPException, status
 
 from app.auth.auth import create_access_token
-from app.types import FileType
 from app.core.exceptions import (
-    ServerNotFoundException,
     FileOperationException,
-    AccessDeniedException,
 )
+from app.types import FileType
 
 
 def get_auth_headers(username: str):
@@ -776,8 +774,6 @@ class TestFileRenameRouter:
         """Test rename when target file already exists"""
         mock_can_modify.return_value = True
 
-        from app.core.exceptions import FileOperationException
-
         mock_rename_file.side_effect = FileOperationException(
             "rename", "test.txt", "File or directory 'existing.txt' already exists"
         )
@@ -800,8 +796,6 @@ class TestFileRenameRouter:
     ):
         """Test rename when source file doesn't exist"""
         mock_can_modify.return_value = True
-
-        from app.core.exceptions import FileOperationException
 
         mock_rename_file.side_effect = FileOperationException(
             "access", "nonexistent.txt", "Path not found"

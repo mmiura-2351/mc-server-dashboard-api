@@ -3,8 +3,8 @@ Test coverage for app/core/database.py
 Tests focus on database initialization, connection setup, and dependency injection
 """
 
-import pytest
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import Mock, patch
+
 from sqlalchemy.orm import Session
 
 
@@ -13,8 +13,8 @@ class TestDatabaseModule:
 
     def test_database_url_from_settings(self):
         """Test DATABASE_URL is loaded from settings"""
-        from app.core.database import DATABASE_URL
         from app.core.config import settings
+        from app.core.database import DATABASE_URL
 
         assert DATABASE_URL == settings.DATABASE_URL
 
@@ -51,6 +51,7 @@ class TestDatabaseModule:
 
         # Reload the module to trigger the import block
         import importlib
+
         import app.core.database
 
         importlib.reload(app.core.database)
@@ -64,7 +65,7 @@ class TestDatabaseModule:
         # The ImportError block is executed when the middleware module is not available
 
         # We can verify the module still works without db_monitor
-        from app.core.database import engine, SessionLocal, Base
+        from app.core.database import Base, SessionLocal, engine
 
         assert engine is not None
         assert SessionLocal is not None
@@ -169,7 +170,7 @@ class TestDatabaseModule:
 
         # The module should still initialize successfully
         # This tests the except ImportError block (lines 17-19)
-        from app.core.database import engine, SessionLocal
+        from app.core.database import SessionLocal, engine
 
         assert engine is not None
         assert SessionLocal is not None
@@ -180,8 +181,9 @@ class TestDatabaseIntegration:
 
     def test_session_database_operations(self):
         """Test actual database operations with SessionLocal"""
-        from app.core.database import SessionLocal, Base, engine
         from sqlalchemy import text
+
+        from app.core.database import SessionLocal, engine
 
         # Create a test session
         session = SessionLocal()

@@ -1,11 +1,11 @@
+from unittest.mock import Mock, patch
+
 import pytest
-from unittest.mock import Mock, patch, MagicMock
-from datetime import datetime
 from fastapi import HTTPException
 
-from app.services.server_service import ServerService, server_service
 from app.servers.models import Server, ServerStatus, ServerType
-from app.users.models import User, Role
+from app.services.server_service import ServerService, server_service
+from app.users.models import Role, User
 
 
 class TestServerService:

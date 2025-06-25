@@ -1,11 +1,11 @@
-import pytest
 from datetime import datetime, timedelta, timezone
+
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
-from app.auth.auth import create_refresh_token, verify_refresh_token, revoke_refresh_token
-from app.users.models import RefreshToken, User
+from app.auth.auth import create_refresh_token, revoke_refresh_token, verify_refresh_token
 from app.services.user import UserService
+from app.users.models import RefreshToken, User
 
 
 class TestRefreshTokenAPI:

@@ -3,11 +3,10 @@ Essential test coverage for import_export router
 Focus on critical edge cases for improved coverage
 """
 
-import pytest
 from unittest.mock import Mock, patch
-from fastapi import HTTPException, UploadFile
 
-from app.users.models import Role, User
+import pytest
+from fastapi import HTTPException, UploadFile
 
 
 class TestImportExportRouter:

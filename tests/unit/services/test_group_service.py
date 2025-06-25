@@ -3,30 +3,26 @@ Comprehensive test coverage for Group Service
 Consolidates all group service related tests for better organization
 """
 
-import pytest
-from unittest.mock import Mock, patch, AsyncMock
-from fastapi import HTTPException, APIRouter, Depends, Query
-import json
-from pathlib import Path
 from typing import List
+from unittest.mock import Mock, patch
 
-from app.services.group_service import GroupService, GroupAccessService, GroupFileService
+import pytest
+from fastapi import APIRouter, Depends, HTTPException, Query
+
+from app.core.exceptions import FileOperationException
+from app.core.security import SecurityError
 from app.groups.models import Group, GroupType, ServerGroup
 from app.groups.schemas import (
     GroupCreateRequest,
+    GroupListResponse,
     GroupResponse,
     GroupUpdateRequest,
     PlayerAddRequest,
     PlayerRemoveRequest,
-    GroupListResponse,
     ServerAttachRequest,
 )
 from app.servers.models import Server, ServerStatus, ServerType
-from app.users.models import Role, User
-from app.audit.models import AuditLog
-from app.core.exceptions import FileOperationException
-from app.core.security import PathValidator, SecurityError
-from app.services.real_time_server_commands import real_time_server_commands
+from app.services.group_service import GroupAccessService, GroupFileService, GroupService
 
 
 class TestGroupFileService:
@@ -690,15 +686,6 @@ class TestGroupsRouter:
 
     def test_schema_imports(self):
         """Test that all required schemas can be imported"""
-        from app.groups.schemas import (
-            GroupCreateRequest,
-            GroupResponse,
-            GroupUpdateRequest,
-            PlayerAddRequest,
-            PlayerRemoveRequest,
-            GroupListResponse,
-            ServerAttachRequest,
-        )
 
         # Test that schemas are properly defined classes
         assert GroupCreateRequest is not None
@@ -711,8 +698,7 @@ class TestGroupsRouter:
 
     def test_fastapi_dependencies(self):
         """Test that FastAPI dependencies can be imported"""
-        from fastapi import APIRouter, Depends, Query, HTTPException
-        from typing import List
+        from fastapi import APIRouter, HTTPException
 
         # These should import without errors
         assert APIRouter is not None
@@ -756,9 +742,9 @@ class TestGroupImports:
     def test_group_service_imports(self):
         """Test that group services can be imported successfully"""
         from app.services.group_service import (
-            GroupService,
             GroupAccessService,
             GroupFileService,
+            GroupService,
         )
 
         assert GroupService is not None
@@ -767,7 +753,7 @@ class TestGroupImports:
 
     def test_group_models_imports(self):
         """Test that group models can be imported successfully"""
-        from app.groups.models import Group, GroupType, ServerGroup
+        from app.groups.models import Group, GroupType
 
         assert Group is not None
         assert GroupType is not None
@@ -775,7 +761,7 @@ class TestGroupImports:
 
     def test_service_initialization(self, db):
         """Test that services can be initialized"""
-        from app.services.group_service import GroupService, GroupFileService
+        from app.services.group_service import GroupFileService, GroupService
 
         group_service = GroupService(db)
         file_service = GroupFileService(db)
@@ -787,9 +773,9 @@ class TestGroupImports:
 def test_global_group_functionality(db):
     """Test overall group functionality integration"""
     from app.services.group_service import (
-        GroupService,
         GroupAccessService,
         GroupFileService,
+        GroupService,
     )
 
     # Test that all services are available and can be instantiated

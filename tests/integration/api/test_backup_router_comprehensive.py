@@ -1,20 +1,18 @@
 """Fixed comprehensive tests for backup router endpoints"""
 
-import pytest
 from datetime import datetime
-from unittest.mock import Mock, patch, AsyncMock
+from unittest.mock import patch
 
 from fastapi import status
 
 from app.auth.auth import create_access_token
-from app.servers.models import Backup, BackupType, BackupStatus, Server, ServerType
-from app.users.models import Role, User
 from app.core.exceptions import (
     BackupNotFoundException,
-    ServerNotFoundException,
     FileOperationException,
-    DatabaseOperationException,
+    ServerNotFoundException,
 )
+from app.servers.models import Backup, BackupStatus, BackupType, Server, ServerType
+from app.users.models import Role, User
 
 
 def get_auth_headers(username: str):
@@ -479,11 +477,14 @@ class TestBackupRouterFixed:
         db.add(backup)
         db.commit()
 
-        with patch(
-            "app.services.authorization_service.authorization_service.check_backup_access"
-        ) as mock_auth, patch(
-            "app.services.authorization_service.authorization_service.can_delete_backup"
-        ) as mock_can_delete:
+        with (
+            patch(
+                "app.services.authorization_service.authorization_service.check_backup_access"
+            ) as mock_auth,
+            patch(
+                "app.services.authorization_service.authorization_service.can_delete_backup"
+            ) as mock_can_delete,
+        ):
             mock_auth.return_value = backup
             mock_can_delete.return_value = False  # Not owner, not admin
 
@@ -673,8 +674,8 @@ class TestBackupRouterFixed:
 
     def test_download_backup_success(self, client, test_user, db):
         """Test successful backup download"""
-        import tempfile
         import os
+        import tempfile
 
         # Create a test server in database
         server = Server(
@@ -855,9 +856,9 @@ class TestBackupRouterFixed:
 
     def test_upload_backup_success(self, client, test_user, db):
         """Test successful backup upload"""
-        import tempfile
-        import tarfile
         import io
+        import tarfile
+        import tempfile
 
         # Set test_user as operator to allow backup upload
         test_user.role = Role.operator

@@ -1,18 +1,18 @@
-import pytest
-from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
-from sqlalchemy.pool import StaticPool
-from unittest.mock import Mock
-from app.main import app
-from app.core.database import get_db, Base
-from app.users.models import User, Role
-from app.services.user import UserService
-from passlib.context import CryptContext
-
 # テスト用のインメモリSQLiteデータベース
 import os
 import tempfile
+from unittest.mock import Mock
+
+import pytest
+from fastapi.testclient import TestClient
+from passlib.context import CryptContext
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+
+from app.core.database import Base, get_db
+from app.main import app
+from app.services.user import UserService
+from app.users.models import Role, User
 
 
 # Worker固有のデータベースファイルを使用して並列実行時の分離を確保
@@ -199,7 +199,7 @@ def user_headers(client, test_user):
 @pytest.fixture
 def sample_server(db, admin_user):
     """テスト用サーバーを作成"""
-    from app.servers.models import Server, ServerType, ServerStatus
+    from app.servers.models import Server, ServerStatus, ServerType
 
     server = Server(
         name="Test Server",

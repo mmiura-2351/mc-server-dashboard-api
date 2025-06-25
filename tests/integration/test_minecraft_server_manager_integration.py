@@ -4,24 +4,19 @@ Tests real file system operations, process management, and server lifecycle
 """
 
 import asyncio
-import os
 import socket
-import subprocess
-import tempfile
-import time
 from datetime import datetime
 from pathlib import Path
-from unittest.mock import Mock, patch, AsyncMock
 from typing import Optional
+from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 import pytest_asyncio
 from sqlalchemy.orm import Session
 
-from app.core.database import get_db
 from app.servers.models import Server, ServerStatus, ServerType
-from app.services.minecraft_server import MinecraftServerManager, ServerProcess
 from app.services.java_compatibility import JavaVersionInfo
+from app.services.minecraft_server import MinecraftServerManager, ServerProcess
 
 
 class MockJavaCompatibilityService:

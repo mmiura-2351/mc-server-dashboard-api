@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import List, Optional, Tuple
@@ -33,10 +34,12 @@ class MinecraftVersionManager:
         self._cache_duration = timedelta(hours=6)  # Cache for 6 hours
         self.minimum_version = version.Version("1.8.0")
 
-        # Timeout configuration
-        self._request_timeout = 10  # Individual request timeout in seconds
-        self._total_timeout = 25  # Total operation timeout in seconds
-        self._client_timeout = aiohttp.ClientTimeout(total=self._request_timeout)
+        # Simple timeout configuration
+        self._request_timeout = 30  # Individual request timeout in seconds
+        self._total_timeout = 60  # Total operation timeout in seconds
+        self._client_timeout = aiohttp.ClientTimeout(
+            total=self._request_timeout, connect=10, sock_read=10
+        )
 
     async def get_supported_versions(self, server_type: ServerType) -> List[VersionInfo]:
         """Get supported versions for a server type"""
@@ -70,15 +73,14 @@ class MinecraftVersionManager:
                 )
                 return filtered_versions
 
-        except asyncio.TimeoutError:
-            logger.error(
-                f"Timeout getting versions for {server_type.value} after {self._total_timeout}s"
-            )
-            return self._get_fallback_versions(server_type)
+        except asyncio.TimeoutError as e:
+            error_msg = f"Timeout getting versions for {server_type.value} after {self._total_timeout}s"
+            logger.error(error_msg)
+            raise RuntimeError(error_msg) from e
         except Exception as e:
-            logger.error(f"Failed to get versions for {server_type.value}: {e}")
-            # Return fallback versions if API fails
-            return self._get_fallback_versions(server_type)
+            error_msg = f"Failed to get versions for {server_type.value}: {e}"
+            logger.error(error_msg)
+            raise RuntimeError(error_msg) from e
 
     async def get_download_url(
         self, server_type: ServerType, minecraft_version: str
@@ -102,26 +104,24 @@ class MinecraftVersionManager:
             return False
 
     async def _get_vanilla_versions(self) -> List[VersionInfo]:
-        """Get vanilla server versions from Mojang API with parallel processing"""
+        """Get vanilla server versions from Mojang API"""
         async with aiohttp.ClientSession(timeout=self._client_timeout) as session:
             try:
-                # Get version manifest with timeout
+                # Get version manifest
                 async with session.get(
                     "https://piston-meta.mojang.com/mc/game/version_manifest.json"
                 ) as response:
                     response.raise_for_status()
                     manifest = await response.json()
 
-                # Prepare tasks for parallel processing
+                # Process release versions
                 release_versions = [
                     version_data
                     for version_data in manifest["versions"]
                     if version_data["type"] == "release"
                 ]
 
-                logger.info(
-                    f"Found {len(release_versions)} vanilla release versions to process"
-                )
+                logger.debug(f"Found {len(release_versions)} vanilla release versions")
 
                 # Create tasks for parallel execution
                 tasks = [
@@ -129,10 +129,15 @@ class MinecraftVersionManager:
                     for version_data in release_versions
                 ]
 
-                # Execute all requests in parallel with timeout control
+                # Execute requests with semaphore for rate limiting
+                semaphore = asyncio.Semaphore(10)
+                limited_tasks = [
+                    self._fetch_with_semaphore(semaphore, task) for task in tasks
+                ]
+
                 try:
                     version_results = await asyncio.wait_for(
-                        asyncio.gather(*tasks, return_exceptions=True),
+                        asyncio.gather(*limited_tasks, return_exceptions=True),
                         timeout=self._total_timeout - 5,  # Reserve 5s for manifest fetch
                     )
                 except asyncio.TimeoutError:
@@ -141,17 +146,13 @@ class MinecraftVersionManager:
 
                 # Filter successful results
                 versions = []
-                failed_count = 0
                 for result in version_results:
                     if isinstance(result, VersionInfo):
                         versions.append(result)
                     elif isinstance(result, Exception):
-                        failed_count += 1
                         logger.warning(f"Failed to fetch vanilla version: {result}")
 
-                logger.info(
-                    f"Successfully processed {len(versions)} vanilla versions, {failed_count} failed"
-                )
+                logger.info(f"Successfully processed {len(versions)} vanilla versions")
                 return sorted(
                     versions, key=lambda x: version.Version(x.version), reverse=True
                 )
@@ -162,6 +163,9 @@ class MinecraftVersionManager:
             except asyncio.TimeoutError:
                 logger.error("Timeout fetching vanilla version manifest")
                 raise
+            except Exception as e:
+                logger.error(f"Error fetching vanilla versions: {e}")
+                raise
 
     async def _fetch_vanilla_version_info(
         self, session: aiohttp.ClientSession, version_data: dict
@@ -170,7 +174,7 @@ class MinecraftVersionManager:
         try:
             version_id = version_data["id"]
 
-            # Get specific version info for download URL with timeout
+            # Get specific version info for download URL
             async with session.get(version_data["url"]) as version_response:
                 version_response.raise_for_status()
                 version_info = await version_response.json()
@@ -188,16 +192,6 @@ class MinecraftVersionManager:
                         release_date=release_date,
                         is_stable=True,
                     )
-        except aiohttp.ClientError as e:
-            logger.warning(
-                f"HTTP error fetching vanilla version {version_data.get('id', 'unknown')}: {e}"
-            )
-            return None
-        except asyncio.TimeoutError:
-            logger.warning(
-                f"Timeout fetching vanilla version {version_data.get('id', 'unknown')}"
-            )
-            return None
         except Exception as e:
             logger.warning(
                 f"Failed to fetch vanilla version {version_data.get('id', 'unknown')}: {e}"
@@ -205,19 +199,17 @@ class MinecraftVersionManager:
             return None
 
     async def _get_paper_versions(self) -> List[VersionInfo]:
-        """Get Paper server versions from PaperMC API with parallel processing"""
+        """Get Paper server versions from PaperMC API"""
         async with aiohttp.ClientSession(timeout=self._client_timeout) as session:
             try:
-                # Get available versions with timeout
+                # Get available versions
                 async with session.get(
                     "https://api.papermc.io/v2/projects/paper"
                 ) as response:
                     response.raise_for_status()
                     project_info = await response.json()
 
-                logger.info(
-                    f"Found {len(project_info['versions'])} paper versions to process"
-                )
+                logger.debug(f"Found {len(project_info['versions'])} paper versions")
 
                 # Create tasks for parallel execution
                 tasks = [
@@ -225,8 +217,8 @@ class MinecraftVersionManager:
                     for version_id in project_info["versions"]
                 ]
 
-                # Execute all requests in parallel with semaphore to limit concurrent requests
-                semaphore = asyncio.Semaphore(10)  # Limit to 10 concurrent requests
+                # Execute requests with semaphore for rate limiting
+                semaphore = asyncio.Semaphore(10)
                 limited_tasks = [
                     self._fetch_with_semaphore(semaphore, task) for task in tasks
                 ]
@@ -243,17 +235,13 @@ class MinecraftVersionManager:
 
                 # Filter successful results
                 versions = []
-                failed_count = 0
                 for result in version_results:
                     if isinstance(result, VersionInfo):
                         versions.append(result)
                     elif isinstance(result, Exception):
-                        failed_count += 1
                         logger.warning(f"Failed to fetch paper version: {result}")
 
-                logger.info(
-                    f"Successfully processed {len(versions)} paper versions, {failed_count} failed"
-                )
+                logger.info(f"Successfully processed {len(versions)} paper versions")
                 return sorted(
                     versions, key=lambda x: version.Version(x.version), reverse=True
                 )
@@ -263,6 +251,9 @@ class MinecraftVersionManager:
                 raise
             except asyncio.TimeoutError:
                 logger.error("Timeout fetching paper project info")
+                raise
+            except Exception as e:
+                logger.error(f"Error fetching paper versions: {e}")
                 raise
 
     async def _fetch_with_semaphore(self, semaphore: asyncio.Semaphore, task):
@@ -275,7 +266,7 @@ class MinecraftVersionManager:
     ) -> Optional[VersionInfo]:
         """Fetch individual Paper version info"""
         try:
-            # Get builds for this version with timeout
+            # Get builds for this version
             builds_url = (
                 f"https://api.papermc.io/v2/projects/paper/versions/{version_id}/builds"
             )
@@ -314,78 +305,87 @@ class MinecraftVersionManager:
             return None
 
     async def _get_forge_versions(self) -> List[VersionInfo]:
-        """Get Forge server versions"""
-        # Note: Forge API is more complex, using fallback for now
-        # In production, would integrate with Forge's promotion API
-        return self._get_fallback_versions(ServerType.forge)
-
-    def _get_fallback_versions(self, server_type: ServerType) -> List[VersionInfo]:
-        """Fallback versions when API is unavailable"""
-        fallback_data = {
-            ServerType.vanilla: [
-                (
-                    "1.20.4",
-                    "https://piston-data.mojang.com/v1/objects/8dd1a28015f51b1803213892b50b7b4fc76e594d/server.jar",
-                ),
-                (
-                    "1.20.1",
-                    "https://piston-data.mojang.com/v1/objects/84194a2f286ef7c14ed7ce0090dba59902951553/server.jar",
-                ),
-                (
-                    "1.19.4",
-                    "https://piston-data.mojang.com/v1/objects/8f3112a1049751cc472ec13e397eade5336ca7ae/server.jar",
-                ),
-                (
-                    "1.18.2",
-                    "https://piston-data.mojang.com/v1/objects/c8f83c5655308435b3dcf03c06d9fe8740a77469/server.jar",
-                ),
-            ],
-            ServerType.paper: [
-                (
-                    "1.20.4",
-                    "https://api.papermc.io/v2/projects/paper/versions/1.20.4/builds/497/downloads/paper-1.20.4-497.jar",
-                ),
-                (
-                    "1.20.1",
-                    "https://api.papermc.io/v2/projects/paper/versions/1.20.1/builds/196/downloads/paper-1.20.1-196.jar",
-                ),
-                (
-                    "1.19.4",
-                    "https://api.papermc.io/v2/projects/paper/versions/1.19.4/builds/550/downloads/paper-1.19.4-550.jar",
-                ),
-                (
-                    "1.18.2",
-                    "https://api.papermc.io/v2/projects/paper/versions/1.18.2/builds/388/downloads/paper-1.18.2-388.jar",
-                ),
-            ],
-            ServerType.forge: [
-                (
-                    "1.20.1",
-                    "https://maven.minecraftforge.net/net/minecraftforge/forge/1.20.1-47.2.0/forge-1.20.1-47.2.0-installer.jar",
-                ),
-                (
-                    "1.19.4",
-                    "https://maven.minecraftforge.net/net/minecraftforge/forge/1.19.4-45.2.0/forge-1.19.4-45.2.0-installer.jar",
-                ),
-                (
-                    "1.18.2",
-                    "https://maven.minecraftforge.net/net/minecraftforge/forge/1.18.2-40.2.0/forge-1.18.2-40.2.0-installer.jar",
-                ),
-            ],
+        """Get Forge server versions from Maven metadata"""
+        headers = {
+            "User-Agent": "MinecraftServerManager/1.0",
+            "Accept-Encoding": "gzip, deflate",
         }
+        async with aiohttp.ClientSession(
+            timeout=self._client_timeout, headers=headers
+        ) as session:
+            try:
+                # Get Forge Maven metadata
+                url = "https://maven.minecraftforge.net/net/minecraftforge/forge/maven-metadata.xml"
+                async with session.get(url) as response:
+                    response.raise_for_status()
+                    xml_content = await response.text()
 
-        versions = []
-        for version_str, url in fallback_data.get(server_type, []):
-            versions.append(
-                VersionInfo(
-                    version=version_str,
-                    server_type=server_type,
-                    download_url=url,
-                    is_stable=True,
+                # Parse XML
+                root = ET.fromstring(xml_content)
+
+                # Extract versions
+                versions = []
+                for version_elem in root.findall(".//version"):
+                    version_text = version_elem.text
+                    if version_text and "-" in version_text:
+                        # Forge versions are in format like '1.20.1-47.2.0'
+                        mc_version = version_text.split("-")[0]
+
+                        # Only include versions >= 1.8
+                        if self._is_version_supported(mc_version):
+                            download_url = f"https://maven.minecraftforge.net/net/minecraftforge/forge/{version_text}/forge-{version_text}-installer.jar"
+
+                            try:
+                                build_number = int(
+                                    version_text.split("-")[1].split(".")[0]
+                                )
+                            except (IndexError, ValueError):
+                                build_number = None
+
+                            version_info = VersionInfo(
+                                version=mc_version,
+                                server_type=ServerType.forge,
+                                download_url=download_url,
+                                release_date=datetime.now(),
+                                is_stable=True,
+                                build_number=build_number,
+                            )
+                            versions.append(version_info)
+
+                # Remove duplicates and keep the highest build number for each MC version
+                unique_versions = {}
+                for v in versions:
+                    if v.version not in unique_versions:
+                        unique_versions[v.version] = v
+                    else:
+                        # Keep the one with higher build number
+                        if v.build_number and (
+                            not unique_versions[v.version].build_number
+                            or v.build_number > unique_versions[v.version].build_number
+                        ):
+                            unique_versions[v.version] = v
+
+                final_versions = sorted(
+                    unique_versions.values(),
+                    key=lambda x: version.Version(x.version),
+                    reverse=True,
                 )
-            )
 
-        return versions
+                logger.info(f"Found {len(final_versions)} forge versions")
+                return final_versions
+
+            except aiohttp.ClientError as e:
+                error_msg = f"HTTP client error fetching forge versions: {e}"
+                logger.error(error_msg)
+                raise RuntimeError(error_msg) from e
+            except ET.ParseError as e:
+                error_msg = f"XML parsing error for forge versions: {e}"
+                logger.error(error_msg)
+                raise RuntimeError(error_msg) from e
+            except Exception as e:
+                error_msg = f"Error processing forge versions: {e}"
+                logger.error(error_msg)
+                raise RuntimeError(error_msg) from e
 
     def _is_version_supported(self, minecraft_version: str) -> bool:
         """Check if version meets minimum requirement (1.8+)"""

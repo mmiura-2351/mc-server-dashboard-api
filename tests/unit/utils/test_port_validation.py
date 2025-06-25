@@ -1,8 +1,9 @@
+from unittest.mock import Mock, patch
+
 import pytest
-from unittest.mock import Mock, patch, AsyncMock
-from app.services.minecraft_server import MinecraftServerManager
+
 from app.servers.models import Server, ServerStatus, ServerType
-from app.users.models import User, Role
+from app.services.minecraft_server import MinecraftServerManager
 
 
 class TestPortValidation:

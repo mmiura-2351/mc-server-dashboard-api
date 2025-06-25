@@ -4,11 +4,9 @@ Tests log reading, streaming, process monitoring, and status detection
 """
 
 import asyncio
-import time
 from datetime import datetime
 from pathlib import Path
-from unittest.mock import Mock, patch, AsyncMock
-from typing import List
+from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 import pytest_asyncio

@@ -1,12 +1,10 @@
 import pytest
-from datetime import datetime, timedelta
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.core.database import get_db
-from app.servers.models import Server
-from app.users.models import User, Role
 from app.backups.models import BackupSchedule, BackupScheduleLog, ScheduleAction
+from app.servers.models import Server
+from app.users.models import Role, User
 
 
 class TestBackupScheduleModel:

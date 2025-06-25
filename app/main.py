@@ -27,6 +27,7 @@ from app.templates.router import router as templates_router
 
 # Import all models to ensure they are registered with SQLAlchemy
 from app.users.router import router as users_router
+from app.versions.router import router as versions_router
 from app.websockets.router import router as websockets_router
 
 logger = logging.getLogger(__name__)
@@ -40,6 +41,7 @@ class ServiceStatus:
         self.database_integration_ready = False
         self.backup_scheduler_ready = False
         self.websocket_service_ready = False
+        self.version_update_scheduler_ready = False
         self.failed_services = []
 
     def is_healthy(self) -> bool:
@@ -53,6 +55,7 @@ class ServiceStatus:
             "database_integration": self.database_integration_ready,
             "backup_scheduler": self.backup_scheduler_ready,
             "websocket_service": self.websocket_service_ready,
+            "version_update_scheduler": self.version_update_scheduler_ready,
             "failed_services": self.failed_services,
             "healthy": self.is_healthy(),
         }
@@ -102,6 +105,9 @@ async def _initialize_services():
 
     # 4. Initialize WebSocket service (optional - real-time features)
     await _initialize_websocket_service()
+
+    # 5. Initialize version update scheduler (optional - background updates)
+    await _initialize_version_update_scheduler()
 
 
 async def _initialize_database():
@@ -177,6 +183,22 @@ async def _initialize_websocket_service():
         # Continue startup - real-time features are optional
 
 
+async def _initialize_version_update_scheduler():
+    """Initialize version update scheduler - optional service"""
+    try:
+        logger.info("Starting version update scheduler...")
+        from app.versions.scheduler import version_update_scheduler
+
+        await version_update_scheduler.start_scheduler()
+        service_status.version_update_scheduler_ready = True
+        logger.info("Version update scheduler started successfully")
+
+    except Exception as e:
+        logger.error(f"Version update scheduler initialization failed: {e}")
+        service_status.failed_services.append("version_update_scheduler")
+        # Continue startup - background updates are optional
+
+
 async def _cleanup_services():
     """Cleanup services during shutdown with error handling"""
     logger.info("Starting application shutdown sequence...")
@@ -225,6 +247,18 @@ async def _cleanup_services():
             logger.error(f"Error stopping WebSocket service: {e}")
             cleanup_errors.append(f"websocket_service: {e}")
 
+    # Stop version update scheduler
+    if service_status.version_update_scheduler_ready:
+        try:
+            logger.info("Stopping version update scheduler...")
+            from app.versions.scheduler import version_update_scheduler
+
+            await version_update_scheduler.stop_scheduler()
+            logger.info("Version update scheduler stopped successfully")
+        except Exception as e:
+            logger.error(f"Error stopping version update scheduler: {e}")
+            cleanup_errors.append(f"version_update_scheduler: {e}")
+
     if cleanup_errors:
         logger.warning(f"Shutdown completed with errors: {cleanup_errors}")
     else:
@@ -255,6 +289,9 @@ async def health_check():
             "backup_scheduler": "operational" if status["backup_scheduler"] else "failed",
             "websocket_service": (
                 "operational" if status["websocket_service"] else "failed"
+            ),
+            "version_update_scheduler": (
+                "operational" if status["version_update_scheduler"] else "failed"
             ),
         },
         "failed_services": status["failed_services"],
@@ -325,5 +362,6 @@ app.include_router(
 app.include_router(backups_router, prefix="/api/v1/backups", tags=["backups"])
 app.include_router(templates_router, prefix="/api/v1/templates", tags=["templates"])
 app.include_router(files_router, prefix="/api/v1/files", tags=["files"])
+app.include_router(versions_router, prefix="/api/v1/versions", tags=["versions"])
 app.include_router(websockets_router, prefix="/api/v1/ws", tags=["websockets"])
 app.include_router(audit_router, tags=["audit"])
