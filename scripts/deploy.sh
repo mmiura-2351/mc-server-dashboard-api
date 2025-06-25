@@ -313,17 +313,7 @@ PrivateDevices=true
 
 # Network restrictions
 RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
-IPAddressDeny=any
-IPAddressAllow=localhost
-IPAddressAllow=127.0.0.0/8
-IPAddressAllow=::1/128
-IPAddressAllow=10.0.0.0/8
-IPAddressAllow=172.16.0.0/12
-IPAddressAllow=192.168.0.0/16
-# Allow external API access for Minecraft version management
-IPAddressAllow=piston-meta.mojang.com
-IPAddressAllow=api.papermc.io
-IPAddressAllow=maven.minecraftforge.net
+# IPAddress restrictions removed - IPAddressDeny=any blocks external API access needed for Minecraft version management
 
 # Resource limits
 LimitNOFILE=65536
