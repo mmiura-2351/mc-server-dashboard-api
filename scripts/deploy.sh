@@ -320,6 +320,10 @@ IPAddressAllow=::1/128
 IPAddressAllow=10.0.0.0/8
 IPAddressAllow=172.16.0.0/12
 IPAddressAllow=192.168.0.0/16
+# Allow external API access for Minecraft version management
+IPAddressAllow=piston-meta.mojang.com
+IPAddressAllow=api.papermc.io
+IPAddressAllow=maven.minecraftforge.net
 
 # Resource limits
 LimitNOFILE=65536
