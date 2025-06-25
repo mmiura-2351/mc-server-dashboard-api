@@ -481,5 +481,5 @@ class TestMinecraftVersionManagerMissingCoverage:
 
             mock_session.get.return_value = MockResponse()
 
-            with pytest.raises(RuntimeError, match="Unexpected error processing forge versions"):
+            with pytest.raises(RuntimeError, match="Error processing forge versions"):
                 await manager._get_forge_versions()
