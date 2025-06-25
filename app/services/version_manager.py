@@ -36,8 +36,10 @@ class MinecraftVersionManager:
 
         # Simple timeout configuration
         self._request_timeout = 30  # Individual request timeout in seconds
-        self._total_timeout = 90  # Total operation timeout in seconds
-        self._client_timeout = aiohttp.ClientTimeout(total=self._request_timeout)
+        self._total_timeout = 60  # Total operation timeout in seconds
+        self._client_timeout = aiohttp.ClientTimeout(
+            total=self._request_timeout, connect=10, sock_read=10
+        )
 
     async def get_supported_versions(self, server_type: ServerType) -> List[VersionInfo]:
         """Get supported versions for a server type"""
@@ -133,9 +135,14 @@ class MinecraftVersionManager:
                     self._fetch_with_semaphore(semaphore, task) for task in tasks
                 ]
 
-                version_results = await asyncio.gather(
-                    *limited_tasks, return_exceptions=True
-                )
+                try:
+                    version_results = await asyncio.wait_for(
+                        asyncio.gather(*limited_tasks, return_exceptions=True),
+                        timeout=self._total_timeout - 5,  # Reserve 5s for manifest fetch
+                    )
+                except asyncio.TimeoutError:
+                    logger.error("Timeout during vanilla version parallel processing")
+                    raise
 
                 # Filter successful results
                 versions = []
@@ -152,6 +159,9 @@ class MinecraftVersionManager:
 
             except aiohttp.ClientError as e:
                 logger.error(f"HTTP client error fetching vanilla versions: {e}")
+                raise
+            except asyncio.TimeoutError:
+                logger.error("Timeout fetching vanilla version manifest")
                 raise
             except Exception as e:
                 logger.error(f"Error fetching vanilla versions: {e}")
@@ -213,9 +223,15 @@ class MinecraftVersionManager:
                     self._fetch_with_semaphore(semaphore, task) for task in tasks
                 ]
 
-                version_results = await asyncio.gather(
-                    *limited_tasks, return_exceptions=True
-                )
+                try:
+                    version_results = await asyncio.wait_for(
+                        asyncio.gather(*limited_tasks, return_exceptions=True),
+                        timeout=self._total_timeout
+                        - 5,  # Reserve 5s for project info fetch
+                    )
+                except asyncio.TimeoutError:
+                    logger.error("Timeout during paper version parallel processing")
+                    raise
 
                 # Filter successful results
                 versions = []
@@ -232,6 +248,9 @@ class MinecraftVersionManager:
 
             except aiohttp.ClientError as e:
                 logger.error(f"HTTP client error fetching paper versions: {e}")
+                raise
+            except asyncio.TimeoutError:
+                logger.error("Timeout fetching paper project info")
                 raise
             except Exception as e:
                 logger.error(f"Error fetching paper versions: {e}")
@@ -273,13 +292,27 @@ class MinecraftVersionManager:
                     is_stable=True,
                     build_number=latest_build["build"],
                 )
+        except aiohttp.ClientError as e:
+            logger.warning(
+                f"HTTP error fetching Paper build for version {version_id}: {e}"
+            )
+            return None
+        except asyncio.TimeoutError:
+            logger.warning(f"Timeout fetching Paper build for version {version_id}")
+            return None
         except Exception as e:
             logger.warning(f"Failed to get Paper build for version {version_id}: {e}")
             return None
 
     async def _get_forge_versions(self) -> List[VersionInfo]:
         """Get Forge server versions from Maven metadata"""
-        async with aiohttp.ClientSession(timeout=self._client_timeout) as session:
+        headers = {
+            "User-Agent": "MinecraftServerManager/1.0",
+            "Accept-Encoding": "gzip, deflate",
+        }
+        async with aiohttp.ClientSession(
+            timeout=self._client_timeout, headers=headers
+        ) as session:
             try:
                 # Get Forge Maven metadata
                 url = "https://maven.minecraftforge.net/net/minecraftforge/forge/maven-metadata.xml"
