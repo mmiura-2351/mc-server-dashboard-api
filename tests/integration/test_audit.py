@@ -36,7 +36,7 @@ class TestAuditLogging:
 
     def test_audit_middleware_correlation_id(self, client: TestClient):
         """Test that audit middleware adds correlation IDs to responses"""
-        response = client.get("/health")
+        response = client.get("/api/v1/health")
 
         assert response.status_code == 200
 
@@ -274,7 +274,7 @@ class TestAuditLogging:
     def test_ip_address_extraction(self, client: TestClient):
         """Test that IP addresses are properly extracted and logged"""
         response = client.get(
-            "/health", headers={"X-Forwarded-For": "203.0.113.1, 192.168.1.1"}
+            "/api/v1/health", headers={"X-Forwarded-For": "203.0.113.1, 192.168.1.1"}
         )
 
         assert response.status_code == 200

@@ -135,7 +135,7 @@ class TestHealthEndpointComprehensive:
                 "healthy": True,
             }
 
-            response = client.get("/health")
+            response = client.get("/api/v1/health")
 
             assert response.status_code == 200
             data = response.json()
@@ -157,7 +157,7 @@ class TestHealthEndpointComprehensive:
                 "healthy": False,
             }
 
-            response = client.get("/health")
+            response = client.get("/api/v1/health")
 
             assert response.status_code == 503
             data = response.json()
@@ -179,7 +179,7 @@ class TestHealthEndpointComprehensive:
                 "healthy": True,
             }
 
-            response = client.get("/health")
+            response = client.get("/api/v1/health")
 
             assert response.status_code == 200  # Still healthy due to database
             data = response.json()
@@ -207,7 +207,7 @@ class TestHealthEndpointComprehensive:
                 "average_response_time": 0.25,
             }
 
-            response = client.get("/metrics")
+            response = client.get("/api/v1/metrics")
 
             assert response.status_code == 200
             data = response.json()
@@ -232,7 +232,7 @@ class TestHealthEndpointComprehensive:
             }
             mock_metrics.return_value = {"requests_per_second": 5.0}
 
-            response = client.get("/metrics")
+            response = client.get("/api/v1/metrics")
 
             assert response.status_code == 200
             data = response.json()
@@ -442,8 +442,8 @@ class TestApplicationConfiguration:
         routes = [route.path for route in app.routes]
 
         # Check required endpoints exist
-        assert "/health" in routes
-        assert "/metrics" in routes
+        assert "/api/v1/health" in routes
+        assert "/api/v1/metrics" in routes
 
     def test_app_includes_routers(self):
         """Test app includes all required routers"""

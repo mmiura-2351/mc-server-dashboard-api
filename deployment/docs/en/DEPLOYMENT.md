@@ -167,7 +167,7 @@ sudo systemctl start minecraft-dashboard
 sudo systemctl status minecraft-dashboard
 
 # Verify API health
-curl http://localhost:8000/health
+curl http://localhost:8000/api/v1/health
 
 # View logs
 sudo journalctl -u minecraft-dashboard -f
@@ -247,7 +247,7 @@ server {
     }
 
     # Health check endpoint (bypass rate limiting)
-    location /health {
+    location /api/v1/health {
         proxy_pass http://127.0.0.1:8000;
         access_log off;
     }
@@ -365,7 +365,7 @@ Use the provided service manager script for easy management:
 
 ```bash
 # API health check
-curl http://localhost:8000/health
+curl http://localhost:8000/api/v1/health
 
 # Service health check
 ./scripts/service-manager.sh status
@@ -437,7 +437,7 @@ ss -tulpn | grep :8000
 du -sh /opt/mcs-dashboard/api/*
 
 # API response times
-curl -w "@curl-format.txt" -o /dev/null -s http://localhost:8000/health
+curl -w "@curl-format.txt" -o /dev/null -s http://localhost:8000/api/v1/health
 ```
 
 Create `curl-format.txt`:
@@ -546,7 +546,7 @@ iotop
 nethogs
 
 # Check API performance
-ab -n 1000 -c 10 http://localhost:8000/health
+ab -n 1000 -c 10 http://localhost:8000/api/v1/health
 
 # Profile the application
 uv run python -m cProfile -o profile.stats app/main.py

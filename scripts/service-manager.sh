@@ -16,7 +16,7 @@ NC='\033[0m' # No Color
 # Configuration
 SERVICE_NAME="minecraft-dashboard"
 API_URL="http://localhost:8000"
-HEALTH_ENDPOINT="$API_URL/health"
+HEALTH_ENDPOINT="$API_URL/api/v1/health"
 
 # Logging functions
 log_info() {
