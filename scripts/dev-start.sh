@@ -188,7 +188,7 @@ start_dev_server() {
     local attempt=1
 
     while [[ $attempt -le $max_attempts ]]; do
-        if curl -s -f "http://localhost:$DEV_PORT/health" > /dev/null 2>&1; then
+        if curl -s -f "http://localhost:$DEV_PORT/api/v1/health" > /dev/null 2>&1; then
             log_success "Development server started successfully!"
             break
         fi
@@ -220,7 +220,7 @@ start_dev_server() {
     echo "=========================================="
     echo "Server PID: $server_pid"
     echo "API URL: http://localhost:$DEV_PORT"
-    echo "Health Check: http://localhost:$DEV_PORT/health"
+    echo "Health Check: http://localhost:$DEV_PORT/api/v1/health"
     echo "API Documentation: http://localhost:$DEV_PORT/docs"
     echo "Alternative Docs: http://localhost:$DEV_PORT/redoc"
     echo "Log File: $LOG_FILE"
@@ -240,7 +240,7 @@ show_status() {
             log_success "Development server is running (PID: $pid)"
 
             # Check API health
-            if curl -s -f "http://localhost:$DEV_PORT/health" > /dev/null 2>&1; then
+            if curl -s -f "http://localhost:$DEV_PORT/api/v1/health" > /dev/null 2>&1; then
                 log_success "API is responding on http://localhost:$DEV_PORT"
             else
                 log_warning "Server process exists but API is not responding"
@@ -322,7 +322,7 @@ show_help() {
     echo "Development URLs:"
     echo "  API: http://localhost:$DEV_PORT"
     echo "  Docs: http://localhost:$DEV_PORT/docs"
-    echo "  Health: http://localhost:$DEV_PORT/health"
+    echo "  Health: http://localhost:$DEV_PORT/api/v1/health"
     echo
 }
 

@@ -380,7 +380,7 @@ uv run python -c "from tests.conftest import test_db; print(test_db)"
 **API Testing**:
 - Interactive docs: `http://localhost:8000/docs`
 - ReDoc documentation: `http://localhost:8000/redoc`
-- Health check: `http://localhost:8000/health`
+- Health check: `http://localhost:8000/api/v1/health`
 
 **Database Inspection**:
 ```bash
@@ -442,8 +442,8 @@ CMD ["uv", "run", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "800
 ### Health Monitoring
 
 **Health Check Endpoint**:
-- `/health` - Service status and health information
-- `/metrics` - Performance metrics and statistics
+- `/api/v1/health` - Service status and health information
+- `/api/v1/metrics` - Performance metrics and statistics
 
 **Monitoring Points**:
 - Database connectivity

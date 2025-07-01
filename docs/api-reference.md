@@ -64,7 +64,7 @@ WebSocket endpoints use token as query parameter:
 
 #### Health Check
 ```http
-GET /health
+GET /api/v1/health
 ```
 **Authentication**: None  
 **Description**: Get system health status with service information

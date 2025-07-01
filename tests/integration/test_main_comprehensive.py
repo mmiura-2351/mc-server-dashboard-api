@@ -135,7 +135,7 @@ class TestHealthEndpointComprehensive:
                 "healthy": True,
             }
 
-            response = client.get("/health")
+            response = client.get("/api/v1/health")
 
             assert response.status_code == 200
             data = response.json()
@@ -157,7 +157,7 @@ class TestHealthEndpointComprehensive:
                 "healthy": False,
             }
 
-            response = client.get("/health")
+            response = client.get("/api/v1/health")
 
             assert response.status_code == 503
             data = response.json()
@@ -179,7 +179,7 @@ class TestHealthEndpointComprehensive:
                 "healthy": True,
             }
 
-            response = client.get("/health")
+            response = client.get("/api/v1/health")
 
             assert response.status_code == 200  # Still healthy due to database
             data = response.json()
@@ -207,7 +207,7 @@ class TestHealthEndpointComprehensive:
                 "average_response_time": 0.25,
             }
 
-            response = client.get("/metrics")
+            response = client.get("/api/v1/metrics")
 
             assert response.status_code == 200
             data = response.json()
@@ -232,7 +232,7 @@ class TestHealthEndpointComprehensive:
             }
             mock_metrics.return_value = {"requests_per_second": 5.0}
 
-            response = client.get("/metrics")
+            response = client.get("/api/v1/metrics")
 
             assert response.status_code == 200
             data = response.json()
@@ -442,8 +442,8 @@ class TestApplicationConfiguration:
         routes = [route.path for route in app.routes]
 
         # Check required endpoints exist
-        assert "/health" in routes
-        assert "/metrics" in routes
+        assert "/api/v1/health" in routes
+        assert "/api/v1/metrics" in routes
 
     def test_app_includes_routers(self):
         """Test app includes all required routers"""
@@ -475,6 +475,111 @@ class TestApplicationConfiguration:
         middleware_names = [str(mw) for mw in app.user_middleware]
         # Should have CORS, Audit, and Performance middleware
         assert len(middleware_names) >= 3
+
+
+class TestApiV1EndpointsNew:
+    """Test new /api/v1 prefixed health and metrics endpoints (TDD approach)"""
+
+    @pytest.fixture
+    def client(self):
+        """Create test client"""
+        return TestClient(app)
+
+    def test_api_v1_health_endpoint_healthy_all_services(self, client):
+        """Test /api/v1/health endpoint when all services are healthy"""
+        with patch("app.main.service_status") as mock_status:
+            mock_status.is_healthy.return_value = True
+            mock_status.get_status.return_value = {
+                "database": True,
+                "database_integration": True,
+                "backup_scheduler": True,
+                "websocket_service": True,
+                "version_update_scheduler": True,
+                "failed_services": [],
+                "healthy": True,
+            }
+
+            response = client.get("/api/v1/health")
+
+            assert response.status_code == 200
+            data = response.json()
+            assert data["status"] == "healthy"
+            assert data["services"]["database"] == "operational"
+            assert data["failed_services"] == []
+
+    def test_api_v1_health_endpoint_unhealthy_database(self, client):
+        """Test /api/v1/health endpoint when database is unhealthy"""
+        with patch("app.main.service_status") as mock_status:
+            mock_status.is_healthy.return_value = False
+            mock_status.get_status.return_value = {
+                "database": False,
+                "database_integration": True,
+                "backup_scheduler": True,
+                "websocket_service": True,
+                "version_update_scheduler": True,
+                "failed_services": ["database"],
+                "healthy": False,
+            }
+
+            response = client.get("/api/v1/health")
+
+            assert response.status_code == 503
+            data = response.json()
+            assert data["status"] == "degraded"
+            assert data["services"]["database"] == "failed"
+            assert "database" in data["failed_services"]
+
+    def test_api_v1_metrics_endpoint_basic_functionality(self, client):
+        """Test /api/v1/metrics endpoint returns expected structure"""
+        with (
+            patch("app.main.service_status") as mock_status,
+            patch("app.main.get_performance_metrics") as mock_metrics,
+        ):
+            mock_status.get_status.return_value = {
+                "database": True,
+                "database_integration": True,
+                "backup_scheduler": True,
+                "websocket_service": True,
+                "version_update_scheduler": True,
+                "failed_services": [],
+                "healthy": True,
+            }
+            mock_metrics.return_value = {
+                "requests_per_second": 10.5,
+                "average_response_time": 0.25,
+            }
+
+            response = client.get("/api/v1/metrics")
+
+            assert response.status_code == 200
+            data = response.json()
+            assert "performance" in data
+            assert "service_status" in data
+            assert data["service_status"]["healthy"] is True
+
+    def test_api_v1_metrics_endpoint_with_service_failures(self, client):
+        """Test /api/v1/metrics endpoint with service failures"""
+        with (
+            patch("app.main.service_status") as mock_status,
+            patch("app.main.get_performance_metrics") as mock_metrics,
+        ):
+            mock_status.get_status.return_value = {
+                "database": True,
+                "database_integration": False,
+                "backup_scheduler": True,
+                "websocket_service": False,
+                "version_update_scheduler": True,
+                "failed_services": ["database_integration", "websocket_service"],
+                "healthy": True,
+            }
+            mock_metrics.return_value = {"requests_per_second": 5.0}
+
+            response = client.get("/api/v1/metrics")
+
+            assert response.status_code == 200
+            data = response.json()
+            assert data["service_status"]["healthy"] is True
+            assert len(data["service_status"]["failed_services"]) == 2
 
 
 class TestServiceIntegrationBasic:

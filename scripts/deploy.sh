@@ -322,7 +322,7 @@ MemoryMax=2G
 TasksMax=4096
 
 # Health check
-ExecStartPost=/bin/bash -c 'for i in {1..60}; do if curl -sf http://localhost:8000/health >/dev/null 2>&1; then exit 0; fi; sleep 4; done; exit 1'
+ExecStartPost=/bin/bash -c 'for i in {1..60}; do if curl -sf http://localhost:8000/api/v1/health >/dev/null 2>&1; then exit 0; fi; sleep 4; done; exit 1'
 
 [Install]
 WantedBy=multi-user.target
@@ -370,7 +370,7 @@ start_and_validate() {
     local attempt=1
 
     while [[ $attempt -le $max_attempts ]]; do
-        if curl -s -f http://localhost:8000/health > /dev/null 2>&1; then
+        if curl -s -f http://localhost:8000/api/v1/health > /dev/null 2>&1; then
             log_success "Health check passed"
             break
         fi
@@ -391,7 +391,7 @@ start_and_validate() {
     $SUDO_CMD systemctl status "$SERVICE_NAME" --no-pager -l
     echo
     log_info "API Health Check:"
-    curl -s http://localhost:8000/health | (cd "$DEPLOY_DIR" && uv run python -m json.tool) 2>/dev/null || echo "API is responding"
+    curl -s http://localhost:8000/api/v1/health | (cd "$DEPLOY_DIR" && uv run python -m json.tool) 2>/dev/null || echo "API is responding"
     echo
     log_info "Useful commands:"
     if [[ $EUID -eq 0 ]]; then
@@ -416,7 +416,7 @@ deployment_summary() {
     echo "Service Name: $SERVICE_NAME"
     echo "Deploy Path: $DEPLOY_DIR"
     echo "API URL: http://localhost:8000"
-    echo "Health Check: http://localhost:8000/health"
+    echo "Health Check: http://localhost:8000/api/v1/health"
     echo "Documentation: http://localhost:8000/docs"
     echo "=========================================="
     echo

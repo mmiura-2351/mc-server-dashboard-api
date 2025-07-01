@@ -216,7 +216,9 @@ class AuditMiddleware(BaseHTTPMiddleware):
         # Skip audit logging for health check and monitoring endpoints
         if self.exclude_health_checks and request.url.path in [
             "/health",
+            "/api/v1/health",
             "/metrics",
+            "/api/v1/metrics",
             "/monitoring",
             "/docs",
             "/openapi.json",

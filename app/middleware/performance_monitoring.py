@@ -206,7 +206,13 @@ class PerformanceMonitoringMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
 
         # Skip monitoring for health check and monitoring endpoints
-        if request.url.path in ["/health", "/metrics", "/monitoring"]:
+        if request.url.path in [
+            "/health",
+            "/api/v1/health",
+            "/metrics",
+            "/api/v1/metrics",
+            "/monitoring",
+        ]:
             return await call_next(request)
 
         # Initialize tracking for this request
