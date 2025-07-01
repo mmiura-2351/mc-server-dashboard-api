@@ -313,8 +313,68 @@ async def health_check():
     return response_data
 
 
+@app.get("/api/v1/health", tags=["health"])
+async def health_check_v1():
+    """Health check endpoint with service status information"""
+    import json
+    from datetime import datetime
+
+    from fastapi import Response
+
+    status = service_status.get_status()
+
+    response_data = {
+        "status": "healthy" if status["healthy"] else "degraded",
+        "timestamp": datetime.now().isoformat(),
+        "services": {
+            "database": "operational" if status["database"] else "failed",
+            "database_integration": (
+                "operational" if status["database_integration"] else "failed"
+            ),
+            "backup_scheduler": "operational" if status["backup_scheduler"] else "failed",
+            "websocket_service": (
+                "operational" if status["websocket_service"] else "failed"
+            ),
+            "version_update_scheduler": (
+                "operational" if status["version_update_scheduler"] else "failed"
+            ),
+        },
+        "failed_services": status["failed_services"],
+        "message": (
+            "All services operational"
+            if status["healthy"]
+            else f"Running with degraded functionality: {', '.join(status['failed_services'])}"
+        ),
+    }
+
+    # Return appropriate HTTP status based on service health
+    if not status["healthy"]:
+        return Response(
+            content=json.dumps(response_data),
+            status_code=503,
+            media_type="application/json",
+        )
+
+    return response_data
+
+
 @app.get("/metrics", tags=["monitoring"])
 async def get_metrics():
+    """Get performance metrics and statistics"""
+    from datetime import datetime
+
+    metrics = get_performance_metrics()
+
+    return {
+        "timestamp": datetime.now().isoformat(),
+        "performance": metrics,
+        "service_status": service_status.get_status(),
+        "message": "Performance metrics collected successfully",
+    }
+
+
+@app.get("/api/v1/metrics", tags=["monitoring"])
+async def get_metrics_v1():
     """Get performance metrics and statistics"""
     from datetime import datetime
 
