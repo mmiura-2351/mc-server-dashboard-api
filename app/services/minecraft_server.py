@@ -599,7 +599,8 @@ class MinecraftServerManager:
 
         try:
             # Scan all server directories for PID files
-            for server_dir in self.base_directory.iterdir():
+            # Sort directories to ensure deterministic processing order for tests
+            for server_dir in sorted(self.base_directory.iterdir()):
                 if not server_dir.is_dir():
                     continue
 
