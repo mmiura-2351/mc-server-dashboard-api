@@ -35,7 +35,7 @@ dependencies = [
     "SQLAlchemy==2.0.41",
     "starlette==0.46.2",
     "typing-inspection==0.4.1",
-    "typing_extensions==4.13.2",
+    "typing_extensions==4.14.1",
     "uvicorn==0.34.2",
     "pytest==8.3.4",
     "pytest-asyncio==0.25.0",
