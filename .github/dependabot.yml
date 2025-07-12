@@ -19,3 +19,10 @@ updates:
       all-dependencies:
         patterns:
           - "*"
+        exclude-patterns:
+          - "pydantic*"  # Exclude pydantic packages to avoid version conflicts
+    ignore:
+      - dependency-name: "pydantic"
+        update-types: ["version-update:semver-minor", "version-update:semver-patch"]
+      - dependency-name: "pydantic-core"
+        update-types: ["version-update:semver-minor", "version-update:semver-patch"]
