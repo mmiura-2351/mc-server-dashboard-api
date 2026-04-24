@@ -1,123 +1,205 @@
 # 仕様書: リアルタイム通信 (WebSocket)
 
-## 認証方式
+## 設計方針
 
-WebSocket は HTTP ヘッダーにトークンを乗せられないため、クエリパラメータで JWT を渡す。
+- **Runner 経由のログストリーム。** API Core はファイルシステムを直接読まず、Runner のログストリームインターフェースを購読し、クライアントへ中継する
+- **コンソール・ステータス・コマンドを1チャネルに統合。** v1 の `/logs` と `/status` を `/console` に統合し、重複を排除する
+- **通知チャネルはジョブ更新を含む。** 非同期ジョブの完了・失敗もリアルタイムで配信する
+- **スケーリング考慮。** 初期実装はインプロセスの ConnectionManager で行うが、API Core を水平スケールする場合は pub/sub バックエンド（Redis 等）への置き換えが必要
+
+---
+
+## 認証
+
+WebSocket は HTTP ヘッダーでトークンを送れないため、クエリパラメータで JWT を渡す。
 
 ```
-ws://host/servers/{server_id}/logs?token=<JWT>
+wss://host/api/v2/organizations/{org_id}/servers/{server_id}/console?token=<JWT>
 ```
+
+- 接続時に JWT を検証し、無効なら即座に接続を閉じる (`4001 Unauthorized`)
+- トークン有効期限切れの場合も接続を閉じる (`4001 Unauthorized`)。クライアントは `/auth/refresh` で新しいトークンを取得してから再接続する
+
+---
+
+## メッセージ形式
+
+すべてのメッセージは JSON。`type` フィールドで種別を識別する。
 
 ---
 
 ## WebSocket エンドポイント
 
-### WS /servers/{server_id}/logs — サーバーログ/コマンドストリーム
+### WS /api/v2/organizations/{org_id}/servers/{server_id}/console — コンソールストリーム
 
-**概要:** サーバーのコンソールログをリアルタイム配信し、コマンド送信も受け付ける。
+**概要:** サーバーのコンソールログをリアルタイム配信し、コマンド送信・状態監視も行う統合チャネル。
 
-**クライアント → サーバー メッセージ:**
+**必要権限:** `server.read` (接続・ログ受信) / `server.command` (コマンド送信)
+
+---
+
+#### クライアント → サーバー
 
 | type | 追加フィールド | 説明 |
 |------|--------------|------|
-| ping | - | 接続維持 |
-| send_command | command: string | コンソールコマンド送信 (admin/operator のみ) |
-| request_status | - | 現在のサーバー状態をリクエスト |
+| `ping` | - | 接続維持 |
+| `send_command` | `command: string` | コンソールコマンド送信 (`server.command` 権限必須) |
+| `request_status` | - | 現在のサーバー状態をリクエスト |
 
-**サーバー → クライアント メッセージ:**
+**`send_command` の制約:**
+- `server.command` 権限がない場合は `4003 Forbidden` でメッセージを拒否
+- `stop` / `restart` / `shutdown` コマンドは禁止 (ライフサイクル API を使用)
+- コマンド実行は RCON 経由 (Runner インターフェース)
+- 監査ログに記録
+
+---
+
+#### サーバー → クライアント
 
 | type | フィールド | 説明 |
 |------|----------|------|
-| initial_status | status オブジェクト | 接続時に送信される初期状態 |
-| server_log | log_line, log_type | ログ行の配信 |
-| server_status | status オブジェクト | 状態変化の通知 |
-| notification | 通知オブジェクト | システム通知 |
-| pong | - | ping への応答 |
+| `pong` | `timestamp` | ping への応答 |
+| `initial_status` | `server` | 接続直後に一度送信される初期状態 |
+| `log` | `line`, `log_type`, `timestamp` | ログ行の配信 |
+| `status_change` | `server` | サーバー状態変化の通知 |
+| `error` | `message` | エラー通知 |
 
-**log_type の種類:** error / warning / info / debug / player_join / player_leave / chat / other
+**`log_type` の値:** `error` / `warning` / `info` / `debug` / `player_join` / `player_leave` / `chat` / `other`
 
-**接続フロー:**
-1. JWT を検証してユーザー取得
-2. サーバーの存在確認とアクセス権チェック
-3. 接続を ConnectionManager に登録
-4. 初期サーバー状態を送信
-5. ログストリームタスクを開始 (同サーバーに接続者がいない場合のみ新規起動)
-6. クライアントからのメッセージを処理:
-   - ping → pong
-   - send_command → admin/operator の場合のみ RCON/stdin でコマンド実行
-   - request_status → 現在の状態を返信
-7. 切断時: ConnectionManager から削除、接続者が 0 になればログストリームを停止
-
-**ログストリームの仕組み:**
-- サーバーの `latest.log` をテールフォロー形式で読み続ける
-- ログ内容からタイプ (error / warning / player_join 等) を判定
-- 同じサーバーに接続している全クライアントにブロードキャスト
-
----
-
-### WS /servers/{server_id}/status — サーバー状態ストリーム
-
-**概要:** サーバー状態の変化をリアルタイム配信する。
-
-ログストリームエンドポイントと同じ仕組みだが、状態通知に特化。
-
----
-
-### WS /notifications — システム通知ストリーム
-
-**概要:** ユーザー向けのシステム通知を受け取るチャネル。
-
-**クライアント → サーバー:**
-
-| type | 説明 |
-|------|------|
-| ping | 接続維持 |
-
-**サーバー → クライアント:**
-
-| type | フィールド | 説明 |
-|------|----------|------|
-| welcome | message, timestamp | 接続時に送信 |
-| pong | timestamp | ping への応答 |
-
----
-
-## 状態監視の仕組み
-
-バックグラウンドで 5 秒ごとに全稼働サーバーの状態を確認し、接続クライアントにブロードキャストする。
-
-**status オブジェクトの構造:**
+**`server` オブジェクト:**
 ```json
 {
-  "server_id": 1,
-  "status": "running",
-  "process_info": {
-    "pid": 12345,
-    "started_at": "ISO8601",
-    "uptime_seconds": 300.5
-  }
+  "server_id": "uuid",
+  "status": "running | stopped | starting | stopping | ...",
+  "runner_type": "docker",
+  "runner_instance_id": "abc123",
+  "started_at": "ISO8601 | null",
+  "uptime_seconds": 300.5
 }
 ```
 
-## ConnectionManager の仕組み
+**接続フロー:**
+1. JWT を検証してユーザーと権限を確認
+2. サーバーの存在・Organization への所属を確認
+3. ConnectionManager に登録
+4. `initial_status` を送信
+5. Runner のログストリームを購読 (同サーバーへの初回接続時のみ新規購読を開始)
+6. クライアントからのメッセージを処理
+7. 切断時: ConnectionManager から削除。同サーバーの接続者が 0 になったらログストリーム購読を解除
+
+**ログストリームの仕組み:**
+- Runner インターフェースの `stream_logs(runner_instance_id)` を呼び出し、ログ行を非同期で受信
+- ログ内容からタイプ (`player_join`, `error` 等) をパターンマッチで判定
+- 同サーバーに接続している全クライアントにブロードキャスト
+
+---
+
+### WS /api/v2/notifications — 通知ストリーム
+
+**概要:** ユーザー向けのシステム通知・ジョブ更新をリアルタイムで受け取るチャネル。
+Organization に限定せず、そのユーザーに関連するすべての通知を配信する。
+
+**必要権限:** 認証済みユーザー
+
+**接続 URL:**
+```
+wss://host/api/v2/notifications?token=<JWT>
+```
+
+---
+
+#### クライアント → サーバー
+
+| type | 説明 |
+|------|------|
+| `ping` | 接続維持 |
+
+---
+
+#### サーバー → クライアント
+
+| type | フィールド | 説明 |
+|------|----------|------|
+| `welcome` | `user_id`, `timestamp` | 接続時に送信 |
+| `pong` | `timestamp` | ping への応答 |
+| `job_update` | `job` | ジョブ状態変化の通知 |
+| `notification` | `title`, `message`, `severity`, `timestamp` | システム通知 |
+
+**`job` オブジェクト:**
+```json
+{
+  "job_id": "uuid",
+  "server_id": "uuid",
+  "server_name": "string",
+  "type": "server_start | server_stop | backup_create | ...",
+  "status": "queued | running | succeeded | failed | cancelled",
+  "updated_at": "ISO8601"
+}
+```
+
+**`severity` の値:** `info` / `warning` / `error`
+
+**配信対象のイベント:**
+- 自分がトリガーしたジョブの状態変化
+- 自分が所属する Organization のサーバーに対するジョブの状態変化
+- システム通知 (メンテナンス予告等)
+
+---
+
+## ConnectionManager
 
 ```
-active_connections: Map<server_id, Set<WebSocket>>
-  - サーバーごとの接続中 WebSocket を管理
+console_connections: Map<server_id, Set<(WebSocket, User)>>
+  - サーバーごとの接続中 WebSocket とユーザーを管理
 
-user_connections: Map<WebSocket, User>
-  - WebSocket とユーザーの紐付け
+notification_connections: Map<user_id, Set<WebSocket>>
+  - ユーザーごとの通知チャネル接続を管理
 
-server_log_tasks: Map<server_id, asyncio.Task>
-  - サーバーごとのログストリームタスク
+runner_log_tasks: Map<server_id, Task>
+  - サーバーごとの Runner ログストリーム購読タスク
 ```
 
-**接続時:** 同サーバーに初めて接続する場合のみログタスクを起動
-**切断時:** 同サーバーの接続者が 0 になったらログタスクを停止
+**接続時:** 同サーバーへの初回接続のみ Runner ログストリームの購読タスクを起動
+**切断時:** 同サーバーの接続者が 0 になったら購読タスクをキャンセル
+
+**水平スケーリング時の注意:**
+初期実装はインプロセスの ConnectionManager で動作する。
+API Core を複数インスタンスで動かす場合、接続先インスタンスが異なるとブロードキャストが届かないため、**Redis pub/sub 等の外部 pub/sub バックエンドへの置き換えが必要**になる。
+
+---
+
+## サーバー状態監視
+
+バックグラウンドで定期的に Runner からサーバー状態を取得し、変化があれば `status_change` イベントをブロードキャストする。
+
+- **ポーリング間隔:** 5 秒
+- **対象:** `console_connections` に1件以上接続があるサーバーのみ
+- **変化検出:** 前回取得した `status` と異なる場合のみ配信 (差分配信)
+
+---
 
 ## セキュリティ要件
 
-- JWT トークンの有効性を接続時に必ず確認
-- サーバーへのアクセス権を確認 (404 または権限エラー)
-- コマンド送信は admin / operator ロールのみ許可
-- 送信されたコマンドは監査ログに記録
+- JWT の有効性を接続時に必ず検証。無効なら `4001` で切断
+- サーバーへのアクセス権を確認。権限なしなら `4003` で切断
+- `send_command` は `server.command` 権限を持つユーザーのみ実行可能
+- 禁止コマンド (`stop` 等) を送信した場合は `error` メッセージを返しコマンドは実行しない
+- 実行されたすべてのコマンドを監査ログに記録
+
+---
+
+## WebSocket クローズコード
+
+| コード | 意味 |
+|--------|------|
+| `4001` | Unauthorized (JWT 無効・期限切れ) |
+| `4003` | Forbidden (権限不足) |
+| `4004` | Server not found |
+
+---
+
+## バリデーション一覧
+
+| 項目 | ルール |
+|------|--------|
+| `send_command.command` | 1-500 文字、禁止コマンドを含まない |
