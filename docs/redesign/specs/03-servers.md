@@ -1,4 +1,14 @@
-# 仕様書: サーバー管理・制御・ユーティリティ
+# 仕様書: サーバー管理・制御
+
+## 設計原則
+
+- **すべてのライフサイクル操作は非同期ジョブ。** 起動/停止/作成/削除はすべて Job を返す
+- **Runner 抽象化。** サーバーの実行基盤（ホストプロセス/Docker/Podman/VM 等）は差し替え可能なプラグイン構造とし、API Core は Runner の実装に依存しない
+- **設定の責務分離。** DB はインフラ設定（コンテナ起動に必要な情報）のみ保持し、ゲーム設定（server.properties の内容）はファイルが唯一の真実の源
+- **Organization スコープ。** サーバーは Organization に属し、他の Organization からは不可視
+- **ドメイン接続対応。** slug フィールドで DNS フレンドリーな名前を確保し、将来のドメインベース接続（SRV レコード / Minecraft プロキシ等）に備える
+
+---
 
 ## データモデル
 
@@ -6,119 +16,232 @@
 
 | フィールド | 型 | 制約 | デフォルト | 説明 |
 |-----------|-----|------|-----------|------|
-| id | int | PK | - | - |
-| name | string(100) | NOT NULL | - | サーバー名 |
-| description | text | - | NULL | 説明 |
-| minecraft_version | string(20) | NOT NULL | - | 例: "1.20.1" |
-| server_type | enum | NOT NULL | - | vanilla / forge / paper |
-| status | enum | NOT NULL | stopped | stopped / starting / running / stopping / error |
-| directory_path | string(500) | NOT NULL | - | サーバーディレクトリの絶対パス |
-| port | int | NOT NULL | 25565 | 1024-65535 |
-| max_memory | int | NOT NULL | 1024 | MB (512-16384) |
-| max_players | int | NOT NULL | 20 | 1-100 |
-| owner_id | int | FK(users.id), NOT NULL | - | 所有者 |
-| template_id | int | FK(templates.id) | NULL | 適用テンプレート |
-| is_deleted | bool | NOT NULL | false | 論理削除フラグ |
+| id | UUID | PK | gen_random_uuid() | - |
+| organization_id | UUID | FK(organizations.id), NOT NULL | - | 所属 Organization |
+| name | string(100) | NOT NULL | - | 表示名 |
+| slug | string(50) | NOT NULL | - | DNS フレンドリーな識別子 |
+| description | text | - | NULL | - |
+| minecraft_version | string(20) | NOT NULL | - | 例: "1.21.1" |
+| server_type | enum | NOT NULL | - | vanilla / paper / spigot / purpur / forge / fabric / neoforge / folia |
+| status | enum | NOT NULL | creating | 下記参照 |
+| runner_type | enum | NOT NULL | - | host / docker / podman (Runner プラグイン種別) |
+| runner_instance_id | string(255) | - | NULL | Runner が管理するインスタンス識別子 (コンテナID等) |
+| max_memory_mb | int | NOT NULL | 2048 | JVM ヒープ上限 (MB) |
+| max_cpu_cores | float | NOT NULL | 1.0 | CPU 上限 (コア数) |
+| max_disk_gb | int | NOT NULL | 20 | ディスククォータ (GB) |
+| connection_host | string(255) | - | NULL | 稼働中に Runner が設定する接続先ホスト |
+| connection_port | int | - | NULL | 稼働中に Runner が割り当てた外部ポート |
+| template_id | UUID | FK(templates.id), ON DELETE SET NULL | NULL | 作成時に適用したテンプレート |
+| deleted_at | datetime(tz) | - | NULL | 論理削除日時 |
 | created_at | datetime(tz) | NOT NULL | now() | - |
 | updated_at | datetime(tz) | NOT NULL | now() | - |
 
-**ServerStatus:** stopped / starting / running / stopping / error
+**UNIQUE 制約:** (organization_id, slug)
 
-**ServerType:** vanilla / forge / paper
+**ServerType:**
 
-### ServerConfiguration
-
-| フィールド | 型 | 制約 | 説明 |
-|-----------|-----|------|------|
-| id | int | PK | - |
-| server_id | int | FK(servers.id), NOT NULL | - |
-| configuration_key | string(100) | NOT NULL | キー名 |
-| configuration_value | text | NOT NULL | 値 |
-| updated_at | datetime(tz) | NOT NULL | - |
-
-**UNIQUE 制約:** (server_id, configuration_key)
+| 値 | 説明 |
+|----|------|
+| `vanilla` | Mojang 公式 |
+| `paper` | PaperMC (高性能、最も一般的) |
+| `folia` | PaperMC fork (領域マルチスレッド) |
+| `spigot` | SpigotMC |
+| `purpur` | Purpur fork |
+| `forge` | MinecraftForge (Mod対応) |
+| `fabric` | FabricMC (Mod対応) |
+| `neoforge` | NeoForge (Forge 後継) |
 
 ---
 
-## サーバー管理エンドポイント
+### ServerStatus (状態遷移)
 
-### POST /api/v1/servers — サーバー作成
+```
+                    ┌─────────┐
+             作成Job ↓         │ 作成失敗
+            creating ──────→ error ←──┐
+                │                    │  操作失敗
+                │ 作成完了            │
+                ↓                    │
+┌─────────── stopped ────────────────┘
+│               │ ↑
+│ 削除Job        │ stop完了 / force-stop完了
+↓               │
+deleting   starting ←── stop完了後に再起動
+(終端)         │ ↑
+               │ │ 起動完了
+               ↓ │
+             running ──→ stopping ──→ stopped
+               │            ↑
+               └─ restarting ┘
+                   (再起動Job)
 
-**認証:** User
+restore Job: stopped → restoring → stopped
+```
 
-**リクエスト:**
+| status | 意味 |
+|--------|------|
+| `creating` | 初回作成 Job 実行中 (JAR DL・ディレクトリ構成) |
+| `stopped` | 停止中 (操作可能な安定状態) |
+| `starting` | 起動 Job 実行中 |
+| `running` | 稼働中 |
+| `stopping` | 停止 Job 実行中 |
+| `restarting` | 再起動 Job 実行中 |
+| `restoring` | バックアップ復元 Job 実行中 |
+| `error` | 直前の操作が失敗 |
+| `deleting` | 削除 Job 実行中 |
+
+---
+
+### Runner 抽象化
+
+Runner は以下のインターフェースを実装するプラグインとして扱う。
+API Core は Runner の実装詳細を知らず、このインターフェース経由でのみ制御する。
+
+```
+Runner Interface:
+  - create(server_config) → runner_instance_id
+  - start(runner_instance_id) → connection_host, connection_port
+  - stop(runner_instance_id, force: bool)
+  - restart(runner_instance_id)
+  - delete(runner_instance_id)
+  - exec_command(runner_instance_id, command) → output
+  - get_logs(runner_instance_id, lines) → log_lines[]
+  - get_status(runner_instance_id) → status
+```
+
+初期提供 Runner: `docker` / `podman` / `host` (直接プロセス起動)
+
+---
+
+## Job レスポンス
+
+ライフサイクル操作は 202 Accepted でジョブ情報を返す。
+
+```json
+{
+  "job_id": "uuid",
+  "server_id": "uuid",
+  "type": "server_create | server_start | server_stop | server_restart | server_delete | server_restore",
+  "status": "queued | running | succeeded | failed | cancelled",
+  "created_at": "ISO8601",
+  "started_at": "ISO8601 | null",
+  "completed_at": "ISO8601 | null",
+  "error": "string | null"
+}
+```
+
+Job の詳細仕様はジョブ管理仕様書に委ねる。
+
+---
+
+## ServerResponse
+
+```json
+{
+  "id": "uuid",
+  "organization_id": "uuid",
+  "name": "サバイバルサーバー",
+  "slug": "survival",
+  "description": "string | null",
+  "minecraft_version": "1.21.1",
+  "server_type": "paper",
+  "status": "running",
+  "runner_type": "docker",
+  "settings": {
+    "max_memory_mb": 4096,
+    "max_cpu_cores": 2.0,
+    "max_disk_gb": 50
+  },
+  "connection": {
+    "host": "mc.example.com",
+    "port": 25566
+  },
+  "template_id": "uuid | null",
+  "created_at": "ISO8601",
+  "updated_at": "ISO8601"
+}
+```
+
+`connection` は `status=running` のときのみ値を持つ。それ以外は `null`。
+
+---
+
+## エンドポイント
+
+### POST /api/v2/organizations/{org_id}/servers — サーバー作成
+
+**認証:** `server.create` 権限
+
+**リクエスト (JSON):**
 | フィールド | 型 | 制約 | 必須 |
 |-----------|-----|------|-----|
-| name | string | 1-100 文字、命名規則あり | ○ |
+| name | string | 1-100 文字 | ○ |
+| slug | string | 1-50 文字、英小文字/数字/ハイフン、先頭末尾は英数字 | ○ |
 | description | string | 最大 500 文字 | - |
-| minecraft_version | string | 形式: X.Y または X.Y.Z、最小 1.8 | ○ |
-| server_type | enum | vanilla / forge / paper | ○ |
-| port | int | 1024-65535 | - (デフォルト 25565) |
-| max_memory | int | 512-16384 | - (デフォルト 1024) |
-| max_players | int | 1-100 | - (デフォルト 20) |
-| template_id | int | - | - |
-| server_properties | object | 許可キーのみ | - |
-| attach_groups | object | `{op_groups: [id], whitelist_groups: [id]}` | - |
+| minecraft_version | string | `\d+\.\d+(\.\d+)?`、最小 1.8 | ○ |
+| server_type | enum | - | ○ |
+| runner_type | enum | - | ○ |
+| max_memory_mb | int | 512-32768 | - (デフォルト 2048) |
+| max_cpu_cores | float | 0.5-32.0 | - (デフォルト 1.0) |
+| max_disk_gb | int | 5-1000 | - (デフォルト 20) |
+| template_id | UUID | - | - |
+| initial_groups | object | `{op_groups: [uuid], whitelist_groups: [uuid]}` | - |
 
-**server_properties の許可キー:** difficulty, gamemode, hardcore, pvp, spawn_protection, enable_command_block, allow_flight, spawn_monsters, spawn_animals, spawn_npcs, generate_structures, level_name, level_seed, level_type, motd, online_mode, white_list, enforce_whitelist, view_distance, simulation_distance, op_permission_level
-
-**レスポンス (201):** `ServerResponse`
+**レスポンス (202):**
+```json
+{
+  "server": { ...ServerResponse (status=creating) },
+  "job": { ...JobResponse (type=server_create) }
+}
+```
 
 **処理フロー:**
-1. サーバー名の一意性チェック (論理削除含めて除外)
-2. Java 互換性検証 (指定 MC バージョンに対応する Java が利用可能か)
-3. サーバーディレクトリを作成 (アトミック、ファイルロック使用)
-4. サーバー JAR をダウンロード (キャッシュを優先利用)
-5. DB レコード作成 (status=stopped)
-6. 設定ファイル生成: server.properties / eula.txt / start.sh
-7. テンプレートが指定された場合は適用
-8. グループが指定された場合は attach
-9. 失敗時はディレクトリをクリーンアップ
+1. slug の一意性確認 (Organization 内) → 重複なら 409
+2. minecraft_version が既知のバージョンか確認 → 不明なら 400
+3. Server レコード作成 (`status=creating`)
+4. `server_create` ジョブをキューに追加
+5. ジョブが非同期で実行:
+   a. Runner に作成を依頼 (JAR DL、ディレクトリ構成、eula.txt 生成)
+   b. テンプレートが指定された場合は適用
+   c. グループが指定された場合は attach
+   d. 成功 → `status=stopped`、失敗 → `status=error`
 
 **エラー:**
-- 409 `Server name already exists`
-- 400 バージョン形式エラー / Java 互換性なし / プロパティ不正
-- 500 ファイルシステムエラー / ダウンロード失敗
+- 409 `Slug already exists in this organization`
+- 400 `Unknown minecraft version`
+- 422 バリデーションエラー
 
 ---
 
-**サーバー名バリデーション:**
-- 長さ: 1-100 文字
-- パターン: 英数字で始まり・終わること。中間はスペース / ハイフン / アンダースコア / ドットを許容
-- 禁止文字: `/ \ : * ? " < > |`
-- Windows 予約名禁止: CON, PRN, AUX, NUL, COM1-9, LPT1-9
-- `..` を含むパス traversal は禁止
-- ドットやスペースで始まり・終わることは禁止
+### GET /api/v2/organizations/{org_id}/servers — サーバー一覧
 
----
-
-### GET /api/v1/servers — サーバー一覧
-
-**認証:** User
+**認証:** `server.read` 権限
 
 **クエリパラメータ:**
-| パラメータ | 型 | デフォルト |
-|-----------|-----|---------|
-| page | int (≥1) | 1 |
-| size | int (1-100) | 50 |
+| パラメータ | 型 | 説明 |
+|-----------|-----|------|
+| status | enum | フィルタ |
+| server_type | enum | フィルタ |
+| page | int | デフォルト 1 |
+| page_size | int (1-100) | デフォルト 50 |
 
 **レスポンス (200):**
 ```json
 {
   "servers": [ ...ServerResponse[] ],
-  "total": 100,
+  "total_count": 10,
   "page": 1,
-  "size": 50
+  "page_size": 50
 }
 ```
 
-**注意:** 論理削除済み (is_deleted=true) は除外。作成日時の降順。
+論理削除済み (`deleted_at IS NOT NULL`) は除外。
 
 ---
 
-### GET /api/v1/servers/{server_id} — サーバー詳細
+### GET /api/v2/organizations/{org_id}/servers/{server_id} — サーバー詳細
 
-**認証:** User
+**認証:** `server.read` 権限
 
 **レスポンス (200):** `ServerResponse`
 
@@ -127,406 +250,285 @@
 
 ---
 
-### PUT /api/v1/servers/{server_id} — サーバー更新
+### PUT /api/v2/organizations/{org_id}/servers/{server_id} — メタデータ更新
 
-**認証:** User
+**認証:** `server.settings.manage` 権限
 
-**リクエスト:**
-| フィールド | 型 | 制約 | 必須 |
-|-----------|-----|------|-----|
-| name | string | - | 任意 |
-| description | string | - | 任意 |
-| max_memory | int | 512-16384 | 任意 |
-| max_players | int | 1-100 | 任意 |
-| port | int | 1024-65535 | 任意 |
-| server_properties | object | - | 任意 |
+**変更可能なフィールド (すべて任意):**
+| フィールド | 型 | 制約 |
+|-----------|-----|------|
+| name | string | 1-100 文字 |
+| slug | string | 1-50 文字、形式制約あり |
+| description | string | 最大 500 文字 |
 
-**重要:** `max_memory` または `server_properties` を更新する場合、サーバーは `stopped` または `error` 状態である必要がある。
+**Note:** `name` / `slug` / `description` は稼働中でも変更可能。
 
-**処理フロー:**
-1. DB レコード更新
-2. server.properties ファイルに変更を同期 (port, max-players 等)
+**レスポンス (200):** `ServerResponse`
 
 **エラー:**
-- 404 Not found
-- 409 `Server not in required state for update`
-
----
-
-### DELETE /api/v1/servers/{server_id} — サーバー削除
-
-**認証:** Owner または Admin
-
-**レスポンス (204):** 空
-
-**処理フロー:**
-1. 権限チェック: `user.role == admin OR server.owner_id == user.id`
-2. 稼働中の場合は停止
-3. 論理削除 (`is_deleted=true`, `status=stopped`)
-
-**エラー:**
-- 403 Not owner or admin
+- 409 slug 重複
 - 404 Not found
 
 ---
 
-## サーバー制御エンドポイント
+### PUT /api/v2/organizations/{org_id}/servers/{server_id}/settings — インフラ設定更新
 
-### POST /api/v1/servers/{server_id}/start — 起動
+**認証:** `server.settings.manage` 権限
 
-**認証:** User
+**前提条件:** `status` が `stopped` または `error` であること
 
-**レスポンス (200):**
+**リクエスト (JSON):** (すべて任意)
 ```json
 {
-  "server_id": 1,
-  "status": "starting",
-  "process_info": {
-    "pid": 12345,
-    "started_at": "ISO8601",
-    "uptime_seconds": 0.5
-  }
+  "max_memory_mb": 4096,
+  "max_cpu_cores": 2.0,
+  "max_disk_gb": 50
 }
 ```
 
-**起動前チェック (プリフライト):**
-1. ステータスが `stopped` または `error` であること
-2. DB と server.properties の双方向同期
-3. ポートの利用可能確認 (稼働中サーバーとのバッティング + システムソケット確認)
-4. Java 互換性確認 (指定 MC バージョンに対応する Java が見つかること)
-5. server.jar ファイルの存在と読み取り権限確認
-6. eula.txt に `eula=true` が含まれること
-7. RCON 設定 (利用可能ポートを自動選択、ランダムパスワード生成、server.properties に書き込み)
-
-**起動フロー:**
-1. double-fork でデーモンプロセス作成
-2. デーモン動作確認 (300ms にわたり 3 回確認)
-3. PID ファイル書き込み
-4. バックグラウンドでログ監視タスク + デーモン監視タスクを開始
-5. DB ステータスを `starting` に更新
-
-**デーモン監視:** ログに "Done" + "For help" / "Time elapsed" が出現したら `running` に遷移。タイムアウト: 45 秒。
+**レスポンス (200):** `ServerResponse`
 
 **エラー:**
-- 409 `Server not in valid state (not stopped/error)`
-- 500 Java 不在 / JAR 欠損 / 起動失敗
+- 409 `Server must be stopped to change settings`
 
 ---
 
-### POST /api/v1/servers/{server_id}/stop — 停止
+### DELETE /api/v2/organizations/{org_id}/servers/{server_id} — サーバー削除
 
-**認証:** User
+**認証:** `server.delete` 権限
 
-**クエリパラメータ:**
-| パラメータ | 型 | デフォルト | 説明 |
-|-----------|-----|---------|------|
-| force | bool | false | true: 強制終了 |
+**前提条件:** `status` が `stopped` または `error` であること
 
-**レスポンス (200):**
-```json
-{ "message": "string" }
-```
-
-**停止フロー:**
-1. force=false: stdin に `stop\n` を送信し最大 15 秒待機
-2. 停止しない / force=true: SIGTERM を送信し最大 5 秒待機
-3. さらに停止しない: SIGKILL
-4. PID ファイルを削除
-5. DB ステータスを `stopped` に更新
-
-**エラー:**
-- 409 `Server already stopped`
-
----
-
-### POST /api/v1/servers/{server_id}/restart — 再起動
-
-**認証:** User
-
-**レスポンス (200):**
-```json
-{ "message": "string" }
-```
-
-**処理フロー:**
-1. 稼働中の場合は停止 (指数バックオフで最大 60 秒待機)
-2. 停止を確認後、起動フロー実行
-
-**エラー:**
-- 500 停止タイムアウト
-
----
-
-### GET /api/v1/servers/{server_id}/status — 状態取得
-
-**認証:** User
-
-**レスポンス (200):**
+**レスポンス (202):**
 ```json
 {
-  "server_id": 1,
-  "status": "stopped|starting|running|stopping|error",
-  "process_info": {
-    "pid": 12345,
-    "started_at": "ISO8601",
-    "uptime_seconds": 123.4
-  }
+  "job": { ...JobResponse (type=server_delete) }
 }
 ```
 
+**処理フロー (ジョブ内):**
+1. Runner にインスタンス削除を依頼 (ファイル・コンテナ等の破棄)
+2. Server を論理削除 (`deleted_at = now()`, `status=deleting` → 完了後レコードは削除済みとして参照不可)
+3. 監査ログ記録
+
+**エラー:**
+- 409 `Server must be stopped before deletion`
+
 ---
 
-### POST /api/v1/servers/{server_id}/command — コマンド送信
+## ライフサイクル制御エンドポイント
 
-**認証:** User
+### POST /api/v2/organizations/{org_id}/servers/{server_id}/start — 起動
 
-**リクエスト:**
+**認証:** `server.start` 権限
+
+**前提条件:** `status` が `stopped` または `error`
+
+**レスポンス (202):** `JobResponse (type=server_start)`
+
+**ジョブ内処理:**
+1. Runner にコンテナ/プロセス起動を依頼
+2. Runner がポートを自動割り当て
+3. Runner がログを監視し "Done" を検出 → `status=running`、`connection_host/port` を保存
+4. タイムアウト (90秒) → `status=error`
+
+---
+
+### POST /api/v2/organizations/{org_id}/servers/{server_id}/stop — 停止
+
+**認証:** `server.stop` 権限
+
+**前提条件:** `status` が `running`
+
+**レスポンス (202):** `JobResponse (type=server_stop)`
+
+**ジョブ内処理:**
+1. Runner 経由でグレースフルシャットダウン (`stop` コマンド送信)
+2. 最大 30 秒待機
+3. タイムアウト → 強制終了 (SIGKILL 相当)
+4. `status=stopped`、`connection_host/port` を null に更新
+
+---
+
+### POST /api/v2/organizations/{org_id}/servers/{server_id}/force-stop — 強制停止
+
+**認証:** `server.stop` 権限
+
+**前提条件:** `status` が `running` / `starting` / `stopping`
+
+**レスポンス (202):** `JobResponse (type=server_stop)`
+
+**ジョブ内処理:** 即時強制終了 → `status=stopped`
+
+---
+
+### POST /api/v2/organizations/{org_id}/servers/{server_id}/restart — 再起動
+
+**認証:** `server.start` 権限 + `server.stop` 権限
+
+**前提条件:** `status` が `running`
+
+**レスポンス (202):** `JobResponse (type=server_restart)`
+
+**ジョブ内処理:** グレースフルシャットダウン → 起動 → running 確認
+
+---
+
+## コマンドエンドポイント
+
+### POST /api/v2/organizations/{org_id}/servers/{server_id}/command — コマンド送信
+
+**認証:** `server.command` 権限
+
+**前提条件:** `status` が `running`
+
+**リクエスト (JSON):**
 ```json
 { "command": "string (1-500文字)" }
 ```
 
-**禁止コマンド:** stop, restart, shutdown
+**禁止コマンド:** `stop`, `restart`, `shutdown` (ライフサイクル API 経由で操作する)
+
+**レスポンス (200):**
+```json
+{
+  "command": "say Hello",
+  "executed_at": "ISO8601"
+}
+```
 
 **処理フロー:**
-1. サーバーが `running` 状態であること
-2. RCON が利用可能な場合 → RCON 経由で送信
-3. RCON 不可の場合 → stdin に書き込み
-4. 監査ログ記録
+1. Runner の RCON インターフェース経由でコマンドを送信
+2. 監査ログ記録
 
 **エラー:**
-- 409 Server not running
-- 400 危険なコマンド
+- 409 `Server is not running`
+- 400 `Command not allowed`
 
 ---
 
-### GET /api/v1/servers/{server_id}/logs — ログ取得
+## ログエンドポイント
 
-**認証:** User
+### GET /api/v2/organizations/{org_id}/servers/{server_id}/logs — ログ取得 (スナップショット)
+
+**認証:** `server.read` 権限
 
 **クエリパラメータ:**
 | パラメータ | 型 | デフォルト |
 |-----------|-----|---------|
-| lines | int (1-1000) | 100 |
+| lines | int (1-5000) | 200 |
 
 **レスポンス (200):**
 ```json
 {
-  "server_id": 1,
-  "logs": ["string", "..."],
-  "total_lines": 50
+  "server_id": "uuid",
+  "lines": ["[12:00:00] [Server thread/INFO]: Done (3.456s)!"],
+  "total_lines": 200,
+  "retrieved_at": "ISO8601"
+}
+```
+
+**Note:** リアルタイムログ配信は WebSocket 仕様 (08-realtime) を参照。
+
+---
+
+## ジョブエンドポイント
+
+### GET /api/v2/organizations/{org_id}/servers/{server_id}/jobs — ジョブ履歴
+
+**認証:** `server.read` 権限
+
+**クエリパラメータ:**
+| パラメータ | 型 | 説明 |
+|-----------|-----|------|
+| type | enum | フィルタ |
+| status | enum | フィルタ |
+| page | int | デフォルト 1 |
+| page_size | int (1-100) | デフォルト 20 |
+
+**レスポンス (200):**
+```json
+{
+  "jobs": [ ...JobResponse[] ],
+  "total_count": 50
 }
 ```
 
 ---
 
-## ユーティリティエンドポイント
+### GET /api/v2/organizations/{org_id}/servers/{server_id}/jobs/{job_id} — ジョブ詳細
 
-### GET /api/v1/servers/versions/supported — サポートバージョン一覧
+**認証:** `server.read` 権限
 
-**認証:** 不要
-
-**レスポンス (200):**
-```json
-{
-  "versions": [
-    {
-      "version": "1.20.1",
-      "server_type": "vanilla|forge|paper",
-      "download_url": "string",
-      "is_supported": true,
-      "release_date": "ISO8601|null",
-      "is_stable": true,
-      "build_number": null
-    }
-  ]
-}
-```
-
-**実装詳細:** DB から取得 (10-50ms)。外部 API には問い合わせない。
+**レスポンス (200):** `JobResponse`
 
 ---
 
-### POST /api/v1/servers/sync — サーバー状態同期
+### POST /api/v2/organizations/{org_id}/servers/{server_id}/jobs/{job_id}/cancel — ジョブキャンセル
 
-**認証:** Admin
+**認証:** `server.settings.manage` 権限
 
-**レスポンス (200):**
-```json
-{
-  "message": "string",
-  "running_servers": [1, 2, 3],
-  "total_running": 3
-}
-```
+**前提条件:** ジョブ `status` が `queued`
 
-**処理フロー:**
-1. サーバーディレクトリの PID ファイルをスキャン
-2. 生存確認 (psutil 等でプロセス存在を確認)
-3. DB のステータスを実際のプロセス状態と同期
-
----
-
-### GET /api/v1/servers/cache/stats — JAR キャッシュ統計
-
-**認証:** Admin
-
-**レスポンス (200):**
-```json
-{
-  "total_files": 10,
-  "total_size_mb": 512.5,
-  "cache_dir": "string",
-  "max_age_days": 30,
-  "max_size_gb": 10
-}
-```
-
----
-
-### POST /api/v1/servers/cache/cleanup — JAR キャッシュクリーンアップ
-
-**認証:** Admin
-
-**処理フロー:**
-1. 30 日以上経過したファイルを削除
-2. 合計サイズが 10GB を超える場合は古いものから削除
-
----
-
-### GET /api/v1/servers/java/compatibility — Java 互換情報
-
-**認証:** 不要
-
-**レスポンス (200):**
-```json
-{
-  "java_installations_found": 2,
-  "compatibility_matrix": {
-    "1.8.0 - 1.16.5": 8,
-    "1.17.0 - 1.17.1": 16,
-    "1.18.0 - 1.20.9": 17,
-    "1.21.0+": 21
-  },
-  "installations": {
-    "17": {
-      "major_version": 17,
-      "version_string": "17.0.8",
-      "vendor": "OpenJDK",
-      "executable_path": "/usr/bin/java",
-      "supported_minecraft_versions": ["1.18 - 1.20.9"]
-    }
-  },
-  "error": null,
-  "installation_help": null
-}
-```
-
-**Java 互換性マトリクス:**
-| Minecraft バージョン | 必要 Java |
-|---------------------|---------|
-| 1.8.0 - 1.16.5 | Java 8 |
-| 1.17.0 - 1.17.1 | Java 16 |
-| 1.18.0 - 1.20.9 | Java 17 |
-| 1.21.0+ | Java 21 |
-
----
-
-### GET /api/v1/servers/java/validate/{minecraft_version} — Java 互換確認
-
-**認証:** 不要
-
-**レスポンス (200):**
-```json
-{
-  "compatible": true,
-  "minecraft_version": "1.20.1",
-  "required_java": 17,
-  "available_java_versions": [8, 17, 21],
-  "selected_java": {
-    "major_version": 17,
-    "version_string": "17.0.8",
-    "vendor": "OpenJDK",
-    "executable_path": "/usr/bin/java"
-  },
-  "message": "string",
-  "error": null,
-  "installation_help": null
-}
-```
+**レスポンス (200):** キャンセル後の `JobResponse`
 
 **エラー:**
-- 400 バージョン形式不正
+- 409 `Job is already running or completed`
 
 ---
 
-## インポート/エクスポート
+### POST /api/v2/organizations/{org_id}/servers/{server_id}/jobs/{job_id}/retry — ジョブリトライ
 
-### GET /api/v1/servers/{server_id}/export — エクスポート
+**認証:** `server.settings.manage` 権限
 
-**認証:** User
+**前提条件:** ジョブ `status` が `failed`
 
-**レスポンス:** ZIP ファイルダウンロード (application/zip)
-
-**ZIP 内容:**
-- `export_metadata.json`: サーバー設定情報
-- サーバーファイル (除外: *.log, logs/, crash-reports/, *.tmp, .DS_Store, Thumbs.db)
-
-**エラー:**
-- 404 Server or directory not found
+**レスポンス (202):** 新規 `JobResponse`
 
 ---
 
-### POST /api/v1/servers/import — インポート
+## バリデーション一覧
 
-**認証:** Operator または Admin
-
-**リクエスト (multipart/form-data):**
-| フィールド | 型 | 必須 |
-|-----------|-----|-----|
-| name | string (1-100) | ○ |
-| description | string | - |
-| file | UploadFile (ZIP) | ○ |
-
-**制約:** ファイルサイズ最大 500MB
-
-**処理フロー:**
-1. ZIP 形式の確認
-2. `export_metadata.json` の存在確認と必須フィールド検証
-3. 空きポートを自動で検索
-4. サーバーを作成 (create_server ロジックを使用)
-5. 展開したファイルでサーバーディレクトリを上書き
-6. metadata ファイルを削除
-
-**エラー:**
-- 403 Not operator/admin
-- 400 Invalid ZIP / missing metadata
-- 413 File > 500MB
+| 項目 | ルール |
+|------|--------|
+| name | 1-100 文字 |
+| slug | 1-50 文字、英小文字/数字/ハイフンのみ、先頭末尾は英数字、Organization 内一意 |
+| description | 最大 500 文字 |
+| minecraft_version | `\d+\.\d+(\.\d+)?`、既知のバージョンであること、最小 1.8 |
+| server_type | 定義済み enum 値 |
+| runner_type | 定義済み enum 値 |
+| max_memory_mb | 512-32768 |
+| max_cpu_cores | 0.5-32.0 |
+| max_disk_gb | 5-1000 |
+| command | 1-500 文字、禁止コマンドを含まない |
+| logs.lines | 1-5000 |
 
 ---
 
-## サーバー起動のデーモンプロセス (Double-Fork)
+## 状態遷移バリデーション
 
-```
-API プロセス (親)
- └─ Fork #1 (中間プロセス)
-     ├─ setsid() — 新セッションのリーダーになる
-     ├─ umask(0)
-     └─ Fork #2 (デーモン本体)
-         ├─ stdin → /dev/null
-         ├─ stdout → server.log
-         ├─ stderr → server_error.log
-         └─ execvpe() — Java プロセスになる
+| 操作 | 許可される status |
+|------|-----------------|
+| start | `stopped`, `error` |
+| stop | `running` |
+| force-stop | `running`, `starting`, `stopping` |
+| restart | `running` |
+| settings update | `stopped`, `error` |
+| delete | `stopped`, `error` |
+| command | `running` |
 
-PID ファイル (minecraft_server.pid) に保存される情報:
-{
-  "pid": 12345,
-  "server_id": 1,
-  "port": 25565,
-  "rcon_port": 25575,
-  "rcon_password": "...",
-  "cmd": ["java", "-Xmx1024M", "-jar", "server.jar"],
-  "created_at": "ISO8601"
-}
-```
+---
 
-API 再起動時: PID ファイルをスキャンし、プロセスが生存していれば状態を復元する。
+## 監査イベント一覧
+
+| イベント | action 値 | resource_type |
+|--------|-----------|---------------|
+| サーバー作成 Job 開始 | `server_create` | server |
+| サーバー起動 Job 開始 | `server_start` | server |
+| サーバー停止 Job 開始 | `server_stop` | server |
+| サーバー強制停止 Job 開始 | `server_force_stop` | server |
+| サーバー再起動 Job 開始 | `server_restart` | server |
+| サーバー削除 Job 開始 | `server_delete` | server |
+| メタデータ更新 | `server_update` | server |
+| インフラ設定更新 | `server_settings_update` | server |
+| コマンド送信 | `server_command` | server |
