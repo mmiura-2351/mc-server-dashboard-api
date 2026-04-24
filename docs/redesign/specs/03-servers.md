@@ -178,7 +178,7 @@ Job の詳細仕様はジョブ管理仕様書に委ねる。
 | name | string | 1-100 文字 | ○ |
 | slug | string | 1-50 文字、英小文字/数字/ハイフン、先頭末尾は英数字 | ○ |
 | description | string | 最大 500 文字 | - |
-| minecraft_version | string | `\d+\.\d+(\.\d+)?`、最小 1.8 | ○ |
+| minecraft_version | string | `\d+\.\d+(\.\d+)?`、旧形式は最小 1.8 / 新形式 (25.x 以降) はすべて有効 | ○ |
 | server_type | enum | - | ○ |
 | runner_type | enum | - | ○ |
 | max_memory_mb | int | 512-32768 | - (デフォルト 2048) |
@@ -494,7 +494,7 @@ Job の詳細仕様はジョブ管理仕様書に委ねる。
 | name | 1-100 文字 |
 | slug | 1-50 文字、英小文字/数字/ハイフンのみ、先頭末尾は英数字、Organization 内一意 |
 | description | 最大 500 文字 |
-| minecraft_version | `\d+\.\d+(\.\d+)?`、既知のバージョンであること、最小 1.8 |
+| minecraft_version | `\d+\.\d+(\.\d+)?`、既知のバージョンであること、旧形式は最小 1.8 / 新形式 (25.x 以降) はすべて有効 |
 | server_type | 定義済み enum 値 |
 | runner_type | 定義済み enum 値 |
 | max_memory_mb | 512-32768 |

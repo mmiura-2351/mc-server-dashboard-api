@@ -18,7 +18,7 @@
 |-----------|-----|------|-----------|------|
 | id | UUID | PK | gen_random_uuid() | - |
 | server_type | enum | NOT NULL | - | 下記参照 |
-| version | string(50) | NOT NULL | - | ゲームバージョン (例: "1.21.1") |
+| version | string(50) | NOT NULL | - | ゲームバージョン (例: "1.21.1" / "26.1" / "26.1.2") |
 | build_number | int | - | NULL | ビルド番号 (Paper 等のみ) |
 | download_url | text | NOT NULL | - | JAR ダウンロード URL (Runner に渡す) |
 | release_date | datetime(tz) | - | NULL | リリース日時 |
@@ -85,8 +85,8 @@
     {
       "id": "uuid",
       "server_type": "paper",
-      "version": "1.21.1",
-      "build_number": 196,
+      "version": "26.1",
+      "build_number": 52,
       "download_url": "https://...",
       "release_date": "ISO8601 | null",
       "is_stable": true
@@ -224,9 +224,26 @@
 3. VersionUpdateLog を更新 (added / updated / deactivated カウント)
 ```
 
+### バージョン形式
+
+2025年より Mojang がバージョン形式を変更した。両形式を並存してサポートする。
+
+| 形式 | パターン | 例 | 対象期間 |
+|------|---------|-----|---------|
+| 旧形式 | `1.\d+(\.\d+)?` | `1.21.1`, `1.20.4` | ～2024年 |
+| 新形式 | `\d{2}.\d+(\.\d+)?` | `25.3`, `26.1`, `26.1.2` | 2025年～ |
+
+新形式の構造: `YY.DROP[.PATCH]`
+- `YY` — リリース年の下2桁 (25 = 2025, 26 = 2026)
+- `DROP` — その年の何番目のアップデートか
+- `PATCH` — ホットフィックス番号 (省略可)
+
+バリデーション正規表現 `\d+\.\d+(\.\d+)?` は両形式を網羅する。
+
 ### 最小サポートバージョン
 
-Minecraft **1.8.0** 以上のみ取得・保存する。
+旧形式: **1.8.0** 以上のみ取得・保存する。
+新形式: すべて取得・保存する (2025年以降の全バージョン)。
 
 ### スケジューラー
 
@@ -248,5 +265,5 @@ Minecraft **1.8.0** 以上のみ取得・保存する。
 | 項目 | ルール |
 |------|--------|
 | server_type | 定義済み enum 値 |
-| version | `\d+\.\d+(\.\d+)?` 形式 |
+| version | `\d+\.\d+(\.\d+)?` 形式 (旧: `1.X.Y` / 新: `YY.DROP[.PATCH]`) |
 | page_size (update-logs) | 1-50 |
