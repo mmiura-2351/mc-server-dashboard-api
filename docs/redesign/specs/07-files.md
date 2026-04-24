@@ -3,221 +3,286 @@
 サーバーディレクトリ内のファイルを API 経由で安全に読み書きする機能。
 編集履歴のバージョン管理も含む。
 
+## 設計方針
+
+- **Runner 経由のファイルアクセス。** API Core はファイルシステムに直接アクセスしない。すべてのファイル操作は Runner インターフェース経由で行う
+- **ゲーム設定はファイルが唯一の真実の源。** `server.properties` 等はこの API で直接編集する（03-servers 参照）
+- **編集履歴のストレージはバックアップと共通の抽象化。** ファイル内容のスナップショットはバックアップと同じストレージバックエンドに保存する
+- **グループ管理ファイルの保護。** `ops.json` / `whitelist.json` は Groups 機能が管理するため、ファイル API では書き込み・削除を禁止する
+- **Organization スコープ。** サーバーに属するファイルは同じ Organization のメンバーのみアクセス可能
+
+---
+
 ## データモデル
 
 ### FileEditHistory
 
+ファイル書き込み前に自動保存されるスナップショット。
+
 | フィールド | 型 | 制約 | 説明 |
 |-----------|-----|------|------|
-| id | int | PK | - |
-| server_id | int | FK(servers.id), NOT NULL | - |
+| id | UUID | PK | - |
+| server_id | UUID | FK(servers.id), NOT NULL | - |
 | file_path | string(500) | NOT NULL | サーバールートからの相対パス |
-| version_number | int | NOT NULL | バージョン番号 (1始まり、ファイル毎) |
-| backup_file_path | string(500) | NOT NULL | バックアップファイルの絶対パス |
-| file_size | bigint | NOT NULL | バイト数 |
-| content_hash | string(64) | - | SHA256 ハッシュ (重複検出用) |
-| editor_user_id | int | FK(users.id), ON DELETE SET NULL | 編集者 |
-| created_at | datetime | NOT NULL | - |
+| version_number | int | NOT NULL | バージョン番号 (1始まり、ファイル毎に連番) |
+| storage_backend | enum | NOT NULL | local / s3_compatible |
+| storage_key | string(1000) | NOT NULL | ストレージ上の識別キー |
+| file_size_bytes | bigint | NOT NULL | バイト数 |
+| content_hash | string(64) | NOT NULL | SHA256 ハッシュ (重複検出用) |
+| editor_user_id | UUID | FK(users.id), ON DELETE SET NULL | 編集者 |
 | description | text | - | 変更メモ |
+| created_at | datetime(tz) | NOT NULL | - |
+
+**UNIQUE 制約:** (server_id, file_path, version_number)
+
+---
+
+## FileInfoResponse
+
+```json
+{
+  "name": "server.properties",
+  "path": "server.properties",
+  "type": "text | binary | directory | other",
+  "is_directory": false,
+  "size_bytes": 1024,
+  "modified_at": "ISO8601"
+}
+```
 
 ---
 
 ## ファイル管理エンドポイント
 
-### GET /servers/{server_id}/files/{path} — ファイル/ディレクトリ一覧
+### GET /api/v2/organizations/{org_id}/servers/{server_id}/files/{path} — ディレクトリ一覧 / ファイル情報
 
-**認証:** User
+**認証:** `file.read` 権限
+
+`{path}` がディレクトリの場合は配下の一覧を返し、ファイルの場合はそのファイル情報を返す。
+`{path}` を省略するとルートディレクトリの一覧を返す。
 
 **クエリパラメータ:**
 | パラメータ | 型 | 説明 |
 |-----------|-----|------|
-| file_type | enum | text / binary / directory / other でフィルタ |
+| type | enum | text / binary / directory / other でフィルタ |
 
-**レスポンス (200):** `FileListResponse`
+**レスポンス (200) — ディレクトリの場合:**
 ```json
 {
+  "current_path": "plugins/",
   "files": [
     {
-      "name": "server.properties",
-      "path": "server.properties",
-      "type": "text",
+      "name": "EssentialsX.jar",
+      "path": "plugins/EssentialsX.jar",
+      "type": "binary",
       "is_directory": false,
-      "size": 1024,
-      "modified": "ISO8601",
-      "permissions": { "read": true, "write": true, "execute": false }
+      "size_bytes": 2097152,
+      "modified_at": "ISO8601"
     }
   ],
-  "current_path": "plugins/",
-  "total_files": 15
+  "total_count": 15
 }
 ```
+
+**レスポンス (200) — ファイルの場合:** `FileInfoResponse`
 
 **エラー:**
-- 404 Server / path not found
-- 403 Access denied
+- 404 `Path not found`
 
 ---
 
-### GET /servers/{server_id}/files/{path}/read — ファイル内容読み取り
+### GET /api/v2/organizations/{org_id}/servers/{server_id}/files/{path}/content — ファイル内容読み取り
 
-**認証:** User
+**認証:** `file.read` 権限
 
 **クエリパラメータ:**
-| パラメータ | 型 | デフォルト |
-|-----------|-----|---------|
-| encoding | string | utf-8 |
-| image | bool | false |
+| パラメータ | 型 | デフォルト | 説明 |
+|-----------|-----|---------|------|
+| encoding | string | (自動検出) | 文字エンコーディング指定 |
 
-**レスポンス (200):**
+**レスポンス (200) — テキストファイル:**
 ```json
 {
-  "content": "string (テキスト or base64)",
+  "content": "string",
   "encoding": "utf-8",
-  "file_info": { ...FileInfoResponse },
-  "is_image": false,
-  "image_data": null
+  "file_info": { ...FileInfoResponse }
 }
 ```
 
-**画像の場合:** `image=true` で `image_data` に base64 エンコードされたデータを返す。
+**レスポンス (200) — バイナリファイル:**
+```json
+{
+  "content": "base64エンコード文字列",
+  "encoding": "base64",
+  "file_info": { ...FileInfoResponse }
+}
+```
 
-**エンコード検出:** chardet で自動検出。検出精度 > 70% の場合はその結果を使用。
-フォールバック順: utf-8, shift_jis, euc-jp, iso-2022-jp, cp932, latin1, ascii
+**エンコード自動検出:**
+1. chardet で検出、精度 > 70% であればその結果を使用
+2. フォールバック順: utf-8 → shift_jis → euc-jp → cp932 → latin1
+
+**エラー:**
+- 404 `File not found`
+- 400 `Path is a directory. Use the directory listing endpoint.`
 
 ---
 
-### GET /servers/{server_id}/files/{path}/download — ファイルダウンロード
+### GET /api/v2/organizations/{org_id}/servers/{server_id}/files/{path}/download — ダウンロード
 
-**認証:** User
+**認証:** `file.read` 権限
 
 **レスポンス (200):** バイナリストリーム
 
-**ディレクトリの場合:** ZIP アーカイブとして返却
+- ファイルの場合: そのままストリーミング
+- ディレクトリの場合: ZIP アーカイブとして返却 (`Content-Type: application/zip`)
 
 ---
 
-### POST /servers/{server_id}/files/upload — ファイルアップロード
+### POST /api/v2/organizations/{org_id}/servers/{server_id}/files/upload — アップロード
 
-**認証:** User (can_modify_files 権限)
+**認証:** `file.write` 権限
 
 **リクエスト (multipart/form-data):**
-| フィールド | 型 | 必須 |
-|-----------|-----|-----|
-| file | UploadFile | ○ |
-| destination_path | string | - (デフォルト ルート) |
-| extract_if_archive | bool | - (デフォルト false) |
+| フィールド | 型 | 必須 | 説明 |
+|-----------|-----|-----|------|
+| file | UploadFile | ○ | - |
+| destination_path | string | - | アップロード先パス (デフォルト: ルート) |
+| extract_if_archive | bool | - (デフォルト false) | ZIP / tar.gz を展開するか |
 
-**レスポンス (200):**
+**レスポンス (201):**
 ```json
 {
-  "message": "string",
   "file": { ...FileInfoResponse },
   "extracted_files": ["plugins/example.jar"]
 }
 ```
 
-**処理フロー:**
-1. 宛先パスにファイルを保存
-2. `extract_if_archive=true` かつアーカイブ形式 → 展開
-3. ファイル履歴エントリを作成
+**アーカイブ安全性検証 (`extract_if_archive=true` 時):**
+- シンボリックリンクを含むエントリは禁止
+- ハードリンクを含むエントリは禁止
+- アーカイブ内のパスがサーバーディレクトリ外を指していないことを確認
+
+**エラー:**
+- 400 `Destination path is outside server directory`
+- 422 `Archive contains unsafe entries`
 
 ---
 
-### PUT /servers/{server_id}/files/{path} — ファイル書き込み
+### PUT /api/v2/organizations/{org_id}/servers/{server_id}/files/{path} — ファイル書き込み
 
-**認証:** User (can_modify_files 権限)
+**認証:** `file.write` 権限
 
-**リクエスト:**
-| フィールド | 型 | 必須 |
-|-----------|-----|-----|
-| content | string | ○ |
-| encoding | string | - (デフォルト utf-8) |
-| create_backup | bool | - (デフォルト true) |
+**書き込み禁止ファイル:** `ops.json` / `whitelist.json`（Groups 機能が管理）
+
+**リクエスト (JSON):**
+| フィールド | 型 | 必須 | 説明 |
+|-----------|-----|-----|------|
+| content | string | ○ | ファイル内容 |
+| encoding | string | - (デフォルト utf-8) | 書き込みエンコーディング |
+| create_history | bool | - (デフォルト true) | 書き込み前に履歴スナップショットを作成 |
+| description | string | - | 変更メモ (履歴に記録) |
 
 **レスポンス (200):**
 ```json
 {
-  "message": "string",
   "file": { ...FileInfoResponse },
-  "backup_created": true
+  "history_created": true,
+  "version_number": 5
 }
 ```
 
 **処理フロー:**
-1. `create_backup=true` の場合、先に現在の内容をバックアップ (FileEditHistory)
-2. 指定エンコードでファイルに書き込み
-3. 履歴レコードを作成
+1. 書き込み禁止ファイルでないことを確認
+2. `create_history=true` の場合、現在の内容をスナップショットとして保存 (SHA256 が前バージョンと同一なら保存しない)
+3. Runner 経由でファイルに書き込み
+
+**エラー:**
+- 403 `This file is managed by Groups and cannot be written directly`
+- 400 `Path is outside server directory`
 
 ---
 
-### DELETE /servers/{server_id}/files/{path} — ファイル削除
+### DELETE /api/v2/organizations/{org_id}/servers/{server_id}/files/{path} — ファイル削除
 
-**認証:** User (can_modify_files 権限)
+**認証:** `file.delete` 権限
 
-**処理フロー:**
-1. 制限ファイル (ops.json, whitelist.json, eula.txt 等) は admin 以外は削除不可
-2. ディレクトリの場合は再帰的に削除
-3. 監査ログ記録
+**削除禁止ファイル:** `ops.json` / `whitelist.json` / `eula.txt`（常に禁止）
+
+**リクエスト (JSON):** (任意)
+```json
+{ "recursive": true }
+```
+
+ディレクトリを削除する場合は `recursive: true` が必要。
 
 **レスポンス (200):**
 ```json
-{ "message": "string" }
+{ "message": "Deleted successfully", "path": "string" }
 ```
+
+**処理フロー:**
+1. 削除禁止ファイルでないことを確認
+2. ディレクトリかつ `recursive=false` の場合は 400
+3. Runner 経由で削除
+4. 対象ファイルの FileEditHistory は保持（削除しない）
+5. 監査ログ記録
+
+**エラー:**
+- 403 `This file cannot be deleted`
+- 400 `Directory is not empty. Use recursive=true to delete.`
 
 ---
 
-### PATCH /servers/{server_id}/files/{path}/rename — リネーム
+### PATCH /api/v2/organizations/{org_id}/servers/{server_id}/files/{path}/rename — リネーム
 
-**認証:** User (can_modify_files 権限)
+**認証:** `file.write` 権限
 
-**リクエスト:**
+**リクエスト (JSON):**
 ```json
 { "new_name": "string (1-255文字)" }
 ```
 
-**制約:** new_name にパスセパレータ (`/`, `\`) を含めてはならない
+`new_name` にパスセパレータ (`/`, `\`) を含めてはならない（同ディレクトリ内でのリネームのみ）。
 
 **レスポンス (200):**
 ```json
 {
-  "message": "string",
-  "old_path": "string",
-  "new_path": "string",
+  "old_path": "plugins/old-name.jar",
+  "new_path": "plugins/new-name.jar",
   "file": { ...FileInfoResponse }
 }
 ```
 
 ---
 
-### POST /servers/{server_id}/files/{path}/directories — ディレクトリ作成
+### POST /api/v2/organizations/{org_id}/servers/{server_id}/files/{path}/mkdir — ディレクトリ作成
 
-**認証:** User (can_modify_files 権限)
+**認証:** `file.write` 権限
 
-**リクエスト:**
+**リクエスト (JSON):**
 ```json
 { "name": "string (1-100文字)" }
 ```
 
-**レスポンス (200):**
+**レスポンス (201):**
 ```json
-{
-  "message": "string",
-  "directory": { ...FileInfoResponse }
-}
+{ "directory": { ...FileInfoResponse } }
 ```
 
 ---
 
-### POST /servers/{server_id}/files/search — ファイル検索
+### POST /api/v2/organizations/{org_id}/servers/{server_id}/files/search — ファイル検索
 
-**認証:** User
+**認証:** `file.read` 権限
 
-**リクエスト:**
+**リクエスト (JSON):**
 | フィールド | 型 | 制約 | 必須 |
 |-----------|-----|------|-----|
-| query | string | 最小 1 文字 | ○ |
-| file_type | enum | - | - |
-| include_content | bool | - | - (デフォルト false) |
+| query | string | 1文字以上 | ○ |
+| search_path | string | - | 検索対象ディレクトリ (デフォルト: ルート) |
+| type | enum | text / binary / directory / other | - |
+| include_content | bool | - (デフォルト false) | ファイル内容を全文検索するか |
 | max_results | int | 1-200 | - (デフォルト 50) |
 
 **レスポンス (200):**
@@ -236,15 +301,21 @@
 }
 ```
 
+`include_content=false` の場合は `matches` は空、ファイル名のみでマッチ。
+
 ---
 
 ## ファイル編集履歴エンドポイント
 
-### GET /servers/{server_id}/files/{path}/history — 編集履歴一覧
+### GET /api/v2/organizations/{org_id}/servers/{server_id}/files/{path}/history — 履歴一覧
 
-**認証:** User
+**認証:** `file.read` 権限
 
-**クエリパラメータ:** `limit` (1-100, デフォルト 20)
+**クエリパラメータ:**
+| パラメータ | 型 | デフォルト |
+|-----------|-----|---------|
+| page | int | 1 |
+| page_size | int (1-100) | 20 |
 
 **レスポンス (200):**
 ```json
@@ -253,17 +324,13 @@
   "total_versions": 5,
   "history": [
     {
-      "id": 1,
-      "server_id": 1,
-      "file_path": "server.properties",
+      "id": "uuid",
       "version_number": 5,
-      "backup_file_path": "string",
-      "file_size": 1024,
+      "file_size_bytes": 1024,
       "content_hash": "sha256...",
-      "editor_user_id": 1,
-      "editor_username": "string",
-      "created_at": "ISO8601",
-      "description": null
+      "editor_username": "string | null",
+      "description": "null",
+      "created_at": "ISO8601"
     }
   ]
 }
@@ -271,9 +338,9 @@
 
 ---
 
-### GET /servers/{server_id}/files/{path}/history/{version} — 特定バージョン内容取得
+### GET /api/v2/organizations/{org_id}/servers/{server_id}/files/{path}/history/{version} — バージョン内容取得
 
-**認証:** User
+**認証:** `file.read` 権限
 
 **レスポンス (200):**
 ```json
@@ -282,73 +349,71 @@
   "version_number": 3,
   "content": "string",
   "encoding": "utf-8",
-  "created_at": "ISO8601",
-  "editor_username": "string",
-  "description": null
+  "editor_username": "string | null",
+  "description": null,
+  "created_at": "ISO8601"
 }
 ```
 
 ---
 
-### POST /servers/{server_id}/files/{path}/history/{version}/restore — バージョン復元
+### POST /api/v2/organizations/{org_id}/servers/{server_id}/files/{path}/history/{version}/restore — バージョン復元
 
-**認証:** User (can_modify_files 権限)
+**認証:** `file.write` 権限
 
-**リクエスト:**
+**リクエスト (JSON):**
 ```json
 {
-  "create_backup_before_restore": true,
-  "description": "string|null"
+  "create_history_before_restore": true,
+  "description": "string | null"
 }
 ```
 
 **レスポンス (200):**
 ```json
 {
-  "message": "string",
   "file": { ...FileInfoResponse },
-  "backup_created": true,
-  "restored_from_version": 3
+  "history_created": true,
+  "restored_from_version": 3,
+  "new_version_number": 6
 }
 ```
 
 **処理フロー:**
-1. `create_backup_before_restore=true` の場合、現在の内容を新バージョンとして保存
-2. 指定バージョンの内容を現在のファイルに書き戻す
-3. 復元操作を履歴エントリとして記録
+1. `create_history_before_restore=true` の場合、現在の内容をスナップショットとして保存
+2. 指定バージョンの内容をストレージから取得
+3. Runner 経由でファイルに書き込み
+4. 復元操作を新バージョンとして履歴に記録
 
 ---
 
-### DELETE /servers/{server_id}/files/{path}/history/{version} — バージョン削除
+### DELETE /api/v2/organizations/{org_id}/servers/{server_id}/files/{path}/history/{version} — バージョン削除
 
-**認証:** Admin
+**認証:** `file.delete` 権限
 
 **レスポンス (200):**
 ```json
-{
-  "message": "string",
-  "deleted_version": 3
-}
+{ "deleted_version": 3 }
 ```
 
 **処理フロー:**
-1. バックアップファイルをディスクから削除
+1. ストレージバックエンドからスナップショットファイルを削除
 2. DB レコードを削除
 
 ---
 
-### GET /servers/{server_id}/files/history/statistics — ファイル履歴統計
+### GET /api/v2/organizations/{org_id}/servers/{server_id}/files/history/stats — 履歴統計
 
-**認証:** User
+**認証:** `file.read` 権限
 
 **レスポンス (200):**
 ```json
 {
-  "server_id": 1,
+  "server_id": "uuid",
   "total_files_with_history": 15,
   "total_versions": 87,
-  "total_storage_used": 5242880,
-  "oldest_version_date": "ISO8601",
+  "total_storage_bytes": 5242880,
+  "oldest_version_at": "ISO8601",
   "most_edited_file": "server.properties",
   "most_edited_file_versions": 23
 }
@@ -358,37 +423,53 @@
 
 ## セキュリティ要件
 
-**パストラバーサル防止:**
-- すべてのパス操作でサーバーディレクトリ外に出ないことを検証
+### パストラバーサル防止
+
+Runner 側で強制する。API Core でも二重に検証する。
+
 - `../` を含むパスは拒否
-- 絶対パスは拒否
+- 絶対パスは拒否 (先頭が `/` のパス)
 - バックスラッシュは拒否
+- ヌルバイトを含むパスは拒否
+- サーバーディレクトリのルートから外に出るパスは拒否
 
-**制限ファイル (admin 以外は削除不可):**
-- ops.json
-- whitelist.json
-- eula.txt
-- その他 admin 限定ファイル
+### 保護ファイル
 
-**アーカイブ検証 (アップロード時):**
-- シンボリックリンクは禁止
-- ハードリンクは禁止
-- アーカイブ内のパスがサーバーディレクトリ外を指していないことを確認
+| ファイル | 理由 | 扱い |
+|---------|------|------|
+| `ops.json` | Groups 機能が管理 | 書き込み・削除禁止 |
+| `whitelist.json` | Groups 機能が管理 | 書き込み・削除禁止 |
+| `eula.txt` | 誤削除防止 | 削除禁止、書き込みは `file.write` 権限で可 |
 
 ---
 
 ## 編集履歴の保存ルール
 
-1. **重複検出:** SHA256 ハッシュが直前バージョンと同じ場合はバックアップを作成しない
-2. **バージョン上限:** ファイル毎に保持するバージョン数の上限が設定可能 (超過時は古いものから削除)
-3. **ストレージ:** バックアップは独立したディレクトリ (`file_history/`) に保存
+1. **重複スキップ:** SHA256 ハッシュが直前バージョンと同一の場合はスナップショットを作成しない
+2. **バージョン上限:** サーバー設定で保持するバージョン数の上限を設定可能 (デフォルト 50/ファイル)。上限超過時は最古バージョンから削除
+3. **ストレージ:** バックアップと同じストレージバックエンドを使用 (05-backups 参照)
+
+---
 
 ## バリデーション一覧
 
 | 項目 | ルール |
 |------|--------|
-| ファイル名 | 最大 255 文字 |
+| ファイル名 / 新名前 | 1-255 文字、パスセパレータを含まない |
 | ディレクトリ名 | 1-100 文字 |
-| 検索クエリ | 最小 1 文字 |
+| 検索クエリ | 1文字以上、最大 200 文字 |
 | max_results | 1-200 |
-| 履歴取得件数 | 1-100 |
+| page_size (履歴) | 1-100 |
+
+---
+
+## 監査イベント一覧
+
+| イベント | action 値 | resource_type |
+|--------|-----------|---------------|
+| ファイル書き込み | `file_write` | file |
+| ファイル削除 | `file_delete` | file |
+| ファイルリネーム | `file_rename` | file |
+| ファイルアップロード | `file_upload` | file |
+| バージョン復元 | `file_version_restore` | file |
+| バージョン削除 | `file_version_delete` | file |
