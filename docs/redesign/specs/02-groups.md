@@ -369,7 +369,7 @@
    ```json
    [{"uuid": "...", "name": "..."}]
    ```
-4. 同じ UUID は priority が高いグループのみ採用 (重複排除)
+4. **重複排除:** `ops.json` 内で同じ UUID が複数グループに含まれる場合は priority 最大のグループのエントリを採用する。`whitelist.json` も同様。op グループと whitelist グループは独立して処理するため、両方に同じプレイヤーが存在しても問題ない
 5. サーバーが稼働中の場合:
    - whitelist グループがある → `whitelist reload` コマンドを送信
    - op グループがある → `ops.json` 再送信後にリロード

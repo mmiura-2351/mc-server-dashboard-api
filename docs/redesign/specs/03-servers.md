@@ -57,14 +57,14 @@
 ```
                     ┌─────────┐
              作成Job ↓         │ 作成失敗
-            creating ──────→ error ←──┐
-                │                    │  操作失敗
-                │ 作成完了            │
-                ↓                    │
-┌─────────── stopped ────────────────┘
-│               │ ↑
-│ 削除Job        │ stop完了 / force-stop完了
-↓               │
+            creating ──────→ error ←────────────┐
+                │                               │ 操作失敗
+                │ 作成完了                       │
+                ↓                               │
+┌─────────── stopped ──────────────────────────→┘
+│               │ ↑                 ↑
+│ 削除Job        │ stop完了          │ restore完了 / 失敗
+↓               │                  │
 deleting   starting ←── stop完了後に再起動
 (終端)         │ ↑
                │ │ 起動完了
@@ -74,7 +74,8 @@ deleting   starting ←── stop完了後に再起動
                └─ restarting ┘
                    (再起動Job)
 
-restore Job: stopped → restoring → stopped
+stopped ──→ restoring ──→ stopped   (restore Job)
+                  └──→ error        (restore 失敗)
 ```
 
 | status | 意味 |
@@ -120,7 +121,7 @@ Runner Interface:
 {
   "job_id": "uuid",
   "server_id": "uuid",
-  "type": "server_create | server_start | server_stop | server_restart | server_delete | server_restore",
+  "type": "server_create | server_start | server_stop | server_restart | server_delete | backup_create | backup_restore",
   "status": "queued | running | succeeded | failed | cancelled",
   "created_at": "ISO8601",
   "started_at": "ISO8601 | null",
@@ -308,7 +309,7 @@ Job の詳細仕様はジョブ管理仕様書に委ねる。
 3. 監査ログ記録
 
 **エラー:**
-- 409 `Server must be stopped before deletion`
+- 409 `Server must be stopped or in error state before deletion`
 
 ---
 
@@ -360,7 +361,7 @@ Job の詳細仕様はジョブ管理仕様書に委ねる。
 
 ### POST /api/v2/organizations/{org_id}/servers/{server_id}/restart — 再起動
 
-**認証:** `server.start` 権限 + `server.stop` 権限
+**認証:** `server.start` 権限 **AND** `server.stop` 権限 (両方必要)
 
 **前提条件:** `status` が `running`
 

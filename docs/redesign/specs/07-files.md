@@ -197,6 +197,12 @@
 2. `create_history=true` の場合、現在の内容をスナップショットとして保存 (SHA256 が前バージョンと同一なら保存しない)
 3. Runner 経由でファイルに書き込み
 
+**稼働中サーバーへの変更と設定反映:**
+- `server.properties` 等のゲーム設定ファイルは稼働中でも書き込み可能
+- ただし `server.properties` の変更はサーバーを再起動するまで反映されない（Minecraft の仕様）
+- 即時反映が必要な設定は、別途 `/command` エンドポイントで RCON コマンドを送信する
+- インフラ設定 (メモリ/CPU) は DB 管理であり、このエンドポイントでは変更できない (specs/03-servers.md 参照)
+
 **エラー:**
 - 403 `This file is managed by Groups and cannot be written directly`
 - 400 `Path is outside server directory`

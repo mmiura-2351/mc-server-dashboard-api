@@ -88,7 +88,7 @@
 
 ### GET /api/v2/organizations/{org_id}/audit/logs — Organization 監査ログ一覧
 
-**必要権限:** Organization の `owner` または `admin` ロール
+**必要権限:** `audit.read` 権限 (デフォルトでは owner / admin ロールのみ付与。`custom_permissions` で operator に grant することも可能)
 
 **クエリパラメータ:**
 | パラメータ | 型 | デフォルト | 説明 |
@@ -129,7 +129,7 @@
 
 ### GET /api/v2/organizations/{org_id}/audit/stats — Organization 監査統計
 
-**必要権限:** Organization の `owner` または `admin` ロール
+**必要権限:** `audit.read` 権限
 
 **レスポンス (200):**
 ```json

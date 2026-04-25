@@ -34,7 +34,7 @@ v1 の破綻分析 (`01-current-issues.md`) を踏まえ、v2 が満たすべき
 ## 3. 機能要件
 
 ### 3.1 Organization / ユーザー管理
-- **FR-O-1** Organization を作成/削除できる。削除は配下リソースをカスケード論理削除する
+- **FR-O-1** Organization を作成/削除できる。削除は配下のサーバーがすべて削除済みであることを前提とし、サーバーが残っている場合は削除不可とする（誤削除防止）
 - **FR-O-2** 1 ユーザーは複数の Organization に所属でき、Organization ごとに異なるロールを持てる
 - **FR-O-3** メンバーに対して **機能単位** のパーミッションを付与できる (例: `server.start`, `server.delete`, `backup.restore`)
 - **FR-O-4** パーミッションは Role テンプレート (`owner`, `admin`, `operator`, `viewer`) からプリセット適用でき、かつ個別に上書きできる
@@ -51,9 +51,7 @@ v1 の破綻分析 (`01-current-issues.md`) を踏まえ、v2 が満たすべき
 - **FR-S-7** サーバーごとに CPU/メモリ/ディスクのリソース上限を設定できる
 
 ### 3.3 Runner (実行基盤)
-- **FR-R-1** 実行基盤は **差し替え可能なプラガブル構造** とし、初期提供は以下:
-  - ホスト Runner (直接プロセス起動)
-  - コンテナ Runner (Docker/Podman)
+- **FR-R-1** 実行基盤は **差し替え可能なプラガブル構造** とし、MVP の主ターゲットはコンテナ Runner (Docker/Podman) とする。ホスト Runner (直接プロセス起動) はオプション実装として許容する
 - **FR-R-2** API Core を再起動しても、稼働中の Minecraft サーバーは継続稼働し、状態再同期で追跡を復元できる
 - **FR-R-3** Runner と API Core は認証付きチャネルで通信し、Runner は外部から直接操作できない
 
@@ -152,5 +150,5 @@ v1 の破綻分析 (`01-current-issues.md`) を踏まえ、v2 が満たすべき
 
 - **OQ-1** Runner 認証方式 (mTLS / OIDC / 単純トークン) のどれを採用するか
 - **OQ-2** ジョブキューの実装選定 (Redis / Postgres-based / NATS / RabbitMQ)
-- **OQ-3** DB は引き続き SQLite で MVP を作るか、最初から PostgreSQL を前提にするか
+- **OQ-3** DB は引き続き SQLite で MVP を作るか、最初から PostgreSQL を前提にするか (`03-architecture-direction.md` では PostgreSQL を推奨。SQLite はマルチインスタンス化に不向きなため)
 - **OQ-4** v1 の既存ユーザー/サーバーを v2 に移行する必要があるか

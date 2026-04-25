@@ -144,6 +144,8 @@
 
 外部で作成したバックアップを取り込む。
 
+**Note:** バックアップ作成 (POST .../backups) は非同期ジョブだが、アップロードは **同期処理 (201)** とする。理由: クライアントはアップロード完了まで接続を保持するため、非同期化しても体験上の差がなく、ジョブへの移行によるオーバーヘッドが不要のため。2GB のファイルをストリーミング転送するため、クライアント側のタイムアウト設定に注意する。
+
 **認証:** `backup.create` 権限
 
 **リクエスト (multipart/form-data):**
@@ -293,6 +295,8 @@
 
 ## バックアップスケジュールエンドポイント
 
+> **Phase 2 機能。** 手動バックアップは MVP (Phase 1) で実装するが、スケジュール自動バックアップは Phase 2 での実装とする。
+
 ### POST /api/v2/organizations/{org_id}/servers/{server_id}/backup-schedule — スケジュール作成
 
 **認証:** `backup.create` 権限
@@ -370,7 +374,7 @@
 
 ### DELETE /api/v2/organizations/{org_id}/servers/{server_id}/backup-schedule — スケジュール削除
 
-**認証:** `backup.create` 権限
+**認証:** `backup.delete` 権限
 
 **レスポンス (200):**
 ```json

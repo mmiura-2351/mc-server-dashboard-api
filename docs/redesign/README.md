@@ -30,6 +30,7 @@
 | `specs/03-servers.md` | サーバー管理・制御 |
 | `specs/04-versions.md` | Minecraft バージョン管理 |
 | `specs/05-backups.md` | バックアップ管理 / スケジューラー |
+| `specs/06-jobs.md` | ジョブ管理 (非同期タスク共通仕様) |
 | `specs/07-files.md` | ファイル管理 / 編集履歴 |
 | `specs/08-realtime.md` | リアルタイム通信 (WebSocket) |
 | `specs/09-audit.md` | 監査ログ |
@@ -46,4 +47,10 @@
 
 - v2 を同リポジトリ内に共存させるか、新規リポジトリとして切り出すか
 - v1 からの移行経路 (データ/サーバーディレクトリ) の要否
-- 既存フロントエンド (`mc-server-dashboard-ui`) との互換 API を維持するか
+
+## 決定済み事項
+
+- 既存フロントエンド (`mc-server-dashboard-ui`) との API 互換は **維持しない**。v2 は新規 API 契約で設計する (`02-requirements.md` C-1)
+- リソース分離の単位は **Organization (1 層)**。Tenant/Workspace の 2 層構造は採用しない
+- テンプレート機能は **v2 廃止**。バックアップ復元で代替する
+- 多言語対応 (i18n) は **v2 対象外**
