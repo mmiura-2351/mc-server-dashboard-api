@@ -144,11 +144,11 @@ v1 の破綻分析 (`01-current-issues.md`) を踏まえ、v2 が満たすべき
 - リージョン分散、マルチクラウド
 - メトリクス公開 (Prometheus 互換)
 
-## 7. オープン事項
+## 7. オープン事項 (すべて解決済み)
 
-合意形成が必要で、要件 FIX 前に決めたい項目。
-
-- **OQ-1** Runner 認証方式 (mTLS / OIDC / 単純トークン) のどれを採用するか
-- **OQ-2** ジョブキューの実装選定 (Redis / Postgres-based / NATS / RabbitMQ)
-- **OQ-3** DB は引き続き SQLite で MVP を作るか、最初から PostgreSQL を前提にするか (`03-architecture-direction.md` では PostgreSQL を推奨。SQLite はマルチインスタンス化に不向きなため)
-- **OQ-4** v1 の既存ユーザー/サーバーを v2 に移行する必要があるか
+| ID | 内容 | 決定 |
+|----|------|------|
+| OQ-1 | Runner 認証方式 | **Bearer Token (共有シークレット)** — Worker → Runner Agent 間。MVP は同一 Docker ネットワーク内前提のため単純トークンで十分 |
+| OQ-2 | ジョブキューの実装選定 | **PostgreSQL テーブル (MVP)** — `SELECT FOR UPDATE SKIP LOCKED` で複数ワーカーの競合を防ぐ。Phase 2 以降で Redis / NATS JetStream への移行を検討 |
+| OQ-3 | DB 選定 | **PostgreSQL** — SQLite はマルチインスタンス化に不向きなため最初から PostgreSQL を採用 |
+| OQ-4 | v1 データ移行 | **MVP では対象外** — 要件 §5 C-2 の通り。v1 との互換は維持しない |

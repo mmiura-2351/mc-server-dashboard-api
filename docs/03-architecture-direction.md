@@ -1,43 +1,48 @@
-# v2 アーキテクチャ方針 (叩き台)
+# v2 アーキテクチャ方針
 
-`02-requirements.md` の要件を満たすためのアーキテクチャの **方向性** を示します。
-設計レビューで合意するまでは暫定であり、本ドキュメント単体で実装を開始しないこと。
+`02-requirements.md` の要件を満たすアーキテクチャ方針です。技術スタックを含む主要事項は確定済みです。
 
-## 1. 全体構成 (論理)
+## 1. 全体構成 (コンテナ構成)
 
 ```
         ┌────────────────────┐
         │  Web UI / CLI /    │
         │  External API User │
         └─────────┬──────────┘
-                  │ (HTTPS, JWT/PAT)
+                  │ (HTTPS, JWT)
         ┌─────────▼──────────┐
-        │     API Core       │  ← ステートレス / 水平スケール
-        │ (FastAPI or other) │
+        │   [api コンテナ]    │  ← ステートレス / 水平スケール
+        │   Echo (Go)        │
         └──┬──────┬──────┬───┘
            │      │      │
-       RDB │      │ Queue│  WebSocket/SSE
-           │      │      │
-     ┌─────▼┐  ┌──▼────┐ │
-     │ RDB  │  │Job    │ │
-     │(PG)  │  │Queue  │ │
-     └──────┘  └──┬────┘ │
-                  │      │
-        ┌─────────▼──────▼───────┐
-        │     Runner Agent       │ ← ホスト毎 / クラスタ毎
-        │ (Docker / K8s driver)  │
-        └─────────┬──────────────┘
-                  │ (exec / attach / logs)
-        ┌─────────▼──────────────┐
-        │ Minecraft Server       │ ← コンテナ/Pod
-        │ (JVM process in sandbox)│
-        └────────────────────────┘
+       SQL │    Redis    │ Redis pub/sub
+           │   pub/sub   │ (WebSocket 配信)
+     ┌─────▼┐  ┌──▼──────┐
+     │[pg]  │  │[redis]  │
+     │(PG)  │  │         │
+     └──┬───┘  └─────────┘
+        │ SQL (job polling)
+        │
+     ┌──▼──────────────┐
+     │ [worker コンテナ] │  ← DB キューをポーリング
+     │  Job Worker (Go) │
+     └──────────┬───────┘
+                │ HTTP + Bearer Token
+     ┌──────────▼───────────┐
+     │ [runner-agent コンテナ]│  ← 独立デプロイ可能
+     │  Runner Agent (Go)   │
+     └──────────┬────────────┘
+                │ Docker SDK (/var/run/docker.sock)
+     ┌──────────▼────────────┐
+     │  Minecraft コンテナ    │  ← JVM in sandbox
+     └───────────────────────┘
 ```
 
-- **API Core**: HTTP/WebSocket エンドポイント、認可、データ永続化の入出力
-- **Job Queue**: 起動/停止/バックアップ等の非同期ジョブを保持
-- **Runner Agent**: Runner (Docker/K8s 等) に対する操作をラップする常駐プロセス
-- **Runner**: Minecraft サーバープロセスをサンドボックス内で実行する基盤
+- **api**: HTTP/WebSocket エンドポイント、認可、DB 読み書き。Redis pub/sub で WebSocket をマルチレプリカ対応
+- **worker**: DB の `jobs` テーブルをポーリングし、Runner Agent に HTTP で指示を出す
+- **runner-agent**: Docker SDK 経由で Minecraft コンテナを操作する独立サービス。API Core / Worker とは別にデプロイ可能
+- **postgres**: 全サービス共通のデータストア。jobs テーブルがジョブキューを兼ねる (MVP)
+- **redis**: WebSocket pub/sub チャネル (api 複数レプリカ時のログ/ステータス配信)
 
 ## 2. 方針の要点
 
@@ -77,29 +82,41 @@ Server ─── ServerGroup (attach) ─── Group
 - `Server.runner_type` と `runner_instance_id` で Runner 上の実行インスタンスを追跡
 - `Backup`/`FileEditHistory` は `storage_backend + storage_key` でストレージ抽象化
 
-## 4. 技術選定 (候補)
+## 4. 技術選定 (確定)
 
-| レイヤ | 候補 | 備考 |
+| レイヤ | 採用 | 備考 |
 |--------|------|------|
-| API Core | FastAPI / Litestar | Python 継続なら FastAPI |
-| DB | PostgreSQL | SQLite はテナント化と同時スケールに不向き |
-| Queue | Redis + RQ / Arq / Dramatiq / NATS JetStream | 永続性と運用容易性で選定 |
-| Runner (MVP) | Docker Engine API | 単一ホスト前提 |
+| 言語 | **Go** | - |
+| API フレームワーク | **Echo** | WebSocket・ミドルウェアが充実 |
+| DB | **PostgreSQL** | SQLite はマルチインスタンス化に不向き |
+| DB ドライバ | **pgx/v5** | - |
+| クエリ生成 | **sqlc** | SQL から型安全な Go コードを生成 |
+| マイグレーション | **goose** | - |
+| Job Queue (MVP) | **PostgreSQL テーブル** | `SELECT FOR UPDATE SKIP LOCKED` でワーカー競合を防ぐ |
+| Job Queue (Phase 2) | Redis / NATS JetStream | 専用キューへの移行を検討 |
+| WebSocket pub/sub | **Redis** | api 複数レプリカ時のログ/ステータス配信 |
+| Runner (MVP) | **Docker Engine API** | docker/docker 公式 Go SDK |
 | Runner (Phase 2) | Kubernetes | StatefulSet or Custom Operator |
+| Runner 認証 (MVP) | **Bearer Token (共有シークレット)** | Worker → Runner Agent 間。同一 Docker ネットワーク内 |
 | 監視 | OpenTelemetry + Prometheus | |
-| 認可 | Casbin / 自前ポリシーエンジン | ABAC 相当が必要なら Casbin |
+| リポジトリ構成 | **モノレポ** | cmd/api, cmd/worker, cmd/runner-agent を 1 Go モジュールで管理 |
+| ローカル開発 | **Docker Compose** | 全コンテナを一括起動 |
 
-## 5. 主要リスクと先行検討事項
+## 5. 主要リスクと対応方針
 
-- **R-1** Runner Agent ↔ API Core 間通信の信頼性 (ネットワーク断時のジョブ状態整合)
+- **R-1** Worker → Runner Agent 間通信のネットワーク断時のジョブ状態整合
+  - Worker 起動時に `status=running` のまま完了していないジョブを検出して再実行 (at-least-once)
 - **R-2** コンテナ化時の永続ストレージ (ワールドデータ/バックアップ) の扱い
-- **R-3** ~~RCON 接続を API Core から直接張るか、Runner Agent 経由にするか~~ → **決定済み: Runner 経由**
+  - Docker volume または bind mount。Runner Agent がパスを管理
+- **R-3** ~~RCON 接続を API Core から直接張るか、Runner Agent 経由にするか~~ → **決定済み: Runner Agent 経由**
 - **R-4** Organization 横断のオペレーション (複数 Organization をまたいで保守する場面) の権限モデル
-- **R-5** v1 データの移行可否 (要件 §5 C-2 とのすり合わせ)
+  - MVP では対象外。将来的にスーパー管理者ロールで対応
+- **R-5** ~~v1 データの移行可否~~ → **決定済み: MVP では移行しない** (要件 §5 C-2)
 
 ## 6. 次ステップ
 
-1. 本ドキュメント + 要件を **レビュー**、オープン事項 (要件 §7) を決定
-2. R-1〜R-5 のスパイク実装 (PoC) をタスク化
-3. データモデルと API 契約 (OpenAPI) のドラフト作成
-4. MVP スコープの合意と v2 リポジトリ/ディレクトリ方針の決定
+1. モノレポのディレクトリ骨格と `go.mod` の作成 (`docs/05-monorepo-structure.md` 参照)
+2. Docker Compose の整備 (postgres / redis / api / worker / runner-agent)
+3. goose マイグレーションファイルの作成 (全テーブル定義)
+4. sqlc 設定とクエリ定義
+5. `cmd/api` — 認証エンドポイントから実装開始
