@@ -37,8 +37,7 @@ mc-server-dashboard-api/
 ├── docker-compose.test.yml # テスト用 (postgres のみ)
 ├── sqlc.yaml               # sqlc 設定
 ├── go.mod
-├── go.sum
-└── Makefile
+└── go.sum
 ```
 
 ---
@@ -159,17 +158,3 @@ Runner Agent が公開する内部 HTTP API。Worker からのみ呼び出され
 | `MINECRAFT_DATA_DIR` | Minecraft データ格納ルートディレクトリ | `/data` |
 | `REDIS_URL` | ログ/ステータス Publish 先 | `redis://redis:6379` |
 
----
-
-## 6. Makefile ターゲット (主要)
-
-| ターゲット | 内容 |
-|-----------|------|
-| `make up` | Docker Compose で全サービス起動 |
-| `make down` | 全サービス停止 |
-| `make migrate` | goose マイグレーション実行 |
-| `make migrate-down` | 1ステップロールバック |
-| `make sqlc` | sqlc コード生成 |
-| `make test` | テスト実行 (docker-compose.test.yml 使用) |
-| `make lint` | golangci-lint 実行 |
-| `make build` | 全バイナリビルド |
