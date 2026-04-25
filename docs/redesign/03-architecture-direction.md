@@ -46,8 +46,8 @@
 - Runner は差し替え可能なドライバ (Docker / Podman / Kubernetes / リモートホスト over SSH)
 - Runner プロファイルで Java バージョン/メモリ/追加パッケージを宣言
 
-### 2.2 マルチテナント基盤 (Issues §1, §5 への解)
-- 全ドメインモデルに `tenant_id` と `workspace_id` を必須化
+### 2.2 Organization 基盤 (Issues §1, §5 への解)
+- 全ドメインモデルに `organization_id` を必須化 (Tenant/Workspace の 2 層構造は採用しない)
 - 認可は **機能別パーミッション** を一次、Role テンプレートを二次として設計
 - 行レベル (Row-Level) の参照制御をクエリ/リポジトリ層で強制
 
@@ -63,20 +63,19 @@
 ## 3. データモデル方針 (概略)
 
 ```
-Tenant ─┬─ Workspace ─┬─ Server ─── ServerRevision
-        │             ├─ Group
-        │             └─ Template
-        ├─ Member (User×Tenant) ── MemberPermission
-        └─ ApiToken
+Organization ─┬─ Server ──── Job (start/stop/delete/restore...)
+              │         └─── Backup
+              ├─ Group ────── GroupPlayer
+              ├─ Member (User×Organization) ── custom_permissions
+              └─ AuditLog
 
-Server ─┬─ Job (backup/start/stop/restore...)
-        ├─ Backup
-        └─ AuditLog
+Server ─── ServerGroup (attach) ─── Group
 ```
 
-- `Server.runner_profile_id` で Runner プロファイル参照
-- `Server.current_runtime` は Runner Agent の割り当て (Pod ID / container ID 等)
-- `MemberPermission` は `(member_id, scope, action)` 構造で拡張性を確保
+- `Organization` がリソース分離の主軸 (Tenant/Workspace の 2 層は採用しない)
+- `OrganizationMember.role_template` で owner/admin/operator/viewer を管理、`custom_permissions` で個別上書き
+- `Server.runner_type` と `runner_instance_id` で Runner 上の実行インスタンスを追跡
+- `Backup`/`FileEditHistory` は `storage_backend + storage_key` でストレージ抽象化
 
 ## 4. 技術選定 (候補)
 
@@ -95,7 +94,7 @@ Server ─┬─ Job (backup/start/stop/restore...)
 - **R-1** Runner Agent ↔ API Core 間通信の信頼性 (ネットワーク断時のジョブ状態整合)
 - **R-2** コンテナ化時の永続ストレージ (ワールドデータ/バックアップ) の扱い
 - **R-3** RCON 接続を API Core から直接張るか、Runner Agent 経由にするか
-- **R-4** テナント跨ぎのオペレーション (運営が全テナントをまたいで保守する場面) の権限モデル
+- **R-4** Organization 横断のオペレーション (複数 Organization をまたいで保守する場面) の権限モデル
 - **R-5** v1 データの移行可否 (要件 §5 C-2 とのすり合わせ)
 
 ## 6. 次ステップ

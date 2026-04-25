@@ -29,7 +29,7 @@
 
 ## アクション一覧
 
-他の仕様書の「監査イベント一覧」と対応する。
+各仕様書の「監査イベント一覧」を集約したもの。詳細は各仕様書を参照。
 
 | カテゴリ | action 値 | resource_type |
 |---------|-----------|---------------|
@@ -37,24 +37,31 @@
 | | `auth_login_failure` | authentication |
 | | `auth_token_refresh` | authentication |
 | | `auth_logout` | authentication |
+| | `auth_logout_all` | authentication |
 | | `auth_token_revoked` | authentication |
-| **ユーザー** | `user_update` | user |
+| **ユーザー** | `user_register` | user |
+| | `user_update` | user |
 | | `user_password_change` | user |
+| | `user_delete` | user |
+| | `pat_create` | user |
+| | `pat_revoke` | user |
 | **Organization** | `org_create` | organization |
 | | `org_update` | organization |
 | | `org_delete` | organization |
 | | `member_invite` | organization |
 | | `member_join` | organization |
-| | `member_remove` | organization |
 | | `member_role_change` | organization |
+| | `member_remove` | organization |
+| | `invitation_cancel` | organization |
 | **サーバー** | `server_create` | server |
 | | `server_delete` | server |
 | | `server_start` | server |
 | | `server_stop` | server |
-| | `server_restart` | server |
 | | `server_force_stop` | server |
-| | `server_command` | server |
+| | `server_restart` | server |
 | | `server_update` | server |
+| | `server_settings_update` | server |
+| | `server_command` | server |
 | **バックアップ** | `backup_create` | backup |
 | | `backup_delete` | backup |
 | | `backup_restore` | backup |

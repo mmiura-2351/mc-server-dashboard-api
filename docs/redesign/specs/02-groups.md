@@ -413,7 +413,7 @@
 | グループ作成 | `group_create` | group |
 | グループ更新 | `group_update` | group |
 | グループ削除 | `group_delete` | group |
-| プレイヤー追加 | `player_added_to_group` | group |
-| プレイヤー削除 | `player_removed_from_group` | group |
-| サーバーに attach | `group_attached_to_server` | group |
-| サーバーから detach | `group_detached_from_server` | group |
+| プレイヤー追加 | `player_add` | group |
+| プレイヤー削除 | `player_remove` | group |
+| サーバーに attach | `group_attach` | group |
+| サーバーから detach | `group_detach` | group |

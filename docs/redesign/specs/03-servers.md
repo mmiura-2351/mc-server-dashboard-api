@@ -31,7 +31,6 @@
 | max_disk_gb | int | NOT NULL | 20 | ディスククォータ (GB) |
 | connection_host | string(255) | - | NULL | 稼働中に Runner が設定する接続先ホスト |
 | connection_port | int | - | NULL | 稼働中に Runner が割り当てた外部ポート |
-| template_id | UUID | FK(templates.id), ON DELETE SET NULL | NULL | 作成時に適用したテンプレート |
 | deleted_at | datetime(tz) | - | NULL | 論理削除日時 |
 | created_at | datetime(tz) | NOT NULL | now() | - |
 | updated_at | datetime(tz) | NOT NULL | now() | - |
@@ -156,7 +155,6 @@ Job の詳細仕様はジョブ管理仕様書に委ねる。
     "host": "mc.example.com",
     "port": 25566
   },
-  "template_id": "uuid | null",
   "created_at": "ISO8601",
   "updated_at": "ISO8601"
 }
@@ -184,7 +182,6 @@ Job の詳細仕様はジョブ管理仕様書に委ねる。
 | max_memory_mb | int | 512-32768 | - (デフォルト 2048) |
 | max_cpu_cores | float | 0.5-32.0 | - (デフォルト 1.0) |
 | max_disk_gb | int | 5-1000 | - (デフォルト 20) |
-| template_id | UUID | - | - |
 | initial_groups | object | `{op_groups: [uuid], whitelist_groups: [uuid]}` | - |
 
 **レスポンス (202):**
@@ -202,9 +199,8 @@ Job の詳細仕様はジョブ管理仕様書に委ねる。
 4. `server_create` ジョブをキューに追加
 5. ジョブが非同期で実行:
    a. Runner に作成を依頼 (JAR DL、ディレクトリ構成、eula.txt 生成)
-   b. テンプレートが指定された場合は適用
-   c. グループが指定された場合は attach
-   d. 成功 → `status=stopped`、失敗 → `status=error`
+   b. グループが指定された場合は attach
+   c. 成功 → `status=stopped`、失敗 → `status=error`
 
 **エラー:**
 - 409 `Slug already exists in this organization`

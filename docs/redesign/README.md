@@ -8,11 +8,11 @@
 現行実装 (v1) は設計フェーズを省略して機能追加を繰り返した結果、
 以下の「後から変更が難しい層」で破綻が発生しています。
 
-- ユーザー/テナント単位の機能制限・権限管理
+- ユーザー/Organization 単位の機能制限・権限管理
 - アプリケーションと Minecraft サーバープロセスの実行環境の分離
 - 複数サーバーの同時実行
 - 実行環境の抽象化 (現状 host 上で直接 `fork(2)` + Java 起動)
-- マルチテナント/グループ単位でのサーバー分離
+- Organization 単位でのサーバー分離
 
 これらはモジュール単位の置き換えでは解決できないため、
 要件から再整理した上で v2 として作り直します。
@@ -24,6 +24,15 @@
 | `01-current-issues.md` | v1 の設計上の破綻の詳細分析 |
 | `02-requirements.md` | v2 の機能/非機能要件 |
 | `03-architecture-direction.md` | v2 のアーキテクチャ方針 (叩き台) |
+| `04-feature-list.md` | v1 機能一覧と v2 での扱い (廃止・変更・継続) |
+| `specs/01-auth-users.md` | 認証 / Organization / ユーザー管理 |
+| `specs/02-groups.md` | プレイヤーグループ管理 |
+| `specs/03-servers.md` | サーバー管理・制御 |
+| `specs/04-versions.md` | Minecraft バージョン管理 |
+| `specs/05-backups.md` | バックアップ管理 / スケジューラー |
+| `specs/07-files.md` | ファイル管理 / 編集履歴 |
+| `specs/08-realtime.md` | リアルタイム通信 (WebSocket) |
+| `specs/09-audit.md` | 監査ログ |
 
 ## 位置付け
 
