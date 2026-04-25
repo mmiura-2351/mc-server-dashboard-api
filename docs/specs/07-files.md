@@ -291,6 +291,8 @@
 | include_content | bool | - (デフォルト false) | ファイル内容を全文検索するか |
 | max_results | int | 1-200 | - (デフォルト 50) |
 
+**タイムアウト:** 30 秒。超過した場合は 408 を返す。
+
 **レスポンス (200):**
 ```json
 {
@@ -308,6 +310,9 @@
 ```
 
 `include_content=false` の場合は `matches` は空、ファイル名のみでマッチ。
+
+**エラー:**
+- 408 `Search timed out. Try narrowing the search path or disabling content search.`
 
 ---
 

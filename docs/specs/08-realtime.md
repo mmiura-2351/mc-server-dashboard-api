@@ -18,7 +18,8 @@ wss://host/api/v2/organizations/{org_id}/servers/{server_id}/console?token=<JWT>
 ```
 
 - 接続時に JWT を検証し、無効なら即座に接続を閉じる (`4001 Unauthorized`)
-- トークン有効期限切れの場合も接続を閉じる (`4001 Unauthorized`)。クライアントは `/auth/refresh` で新しいトークンを取得してから再接続する
+- JWT の検証は接続時のみ行う。接続確立後にトークンが期限切れになっても切断しない
+- クライアントが再接続する場合は `/auth/refresh` で新しいトークンを取得してから接続する
 
 ---
 

@@ -48,9 +48,10 @@
 | **Organization** | `org_create` | organization |
 | | `org_update` | organization |
 | | `org_delete` | organization |
+| | `org_transfer_ownership` | organization |
 | | `member_invite` | organization |
 | | `member_join` | organization |
-| | `member_role_change` | organization |
+| | `member_permissions_update` | organization |
 | | `member_remove` | organization |
 | | `invitation_cancel` | organization |
 | **サーバー** | `server_create` | server |
@@ -63,6 +64,7 @@
 | | `server_settings_update` | server |
 | | `server_command` | server |
 | **バックアップ** | `backup_create` | backup |
+| | `backup_upload` | backup |
 | | `backup_delete` | backup |
 | | `backup_restore` | backup |
 | | `backup_schedule_create` | backup |

@@ -446,7 +446,7 @@
 - **実行条件:** `enabled=true` AND `next_backup_at <= now(UTC)`
 - **only_when_running=true:** サーバーが `running` 状態でない場合はスキップ（`action=skipped` をログ記録）
 - **実行後:** `last_backup_at` を更新し、`schedule_expression` から次回 `next_backup_at` を算出
-- **max_backups 超過時:** 最も古い `scheduled` タイプのバックアップを自動削除（`manual` / `pre_restore` は削除しない）
+- **max_backups 超過時:** 最も古い `scheduled` タイプのバックアップを自動削除（`manual` / `pre_restore` は削除しない）。`pre_restore` バックアップの削除はユーザーの手動操作に任せる
 - **実行はジョブキュー経由:** スケジューラーは `backup_create` ジョブをキューに追加するだけで、実際の処理はジョブワーカーが行う
 
 ---
@@ -469,6 +469,7 @@
 | イベント | action 値 | resource_type |
 |--------|-----------|---------------|
 | バックアップ作成開始 | `backup_create` | backup |
+| バックアップアップロード | `backup_upload` | backup |
 | バックアップ削除 | `backup_delete` | backup |
 | バックアップ復元開始 | `backup_restore` | backup |
 | スケジュール作成 | `backup_schedule_create` | backup |

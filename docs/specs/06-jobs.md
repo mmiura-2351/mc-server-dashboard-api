@@ -114,7 +114,7 @@ queued 状態のみ cancelled に遷移可能:
 
 | job type | タイムアウト | タイムアウト時の挙動 |
 |----------|------------|------------------|
-| `server_create` | 300 秒 | `status=failed`、サーバー `status=error` |
+| `server_create` | 300 秒 | `status=failed`、サーバー `status=error`。Runner 側の中途生成リソースはクリーンアップしない。ユーザーが DELETE エンドポイントで明示的に削除する |
 | `server_start` | 90 秒 | `status=failed`、サーバー `status=error` |
 | `server_stop` | 60 秒 | 強制終了後 `status=succeeded`、サーバー `status=stopped` |
 | `server_restart` | 150 秒 | `status=failed`、サーバー `status=error` |

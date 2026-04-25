@@ -7,6 +7,7 @@
 - **システムグローバル。** バージョン情報は Organization に依存しない共有リソース
 - **Runner に渡すための情報。** `download_url` は API Core が使うのではなく、サーバー作成時に Runner へ渡すために保持する
 - **Java バージョンは持たない。** Minecraft バージョンから Java バージョンへのマッピングは固定の対応関係であり、Runner の内部ロジックが担う
+- **監査ログは VersionUpdateLog で代替。** バージョン更新操作は `audit_logs` には記録しない。`VersionUpdateLog` が実行者・結果・件数を保持するため、監査の役割を担う
 
 ---
 

@@ -19,7 +19,6 @@
 | name | string(100) | NOT NULL | - | グループ名 |
 | description | text | - | NULL | 説明 |
 | type | enum | NOT NULL | - | op / whitelist |
-| is_template | bool | NOT NULL | false | テンプレートフラグ (複製元として使いやすくする用途) |
 | deleted_at | datetime(tz) | - | NULL | 論理削除日時 |
 | created_at | datetime(tz) | NOT NULL | now() | - |
 | updated_at | datetime(tz) | NOT NULL | now() | - |
@@ -81,7 +80,6 @@
 | name | string | 1-100 文字、英数字・スペース・ハイフン・アンダースコアのみ | ○ |
 | type | enum | op / whitelist | ○ |
 | description | string | 最大 500 文字 | - |
-| is_template | bool | - | - (デフォルト false) |
 
 **レスポンス (201):** `GroupResponse`
 ```json
@@ -91,7 +89,6 @@
   "name": "string",
   "description": "string|null",
   "type": "op|whitelist",
-  "is_template": false,
   "player_count": 0,
   "created_at": "ISO8601",
   "updated_at": "ISO8601"
@@ -117,7 +114,6 @@
 | パラメータ | 型 | 説明 |
 |-----------|-----|------|
 | type | enum | op / whitelist でフィルタ |
-| is_template | bool | テンプレートのみ / 通常のみでフィルタ |
 | page | int | デフォルト 1 |
 | page_size | int (1-100) | デフォルト 50 |
 
@@ -145,7 +141,6 @@
   "name": "string",
   "description": "string|null",
   "type": "op|whitelist",
-  "is_template": false,
   "players": [
     { "id": "uuid", "minecraft_uuid": "string", "username": "string", "added_at": "ISO8601" }
   ],
@@ -168,8 +163,7 @@
 ```json
 {
   "name": "string",
-  "description": "string",
-  "is_template": true
+  "description": "string"
 }
 ```
 

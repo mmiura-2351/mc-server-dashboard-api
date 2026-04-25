@@ -93,7 +93,7 @@ Server ─── ServerGroup (attach) ─── Group
 
 - **R-1** Runner Agent ↔ API Core 間通信の信頼性 (ネットワーク断時のジョブ状態整合)
 - **R-2** コンテナ化時の永続ストレージ (ワールドデータ/バックアップ) の扱い
-- **R-3** RCON 接続を API Core から直接張るか、Runner Agent 経由にするか
+- **R-3** ~~RCON 接続を API Core から直接張るか、Runner Agent 経由にするか~~ → **決定済み: Runner 経由**
 - **R-4** Organization 横断のオペレーション (複数 Organization をまたいで保守する場面) の権限モデル
 - **R-5** v1 データの移行可否 (要件 §5 C-2 とのすり合わせ)
 
