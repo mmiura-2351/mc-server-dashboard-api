@@ -1,32 +1,33 @@
-# Python-generated files
-__pycache__/
-*.py[oc]
-build/
-dist/
-wheels/
-*.egg-info
-.pytest_cache/
-.ruff_cache/
+# Binaries
+/api
+/worker
+/runner-agent
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
 
-# Virtual environments
-.venv
+# Test binary
+*.test
 
-# Environment variables
+# Output
+*.out
+coverage.html
+coverage.out
+
+# Go workspace
+go.work
+go.work.sum
+
+# Environment
 .env
 
-# Database files
-*.db
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
 
-# Coverage reports
-.coverage
-htmlcov/
-coverage.json
-
-# Application runtime directories
-/cache/
-/servers/
-/backups/
-/file_history/
-
-# Test screenshots
-/screenshots/
+# direnv
+.direnv/

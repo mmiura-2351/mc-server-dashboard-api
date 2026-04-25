@@ -1,0 +1,79 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: mcdb
+      POSTGRES_USER: mcuser
+      POSTGRES_PASSWORD: mcpassword
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mcuser -d mcdb"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build:
+      context: .
+      dockerfile: docker/api/Dockerfile
+    ports:
+      - "8080:8080"
+    env_file: .env
+    environment:
+      DATABASE_URL: postgres://mcuser:mcpassword@postgres:5432/mcdb
+      REDIS_URL: redis://redis:6379
+      PORT: "8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  worker:
+    build:
+      context: .
+      dockerfile: docker/worker/Dockerfile
+    env_file: .env
+    environment:
+      DATABASE_URL: postgres://mcuser:mcpassword@postgres:5432/mcdb
+      RUNNER_AGENT_URL: http://runner-agent:8081
+    depends_on:
+      postgres:
+        condition: service_healthy
+      runner-agent:
+        condition: service_started
+
+  runner-agent:
+    build:
+      context: .
+      dockerfile: docker/runner-agent/Dockerfile
+    ports:
+      - "127.0.0.1:8081:8081"
+    env_file: .env
+    environment:
+      PORT: "8081"
+      MINECRAFT_DATA_DIR: /data
+      REDIS_URL: redis://redis:6379
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - minecraft_data:/data
+    depends_on:
+      redis:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
+  minecraft_data:
