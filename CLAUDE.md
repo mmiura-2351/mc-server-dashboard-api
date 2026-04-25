@@ -87,7 +87,7 @@ Always delete the feature branch after merge and ensure linked issues are closed
 ### ドキュメント構成
 
 ```
-docs/redesign/
+docs/
 ├── 01-current-issues.md          # v1 の設計破綻の分析
 ├── 02-requirements.md            # v2 機能/非機能要件 (FR-O-*, FR-S-*, NFR-*)
 ├── 03-architecture-direction.md  # アーキテクチャ方針
