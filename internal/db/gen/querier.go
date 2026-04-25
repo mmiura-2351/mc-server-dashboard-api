@@ -40,6 +40,9 @@ type Querier interface {
 	GetMinecraftVersionByTypeAndVersion(ctx context.Context, arg GetMinecraftVersionByTypeAndVersionParams) (MinecraftVersion, error)
 	GetMinecraftVersionByTypeVersionBuild(ctx context.Context, arg GetMinecraftVersionByTypeVersionBuildParams) (MinecraftVersion, error)
 	// Atomically claim the oldest queued job; skip jobs locked by other workers.
+	// Note: per-server serialization (同一サーバーの running ジョブが存在しないことの確認) は
+	// ワーカー側の責務。ジョブ取り出し後に CountJobsByServerAndStatus で status='running'
+	// を確認し、存在すれば処理を遅延させること。
 	GetNextQueuedJob(ctx context.Context) (Job, error)
 	GetOrganizationByID(ctx context.Context, id pgtype.UUID) (Organization, error)
 	GetOrganizationBySlug(ctx context.Context, slug string) (Organization, error)
@@ -77,6 +80,7 @@ type Querier interface {
 	UpdateBackupFailed(ctx context.Context, id pgtype.UUID) error
 	UpdateJobCompleted(ctx context.Context, arg UpdateJobCompletedParams) error
 	UpdateJobStarted(ctx context.Context, id pgtype.UUID) error
+	// slug は作成後に変更不可 (specs/01-auth-users.md)
 	UpdateOrganization(ctx context.Context, arg UpdateOrganizationParams) (Organization, error)
 	UpdateOrganizationMemberPermissions(ctx context.Context, arg UpdateOrganizationMemberPermissionsParams) (OrganizationMember, error)
 	UpdateRefreshTokenLastUsed(ctx context.Context, id pgtype.UUID) error

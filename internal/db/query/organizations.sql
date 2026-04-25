@@ -12,9 +12,9 @@ SELECT * FROM organizations
 WHERE slug = @slug AND deleted_at IS NULL;
 
 -- name: UpdateOrganization :one
+-- slug は作成後に変更不可 (specs/01-auth-users.md)
 UPDATE organizations
 SET name       = @name,
-    slug       = @slug,
     updated_at = NOW()
 WHERE id = @id AND deleted_at IS NULL
 RETURNING *;

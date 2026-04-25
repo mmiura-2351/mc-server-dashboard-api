@@ -108,18 +108,20 @@ func (q *Queries) SoftDeleteUser(ctx context.Context, id pgtype.UUID) error {
 const updateUser = `-- name: UpdateUser :one
 UPDATE users
 SET username   = $1,
+    email      = $2,
     updated_at = NOW()
-WHERE id = $2 AND deleted_at IS NULL
+WHERE id = $3 AND deleted_at IS NULL
 RETURNING id, email, username, hashed_password, is_active, deleted_at, created_at, updated_at
 `
 
 type UpdateUserParams struct {
 	Username string      `json:"username"`
+	Email    string      `json:"email"`
 	ID       pgtype.UUID `json:"id"`
 }
 
 func (q *Queries) UpdateUser(ctx context.Context, arg UpdateUserParams) (User, error) {
-	row := q.db.QueryRow(ctx, updateUser, arg.Username, arg.ID)
+	row := q.db.QueryRow(ctx, updateUser, arg.Username, arg.Email, arg.ID)
 	var i User
 	err := row.Scan(
 		&i.ID,

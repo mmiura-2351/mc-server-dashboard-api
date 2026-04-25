@@ -121,20 +121,19 @@ func (q *Queries) TransferOrganizationOwnership(ctx context.Context, arg Transfe
 const updateOrganization = `-- name: UpdateOrganization :one
 UPDATE organizations
 SET name       = $1,
-    slug       = $2,
     updated_at = NOW()
-WHERE id = $3 AND deleted_at IS NULL
+WHERE id = $2 AND deleted_at IS NULL
 RETURNING id, name, slug, owner_user_id, deleted_at, created_at, updated_at
 `
 
 type UpdateOrganizationParams struct {
 	Name string      `json:"name"`
-	Slug string      `json:"slug"`
 	ID   pgtype.UUID `json:"id"`
 }
 
+// slug は作成後に変更不可 (specs/01-auth-users.md)
 func (q *Queries) UpdateOrganization(ctx context.Context, arg UpdateOrganizationParams) (Organization, error) {
-	row := q.db.QueryRow(ctx, updateOrganization, arg.Name, arg.Slug, arg.ID)
+	row := q.db.QueryRow(ctx, updateOrganization, arg.Name, arg.ID)
 	var i Organization
 	err := row.Scan(
 		&i.ID,

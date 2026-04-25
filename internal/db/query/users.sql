@@ -14,6 +14,7 @@ WHERE email = @email AND deleted_at IS NULL;
 -- name: UpdateUser :one
 UPDATE users
 SET username   = @username,
+    email      = @email,
     updated_at = NOW()
 WHERE id = @id AND deleted_at IS NULL
 RETURNING *;

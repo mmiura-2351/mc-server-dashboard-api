@@ -153,6 +153,9 @@ FOR UPDATE SKIP LOCKED
 `
 
 // Atomically claim the oldest queued job; skip jobs locked by other workers.
+// Note: per-server serialization (同一サーバーの running ジョブが存在しないことの確認) は
+// ワーカー側の責務。ジョブ取り出し後に CountJobsByServerAndStatus で status='running'
+// を確認し、存在すれば処理を遅延させること。
 func (q *Queries) GetNextQueuedJob(ctx context.Context) (Job, error) {
 	row := q.db.QueryRow(ctx, getNextQueuedJob)
 	var i Job
