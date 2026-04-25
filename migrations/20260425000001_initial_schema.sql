@@ -1,8 +1,5 @@
 -- +goose Up
 
--- Enable pgcrypto for gen_random_uuid()
-CREATE EXTENSION IF NOT EXISTS pgcrypto;
-
 -- ============================================================
 -- users
 -- ============================================================
@@ -116,8 +113,15 @@ CREATE TABLE minecraft_versions (
     updated_at   TIMESTAMPTZ      NOT NULL DEFAULT NOW()
 );
 
+-- build_number が NULL のサーバータイプ (vanilla 等) と NULL でないタイプ (paper 等) で
+-- NULL != NULL となる PostgreSQL の挙動を回避するため partial index を分割する
 CREATE UNIQUE INDEX minecraft_versions_type_version_build_unique
-    ON minecraft_versions (server_type, version, build_number);
+    ON minecraft_versions (server_type, version, build_number)
+    WHERE build_number IS NOT NULL;
+
+CREATE UNIQUE INDEX minecraft_versions_type_version_no_build_unique
+    ON minecraft_versions (server_type, version)
+    WHERE build_number IS NULL;
 
 CREATE INDEX minecraft_versions_server_type_idx ON minecraft_versions (server_type);
 
@@ -154,7 +158,7 @@ CREATE INDEX version_update_logs_started_at_idx ON version_update_logs (started_
 -- ============================================================
 CREATE TYPE server_status_enum AS ENUM (
     'creating', 'stopped', 'starting', 'running', 'stopping',
-    'restarting', 'error', 'deleting', 'deleted'
+    'restarting', 'restoring', 'error', 'deleting', 'deleted'
 );
 
 CREATE TYPE runner_type_enum AS ENUM ('host', 'docker', 'podman');
@@ -349,26 +353,24 @@ DROP TABLE IF EXISTS refresh_tokens;
 
 DROP TABLE IF EXISTS users;
 
-DROP TYPE IF EXISTS backup_schedule_action_enum;
+DROP TYPE IF EXISTS backup_schedule_action_enum CASCADE;
 
-DROP TYPE IF EXISTS storage_backend_enum;
+DROP TYPE IF EXISTS storage_backend_enum CASCADE;
 
-DROP TYPE IF EXISTS backup_status_enum;
+DROP TYPE IF EXISTS backup_status_enum CASCADE;
 
-DROP TYPE IF EXISTS backup_type_enum;
+DROP TYPE IF EXISTS backup_type_enum CASCADE;
 
-DROP TYPE IF EXISTS job_status_enum;
+DROP TYPE IF EXISTS job_status_enum CASCADE;
 
-DROP TYPE IF EXISTS job_type_enum;
+DROP TYPE IF EXISTS job_type_enum CASCADE;
 
-DROP TYPE IF EXISTS runner_type_enum;
+DROP TYPE IF EXISTS runner_type_enum CASCADE;
 
-DROP TYPE IF EXISTS server_status_enum;
+DROP TYPE IF EXISTS server_status_enum CASCADE;
 
-DROP TYPE IF EXISTS version_update_status_enum;
+DROP TYPE IF EXISTS version_update_status_enum CASCADE;
 
-DROP TYPE IF EXISTS version_update_trigger_enum;
+DROP TYPE IF EXISTS version_update_trigger_enum CASCADE;
 
-DROP TYPE IF EXISTS server_type_enum;
-
-DROP EXTENSION IF EXISTS pgcrypto;
+DROP TYPE IF EXISTS server_type_enum CASCADE;
