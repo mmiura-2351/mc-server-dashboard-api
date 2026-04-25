@@ -1,196 +1,63 @@
-# Minecraft Server Dashboard API
+# Minecraft Server Dashboard API — v2 設計ドキュメント
 
-A comprehensive FastAPI-based backend system for managing multiple Minecraft servers with advanced automation, real-time monitoring, and extensive file management capabilities.
+このリポジトリの `redesign/v2-requirements` ブランチは、Minecraft Server Dashboard API の v2 再設計に向けた **要件定義・仕様書専用ブランチ** です。実装コードは含みません。
 
-## Features
+## 背景
 
-### 🖥️ Server Management
-- **Daemon Process Architecture** - True process detachment with double-fork technique for server persistence
-- **Multi-Server Management** - Create and manage multiple Minecraft servers with advanced process monitoring
-- **Auto-Recovery System** - Automatic server restoration across API restarts using PID file management
-- **Java Version Compatibility** - Automatic Java version selection and validation for different Minecraft versions
+v1 は設計フェーズを省略して機能追加を繰り返した結果、以下の領域で後から変更が困難な破綻が生じています。
 
-### 🔐 Security & Authentication
-- **User Authentication & Authorization** - JWT-based authentication with three-tier role system (User/Operator/Admin)
-- **Security Hardening** - Protection against path traversal, command injection, and memory exhaustion attacks
-- **Process Isolation** - Secure daemon processes with resource limits and signal isolation
-- **Audit Logging** - Comprehensive activity tracking for security and compliance
+- Organization 単位のアクセス制御・権限管理
+- API プロセスと Minecraft サーバープロセスの実行環境分離
+- 複数サーバーの同時実行
+- 実行基盤の抽象化（v1 は host 上で直接 `fork(2)` + Java 起動）
 
-### ⚡ Real-time Operations
-- **RCON Integration** - Real-time command execution via Remote Console protocol
-- **Live Monitoring** - WebSocket-based live server status, log streaming, and console interaction
-- **Group Operations** - Dynamic OP/whitelist groups with real-time player management via RCON
-- **Performance Monitoring** - Request tracking, metrics collection, and service health monitoring
+これらはモジュール単位の置き換えでは解決できないため、要件から再整理して v2 として作り直します。
 
-### 💾 Data Management
-- **Automated Backup System** - Database-persistent scheduling with metadata tracking and restoration
-- **Advanced File Management** - Secure file operations with version history, encoding detection, and rollback
-- **Template System** - Reusable server configurations with cloning capabilities
-- **Database Integration** - Seamless sync between filesystem state and database records
+## ドキュメント構成
 
-## Quick Start
-
-### Prerequisites
-- uv package manager (automatically manages Python 3.13+ requirement)
-- Java Runtime Environment (for Minecraft servers)
-  - Supports multiple Java versions for different Minecraft versions
-  - OpenJDK 8, 16, 17, or 21 recommended
-
-### Installation
-
-1. Clone the repository
-2. Install dependencies:
-   ```bash
-   uv sync
-   ```
-3. Create a `.env` file:
-   ```env
-   # Required Settings
-   SECRET_KEY=your-secret-key
-   DATABASE_URL=sqlite:///./app.db
-   CORS_ORIGINS=["http://localhost:3000"]
-
-   # Java Configuration (Optional - for specific Java paths)
-   JAVA_8_PATH=/usr/lib/jvm/java-8-openjdk/bin/java
-   JAVA_16_PATH=/usr/lib/jvm/java-16-openjdk/bin/java
-   JAVA_17_PATH=/usr/lib/jvm/java-17-openjdk/bin/java
-   JAVA_21_PATH=/usr/lib/jvm/java-21-openjdk/bin/java
-   JAVA_DISCOVERY_PATHS=/opt/java,/usr/local/java
-
-   # Daemon Process Configuration (Optional - defaults provided)
-   DAEMON_MODE=double_fork                    # Process creation method
-   DAEMON_ENABLE_PERSISTENCE=true            # Enable process persistence
-   DAEMON_ENABLE_MONITORING=true             # Enable process monitoring
-   DAEMON_MONITORING_INTERVAL=5              # Monitor every 5 seconds
-   DAEMON_ENABLE_RCON=true                   # Enable real-time commands
-   DAEMON_ENABLE_AUTO_RECOVERY=true          # Enable auto-recovery
-
-   # See full configuration options in docs/DAEMON_PROCESS_ARCHITECTURE.md
-   ```
-4. Start the application:
-   ```bash
-   uv run fastapi dev
-   ```
-
-The API will be available at `http://localhost:8000` with interactive documentation at `/docs`.
-
-## Documentation
-
-### 📚 Core Documentation
-- **Interactive API docs**: `http://localhost:8000/docs`
-- **[Daemon Process Architecture](docs/DAEMON_PROCESS_ARCHITECTURE.md)** - Process management and persistence system
-- **[RCON Integration](docs/RCON_INTEGRATION.md)** - Real-time command execution system
-- **[Java Compatibility Guide](docs/java-compatibility.md)** - Multi-version Java setup and configuration
-
-### 🏗️ System Architecture  
-- **[Architecture](docs/architecture.md)** - System design and architecture
-- **[Database Schema](docs/database.md)** - Database models and relationships
-- **[API Reference](docs/api-reference.md)** - Complete endpoint documentation
-- **[Development Guide](docs/development.md)** - Testing, coding standards, and deployment
-
-### 🔧 Configuration
-All configuration options are documented in the respective architecture guides:
-- **Daemon Process Settings** - See [DAEMON_PROCESS_ARCHITECTURE.md](docs/DAEMON_PROCESS_ARCHITECTURE.md#configuration)
-- **RCON Configuration** - See [RCON_INTEGRATION.md](docs/RCON_INTEGRATION.md#configuration)
-- **Security Settings** - Environment variables for security hardening
-- **Performance Tuning** - Resource limits and monitoring intervals
-
-## Development
-
-### Quick Commands
-
-| Command | Description |
-|---------|-------------|
-| `make dev` | Start development server with auto-reload |
-| `make test` | Run test suite |
-| `make lint` | Check code quality |
-| `make format` | Format code |
-| `make install` | Install dependencies and setup environment |
-
-### Direct Commands
-
-| Command | Description |
-|---------|-------------|
-| `uv run fastapi dev` | Start development server |
-| `uv run pytest` | Run tests |
-| `uv run pytest --timeout=300000` | Run full test suite with extended timeout |
-| `uv run ruff check app/` | Check code quality |
-| `uv run ruff format app/` | Format code |
-| `uv run coverage run -m pytest && uv run coverage report` | Generate coverage report |
-
-### Development Scripts
-
-| Script | Description |
-|--------|-------------|
-| `make dev-start` | Start development server with monitoring |
-| `make dev-stop` | Stop development server |
-| `make dev-status` | Show development server status |
-| `make dev-logs` | View development logs |
-
-### Alternative: Direct Script Execution
-
-| Script | Description |
-|--------|-------------|
-| `./scripts/dev-start.sh start` | Start development server with monitoring |
-| `./scripts/dev-start.sh stop` | Stop development server |
-| `./scripts/dev-start.sh status` | Show development server status |
-| `./scripts/dev-start.sh logs` | View development logs |
-
-## Production Deployment
-
-### Quick Deployment
-
-```bash
-# Using make (recommended)
-make deploy
-
-# Or direct script execution
-./scripts/deploy.sh
+```
+docs/redesign/
+├── 01-current-issues.md          # v1 の設計破綻の詳細分析
+├── 02-requirements.md            # v2 機能/非機能要件 (FR-*, NFR-*)
+├── 03-architecture-direction.md  # アーキテクチャ方針
+├── 04-feature-list.md            # v1 機能一覧と v2 での扱い
+└── specs/
+    ├── 01-auth-users.md          # 認証 / Organization / ユーザー管理
+    ├── 02-groups.md              # プレイヤーグループ (OP/whitelist)
+    ├── 03-servers.md             # サーバー管理・制御
+    ├── 04-versions.md            # Minecraft バージョン管理
+    ├── 05-backups.md             # バックアップ / スケジューラー
+    ├── 06-jobs.md                # 非同期ジョブ共通仕様
+    ├── 07-files.md               # ファイル管理・編集履歴
+    ├── 08-realtime.md            # リアルタイム通信 (WebSocket)
+    └── 09-audit.md               # 監査ログ
 ```
 
-### Production Management
+## 主要な設計方針
 
-| Command | Description |
-|---------|-------------|
-| `make service-start` | Start production service |
-| `make service-stop` | Stop production service |
-| `make service-restart` | Restart production service |
-| `make service-status` | Show service status |
-| `make service-logs` | View service logs |
-| `make service-enable` | Enable auto-start on boot |
-| `make service-disable` | Disable auto-start on boot |
+| 項目 | 決定内容 |
+|------|---------|
+| リソース分離単位 | Organization (1 層)。Tenant/Workspace の 2 層構造は採用しない |
+| Runner 抽象化 | API Core はファイルシステムに直接触れない。すべての操作を Runner インターフェース経由にする (Docker/Podman が MVP ターゲット) |
+| 非同期ジョブ | サーバー起動/停止/作成/削除・バックアップ操作はすべて `202 + job_id` を返す |
+| 設定の責務分離 | DB はインフラ設定のみ。`server.properties` 等ゲーム設定はファイルが唯一の真実の源 |
+| API 互換 | 既存フロントエンド (`mc-server-dashboard-ui`) との互換は **維持しない** |
+| テンプレート機能 | **v2 廃止**。バックアップ復元で代替する |
+| 多言語対応 | **対象外** |
 
-### Alternative: Direct Script Execution
+## ブランチの位置付け
 
-| Command | Description |
-|---------|-------------|
-| `./scripts/service-manager.sh start` | Start production service |
-| `./scripts/service-manager.sh stop` | Stop production service |
-| `./scripts/service-manager.sh restart` | Restart production service |
-| `./scripts/service-manager.sh status` | Show service status |
-| `./scripts/service-manager.sh logs` | View service logs |
+- このブランチ (`redesign/v2-requirements`) は要件定義・仕様書のみを含む
+- v2 実装は別リポジトリまたは `v2/` ディレクトリ配下で進める予定
+- v1 実装は `master` ブランチで保守モードを継続
 
-### Manual Production Setup
+## 未決定事項
 
-See [comprehensive deployment guide](deployment/docs/en/DEPLOYMENT.md) for detailed production setup instructions including:
-
-- Prerequisites and system requirements
-- Nginx reverse proxy configuration
-- SSL/TLS setup with Let's Encrypt
-- Security hardening
-- Monitoring and maintenance
-- Troubleshooting guide
-
-## Integration with Frontend
-
-This API is designed to work with the [Minecraft Server Dashboard UI](../mc-server-dashboard-ui/) frontend. For complete setup:
-
-1. Deploy this API backend
-2. Deploy the frontend UI
-3. Configure nginx reverse proxy (optional but recommended)
-
-The deployment scripts and documentation are aligned with the frontend for seamless integration.
+- v2 を同リポジトリ内に共存させるか、新規リポジトリとして切り出すか
+- v1 からの移行経路（データ/サーバーディレクトリ）の要否
+- ジョブキューの実装選定（Redis / Postgres-based / NATS 等）
+- DB を SQLite のまま MVP にするか、最初から PostgreSQL を前提にするか
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+MIT License — see [LICENSE](LICENSE) for details.
