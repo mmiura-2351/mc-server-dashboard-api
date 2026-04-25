@@ -36,13 +36,44 @@ mc-server-dashboard-api/
 ├── docker-compose.yml      # ローカル開発用 (全サービス)
 ├── docker-compose.test.yml # テスト用 (postgres のみ)
 ├── sqlc.yaml               # sqlc 設定
+├── flake.nix               # Nix 開発環境定義
+├── flake.lock              # Nix flake ロックファイル
 ├── go.mod
 └── go.sum
 ```
 
 ---
 
-## 2. Go モジュール
+## 2. 開発環境 (Nix)
+
+開発環境は **Nix flakes** で再現可能な状態に固定する。
+`flake.nix` が提供するツールチェーンを使うことで、チームメンバー間・CI 間でバージョンを完全に一致させる。
+
+### flake.nix が提供するツール
+
+| ツール | 用途 |
+|--------|------|
+| Go (固定バージョン) | ビルド・テスト |
+| sqlc | SQL → Go コード生成 |
+| goose | DB マイグレーション |
+| golangci-lint | Lint |
+| docker-compose (CLI) | ローカル開発用コンテナ起動 |
+
+### 使い方
+
+```bash
+# 開発シェルに入る
+nix develop
+
+# direnv を使う場合 (.envrc に "use flake" を記載)
+direnv allow
+```
+
+**Note:** Docker デーモン自体は Nix 管理外。ホスト OS の Docker を使う。
+
+---
+
+## 4. Go モジュール
 
 モジュール名: `github.com/mmiura-2351/mc-server-dashboard-api`
 
@@ -51,7 +82,7 @@ mc-server-dashboard-api/
 
 ---
 
-## 3. Docker Compose 構成
+## 5. Docker Compose 構成
 
 ### コンテナ一覧
 
@@ -90,7 +121,7 @@ runner-agent → (Docker socket)
 
 ---
 
-## 4. サービス間通信
+## 6. サービス間通信
 
 ### Worker → Runner Agent
 
@@ -122,7 +153,7 @@ Runner Agent が公開する内部 HTTP API。Worker からのみ呼び出され
 
 ---
 
-## 5. 環境変数
+## 7. 環境変数
 
 ### 共通
 
