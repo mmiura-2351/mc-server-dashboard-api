@@ -145,7 +145,7 @@ This is a comprehensive FastAPI-based backend API for managing multiple Minecraf
 | Type checking     | `uv run mypy app/` (currently disabled in pre-commit) |
 | Run tests         | `uv run pytest`               |
 | Run single test   | `uv run pytest tests/test_filename.py::test_function_name` |
-| Check code coverage | `uv run coverage run -m pytest && uv run coverage report` |
+| Check code coverage | `uv run pytest --cov=app --cov-branch --cov-report=term-missing` (or `make coverage`) |
 | Install pre-commit hooks | `uv run pre-commit install` |
 | Run pre-commit on all files | `uv run pre-commit run --all-files` |
 | Run specific pre-commit hook | `uv run pre-commit run <hook-name>` |
