@@ -1,4 +1,10 @@
-# System Architecture
+# System Architecture (Historical / Pre-refactor)
+
+> **Note**: This document describes the **past implementation** of the system prior to the architectural refactor tracked under Issue #149.
+>
+> For the **target architecture and standards that new code must follow**, see [`docs/ARCHITECTURE.md`](ARCHITECTURE.md).
+>
+> This document is preserved as historical context. It is not updated to reflect ongoing changes.
 
 This document provides a comprehensive overview of the Minecraft Server Dashboard API architecture, design patterns, and system requirements.
 
