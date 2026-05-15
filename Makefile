@@ -1,7 +1,7 @@
 # Minecraft Server Dashboard API - Makefile
 # Provides convenient commands for development and deployment
 
-.PHONY: help install dev dev-start dev-stop dev-status dev-logs test lint format deploy service-start service-stop service-restart service-status service-logs service-enable service-disable clean
+.PHONY: help install dev dev-start dev-stop dev-status dev-logs test coverage lint format deploy service-start service-stop service-restart service-status service-logs service-enable service-disable clean
 
 # Default target
 help:
@@ -15,6 +15,7 @@ help:
 	@echo "  make dev-status    - Show development server status"
 	@echo "  make dev-logs      - View development logs"
 	@echo "  make test          - Run test suite"
+	@echo "  make coverage      - Run test suite with coverage report"
 	@echo "  make lint          - Run code linting"
 	@echo "  make format        - Format code"
 	@echo ""
@@ -60,6 +61,10 @@ dev-logs:
 test:
 	@echo "Running test suite..."
 	uv run pytest
+
+coverage:
+	@echo "Running test suite with coverage..."
+	uv run pytest --cov=app --cov-branch --cov-report=term-missing --cov-report=html
 
 lint:
 	@echo "Running code linting..."

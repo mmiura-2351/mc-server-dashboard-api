@@ -117,7 +117,7 @@ All configuration options are documented in the respective architecture guides:
 | `uv run pytest --timeout=300000` | Run full test suite with extended timeout |
 | `uv run ruff check app/` | Check code quality |
 | `uv run ruff format app/` | Format code |
-| `uv run coverage run -m pytest && uv run coverage report` | Generate coverage report |
+| `uv run pytest --cov=app --cov-branch --cov-report=term-missing` (or `make coverage`) | Generate coverage report |
 
 ### Development Scripts
 

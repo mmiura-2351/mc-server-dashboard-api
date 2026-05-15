@@ -42,8 +42,8 @@ Complete guide for developing, testing, and deploying the Minecraft Server Dashb
 | `uv run pytest --timeout=300000` | Run full test suite with extended timeout |
 | `uv run ruff check app/` | Code quality checks |
 | `uv run ruff format app/` | Format code |
-| `uv run coverage run -m pytest && uv run coverage report` | Generate coverage report |
-| `uv run coverage html` | Generate HTML coverage report |
+| `uv run pytest --cov=app --cov-branch --cov-report=term-missing` (or `make coverage`) | Generate coverage report |
+| `uv run pytest --cov=app --cov-report=html` | Generate HTML coverage report |
 
 ## Project Structure
 
@@ -103,11 +103,11 @@ uv run pytest -v
 # Run tests and show print statements
 uv run pytest -s
 
-# Run tests with coverage
-uv run coverage run -m pytest && uv run coverage report
+# Run tests with coverage (works with xdist parallel execution)
+uv run pytest --cov=app --cov-branch --cov-report=term-missing
 
 # Generate HTML coverage report
-uv run coverage html
+uv run pytest --cov=app --cov-report=html
 ```
 
 #### Test Organization
