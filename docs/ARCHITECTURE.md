@@ -44,7 +44,7 @@ Hexagonal architecture inverts this: business logic depends only on abstractions
 1. **The domain core is pure**. It must not import FastAPI, SQLAlchemy, httpx, or any other framework/library.
 2. **External access is mediated by Ports**. A Port is a Python `Protocol` defined inside the domain layer.
 3. **Adapters implement Ports**. Adapters live outside the domain core and depend on the domain (never the other way around).
-4. **Wiring happens at the edge**. The `api/` layer (or a dedicated DI module) selects which Adapter to inject.
+4. **Wiring happens at the edge**. The `api/` layer's `dependencies.py` selects which Adapter to inject.
 5. **Layers are thin and have a single responsibility**. No layer skipping, no reverse dependencies.
 
 ## 4. Layer Definitions
@@ -62,10 +62,16 @@ The system is organized into four concentric layers. Each layer has a strict res
 # domain/entities.py
 @dataclass
 class Server:
-    id: ServerId
+    id: ServerId | None
     name: str
     owner_id: UserId
     status: ServerStatus
+    created_at: datetime
+
+    @classmethod
+    def create(cls, name: str, owner_id: UserId, created_at: datetime) -> "Server":
+        # Invariant checks live here; no I/O, no framework calls.
+        ...
 ```
 
 ```python
@@ -91,8 +97,8 @@ class CreateServer:
         self._repo = repo
         self._clock = clock
 
-    async def execute(self, command: CreateServerCommand) -> Server:
-        server = Server.create(command, created_at=self._clock.now())
+    async def execute(self, name: str, owner_id: UserId) -> Server:
+        server = Server.create(name=name, owner_id=owner_id, created_at=self._clock.now())
         await self._repo.save(server)
         return server
 ```
@@ -119,22 +125,25 @@ class SqlAlchemyServerRepository:  # implements ServerRepository Protocol
 
 **Responsibility**: Translate HTTP requests into use case invocations and translate use case results into HTTP responses.
 
-- **May depend on**: `application/` (use cases), `adapters/` (for DI wiring), and FastAPI
+- **May depend on**: `application/` (use cases), FastAPI, and — only inside `dependencies.py` — `adapters/` for DI wiring
 - **Components**:
-  - `router.py` — FastAPI router with endpoint definitions
-  - `schemas.py` — Pydantic models for request/response (DTOs)
-  - `dependencies.py` — Dependency Injection: maps Ports to Adapters
-- **Must not contain**: business logic, database access, or domain rules
+  - `router.py` — FastAPI router with endpoint definitions. **Must only import from `application/` and `.schemas` / `.dependencies`.** It must not import any module under `adapters/`.
+  - `schemas.py` — Pydantic models for request/response (DTOs). **Must only import from `domain/` (for entity-to-DTO mapping types) and standard libraries.** It must not import from `adapters/` or `application/`.
+  - `dependencies.py` — The **only** file in `api/` allowed to import from `adapters/`. It wires concrete Adapters to the Ports that use cases require.
+- **Must not contain**: business logic, database access, or domain rules. A router that holds a SQLAlchemy session, calls an ORM model, or branches on roles is a violation.
 
 ```python
 # api/router.py
 @router.post("/", response_model=ServerResponse)
 async def create_server(
     request: CreateServerRequest,
+    user: User = Depends(get_current_user),
     use_case: CreateServer = Depends(get_create_server),
 ) -> ServerResponse:
-    server = await use_case.execute(request.to_command())
-    return ServerResponse.from_entity(server)
+    server = await use_case.execute(name=request.name, owner_id=user.id)
+    return ServerResponse(
+        id=server.id, name=server.name, status=server.status,
+    )
 ```
 
 ```python
@@ -172,16 +181,22 @@ def get_create_server(
 ### 5.1 Rules
 
 - `domain/` imports nothing from the project's other layers
-- `application/` imports only from `domain/`
-- `adapters/` imports from `domain/` (Port definitions) and external libraries
-- `api/` imports from `application/` and `adapters/` (for wiring)
+- `application/` imports only from `domain/` (its own or — for cross-domain types such as Ports, entities, value objects, and exceptions — another domain's `domain/`, or `app/core/ports`)
+- `adapters/` imports from `domain/` (Port definitions) and external libraries; it must not import from `application/` or `api/`
+- `api/` imports from `application/`, and from `adapters/` **only** in `dependencies.py`
 
 ### 5.2 Forbidden patterns
 
-- A use case in `application/` instantiating a concrete adapter directly
-- `domain/` importing SQLAlchemy, Pydantic, FastAPI, or any external library
-- `api/router.py` running business logic or accessing a database session
-- One domain's `application/` directly importing another domain's `adapters/`
+The patterns below are violations regardless of the rationale offered. CI tooling (e.g., import-linter contracts) should enforce them mechanically as the codebase migrates.
+
+- A use case in `application/` instantiating a concrete adapter directly (instead of receiving a Port)
+- `domain/` importing SQLAlchemy, Pydantic, FastAPI, or any external library beyond the Python standard library
+- `application/` importing FastAPI, SQLAlchemy, Pydantic, or any module under `adapters/` or `api/`
+- `adapters/` importing from `application/` or `api/`
+- `api/router.py` or `api/schemas.py` importing from `adapters/`. Only `api/dependencies.py` may bridge those two
+- `api/router.py` running business logic, opening a database session, or branching on user roles
+- One domain's `application/` directly importing another domain's `adapters/` (use a Port — see §5.3)
+- One domain's `adapters/` reaching into another domain's `domain/` internals to bypass its Ports
 
 ### 5.3 Cross-domain use cases
 
@@ -230,8 +245,20 @@ Code that is genuinely shared across domains lives in `app/core/`:
 - `app/core/database.py` — SQLAlchemy engine and session factory
 - `app/core/config.py` — application settings
 - `app/core/exceptions.py` — base exception types
-- `app/core/ports.py` — cross-cutting Ports (e.g., `Clock`, `EventPublisher`)
+- `app/core/ports.py` — cross-cutting Ports (e.g., `Clock`, `EventPublisher`, `PermissionChecker`)
+- `app/core/dependencies.py` — DI factories for cross-cutting Ports (e.g., `get_clock`, `get_permission_checker`)
 - `app/core/error_handlers.py` — FastAPI exception handlers
+
+### 6.3 Boundary enforcement
+
+The rules in §4 and §5 are mechanically checkable. As the migration under Issue #149 progresses, the project should add import-direction contracts (e.g., [import-linter](https://import-linter.readthedocs.io/)) to CI so the following are flagged automatically:
+
+- `app/<domain>/domain/` may not import from `app/<domain>/application/`, `app/<domain>/adapters/`, or `app/<domain>/api/`, nor from any third-party framework
+- `app/<domain>/application/` may not import from `app/<domain>/adapters/` or `app/<domain>/api/`
+- `app/<domain>/adapters/` may not import from `app/<domain>/application/` or `app/<domain>/api/`
+- Inside `app/<domain>/api/`, only `dependencies.py` may import from `app/<domain>/adapters/`
+
+Until those contracts are in place, reviewers are responsible for enforcing the boundaries listed in §5.2.
 
 ## 7. Cross-cutting Concerns via Ports
 
@@ -384,13 +411,22 @@ The use case asks the Port for what it needs; failure modes (timeout, cache hit)
 
 ### 13.3 Testing
 
-Testing follows the layered structure (see [`docs/TESTING.md`](TESTING.md) once published):
+Testing follows the layered structure. A dedicated `docs/TESTING.md` is planned but not yet published; until then, this section is the source of truth.
 
 - **Unit tests** target `domain/` and `application/`, with all Ports replaced by in-memory fakes or stubs
 - **Integration tests** exercise `adapters/` and the `api/` boundary with a real database
 - **Infrastructure tests** verify behavior that depends on real processes, file system, or sockets
 
-Each Port should have a `FakeXxx` test double in the test code to make use case tests fast and isolated.
+Test files are organized **layer-first**, mirroring the standard set under Issue #151 (testing redesign):
+
+```
+tests/
+├── unit/<domain>/            # tests for domain/ and application/ — Ports replaced by Fake doubles
+├── integration/<domain>/     # tests for adapters/ and api/ — real DB, FastAPI TestClient
+└── infrastructure/<domain>/  # tests requiring real processes, file system, sockets, or external I/O
+```
+
+Each Port should have a `FakeXxx` test double in the test code to make use case tests fast and isolated. See [Issue #167 (test layering policy)](https://github.com/mmiura-2351/mc-server-dashboard-api/issues/167) for the broader testing direction.
 
 ## 14. New Domain Checklist
 
@@ -406,8 +442,8 @@ When introducing a new domain, follow these steps in order. Skipping any step is
 8. Implement the FastAPI router in `api/router.py`, using `Depends` to inject use cases
 9. Register the router in `app/main.py` under `/api/v1/<domain>`
 10. Add tests for each layer (unit for `domain/` and `application/`, integration for `adapters/` and `api/`)
-11. Update `docs/ARCHITECTURE.md` Section 17 (Use Case Coverage) with the new use cases
-12. Verify dependency direction: `domain/` imports nothing from this project; `application/` imports only from `domain/`
+11. Update `docs/ARCHITECTURE.md` Section 16 (Use Case Coverage) with the new use cases
+12. Verify dependency direction against §5.2: `domain/` imports nothing from this project; `application/` imports only from `domain/`; `api/router.py` and `api/schemas.py` do not import from `adapters/`
 
 ## 15. Sample Domain: `notes/`
 
@@ -446,12 +482,23 @@ class NoteRepository(Protocol):
     async def list_for_owner(self, owner_id: int) -> list[Note]: ...
 ```
 
-### 15.3 `app/notes/application/use_cases.py`
+### 15.3 `app/notes/domain/exceptions.py`
+
+```python
+class NoteError(Exception):
+    """Base class for note domain errors."""
+
+class NotePermissionDenied(NoteError):
+    """Raised when a user lacks permission for a note operation."""
+```
+
+### 15.4 `app/notes/application/use_cases.py`
 
 ```python
 from app.core.ports import Clock, PermissionChecker
 from app.users.domain.entities import User
 from ..domain.entities import Note
+from ..domain.exceptions import NotePermissionDenied
 from ..domain.ports import NoteRepository
 
 class CreateNote:
@@ -460,26 +507,26 @@ class CreateNote:
         repo: NoteRepository,
         clock: Clock,
         checker: PermissionChecker,
-    ):
+    ) -> None:
         self._repo = repo
         self._clock = clock
         self._checker = checker
 
     async def execute(self, user: User, title: str, body: str) -> Note:
         if not self._checker.can(user, "note:create"):
-            raise PermissionError("note:create")
+            raise NotePermissionDenied("note:create")
         note = Note.create(user.id, title, body, self._clock.now())
         return await self._repo.add(note)
 ```
 
-### 15.4 `app/notes/adapters/repository.py`
+### 15.5 `app/notes/adapters/repository.py`
 
 ```python
 from sqlalchemy.ext.asyncio import AsyncSession
 from ..domain.entities import Note
 
 class SqlAlchemyNoteRepository:  # implements NoteRepository
-    def __init__(self, session: AsyncSession):
+    def __init__(self, session: AsyncSession) -> None:
         self._session = session
 
     async def add(self, note: Note) -> Note:
@@ -487,7 +534,7 @@ class SqlAlchemyNoteRepository:  # implements NoteRepository
         ...
 ```
 
-### 15.5 `app/notes/api/schemas.py`
+### 15.6 `app/notes/api/schemas.py`
 
 ```python
 from pydantic import BaseModel
@@ -504,32 +551,39 @@ class NoteResponse(BaseModel):
     created_at: datetime
 ```
 
-### 15.6 `app/notes/api/dependencies.py`
+### 15.7 `app/notes/api/dependencies.py`
+
+> This is the **only** file in `app/notes/api/` that may import from `app/notes/adapters/`. Routers and schemas must depend on use cases and Ports, never on concrete adapters.
 
 ```python
 from fastapi import Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_session
 from app.core.dependencies import get_clock, get_permission_checker
+from app.core.ports import Clock, PermissionChecker
 from ..application.use_cases import CreateNote
 from ..adapters.repository import SqlAlchemyNoteRepository
+from ..domain.ports import NoteRepository
 
-def get_note_repo(session: AsyncSession = Depends(get_session)):
+def get_note_repo(
+    session: AsyncSession = Depends(get_session),
+) -> NoteRepository:
     return SqlAlchemyNoteRepository(session)
 
 def get_create_note(
-    repo = Depends(get_note_repo),
-    clock = Depends(get_clock),
-    checker = Depends(get_permission_checker),
-):
+    repo: NoteRepository = Depends(get_note_repo),
+    clock: Clock = Depends(get_clock),
+    checker: PermissionChecker = Depends(get_permission_checker),
+) -> CreateNote:
     return CreateNote(repo, clock, checker)
 ```
 
-### 15.7 `app/notes/api/router.py`
+### 15.8 `app/notes/api/router.py`
 
 ```python
 from fastapi import APIRouter, Depends
 from app.auth.dependencies import get_current_user
+from app.users.domain.entities import User
 from ..application.use_cases import CreateNote
 from .schemas import CreateNoteRequest, NoteResponse
 from .dependencies import get_create_note
@@ -539,7 +593,7 @@ router = APIRouter()
 @router.post("/", response_model=NoteResponse)
 async def create_note(
     request: CreateNoteRequest,
-    user = Depends(get_current_user),
+    user: User = Depends(get_current_user),
     use_case: CreateNote = Depends(get_create_note),
 ) -> NoteResponse:
     note = await use_case.execute(user, request.title, request.body)
