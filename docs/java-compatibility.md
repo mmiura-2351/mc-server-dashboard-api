@@ -226,5 +226,5 @@ The system is designed to accommodate future Minecraft and Java versions:
 
 - [Server Management API](api-reference.md#servers)
 - [Configuration Guide](development.md#configuration)
-- [Architecture Overview](architecture.md)
+- [Architecture Overview](ARCHITECTURE.md)
 - [Troubleshooting Guide](development.md#troubleshooting)

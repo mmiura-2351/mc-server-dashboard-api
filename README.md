@@ -83,7 +83,8 @@ The API will be available at `http://localhost:8000` with interactive documentat
 - **[Java Compatibility Guide](docs/java-compatibility.md)** - Multi-version Java setup and configuration
 
 ### 🏗️ System Architecture  
-- **[Architecture](docs/architecture.md)** - System design and architecture
+- **[Architecture](docs/ARCHITECTURE.md)** - Target architecture and standards for new code
+- **[Architecture (Historical)](docs/ARCHITECTURE_LEGACY.md)** - Pre-refactor system design (kept for context)
 - **[Database Schema](docs/database.md)** - Database models and relationships
 - **[API Reference](docs/api-reference.md)** - Complete endpoint documentation
 - **[Development Guide](docs/development.md)** - Testing, coding standards, and deployment

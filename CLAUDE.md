@@ -152,6 +152,8 @@ This is a comprehensive FastAPI-based backend API for managing multiple Minecraf
 
 ## System Architecture
 
+> **For the target architecture and rules new code must follow**, see [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md). The section below describes the current (pre-refactor) implementation as it exists today; the codebase is migrating toward the target under Issue #149.
+
 ### Core Service Integration
 The application follows a layered architecture with tight integration between components:
 
