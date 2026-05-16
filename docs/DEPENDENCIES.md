@@ -84,10 +84,14 @@
 
 cooldown を bypass する必要がある場合は以下のいずれかで対応する。Override の理由 (CVE 番号・Advisory リンク) を PR 本文に明記すること。
 
-- **uv (ローカル)**: 特定パッケージのみ cooldown を外して更新する。
+- **uv (ローカル)**: 特定パッケージのみ cooldown を外して更新する。`--exclude-newer-package` は `PACKAGE=DATE` または `PACKAGE=false` の形式 (`=` 区切り) で指定する。
 
   ```bash
-  uv lock --upgrade-package <pkg> --exclude-newer-package <pkg> false
+  # cooldown を完全に無効化して最新版を取り込む
+  uv lock --upgrade-package <pkg> --exclude-newer-package <pkg>=false
+
+  # あるいは特定日 (例: CVE Advisory 公開日) を上限に指定する
+  uv lock --upgrade-package <pkg> --exclude-newer-package <pkg>=2026-05-15
   ```
 
 - **Dependabot**: GitHub Security Advisory に紐づく **security update** は cooldown を自動で bypass するため、追加設定は不要。手動で取り込みたい場合はローカルで上記 `uv` コマンドを実行して PR を起票する。
