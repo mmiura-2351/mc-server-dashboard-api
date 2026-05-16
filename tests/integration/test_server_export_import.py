@@ -4,6 +4,7 @@ import zipfile
 from pathlib import Path
 from unittest.mock import Mock, patch
 
+import pytest
 from fastapi import status
 from fastapi.testclient import TestClient
 
@@ -85,6 +86,7 @@ class TestServerExportImport:
         assert response.status_code == status.HTTP_404_NOT_FOUND
         assert "Server directory not found" in response.json()["detail"]
 
+    @pytest.mark.requires_java
     def test_import_server_success(self, client: TestClient, admin_headers, db):
         """Test successful server import"""
         # Create test ZIP file
@@ -341,6 +343,7 @@ class TestServerExportImport:
             if server_dir.exists():
                 shutil.rmtree(server_dir)
 
+    @pytest.mark.requires_java
     def test_import_server_port_conflict_only_with_running_servers(
         self, client: TestClient, admin_headers, admin_user, db
     ):
