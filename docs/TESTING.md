@@ -101,6 +101,8 @@ markers =
 > **Status:** The `markers` directive is currently silently dropped because the file uses the `[tool:pytest]` section header (the `setup.cfg` form). Selection (`-m slow` / `-m "not slow"`) still works fine — it does not require registration — but pytest emits "unknown mark" warnings that are suppressed by `--disable-warnings` in `addopts`. Migrating the config to `pyproject.toml` under `[tool.pytest.ini_options]` is the proper fix and will re-enable `--strict-markers`; this is deferred because the migration also activates the `-n auto --dist loadscope` directives that are currently no-ops, and doing so exposes pre-existing race conditions in the integration auth fixtures.
 >
 > `tests/conftest.py` provides an automatic skip for `requires_java` when no JRE is on `PATH` (added in #171).
+>
+> **CI Java version:** `.github/workflows/ci.yaml` and `.github/workflows/nightly.yaml` explicitly install Temurin 21 via `actions/setup-java@v4`. This pins the JRE used for `requires_java` tests so the runner image's bundled Java cannot silently change and so `requires_java` tests are never silently skipped on CI (see #211).
 
 ---
 
