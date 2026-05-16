@@ -6,8 +6,54 @@ on:
       - "**"
 
 jobs:
-  ci:
-    name: Test, Lint, Format
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          python-version: "3.13.3"
+
+      - name: Set up just
+        uses: extractions/setup-just@v2
+
+      - name: Install dependencies
+        run: uv sync
+
+      - name: Run linter (ruff)
+        run: just lint
+
+  format:
+    name: Format
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          python-version: "3.13.3"
+
+      - name: Set up just
+        uses: extractions/setup-just@v2
+
+      - name: Install dependencies
+        run: uv sync
+
+      - name: Run formatter (ruff)
+        run: just format-check
+
+  test:
+    name: Test
     runs-on: ubuntu-latest
 
     steps:
@@ -32,12 +78,6 @@ jobs:
 
       - name: Install dependencies
         run: uv sync
-
-      - name: Run formatter (ruff)
-        run: just format-check
-
-      - name: Run linter (ruff)
-        run: just lint
 
       - name: Run tests (pytest)
         run: just test
