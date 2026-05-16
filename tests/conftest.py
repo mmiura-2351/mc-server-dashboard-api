@@ -1,5 +1,6 @@
 # テスト用のインメモリSQLiteデータベース
 import os
+import shutil
 import tempfile
 from unittest.mock import Mock
 
@@ -72,6 +73,21 @@ def pytest_sessionfinish(session, exitstatus):
         import warnings
 
         warnings.warn(f"Failed to cleanup test database {current_worker_db}: {e}")
+
+
+def _java_available() -> bool:
+    """Return True when a `java` executable is reachable on PATH."""
+    return shutil.which("java") is not None
+
+
+def pytest_collection_modifyitems(config, items):
+    """Auto-skip `@pytest.mark.requires_java` tests when no JRE is on PATH."""
+    if _java_available():
+        return
+    skip_marker = pytest.mark.skip(reason="requires_java: no JRE on PATH")
+    for item in items:
+        if "requires_java" in item.keywords:
+            item.add_marker(skip_marker)
 
 
 @pytest.fixture(scope="function")

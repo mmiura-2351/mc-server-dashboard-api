@@ -14,6 +14,8 @@ import pytest_asyncio
 from app.servers.models import ServerStatus
 from app.services.minecraft_server import MinecraftServerManager, ServerProcess
 
+pytestmark = pytest.mark.slow
+
 
 class TestMinecraftServerMonitoringIntegration:
     """Integration tests for server monitoring and log management"""

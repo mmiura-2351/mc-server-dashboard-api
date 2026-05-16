@@ -10,6 +10,7 @@ from app.users.models import Role, User
 class TestBackupScheduleModel:
     """BackupSchedule モデルのテスト"""
 
+    @pytest.mark.slow
     def test_create_backup_schedule_success(self, db: Session):
         """正常なBackupSchedule作成テスト"""
         # テスト用ユーザーとサーバーを作成

@@ -358,6 +358,7 @@ class TestServerService:
         assert result is True
         mock_manager.get_server_status.assert_called_with(1)
 
+    @pytest.mark.slow
     @pytest.mark.asyncio
     @patch("app.services.server_service.minecraft_server_manager")
     async def test_wait_for_server_status_timeout(self, mock_manager, service):
@@ -368,6 +369,7 @@ class TestServerService:
 
         assert result is False
 
+    @pytest.mark.slow
     @pytest.mark.asyncio
     @patch("app.services.server_service.minecraft_server_manager")
     async def test_wait_for_server_status_eventual_success(self, mock_manager, service):

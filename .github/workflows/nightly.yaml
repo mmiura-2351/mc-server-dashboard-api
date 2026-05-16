@@ -1,0 +1,50 @@
+name: Nightly
+
+# Runs the full test suite (including @pytest.mark.slow) plus coverage.
+# Catches environmental drift and flakiness that PR CI may miss because slow
+# tests are excluded from pre-commit/pre-push smoke runs. See docs/TESTING.md §4.
+
+on:
+  schedule:
+    # 02:00 JST = 17:00 UTC daily
+    - cron: "0 17 * * *"
+  workflow_dispatch: {}
+
+jobs:
+  full-suite:
+    name: Full test suite + coverage
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          python-version: "3.13.3"
+
+      - name: Set up just
+        uses: extractions/setup-just@v2
+
+      - name: Create .env file
+        run: |
+          echo "SECRET_KEY=test-secret-key-for-ci-pipeline-32-chars-long" >> .env
+          echo "ALGORITHM=HS256" >> .env
+          echo "ACCESS_TOKEN_EXPIRE_MINUTES=30" >> .env
+          echo "DATABASE_URL=sqlite:///./test.db" >> .env
+
+      - name: Install dependencies
+        run: uv sync
+
+      - name: Run full suite with coverage
+        run: just coverage
+
+      - name: Upload coverage HTML report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-html
+          path: htmlcov/
+          retention-days: 14

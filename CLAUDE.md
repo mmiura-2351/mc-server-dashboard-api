@@ -65,12 +65,21 @@ When addressing GitHub Issues, follow this standard procedure:
 6. **Verify and Create PR**: Confirm the issue has been properly addressed and create a pull request
 
 ### Rule 6: Test Execution Guidelines
-**Be mindful of test execution performance and timeouts.**
+**Be mindful of test execution performance and timeouts. Tests are split into a layered execution strategy — see [`docs/TESTING.md`](docs/TESTING.md) for the canonical policy.**
 
-When running tests, follow these guidelines:
-1. **Pre-commit Full Test Suite**: Pre-commit hooks now run the complete test suite for comprehensive quality assurance
-2. **Manual Test Execution**: For manual testing, use appropriate timeout settings if needed
-3. **Extend Timeout for Full Suite**: When running the complete test suite manually, explicitly extend the timeout duration (e.g., use `--timeout=300000` parameter)
+| Stage | Scope | Command | Typical time |
+|---|---|---|---|
+| pre-commit | unit smoke (`-m "not slow"`) | `pytest tests/unit -m "not slow"` | ~60–70 s |
+| pre-push | unit + integration smoke (`-m "not slow"`) | `pytest tests/unit tests/integration -m "not slow"` | ~2 min |
+| CI on push (`ci.yaml`) | full suite incl. `slow` | `just test` | < 5 min |
+| CI nightly (`nightly.yaml`) | full suite + coverage | `just coverage` | < 10 min |
+
+Operational notes:
+1. **Install both hook stages once**: `uv run pre-commit install --hook-type pre-commit --hook-type pre-push`. The pre-push stage will not run automatically without `--hook-type pre-push`.
+2. **Manual full-suite run**: prefer `just test` over invoking `pytest` directly; it inherits the project's standard options.
+3. **Extend timeout for full suite**: when running the complete suite manually under tooling that imposes a timeout, explicitly extend it (e.g. `--timeout=300000`).
+4. **Mark new slow tests**: any test that takes ≥ 1 s or spawns a subprocess must carry `@pytest.mark.slow` (or `pytestmark = pytest.mark.slow` at file level). See `docs/TESTING.md` §3.
+5. **Pre-push fails without a JRE on `PATH`**: the integration smoke set includes server-creation API tests that invoke Java discovery. Until [#209](https://github.com/mmiura-2351/mc-server-dashboard-api/issues/209) annotates them with `@pytest.mark.requires_java`, push from a machine with Java installed, or bypass with `git push --no-verify` if you understand the risk.
 
 ### Rule 7: Issue Resolution Completion Process
 **Always close resolved Issues with proper documentation and status updates.**

@@ -387,6 +387,7 @@ class TestServerControlRouter:
         assert "failed to stop server" in exc_info.value.detail.lower()
 
     # Test restart_server endpoint
+    @pytest.mark.slow
     @pytest.mark.asyncio
     @patch("app.servers.routers.control.authorization_service")
     @patch("app.servers.routers.control.minecraft_server_manager")

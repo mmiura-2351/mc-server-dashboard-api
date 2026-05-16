@@ -16,6 +16,8 @@ import pytest
 from app.servers.models import Server, ServerStatus, ServerType
 from app.services.minecraft_server import MinecraftServerManager, ServerProcess
 
+pytestmark = pytest.mark.slow
+
 
 class TestDaemonDetachmentVerification:
     """Tests for verifying proper daemon process detachment"""
