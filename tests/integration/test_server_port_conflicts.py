@@ -1,9 +1,14 @@
 from unittest.mock import patch
 
+import pytest
 from fastapi import status
 from fastapi.testclient import TestClient
 
 from app.servers.models import Server, ServerStatus, ServerType
+
+# Every test in this file calls `POST /api/v1/servers`, which triggers
+# real Java discovery inside MinecraftServerManager — skip without a JRE.
+pytestmark = pytest.mark.requires_java
 
 
 class TestServerPortConflicts:

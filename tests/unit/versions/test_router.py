@@ -246,8 +246,10 @@ class TestVersionRouter:
                 # Verify scheduler was called correctly
                 mock_scheduler.trigger_immediate_update.assert_called_once_with(force_refresh=True)
         finally:
-            # Clean up dependency override
-            app.dependency_overrides.clear()
+            # Pop only what this test added — `clear()` would also drop the
+            # `get_db` override set by tests/conftest.py, breaking every
+            # integration test that runs afterwards (401 on auth fixtures).
+            app.dependency_overrides.pop(get_current_user, None)
 
     def test_trigger_version_update_forbidden_non_admin(self, client):
         """Test manual version update trigger by non-admin user"""
@@ -269,8 +271,10 @@ class TestVersionRouter:
             data = response.json()
             assert "administrator" in data["detail"].lower()
         finally:
-            # Clean up dependency override
-            app.dependency_overrides.clear()
+            # Pop only what this test added — `clear()` would also drop the
+            # `get_db` override set by tests/conftest.py, breaking every
+            # integration test that runs afterwards (401 on auth fixtures).
+            app.dependency_overrides.pop(get_current_user, None)
 
     def test_get_scheduler_status_admin(self, client):
         """Test getting scheduler status as admin"""
@@ -311,8 +315,10 @@ class TestVersionRouter:
                 assert data["update_interval_hours"] == 24
                 assert "retry_config" in data
         finally:
-            # Clean up dependency override
-            app.dependency_overrides.clear()
+            # Pop only what this test added — `clear()` would also drop the
+            # `get_db` override set by tests/conftest.py, breaking every
+            # integration test that runs afterwards (401 on auth fixtures).
+            app.dependency_overrides.pop(get_current_user, None)
 
     def test_get_scheduler_status_forbidden_non_admin(self, client):
         """Test getting scheduler status as non-admin user"""
@@ -334,8 +340,10 @@ class TestVersionRouter:
             data = response.json()
             assert "administrator" in data["detail"].lower()
         finally:
-            # Clean up dependency override
-            app.dependency_overrides.clear()
+            # Pop only what this test added — `clear()` would also drop the
+            # `get_db` override set by tests/conftest.py, breaking every
+            # integration test that runs afterwards (401 on auth fixtures).
+            app.dependency_overrides.pop(get_current_user, None)
 
     # ===================
     # Error handling tests
@@ -393,8 +401,10 @@ class TestVersionRouter:
                 data = response.json()
                 assert "Failed to trigger version update" in data["detail"]
         finally:
-            # Clean up dependency override
-            app.dependency_overrides.clear()
+            # Pop only what this test added — `clear()` would also drop the
+            # `get_db` override set by tests/conftest.py, breaking every
+            # integration test that runs afterwards (401 on auth fixtures).
+            app.dependency_overrides.pop(get_current_user, None)
 
     # ===================
     # Parameter validation tests
@@ -433,8 +443,10 @@ class TestVersionRouter:
             # Should return 422 for invalid enum value
             assert response.status_code == 422
         finally:
-            # Clean up dependency override
-            app.dependency_overrides.clear()
+            # Pop only what this test added — `clear()` would also drop the
+            # `get_db` override set by tests/conftest.py, breaking every
+            # integration test that runs afterwards (401 on auth fixtures).
+            app.dependency_overrides.pop(get_current_user, None)
 
 
 # ===================

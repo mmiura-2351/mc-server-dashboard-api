@@ -46,18 +46,18 @@ class TestDatabaseModule:
 
     @patch("app.core.database.db_monitor")
     def test_db_monitor_import_success(self, mock_db_monitor):
-        """Test successful db_monitor import and setup (lines 14-16)"""
-        mock_db_monitor.setup_sqlalchemy_monitoring = Mock()
+        """Test db_monitor is accessible on the database module (lines 14-16)."""
+        # `importlib.reload(app.core.database)` was previously used here to try
+        # to re-trigger the top-level import block, but it has no real assertion
+        # value (the @patch is set on the pre-reload module reference) and the
+        # reload replaces `SessionLocal` / `engine` / `Base` with new instances,
+        # breaking identity checks (`is`) in any service already constructed
+        # against the pre-reload references — notably the integration tests
+        # `TestDatabaseIntegrationServiceEnhanced.test_*_initialization_*`.
+        # We keep the @patch as a smoke check that the symbol can be patched.
+        from app.core.database import db_monitor as imported
 
-        # Reload the module to trigger the import block
-        import importlib
-
-        import app.core.database
-
-        importlib.reload(app.core.database)
-
-        # The mock should be called during module import
-        # Note: This test is tricky because the import happens at module level
+        assert imported is mock_db_monitor
 
     def test_db_monitor_import_error_handling(self):
         """Test ImportError handling for db_monitor (lines 17-19)"""
