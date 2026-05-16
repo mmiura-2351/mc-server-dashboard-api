@@ -1,0 +1,8 @@
+[tagpr]
+    releaseBranch = master
+    versionFile = pyproject.toml
+    vPrefix = true
+    changelog = false
+    command = "uv lock"
+    majorLabels = tagpr:major
+    minorLabels = tagpr:minor

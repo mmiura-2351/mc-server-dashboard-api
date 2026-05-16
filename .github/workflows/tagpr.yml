@@ -1,0 +1,37 @@
+name: tagpr
+
+on:
+  push:
+    branches:
+      - master
+
+concurrency:
+  group: tagpr-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  tagpr:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          python-version: "3.13.3"
+
+      - name: Run tagpr
+        uses: Songmu/tagpr@v1
+        env:
+          # Use a fine-grained PAT (stored as TAGPR_PAT) instead of the
+          # default GITHUB_TOKEN so that release PRs created by tagpr
+          # trigger ci.yaml. PRs authored via GITHUB_TOKEN do not start
+          # other workflows by GitHub's design.
+          GITHUB_TOKEN: ${{ secrets.TAGPR_PAT }}
