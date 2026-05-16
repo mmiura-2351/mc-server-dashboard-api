@@ -137,18 +137,22 @@ This is a comprehensive FastAPI-based backend API for managing multiple Minecraf
 
 ## Development Commands
 
+Tasks are run with [`just`](https://github.com/casey/just). Run `just` (no args) to list all recipes.
+
 | Task              | Command                       |
 |-------------------|-------------------------------|
-| Start application | `uv run fastapi dev`          |
-| Lint code         | `uv run ruff check app/`      |
-| Format code       | `uv run ruff format app/`     |
+| Start application | `just dev` (or `uv run fastapi dev`) |
+| Lint code         | `just lint`                   |
+| Format code       | `just format`                 |
 | Type checking     | `uv run mypy app/` (currently disabled in pre-commit) |
-| Run tests         | `uv run pytest`               |
+| Run tests         | `just test`                   |
 | Run single test   | `uv run pytest tests/test_filename.py::test_function_name` |
-| Check code coverage | `uv run pytest --cov=app --cov-branch --cov-report=term-missing` (or `make coverage`) |
+| Check code coverage | `just coverage`             |
 | Install pre-commit hooks | `uv run pre-commit install` |
 | Run pre-commit on all files | `uv run pre-commit run --all-files` |
 | Run specific pre-commit hook | `uv run pre-commit run <hook-name>` |
+
+If `just` is not installed, see the project README for installation instructions (`cargo install just`, `brew install just`, or `apt install just`).
 
 ## System Architecture
 

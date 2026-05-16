@@ -42,7 +42,7 @@ Complete guide for developing, testing, and deploying the Minecraft Server Dashb
 | `uv run pytest --timeout=300000` | Run full test suite with extended timeout |
 | `uv run ruff check app/` | Code quality checks |
 | `uv run ruff format app/` | Format code |
-| `uv run pytest --cov=app --cov-branch --cov-report=term-missing` (or `make coverage`) | Generate coverage report |
+| `uv run pytest --cov=app --cov-branch --cov-report=term-missing` (or `just coverage`) | Generate coverage report |
 | `uv run pytest --cov=app --cov-report=html` | Generate HTML coverage report |
 
 ## Project Structure
