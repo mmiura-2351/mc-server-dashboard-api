@@ -88,21 +88,25 @@ The project uses **pytest-xdist** with `--dist loadscope` for parallel execution
 
 ### Registration
 
-Markers are declared in `pytest.ini` so that selection by name works in the pre-commit / pre-push smoke hooks:
+Markers are declared in `pyproject.toml` under `[tool.pytest.ini_options]` and enforced via `--strict-markers`:
 
-```ini
-# pytest.ini
-[tool:pytest]
-markers =
-    slow: test is slow (>= 1s) or spawns a subprocess
-    requires_java: test needs a working JRE on PATH
+```toml
+# pyproject.toml
+[tool.pytest.ini_options]
+markers = [
+    "slow: test is slow (>= 1s) or spawns a subprocess",
+    "requires_java: test needs a working JRE on PATH",
+]
+addopts = ["...", "-n", "auto", "--dist", "loadscope", "--strict-markers"]
 ```
 
-> **Status:** The `markers` directive is currently silently dropped because the file uses the `[tool:pytest]` section header (the `setup.cfg` form). Selection (`-m slow` / `-m "not slow"`) still works fine — it does not require registration — but pytest emits "unknown mark" warnings that are suppressed by `--disable-warnings` in `addopts`. Migrating the config to `pyproject.toml` under `[tool.pytest.ini_options]` is the proper fix and will re-enable `--strict-markers`; this is deferred because the migration also activates the `-n auto --dist loadscope` directives that are currently no-ops, and doing so exposes pre-existing race conditions in the integration auth fixtures.
+> Unknown marker names now fail at collection (`--strict-markers`). Add any new marker to the `markers = [...]` list in `pyproject.toml` before using it.
 >
 > `tests/conftest.py` provides an automatic skip for `requires_java` when no JRE is on `PATH` (added in #171).
 >
 > **CI Java version:** `.github/workflows/ci.yaml` and `.github/workflows/nightly.yaml` explicitly install Temurin 21 via `actions/setup-java@v4`. This pins the JRE used for `requires_java` tests so the runner image's bundled Java cannot silently change and so `requires_java` tests are never silently skipped on CI (see #211).
+>
+> **`app.*` import order in test helpers:** `tests/conftest.py` sets `DATABASE_URL` to a worker-specific path *before* importing anything from `app.*`. The top-level `Settings()` in `app/core/config.py` is evaluated at import time, so any other test helper (e.g. modules under `tests/fixtures/`) must import `app.*` only via fixtures defined in `tests/conftest.py` — never at module scope from a helper that may be imported by another conftest first. Otherwise the worker DB override is bypassed and lifespan startup will race on the shared `app.db` (see Issue #210).
 
 ---
 

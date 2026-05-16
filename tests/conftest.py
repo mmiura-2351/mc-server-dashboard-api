@@ -2,38 +2,36 @@
 import os
 import shutil
 import tempfile
-from unittest.mock import Mock
-
-import pytest
-from fastapi.testclient import TestClient
-from passlib.context import CryptContext
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
-
-from app.core.database import Base, get_db
-from app.main import app
-from app.services.user import UserService
-from app.users.models import Role, User
 
 
 # Worker固有のデータベースファイルを使用して並列実行時の分離を確保
 def get_worker_db_path():
-    """Get worker-specific database path for parallel execution isolation"""
-    try:
-        # pytest-xdistのworker IDを取得
-        import pytest
-
-        worker_id = getattr(pytest.current_pytest_config, "workerinput", {}).get(
-            "workerid", "master"
-        )
-    except (AttributeError, ImportError):
-        # フォールバック: 環境変数またはデフォルト
-        worker_id = os.environ.get("PYTEST_XDIST_WORKER", "master")
-
+    """Get worker-specific database path for parallel execution isolation."""
+    worker_id = os.environ.get("PYTEST_XDIST_WORKER", "master")
     return os.path.join(tempfile.gettempdir(), f"test_mc_server_{worker_id}.db")
 
 
+# IMPORTANT: set DATABASE_URL BEFORE any `from app.*` import so that
+# `app.core.database.engine` and `app.main` lifespan startup target the
+# worker-specific SQLite file. Without this, every xdist worker hits the
+# shared `./app.db` from `.env` and `Base.metadata.create_all` races into
+# "database is locked" errors. See Issue #210.
 test_db_path = get_worker_db_path()
+os.environ["DATABASE_URL"] = f"sqlite:///{test_db_path}"
+
+from unittest.mock import Mock  # noqa: E402
+
+import pytest  # noqa: E402
+from fastapi.testclient import TestClient  # noqa: E402
+from passlib.context import CryptContext  # noqa: E402
+from sqlalchemy import create_engine  # noqa: E402
+from sqlalchemy.orm import sessionmaker  # noqa: E402
+
+from app.core.database import Base, get_db  # noqa: E402
+from app.main import app  # noqa: E402
+from app.services.user import UserService  # noqa: E402
+from app.users.models import Role, User  # noqa: E402
+
 SQLALCHEMY_DATABASE_URL = f"sqlite:///{test_db_path}"
 
 engine = create_engine(
