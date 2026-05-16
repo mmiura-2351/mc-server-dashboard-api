@@ -76,22 +76,41 @@ GitHub Release 発行を自動化している (`.github/workflows/tagpr.yml` / `
 3. **リリース PR で CHANGELOG を整える** (メンテナ手動)
    - `[Unreleased]` を `[X.Y.Z] - YYYY-MM-DD` に rename し、新しい `[Unreleased]` を直上に追加
    - リリース PR ブランチに直接コミットして push
-4. **リリース PR をマージ** (squash merge)
+4. **リリース PR の内容を確認**
+   - `pyproject.toml` の `version` 行のみが書き換わっていること
+   - `uv.lock` が同期更新されていること
+   - 上記以外の意図しない変更が混入していないこと
+5. **リリース PR をマージ** (squash merge)
    - マージ後 tagpr が自動で `vX.Y.Z` タグ作成・push と GitHub Release 発行を行う
 
-### 4.2 リポジトリ設定 (一度きり)
+### 4.2 リリース PR には CI が走らないことに注意
+
+GitHub の仕様上、`GITHUB_TOKEN` を用いて作成された PR (= tagpr が作成するリリース PR) は
+他の workflow をトリガしない。すなわち **リリース PR には `ci.yaml` の lint / format / test が走らない**。
+
+対策:
+
+- **§4.1 の手順 4 で diff を必ず目視確認する** (`pyproject.toml` + `uv.lock` + CHANGELOG 以外の変更が無いことを確認)
+- CI を回したい場合は、リリース PR のブランチに対して以下で手動起動できる:
+  ```bash
+  gh workflow run ci.yaml --ref <release-pr-branch-name>
+  ```
+- 恒久対策として PAT / GitHub App トークンへの切り替えを将来検討 (別 Issue で扱う)
+
+### 4.3 リポジトリ設定 (一度きり)
 
 tagpr が PR を作成できるよう、以下の設定を確認する。
 
 - Settings → Actions → General → Workflow permissions:
   - **Allow GitHub Actions to create and approve pull requests** を ON
 
-### 4.3 Dependabot PR の扱い
+### 4.4 Dependabot PR の扱い
 
 tagpr は Dependabot 作成 PR をデフォルトでバージョン bump 対象から除外する。
-依存更新のみが master に積まれている期間はリリース PR が作られない。
-依存更新もリリースに含めたい場合は、何らかの利用者影響変更を伴う通常 PR を 1 件マージするか、
-任意の PR に `tagpr:patch` 相当のラベル運用を後日検討する。
+依存更新のみが master に積まれている期間はリリース PR が作られない (= 依存更新だけでは
+新しいバージョンを切らない方針)。依存更新もリリースに含めたい場合は、利用者影響のある
+通常 PR を 1 件マージするか、Dependabot PR マージ後に master へ意味のあるコミットを
+別途積む運用とする (なお tagpr の patch bump はラベル無しが既定動作であり、明示ラベルは不要)。
 
 ## 5. 手動リリース手順 (フォールバック)
 

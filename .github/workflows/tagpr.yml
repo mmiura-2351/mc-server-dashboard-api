@@ -5,6 +5,10 @@ on:
     branches:
       - master
 
+concurrency:
+  group: tagpr-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   tagpr:
     runs-on: ubuntu-latest
