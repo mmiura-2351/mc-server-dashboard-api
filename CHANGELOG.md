@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- リリース自動化 ([tagpr](https://github.com/Songmu/tagpr)) を導入。master への push 時に
+  リリース PR を自動生成・更新し、マージで `vX.Y.Z` タグと GitHub Release を自動発行する
+  ([docs/RELEASING.md](docs/RELEASING.md) §4)。バンプ種別は PR ラベル
+  (`tagpr:major` / `tagpr:minor`、無ければ patch) で制御。
+
 ## [0.1.0] - 2026-05-16
 
 初回リリース。本リポジトリの 2026-05-16 時点のスナップショットを `v0.1.0` として確定する。
