@@ -88,7 +88,7 @@ The project uses **pytest-xdist** with `--dist loadscope` for parallel execution
 
 ### Registration
 
-Markers must be declared in the pytest configuration so that typos become a hard error (`--strict-markers`) instead of silent no-ops. This project currently uses `pytest.ini`, so the registration goes there:
+Markers are declared in `pytest.ini` so that selection by name works in the pre-commit / pre-push smoke hooks:
 
 ```ini
 # pytest.ini
@@ -98,18 +98,9 @@ markers =
     requires_java: test needs a working JRE on PATH
 ```
 
-If the project later consolidates pytest config into `pyproject.toml`, the equivalent form is:
-
-```toml
-# pyproject.toml
-[tool.pytest.ini_options]
-markers = [
-    "slow: test is slow (>= 1s) or spawns a subprocess",
-    "requires_java: test needs a working JRE on PATH",
-]
-```
-
-> **Note:** `slow` and `requires_java` are introduced by this document. Wiring them up in `pytest.ini` and adding the Java-detection skip helper is tracked by Issue #171 (pre-commit test scope) since both Issues share the goal of making the quick-feedback loop fast.
+> **Status:** The `markers` directive is currently silently dropped because the file uses the `[tool:pytest]` section header (the `setup.cfg` form). Selection (`-m slow` / `-m "not slow"`) still works fine — it does not require registration — but pytest emits "unknown mark" warnings that are suppressed by `--disable-warnings` in `addopts`. Migrating the config to `pyproject.toml` under `[tool.pytest.ini_options]` is the proper fix and will re-enable `--strict-markers`; this is deferred because the migration also activates the `-n auto --dist loadscope` directives that are currently no-ops, and doing so exposes pre-existing race conditions in the integration auth fixtures.
+>
+> `tests/conftest.py` provides an automatic skip for `requires_java` when no JRE is on `PATH` (added in #171).
 
 ---
 

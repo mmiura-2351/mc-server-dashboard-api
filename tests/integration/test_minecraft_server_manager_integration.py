@@ -18,6 +18,8 @@ from app.servers.models import Server, ServerStatus, ServerType
 from app.services.java_compatibility import JavaVersionInfo
 from app.services.minecraft_server import MinecraftServerManager, ServerProcess
 
+pytestmark = pytest.mark.slow
+
 
 class MockJavaCompatibilityService:
     """Mock Java compatibility service for controlled testing"""

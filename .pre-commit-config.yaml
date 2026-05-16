@@ -29,17 +29,29 @@ repos:
       - id: ruff-format
         types_or: [python, pyi]
 
-  # Full test suite execution for comprehensive quality assurance
+  # Test execution — see docs/TESTING.md §4 for the layered strategy.
+  # pre-commit: unit smoke (excludes slow) — fast feedback before each commit
+  # pre-push:   unit + integration smoke (excludes slow) — full sanity before pushing
+  # CI:         full suite including slow markers (see .github/workflows/)
   - repo: local
     hooks:
-      - id: pytest-all
-        name: Run full test suite
-        entry: uv run pytest
-        args: [--tb=short, --maxfail=5, -v]
+      - id: pytest-unit-smoke
+        name: pytest (unit smoke, excludes slow)
+        entry: uv run pytest tests/unit -m "not slow"
+        args: [--tb=short, --maxfail=5]
         language: system
         types: [python]
         pass_filenames: false
         stages: [pre-commit]
+
+      - id: pytest-integration-smoke
+        name: pytest (unit + integration smoke, excludes slow)
+        entry: uv run pytest tests/unit tests/integration -m "not slow"
+        args: [--tb=short, --maxfail=5]
+        language: system
+        types: [python]
+        pass_filenames: false
+        stages: [pre-push]
 
 # MyPy type checking - currently disabled due to extensive type annotation work needed
 # Will be re-enabled gradually as type coverage improves
