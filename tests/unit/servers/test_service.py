@@ -224,9 +224,7 @@ class TestServerService:
             with pytest.raises(InvalidRequestException) as exc_info:
                 await server_service.create_server(mock_request, mock_user, mock_db)
 
-            assert "Version 1.20.1 is not supported for vanilla" in str(
-                exc_info.value
-            )
+            assert "Version 1.20.1 is not supported for vanilla" in str(exc_info.value)
 
     @pytest.mark.asyncio
     async def test_get_server_success(self, server_service, mock_db):

@@ -126,7 +126,6 @@ class TestMinecraftVersionManager:
             assert all(v.server_type == ServerType.paper for v in versions)
             assert versions[0].build_number == 196
 
-
     @pytest.mark.asyncio
     async def test_get_supported_versions_with_cache(self):
         """Test getting supported versions with cache hit"""
@@ -461,7 +460,9 @@ class TestMinecraftVersionManagerMissingCoverage:
         # Should return real versions from Forge API, not fallback
         assert len(result) > 3  # More than the 3 fallback versions
         assert all(v.server_type == ServerType.forge for v in result)
-        assert all(v.download_url.startswith("https://maven.minecraftforge.net") for v in result)
+        assert all(
+            v.download_url.startswith("https://maven.minecraftforge.net") for v in result
+        )
 
     @pytest.mark.asyncio
     async def test_get_forge_versions_raises_error_on_failure(self, manager):

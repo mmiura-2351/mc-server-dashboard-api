@@ -11,6 +11,7 @@ from datetime import datetime, timedelta
 from typing import Optional
 
 from app.core.database import SessionLocal
+from app.core.datetime_utils import utcnow
 from app.versions.schemas import VersionUpdateResult
 from app.versions.service import VersionUpdateService
 
@@ -117,13 +118,13 @@ class VersionUpdateSchedulerService:
             # No previous update, update is due
             return True
 
-        time_since_last_update = datetime.utcnow() - self._last_successful_update
+        time_since_last_update = utcnow() - self._last_successful_update
         return time_since_last_update >= timedelta(hours=self._update_interval_hours)
 
     def _get_next_update_time(self) -> datetime:
         """Calculate the next scheduled update time"""
         if self._last_successful_update is None:
-            return datetime.utcnow()
+            return utcnow()
 
         return self._last_successful_update + timedelta(hours=self._update_interval_hours)
 
@@ -152,7 +153,7 @@ class VersionUpdateSchedulerService:
 
                     if result.success:
                         # Update successful
-                        self._last_successful_update = datetime.utcnow()
+                        self._last_successful_update = utcnow()
                         self._last_error = None
 
                         logger.info(
@@ -228,7 +229,7 @@ class VersionUpdateSchedulerService:
             )
 
             if result.success:
-                self._last_successful_update = datetime.utcnow()
+                self._last_successful_update = utcnow()
                 self._last_error = None
                 logger.info("Manual version update completed successfully")
             else:

@@ -6,6 +6,7 @@ from datetime import datetime, timedelta
 
 import pytest
 
+from app.core.datetime_utils import utcnow
 from app.servers.models import ServerType
 from app.versions.models import MinecraftVersion, VersionUpdateLog
 from app.versions.repository import VersionRepository
@@ -224,7 +225,7 @@ class TestVersionRepository:
     async def test_cleanup_old_versions(self, repository, db):
         """Test cleaning up old inactive versions"""
         # Create an old inactive version
-        old_date = datetime.utcnow() - timedelta(days=35)
+        old_date = utcnow() - timedelta(days=35)
         old_version = MinecraftVersion(
             server_type=ServerType.vanilla.value,
             version="1.20.0",
@@ -331,13 +332,13 @@ class TestVersionRepository:
         old_log = VersionUpdateLog(
             update_type="scheduled",
             status="success",
-            started_at=datetime.utcnow() - timedelta(hours=2),
+            started_at=utcnow() - timedelta(hours=2),
         )
 
         latest_log = VersionUpdateLog(
             update_type="manual",
             status="success",
-            started_at=datetime.utcnow() - timedelta(minutes=30),
+            started_at=utcnow() - timedelta(minutes=30),
         )
 
         db.add_all([old_log, latest_log])
@@ -356,7 +357,7 @@ class TestVersionRepository:
             VersionUpdateLog(
                 update_type="manual",
                 status="success",
-                started_at=datetime.utcnow() - timedelta(hours=i),
+                started_at=utcnow() - timedelta(hours=i),
             )
             for i in range(3)
         ]
@@ -364,7 +365,7 @@ class TestVersionRepository:
         scheduled_log = VersionUpdateLog(
             update_type="scheduled",
             status="success",
-            started_at=datetime.utcnow() - timedelta(hours=1),
+            started_at=utcnow() - timedelta(hours=1),
         )
 
         db.add_all(manual_logs + [scheduled_log])
@@ -389,7 +390,7 @@ class TestVersionRepository:
             VersionUpdateLog(
                 update_type="scheduled",
                 status="success",
-                started_at=datetime.utcnow() - timedelta(hours=i),
+                started_at=utcnow() - timedelta(hours=i),
             )
             for i in range(5)
         ]

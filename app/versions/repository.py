@@ -8,6 +8,7 @@ from typing import List, Optional
 from sqlalchemy import and_, desc, func
 from sqlalchemy.orm import Session
 
+from app.core.datetime_utils import utcnow
 from app.servers.models import ServerType
 from app.versions.models import MinecraftVersion, VersionUpdateLog
 from app.versions.schemas import (
@@ -105,7 +106,7 @@ class VersionRepository:
             existing.is_stable = version_data.is_stable
             existing.build_number = version_data.build_number
             existing.is_active = True  # Reactivate if was inactive
-            existing.updated_at = datetime.utcnow()
+            existing.updated_at = utcnow()
 
             self.db.commit()
             self.db.refresh(existing)
@@ -131,7 +132,7 @@ class VersionRepository:
         for field, value in version_data.model_dump(exclude_unset=True).items():
             setattr(db_version, field, value)
 
-        db_version.updated_at = datetime.utcnow()
+        db_version.updated_at = utcnow()
 
         self.db.commit()
         self.db.refresh(db_version)
@@ -155,7 +156,7 @@ class VersionRepository:
         count = query.count()
 
         query.update(
-            {"is_active": False, "updated_at": datetime.utcnow()},
+            {"is_active": False, "updated_at": utcnow()},
             synchronize_session=False,
         )
 
@@ -167,7 +168,7 @@ class VersionRepository:
         Remove very old inactive versions to save space
         Returns number of versions deleted
         """
-        cutoff_date = datetime.utcnow() - timedelta(days=days_old)
+        cutoff_date = utcnow() - timedelta(days=days_old)
 
         query = self.db.query(MinecraftVersion).filter(
             and_(
@@ -245,7 +246,7 @@ class VersionRepository:
             return None
 
         db_log.status = status
-        db_log.completed_at = datetime.utcnow()
+        db_log.completed_at = utcnow()
         db_log.execution_time_ms = execution_time_ms
         db_log.error_message = error_message
 

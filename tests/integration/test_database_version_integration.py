@@ -4,7 +4,6 @@ Integration tests for database-based version management in server creation.
 Tests that server creation now uses fast database queries instead of slow external API calls.
 """
 
-import asyncio
 from pathlib import Path
 from unittest.mock import patch
 
@@ -38,7 +37,7 @@ class TestDatabaseVersionIntegration:
             email="admin@test.com",
             is_active=True,
             is_approved=True,
-            role=Role.admin
+            role=Role.admin,
         )
         return user
 
@@ -51,7 +50,7 @@ class TestDatabaseVersionIntegration:
             server_type=ServerType.vanilla,
             max_memory=1024,
             max_players=20,
-            port=25565
+            port=25565,
         )
 
     @pytest.fixture
@@ -64,7 +63,7 @@ class TestDatabaseVersionIntegration:
             version="1.21.6",
             download_url="https://launcher.mojang.com/v1/objects/test.jar",
             is_stable=True,
-            is_active=True
+            is_active=True,
         )
 
         db.add(db_version)
@@ -73,16 +72,28 @@ class TestDatabaseVersionIntegration:
 
     @pytest.mark.asyncio
     async def test_server_creation_uses_database_validation(
-        self, server_service, sample_create_request, mock_admin_user, db, sample_db_version
+        self,
+        server_service,
+        sample_create_request,
+        mock_admin_user,
+        db,
+        sample_db_version,
     ):
         """Test that server creation uses database for version validation (FAST)"""
 
         # Mock filesystem operations to avoid actual file creation
-        with patch.object(server_service.filesystem_service, 'create_server_directory') as mock_create_dir, \
-             patch.object(server_service.jar_service, 'get_server_jar') as mock_get_jar, \
-             patch.object(server_service.filesystem_service, 'generate_server_files') as mock_gen_files, \
-             patch.object(server_service, '_validate_java_compatibility') as mock_java_compat:
-
+        with (
+            patch.object(
+                server_service.filesystem_service, "create_server_directory"
+            ) as mock_create_dir,
+            patch.object(server_service.jar_service, "get_server_jar") as mock_get_jar,
+            patch.object(
+                server_service.filesystem_service, "generate_server_files"
+            ) as mock_gen_files,
+            patch.object(
+                server_service, "_validate_java_compatibility"
+            ) as mock_java_compat,
+        ):
             # Setup mocks
             mock_create_dir.return_value = "/tmp/test-server"
             mock_get_jar.return_value = "/tmp/test-server/server.jar"
@@ -90,7 +101,9 @@ class TestDatabaseVersionIntegration:
             mock_java_compat.return_value = None
 
             # Create server - this should use database validation
-            result = await server_service.create_server(sample_create_request, mock_admin_user, db)
+            result = await server_service.create_server(
+                sample_create_request, mock_admin_user, db
+            )
 
             # Verify result
             assert result.name == "test-server"
@@ -112,9 +125,10 @@ class TestDatabaseVersionIntegration:
         """Test that JAR service uses database for version validation (FAST PATH)"""
 
         # Mock external dependencies
-        with patch.object(jar_service.cache_manager, 'get_or_download_jar') as mock_cache, \
-             patch.object(jar_service.cache_manager, 'copy_jar_to_server') as mock_copy:
-
+        with (
+            patch.object(jar_service.cache_manager, "get_or_download_jar") as mock_cache,
+            patch.object(jar_service.cache_manager, "copy_jar_to_server") as mock_copy,
+        ):
             mock_cache.return_value = "/cache/vanilla-1.21.6.jar"
             mock_copy.return_value = "/server/server.jar"
 
@@ -130,17 +144,17 @@ class TestDatabaseVersionIntegration:
             mock_cache.assert_called_once_with(
                 ServerType.vanilla,
                 "1.21.6",
-                "https://launcher.mojang.com/v1/objects/test.jar"
+                "https://launcher.mojang.com/v1/objects/test.jar",
             )
 
     @pytest.mark.asyncio
-    async def test_jar_service_error_on_unsupported_version(
-        self, jar_service, db
-    ):
+    async def test_jar_service_error_on_unsupported_version(self, jar_service, db):
         """Test that JAR service raises error when version not supported"""
 
         # Call with version not in database - should raise error instead of fallback
-        with pytest.raises(FileOperationException, match="Version 1.20.0 is not supported"):
+        with pytest.raises(
+            FileOperationException, match="Version 1.20.0 is not supported"
+        ):
             await jar_service.get_server_jar(
                 ServerType.vanilla, "1.20.0", "/tmp/test-server", db
             )
@@ -159,16 +173,23 @@ class TestDatabaseVersionIntegration:
             server_type=ServerType.vanilla,
             max_memory=1024,
             max_players=20,
-            port=25565
+            port=25565,
         )
 
         # Mock filesystem and validation to avoid unrelated errors
         # Also mock jar service to ensure version validation happens first
-        with patch.object(server_service.validation_service, 'validate_server_uniqueness') as mock_unique, \
-             patch.object(server_service, '_validate_java_compatibility') as mock_java, \
-             patch.object(server_service.filesystem_service, 'create_server_directory') as mock_dir, \
-             patch.object(server_service.jar_service, '_is_version_supported_db') as mock_jar_version_check:
-
+        with (
+            patch.object(
+                server_service.validation_service, "validate_server_uniqueness"
+            ) as mock_unique,
+            patch.object(server_service, "_validate_java_compatibility") as mock_java,
+            patch.object(
+                server_service.filesystem_service, "create_server_directory"
+            ) as mock_dir,
+            patch.object(
+                server_service.jar_service, "_is_version_supported_db"
+            ) as mock_jar_version_check,
+        ):
             mock_unique.return_value = None
             mock_java.return_value = None
             mock_dir.return_value = Path("/tmp/test-server")
@@ -183,16 +204,15 @@ class TestDatabaseVersionIntegration:
             assert "not supported" in str(exc_info.value.detail).lower()
 
     @pytest.mark.asyncio
-    async def test_database_only_performance(
-        self, jar_service, db, sample_db_version
-    ):
+    async def test_database_only_performance(self, jar_service, db, sample_db_version):
         """Test that database-only approach provides fast performance"""
         import time
 
         # Test database path timing
-        with patch.object(jar_service.cache_manager, 'get_or_download_jar') as mock_cache, \
-             patch.object(jar_service.cache_manager, 'copy_jar_to_server') as mock_copy:
-
+        with (
+            patch.object(jar_service.cache_manager, "get_or_download_jar") as mock_cache,
+            patch.object(jar_service.cache_manager, "copy_jar_to_server") as mock_copy,
+        ):
             mock_cache.return_value = "/cache/test.jar"
             mock_copy.return_value = "/server/server.jar"
 
@@ -205,13 +225,16 @@ class TestDatabaseVersionIntegration:
 
             # Database path should be very fast (< 50ms typically)
             assert db_time < 0.1  # 100ms threshold for CI environments
-            print(f"Database performance: {db_time*1000:.1f}ms")
+            print(f"Database performance: {db_time * 1000:.1f}ms")
 
         # Test that unsupported versions fail fast
         start_time = time.time()
         try:
             await jar_service.get_server_jar(
-                ServerType.vanilla, "1.19.0", "/tmp/test", db  # Version not in DB
+                ServerType.vanilla,
+                "1.19.0",
+                "/tmp/test",
+                db,  # Version not in DB
             )
         except FileOperationException:
             pass  # Expected error
@@ -219,4 +242,4 @@ class TestDatabaseVersionIntegration:
 
         # Error should also be fast
         assert error_time < 0.1  # 100ms threshold for CI environments
-        print(f"Error handling performance: {error_time*1000:.1f}ms")
+        print(f"Error handling performance: {error_time * 1000:.1f}ms")

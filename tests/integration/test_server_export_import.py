@@ -93,16 +93,16 @@ class TestServerExportImport:
         zip_buffer = io.BytesIO()
 
         # First, create a version in the database to ensure it's supported
+        from app.core.datetime_utils import utcnow
         from app.versions.models import MinecraftVersion
-        from datetime import datetime
 
         version = MinecraftVersion(
             server_type="vanilla",
             version="1.21.6",
             download_url="https://launcher.mojang.com/v1/objects/test.jar",
-            release_date=datetime.utcnow(),
+            release_date=utcnow(),
             is_stable=True,
-            is_active=True
+            is_active=True,
         )
         db.add(version)
         db.commit()
@@ -125,9 +125,14 @@ class TestServerExportImport:
         zip_buffer.seek(0)
 
         # Mock JAR download and caching to avoid actual network calls
-        with patch("app.services.jar_cache_manager.jar_cache_manager.get_or_download_jar") as mock_cache, \
-             patch("app.services.jar_cache_manager.jar_cache_manager.copy_jar_to_server") as mock_copy:
-
+        with (
+            patch(
+                "app.services.jar_cache_manager.jar_cache_manager.get_or_download_jar"
+            ) as mock_cache,
+            patch(
+                "app.services.jar_cache_manager.jar_cache_manager.copy_jar_to_server"
+            ) as mock_copy,
+        ):
             mock_cache.return_value = "/cache/test-vanilla-1.21.6.jar"
             mock_copy.return_value = "/server/server.jar"
 
@@ -349,16 +354,16 @@ class TestServerExportImport:
     ):
         """Test that import allows port conflicts with stopped servers"""
         # First, create a version in the database to ensure it's supported
+        from app.core.datetime_utils import utcnow
         from app.versions.models import MinecraftVersion
-        from datetime import datetime
 
         version = MinecraftVersion(
             server_type="vanilla",
             version="1.21.6",
             download_url="https://launcher.mojang.com/v1/objects/test.jar",
-            release_date=datetime.utcnow(),
+            release_date=utcnow(),
             is_stable=True,
-            is_active=True
+            is_active=True,
         )
         db.add(version)
         db.commit()
@@ -396,9 +401,14 @@ class TestServerExportImport:
         zip_buffer.seek(0)
 
         # Mock JAR download and caching to avoid actual network calls
-        with patch("app.services.jar_cache_manager.jar_cache_manager.get_or_download_jar") as mock_cache, \
-             patch("app.services.jar_cache_manager.jar_cache_manager.copy_jar_to_server") as mock_copy:
-
+        with (
+            patch(
+                "app.services.jar_cache_manager.jar_cache_manager.get_or_download_jar"
+            ) as mock_cache,
+            patch(
+                "app.services.jar_cache_manager.jar_cache_manager.copy_jar_to_server"
+            ) as mock_copy,
+        ):
             mock_cache.return_value = "/cache/test-vanilla-1.21.6.jar"
             mock_copy.return_value = "/server/server.jar"
 
@@ -415,7 +425,9 @@ class TestServerExportImport:
 
             assert response.status_code == status.HTTP_201_CREATED
             server_data = response.json()
-            assert server_data["port"] == 25565  # Should get the same port as stopped server
+            assert (
+                server_data["port"] == 25565
+            )  # Should get the same port as stopped server
 
         # Cleanup
         import shutil

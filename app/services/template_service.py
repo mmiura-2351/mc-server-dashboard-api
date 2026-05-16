@@ -314,7 +314,7 @@ class TemplateService:
             if template_path.exists():
                 # Extract template files to server directory
                 with tarfile.open(template_path, "r:gz") as tar:
-                    tar.extractall(path=server_dir)
+                    tar.extractall(path=server_dir, filter="data")
 
                 logger.info(f"Applied template {template_id} files to {server_dir}")
 

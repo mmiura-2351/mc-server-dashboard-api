@@ -1,4 +1,3 @@
-from datetime import datetime
 from enum import Enum as PyEnum
 
 from sqlalchemy import (
@@ -15,6 +14,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import relationship
 
 from app.core.database import Base
+from app.core.datetime_utils import utcnow
 
 
 class ScheduleAction(str, PyEnum):
@@ -59,10 +59,8 @@ class BackupSchedule(Base):
     next_backup_at = Column(DateTime, nullable=True, index=True)
 
     # Timestamps
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column(
-        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
-    )
+    created_at = Column(DateTime, default=utcnow, nullable=False)
+    updated_at = Column(DateTime, default=utcnow, onupdate=utcnow, nullable=False)
 
     # Relations
     server = relationship("Server", back_populates="backup_schedule")
@@ -94,7 +92,7 @@ class BackupScheduleLog(Base):
     old_config = Column(JSON, nullable=True)
     new_config = Column(JSON, nullable=True)
     executed_by_user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=utcnow, nullable=False)
 
     # Relations
     server = relationship("Server")

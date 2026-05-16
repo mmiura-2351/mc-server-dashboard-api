@@ -17,16 +17,16 @@ class TestServerPortConflicts:
     ):
         """Test that creating servers with duplicate ports is now allowed during creation"""
         # First, create a version in the database to ensure it's supported
+        from app.core.datetime_utils import utcnow
         from app.versions.models import MinecraftVersion
-        from datetime import datetime
 
         version = MinecraftVersion(
             server_type="vanilla",
             version="1.21.6",
             download_url="https://launcher.mojang.com/v1/objects/test.jar",
-            release_date=datetime.utcnow(),
+            release_date=utcnow(),
             is_stable=True,
-            is_active=True
+            is_active=True,
         )
         db.add(version)
         db.commit()
@@ -47,9 +47,14 @@ class TestServerPortConflicts:
         db.commit()
 
         # Mock JAR download and caching to avoid actual network calls
-        with patch("app.services.jar_cache_manager.jar_cache_manager.get_or_download_jar") as mock_cache, \
-             patch("app.services.jar_cache_manager.jar_cache_manager.copy_jar_to_server") as mock_copy:
-
+        with (
+            patch(
+                "app.services.jar_cache_manager.jar_cache_manager.get_or_download_jar"
+            ) as mock_cache,
+            patch(
+                "app.services.jar_cache_manager.jar_cache_manager.copy_jar_to_server"
+            ) as mock_copy,
+        ):
             mock_cache.return_value = "/cache/test-vanilla-1.21.6.jar"
             mock_copy.return_value = "/server/server.jar"
 
@@ -86,16 +91,16 @@ class TestServerPortConflicts:
     ):
         """Test that creating a server succeeds when port conflicts with stopped server"""
         # First, create a version in the database to ensure it's supported
+        from app.core.datetime_utils import utcnow
         from app.versions.models import MinecraftVersion
-        from datetime import datetime
 
         version = MinecraftVersion(
             server_type="vanilla",
             version="1.21.6",
             download_url="https://launcher.mojang.com/v1/objects/test.jar",
-            release_date=datetime.utcnow(),
+            release_date=utcnow(),
             is_stable=True,
-            is_active=True
+            is_active=True,
         )
         db.add(version)
         db.commit()
@@ -117,9 +122,14 @@ class TestServerPortConflicts:
         db.commit()
 
         # Mock JAR download and caching to avoid actual network calls
-        with patch("app.services.jar_cache_manager.jar_cache_manager.get_or_download_jar") as mock_cache, \
-             patch("app.services.jar_cache_manager.jar_cache_manager.copy_jar_to_server") as mock_copy:
-
+        with (
+            patch(
+                "app.services.jar_cache_manager.jar_cache_manager.get_or_download_jar"
+            ) as mock_cache,
+            patch(
+                "app.services.jar_cache_manager.jar_cache_manager.copy_jar_to_server"
+            ) as mock_copy,
+        ):
             mock_cache.return_value = "/cache/test-vanilla-1.21.6.jar"
             mock_copy.return_value = "/server/server.jar"
 
@@ -156,16 +166,16 @@ class TestServerPortConflicts:
     ):
         """Test that creating servers with duplicate ports is allowed regardless of existing server status"""
         # First, create a version in the database to ensure it's supported
+        from app.core.datetime_utils import utcnow
         from app.versions.models import MinecraftVersion
-        from datetime import datetime
 
         version = MinecraftVersion(
             server_type="vanilla",
             version="1.21.6",
             download_url="https://launcher.mojang.com/v1/objects/test.jar",
-            release_date=datetime.utcnow(),
+            release_date=utcnow(),
             is_stable=True,
-            is_active=True
+            is_active=True,
         )
         db.add(version)
         db.commit()
@@ -187,9 +197,14 @@ class TestServerPortConflicts:
         db.commit()
 
         # Mock JAR download and caching to avoid actual network calls
-        with patch("app.services.jar_cache_manager.jar_cache_manager.get_or_download_jar") as mock_cache, \
-             patch("app.services.jar_cache_manager.jar_cache_manager.copy_jar_to_server") as mock_copy:
-
+        with (
+            patch(
+                "app.services.jar_cache_manager.jar_cache_manager.get_or_download_jar"
+            ) as mock_cache,
+            patch(
+                "app.services.jar_cache_manager.jar_cache_manager.copy_jar_to_server"
+            ) as mock_copy,
+        ):
             mock_cache.return_value = "/cache/test-vanilla-1.21.6.jar"
             mock_copy.return_value = "/server/server.jar"
 

@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 
+from app.core.datetime_utils import utcnow
 from app.servers.models import ServerType
 from app.services.version_manager import VersionInfo
 from app.versions.models import MinecraftVersion, VersionUpdateLog
@@ -278,7 +279,7 @@ class TestVersionUpdateService:
     async def test_cleanup_old_versions(self, service, db):
         """Test cleaning up old versions"""
         # Create old inactive version
-        old_date = datetime.utcnow() - timedelta(days=35)
+        old_date = utcnow() - timedelta(days=35)
         old_version = MinecraftVersion(
             server_type=ServerType.vanilla.value,
             version="1.20.0",
@@ -350,7 +351,7 @@ class TestVersionUpdateService:
         """Test last update time property"""
         assert service.last_update_time is None
 
-        test_time = datetime.utcnow()
+        test_time = utcnow()
         service._last_update_time = test_time
         assert service.last_update_time == test_time
 
