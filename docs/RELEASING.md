@@ -83,19 +83,31 @@ GitHub Release 発行を自動化している (`.github/workflows/tagpr.yml` / `
 5. **リリース PR をマージ** (squash merge)
    - マージ後 tagpr が自動で `vX.Y.Z` タグ作成・push と GitHub Release 発行を行う
 
-### 4.2 リリース PR には CI が走らないことに注意
+### 4.2 認証トークン (Fine-grained PAT)
 
-GitHub の仕様上、`GITHUB_TOKEN` を用いて作成された PR (= tagpr が作成するリリース PR) は
-他の workflow をトリガしない。すなわち **リリース PR には `ci.yaml` の lint / format / test が走らない**。
+tagpr が作成するリリース PR でも `ci.yaml` (lint / format / test) が走るよう、
+標準の `GITHUB_TOKEN` ではなく **Fine-grained PAT を `TAGPR_PAT` シークレット** として利用している。
 
-対策:
+> GitHub の仕様上、`GITHUB_TOKEN` で作成された PR は他の workflow をトリガしない。
+> PAT で作成された PR はトリガする。
 
-- **§4.1 の手順 4 で diff を必ず目視確認する** (`pyproject.toml` + `uv.lock` + CHANGELOG 以外の変更が無いことを確認)
-- CI を回したい場合は、リリース PR のブランチに対して以下で手動起動できる:
-  ```bash
-  gh workflow run ci.yaml --ref <release-pr-branch-name>
-  ```
-- 恒久対策として PAT / GitHub App トークンへの切り替えを将来検討 (別 Issue で扱う)
+#### セットアップ (一度きり)
+
+1. https://github.com/settings/personal-access-tokens/new で Fine-grained PAT を作成:
+   - **Repository access**: "Only select repositories" → 本リポジトリのみ
+   - **Repository permissions**:
+     - **Contents**: Read and write (commit / tag 作成のため)
+     - **Pull requests**: Read and write (リリース PR 作成・更新のため)
+     - **Metadata**: Read-only (自動付与)
+2. リポジトリ Settings → Secrets and variables → Actions → New repository secret:
+   - **Name**: `TAGPR_PAT`
+   - **Secret**: 生成された PAT
+
+#### 運用上の注意
+
+- PAT は作成したユーザーの所有物となる。そのユーザーが組織を離れる / PAT を revoke すると tagpr が停止する
+- PAT に有効期限を設定した場合、期限切れ前に rotation すること
+- 将来 GitHub App ベースの認証に移行することで属人性を排除可能 (別 Issue で扱う)
 
 ### 4.3 リポジトリ設定 (一度きり)
 
