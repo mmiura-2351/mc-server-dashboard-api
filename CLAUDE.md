@@ -268,6 +268,8 @@ async def endpoint(db: Session = Depends(get_db)):
 
 ## Testing Strategy
 
+> **Where does a new test go?** See [`docs/TESTING.md`](docs/TESTING.md) for the canonical test hierarchy policy (unit / integration / infrastructure), classification rules, and pytest marker usage. The notes below cover only project-specific fixtures and conventions.
+
 ### Unit Tests (`uv run pytest`)
 - Comprehensive fixtures in `conftest.py` with different user roles
 - Database overrides pattern: `app.dependency_overrides[get_db]`

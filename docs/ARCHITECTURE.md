@@ -411,22 +411,13 @@ The use case asks the Port for what it needs; failure modes (timeout, cache hit)
 
 ### 13.3 Testing
 
-Testing follows the layered structure. A dedicated `docs/TESTING.md` is planned but not yet published; until then, this section is the source of truth.
+Testing follows the layered structure. The full policy — classification rules, marker usage, and sample tests — is in [`docs/TESTING.md`](./TESTING.md), which is the canonical source. The summary below exists only so this document is readable standalone.
 
-- **Unit tests** target `domain/` and `application/`, with all Ports replaced by in-memory fakes or stubs
-- **Integration tests** exercise `adapters/` and the `api/` boundary with a real database
-- **Infrastructure tests** verify behavior that depends on real processes, file system, or sockets
+- **Unit tests** (`tests/unit/`) target `domain/` and `application/`, with all Ports replaced by in-memory Fakes or stubs
+- **Integration tests** (`tests/integration/`) exercise `adapters/` and the `api/` boundary with a real (worker-scoped SQLite) database
+- **Infrastructure tests** (`tests/infrastructure/`) verify behavior that depends on real processes, filesystem, sockets, or external HTTP
 
-Test files are organized **layer-first**, mirroring the standard set under Issue #151 (testing redesign):
-
-```
-tests/
-├── unit/<domain>/            # tests for domain/ and application/ — Ports replaced by Fake doubles
-├── integration/<domain>/     # tests for adapters/ and api/ — real DB, FastAPI TestClient
-└── infrastructure/<domain>/  # tests requiring real processes, file system, sockets, or external I/O
-```
-
-Each Port should have a `FakeXxx` test double in the test code to make use case tests fast and isolated. See [Issue #167 (test layering policy)](https://github.com/mmiura-2351/mc-server-dashboard-api/issues/167) for the broader testing direction.
+Each Port should have a `FakeXxx` test double under `tests/unit/<domain>/fakes.py` so use case tests stay fast and isolated.
 
 ## 14. New Domain Checklist
 
