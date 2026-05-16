@@ -64,6 +64,32 @@ dev = [
     "ruff>=0.11.12",
 ]
 
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = [
+    "--tb=short",
+    "--disable-warnings",
+    "-q",
+    "-n", "auto",
+    "--dist", "loadscope",
+    "--strict-markers",
+]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+markers = [
+    "slow: test is slow (>= 1s typical, or spawns a subprocess). Excluded from pre-commit/pre-push smoke runs; always runs in CI.",
+    "requires_java: test needs a working JRE on PATH. Automatically skipped when Java is not detected.",
+]
+filterwarnings = [
+    "ignore::DeprecationWarning",
+    "ignore::PendingDeprecationWarning",
+    "ignore:.*'crypt' is deprecated.*:DeprecationWarning",
+    "ignore:.*Support for class-based.*:DeprecationWarning",
+]
+
 [tool.coverage.run]
 source = ["app"]
 omit = [
