@@ -3,6 +3,6 @@
     versionFile = pyproject.toml
     vPrefix = true
     changelog = false
-    command = "uv lock"
+    postVersionCommand = "uv lock"
     majorLabels = tagpr:major
     minorLabels = tagpr:minor
