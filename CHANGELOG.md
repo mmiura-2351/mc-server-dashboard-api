@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-05-16
+
+初回リリース。本リポジトリの 2026-05-16 時点のスナップショットを `v0.1.0` として確定する。
+以降のリリースは [docs/RELEASING.md](docs/RELEASING.md) の手順に従う。
+
 ### Fixed
 - **Version Management Timeout Issues** - Simplified timeout handling and improved API reliability
   - Identified root cause: systemd service IPAddressAllow restrictions blocking external API calls
