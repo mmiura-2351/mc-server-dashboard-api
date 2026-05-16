@@ -32,6 +32,11 @@ A comprehensive FastAPI-based backend system for managing multiple Minecraft ser
 
 ### Prerequisites
 - uv package manager (automatically manages Python 3.13+ requirement)
+- [`just`](https://github.com/casey/just) task runner — install via one of:
+  - `cargo install just`
+  - `brew install just`
+  - `apt install just` (Debian/Ubuntu 22.10+)
+  - or download a prebuilt binary from the [just releases page](https://github.com/casey/just/releases)
 - Java Runtime Environment (for Minecraft servers)
   - Supports multiple Java versions for different Minecraft versions
   - OpenJDK 8, 16, 17, or 21 recommended
@@ -98,15 +103,17 @@ All configuration options are documented in the respective architecture guides:
 
 ## Development
 
+Recipes are managed with [`just`](https://github.com/casey/just). Run `just` (no args) to list all available recipes.
+
 ### Quick Commands
 
 | Command | Description |
 |---------|-------------|
-| `make dev` | Start development server with auto-reload |
-| `make test` | Run test suite |
-| `make lint` | Check code quality |
-| `make format` | Format code |
-| `make install` | Install dependencies and setup environment |
+| `just dev` | Start development server with auto-reload |
+| `just test` | Run test suite |
+| `just lint` | Check code quality |
+| `just format` | Format code |
+| `just install` | Install dependencies and setup environment |
 
 ### Direct Commands
 
@@ -117,16 +124,16 @@ All configuration options are documented in the respective architecture guides:
 | `uv run pytest --timeout=300000` | Run full test suite with extended timeout |
 | `uv run ruff check app/` | Check code quality |
 | `uv run ruff format app/` | Format code |
-| `uv run pytest --cov=app --cov-branch --cov-report=term-missing` (or `make coverage`) | Generate coverage report |
+| `just coverage` | Generate coverage report |
 
 ### Development Scripts
 
 | Script | Description |
 |--------|-------------|
-| `make dev-start` | Start development server with monitoring |
-| `make dev-stop` | Stop development server |
-| `make dev-status` | Show development server status |
-| `make dev-logs` | View development logs |
+| `just dev-start` | Start development server with monitoring |
+| `just dev-stop` | Stop development server |
+| `just dev-status` | Show development server status |
+| `just dev-logs` | View development logs |
 
 ### Alternative: Direct Script Execution
 
@@ -142,8 +149,8 @@ All configuration options are documented in the respective architecture guides:
 ### Quick Deployment
 
 ```bash
-# Using make (recommended)
-make deploy
+# Using just (recommended)
+just deploy
 
 # Or direct script execution
 ./scripts/deploy.sh
@@ -153,13 +160,13 @@ make deploy
 
 | Command | Description |
 |---------|-------------|
-| `make service-start` | Start production service |
-| `make service-stop` | Stop production service |
-| `make service-restart` | Restart production service |
-| `make service-status` | Show service status |
-| `make service-logs` | View service logs |
-| `make service-enable` | Enable auto-start on boot |
-| `make service-disable` | Disable auto-start on boot |
+| `just service-start` | Start production service |
+| `just service-stop` | Stop production service |
+| `just service-restart` | Restart production service |
+| `just service-status` | Show service status |
+| `just service-logs` | View service logs |
+| `just service-enable` | Enable auto-start on boot |
+| `just service-disable` | Disable auto-start on boot |
 
 ### Alternative: Direct Script Execution
 

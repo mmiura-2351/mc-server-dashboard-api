@@ -20,11 +20,14 @@ jobs:
           enable-cache: true
           python-version: "3.13.3"
 
+      - name: Set up just
+        uses: extractions/setup-just@v2
+
       - name: Install dependencies
         run: uv sync
 
       - name: Run linter (ruff)
-        run: uv run ruff check app/
+        run: just lint
 
   format:
     name: Format
@@ -40,11 +43,14 @@ jobs:
           enable-cache: true
           python-version: "3.13.3"
 
+      - name: Set up just
+        uses: extractions/setup-just@v2
+
       - name: Install dependencies
         run: uv sync
 
       - name: Run formatter (ruff)
-        run: uv run ruff format app/ --check
+        run: just format-check
 
   test:
     name: Test
@@ -60,6 +66,9 @@ jobs:
           enable-cache: true
           python-version: "3.13.3"
 
+      - name: Set up just
+        uses: extractions/setup-just@v2
+
       - name: Create .env file
         run: |
           echo "SECRET_KEY=test-secret-key-for-ci-pipeline-32-chars-long" >> .env
@@ -71,4 +80,4 @@ jobs:
         run: uv sync
 
       - name: Run tests (pytest)
-        run: uv run pytest
+        run: just test
