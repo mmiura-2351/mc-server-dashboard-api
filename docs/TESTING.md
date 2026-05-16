@@ -105,6 +105,8 @@ addopts = ["...", "-n", "auto", "--dist", "loadscope", "--strict-markers"]
 > `tests/conftest.py` provides an automatic skip for `requires_java` when no JRE is on `PATH` (added in #171).
 >
 > **CI Java version:** `.github/workflows/ci.yaml` and `.github/workflows/nightly.yaml` explicitly install Temurin 21 via `actions/setup-java@v4`. This pins the JRE used for `requires_java` tests so the runner image's bundled Java cannot silently change and so `requires_java` tests are never silently skipped on CI (see #211).
+>
+> **`app.*` import order in test helpers:** `tests/conftest.py` sets `DATABASE_URL` to a worker-specific path *before* importing anything from `app.*`. The top-level `Settings()` in `app/core/config.py` is evaluated at import time, so any other test helper (e.g. modules under `tests/fixtures/`) must import `app.*` only via fixtures defined in `tests/conftest.py` — never at module scope from a helper that may be imported by another conftest first. Otherwise the worker DB override is bypassed and lifespan startup will race on the shared `app.db` (see Issue #210).
 
 ---
 
