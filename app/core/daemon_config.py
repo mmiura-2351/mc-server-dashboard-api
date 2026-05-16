@@ -9,7 +9,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, field_validator
 
 
 class DaemonMode(str, Enum):
@@ -128,7 +128,8 @@ class DaemonConfig(BaseModel):
         default=3, ge=1, le=10, description="Maximum recovery attempts per process"
     )
 
-    @validator("pid_file_directory")
+    @field_validator("pid_file_directory")
+    @classmethod
     def validate_pid_directory(cls, v):
         """Validate PID file directory"""
         if v is not None:
@@ -147,7 +148,8 @@ class DaemonConfig(BaseModel):
 
         return v
 
-    @validator("monitoring_interval_seconds")
+    @field_validator("monitoring_interval_seconds")
+    @classmethod
     def validate_monitoring_interval(cls, v):
         """Validate monitoring interval"""
         if v <= 0:
@@ -156,7 +158,8 @@ class DaemonConfig(BaseModel):
             raise ValueError("Monitoring interval too long (max 300 seconds)")
         return v
 
-    @validator("resource_limits")
+    @field_validator("resource_limits")
+    @classmethod
     def validate_resource_limits(cls, v):
         """Validate resource limits"""
         if v.max_memory_mb <= 0:

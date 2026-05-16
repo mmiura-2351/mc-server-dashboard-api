@@ -7,7 +7,7 @@ Defines request/response models for the Phase 2 visibility management system.
 from datetime import datetime
 from typing import List, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.core.visibility import ResourceType, VisibilityType
 from app.users.models import Role
@@ -24,10 +24,11 @@ class VisibilityUpdateRequest(BaseModel):
         description="Role restriction for role_based visibility (required if visibility_type is role_based)",
     )
 
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {"visibility_type": "role_based", "role_restriction": "operator"}
         }
+    )
 
 
 class UserAccessGrantRequest(BaseModel):
@@ -35,8 +36,7 @@ class UserAccessGrantRequest(BaseModel):
 
     user_id: int = Field(description="ID of the user to grant access to")
 
-    class Config:
-        json_schema_extra = {"example": {"user_id": 123}}
+    model_config = ConfigDict(json_schema_extra={"example": {"user_id": 123}})
 
 
 class UserAccessGrantResponse(BaseModel):
@@ -46,8 +46,7 @@ class UserAccessGrantResponse(BaseModel):
     granted_by_user_id: Optional[int]
     granted_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class VisibilityInfoResponse(BaseModel):
@@ -61,9 +60,9 @@ class VisibilityInfoResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
 
-    class Config:
-        from_attributes = True
-        json_schema_extra = {
+    model_config = ConfigDict(
+        from_attributes=True,
+        json_schema_extra={
             "example": {
                 "resource_type": "server",
                 "resource_id": 1,
@@ -79,7 +78,8 @@ class VisibilityInfoResponse(BaseModel):
                 "created_at": "2024-01-01T10:00:00Z",
                 "updated_at": "2024-01-01T11:00:00Z",
             }
-        }
+        },
+    )
 
 
 class MigrationStatusResponse(BaseModel):
@@ -90,8 +90,8 @@ class MigrationStatusResponse(BaseModel):
     resource_stats: dict
     visibility_distribution: dict
 
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "migration_complete": True,
                 "issues": [],
@@ -105,6 +105,7 @@ class MigrationStatusResponse(BaseModel):
                 },
             }
         }
+    )
 
 
 class MigrationExecuteResponse(BaseModel):
@@ -114,14 +115,15 @@ class MigrationExecuteResponse(BaseModel):
     message: str
     migration_counts: dict
 
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "success": True,
                 "message": "Migration completed successfully",
                 "migration_counts": {"servers": 10, "groups": 5, "total": 15},
             }
         }
+    )
 
 
 # Export schemas

@@ -148,11 +148,13 @@ class VersionStatsResponse(BaseModel):
     by_server_type: Dict[str, Dict[str, int]] = Field(
         ...,
         description="Statistics breakdown by server type",
-        example={
-            "vanilla": {"total": 50, "active": 45},
-            "paper": {"total": 120, "active": 115},
-            "fabric": {"total": 80, "active": 75},
-            "forge": {"total": 200, "active": 180},
+        json_schema_extra={
+            "example": {
+                "vanilla": {"total": 50, "active": 45},
+                "paper": {"total": 120, "active": 115},
+                "fabric": {"total": 80, "active": 75},
+                "forge": {"total": 200, "active": 180},
+            }
         },
     )
 

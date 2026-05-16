@@ -6,12 +6,13 @@ manual update triggers and database maintenance operations.
 """
 
 import logging
-from datetime import datetime, timedelta
+from datetime import timedelta
 from typing import Optional
 
 from sqlalchemy.orm import Session
 
 from app.core.database import SessionLocal
+from app.core.datetime_utils import utcnow
 from app.servers.models import ServerType
 from app.versions.repository import VersionRepository
 from app.versions.schemas import VersionUpdateResult
@@ -287,7 +288,7 @@ class VersionManagementService:
 
             # Check for very old data (older than 30 days)
             try:
-                cutoff_date = datetime.utcnow() - timedelta(days=30)
+                cutoff_date = utcnow() - timedelta(days=30)
                 old_versions = repo.get_versions_older_than(cutoff_date)
                 if old_versions:
                     validation_results["warnings"].append(

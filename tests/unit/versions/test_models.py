@@ -7,6 +7,7 @@ from datetime import datetime, timedelta
 import pytest
 from sqlalchemy.exc import IntegrityError
 
+from app.core.datetime_utils import utcnow
 from app.servers.models import ServerType
 from app.versions.models import MinecraftVersion, VersionUpdateLog
 
@@ -160,7 +161,7 @@ class TestVersionUpdateLog:
 
     def test_duration_seconds_from_timestamps(self, db):
         """Test duration_seconds property from timestamps"""
-        start_time = datetime.utcnow()
+        start_time = utcnow()
         end_time = start_time + timedelta(seconds=3.5)
 
         log = VersionUpdateLog(

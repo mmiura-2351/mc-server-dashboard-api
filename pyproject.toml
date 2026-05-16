@@ -84,10 +84,9 @@ markers = [
     "requires_java: test needs a working JRE on PATH. Automatically skipped when Java is not detected.",
 ]
 filterwarnings = [
-    "ignore::DeprecationWarning",
-    "ignore::PendingDeprecationWarning",
-    "ignore:.*'crypt' is deprecated.*:DeprecationWarning",
-    "ignore:.*Support for class-based.*:DeprecationWarning",
+    "error::DeprecationWarning",
+    "error::PendingDeprecationWarning",
+    "ignore:'crypt' is deprecated:DeprecationWarning",
 ]
 
 [tool.coverage.run]

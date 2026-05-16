@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock, Mock, patch
 import pytest
 from fastapi.testclient import TestClient
 
+from app.core.datetime_utils import utcnow
 from app.main import app
 from app.users.models import Role
 from app.versions.schemas import VersionUpdateResult
@@ -37,9 +38,9 @@ class TestVersionRouter:
         vanilla_version.is_stable = True
         vanilla_version.build_number = None
         vanilla_version.is_active = True
-        vanilla_version.last_updated = datetime.utcnow()
-        vanilla_version.created_at = datetime.utcnow()
-        vanilla_version.updated_at = datetime.utcnow()
+        vanilla_version.last_updated = utcnow()
+        vanilla_version.created_at = utcnow()
+        vanilla_version.updated_at = utcnow()
         mock_versions.append(vanilla_version)
 
         # Mock paper version
@@ -52,9 +53,9 @@ class TestVersionRouter:
         paper_version.is_stable = True
         paper_version.build_number = 123
         paper_version.is_active = True
-        paper_version.last_updated = datetime.utcnow()
-        paper_version.created_at = datetime.utcnow()
-        paper_version.updated_at = datetime.utcnow()
+        paper_version.last_updated = utcnow()
+        paper_version.created_at = utcnow()
+        paper_version.updated_at = utcnow()
         mock_versions.append(paper_version)
 
         # Mock forge version
@@ -67,9 +68,9 @@ class TestVersionRouter:
         forge_version.is_stable = True
         forge_version.build_number = None
         forge_version.is_active = True
-        forge_version.last_updated = datetime.utcnow()
-        forge_version.created_at = datetime.utcnow()
-        forge_version.updated_at = datetime.utcnow()
+        forge_version.last_updated = utcnow()
+        forge_version.created_at = utcnow()
+        forge_version.updated_at = utcnow()
         mock_versions.append(forge_version)
 
         return mock_versions
@@ -85,7 +86,7 @@ class TestVersionRouter:
 
     def test_get_supported_versions_all(self, client, mock_db_versions):
         """Test getting all supported versions"""
-        with patch('app.versions.router.VersionRepository') as mock_repo_class:
+        with patch("app.versions.router.VersionRepository") as mock_repo_class:
             # Mock repository
             mock_repo = Mock()
             mock_repo_class.return_value = mock_repo
@@ -108,7 +109,7 @@ class TestVersionRouter:
         """Test getting versions filtered by server type"""
         vanilla_versions = [v for v in mock_db_versions if v.server_type == "vanilla"]
 
-        with patch('app.versions.router.VersionRepository') as mock_repo_class:
+        with patch("app.versions.router.VersionRepository") as mock_repo_class:
             # Mock repository
             mock_repo = Mock()
             mock_repo_class.return_value = mock_repo
@@ -132,7 +133,7 @@ class TestVersionRouter:
             "forge": {"total": 20, "active": 20},
         }
 
-        with patch('app.versions.router.VersionRepository') as mock_repo_class:
+        with patch("app.versions.router.VersionRepository") as mock_repo_class:
             # Mock repository
             mock_repo = Mock()
             mock_repo_class.return_value = mock_repo
@@ -153,7 +154,7 @@ class TestVersionRouter:
         """Test getting versions for specific server type"""
         paper_versions = [v for v in mock_db_versions if v.server_type == "paper"]
 
-        with patch('app.versions.router.VersionRepository') as mock_repo_class:
+        with patch("app.versions.router.VersionRepository") as mock_repo_class:
             # Mock repository
             mock_repo = Mock()
             mock_repo_class.return_value = mock_repo
@@ -173,11 +174,13 @@ class TestVersionRouter:
         """Test getting specific version details"""
         specific_version = mock_db_versions[0]  # vanilla 1.21.6
 
-        with patch('app.versions.router.VersionRepository') as mock_repo_class:
+        with patch("app.versions.router.VersionRepository") as mock_repo_class:
             # Mock repository
             mock_repo = Mock()
             mock_repo_class.return_value = mock_repo
-            mock_repo.get_version_by_type_and_version = AsyncMock(return_value=specific_version)
+            mock_repo.get_version_by_type_and_version = AsyncMock(
+                return_value=specific_version
+            )
 
             response = client.get("/api/v1/versions/vanilla/1.21.6")
 
@@ -190,7 +193,7 @@ class TestVersionRouter:
 
     def test_get_specific_version_not_found(self, client):
         """Test getting specific version that doesn't exist"""
-        with patch('app.versions.router.VersionRepository') as mock_repo_class:
+        with patch("app.versions.router.VersionRepository") as mock_repo_class:
             # Mock repository
             mock_repo = Mock()
             mock_repo_class.return_value = mock_repo
@@ -217,7 +220,7 @@ class TestVersionRouter:
             versions_updated=2,
             versions_removed=1,
             execution_time_ms=2500,
-            errors=[]
+            errors=[],
         )
 
         # Mock admin user
@@ -230,9 +233,11 @@ class TestVersionRouter:
         app.dependency_overrides[get_current_user] = mock_admin_user
 
         try:
-            with patch('app.versions.router.version_update_scheduler') as mock_scheduler:
+            with patch("app.versions.router.version_update_scheduler") as mock_scheduler:
                 # Mock scheduler
-                mock_scheduler.trigger_immediate_update = AsyncMock(return_value=mock_result)
+                mock_scheduler.trigger_immediate_update = AsyncMock(
+                    return_value=mock_result
+                )
 
                 response = client.post("/api/v1/versions/update?force_refresh=true")
 
@@ -244,7 +249,9 @@ class TestVersionRouter:
                 assert data["message"] == "Update completed successfully"
 
                 # Verify scheduler was called correctly
-                mock_scheduler.trigger_immediate_update.assert_called_once_with(force_refresh=True)
+                mock_scheduler.trigger_immediate_update.assert_called_once_with(
+                    force_refresh=True
+                )
         finally:
             # Pop only what this test added — `clear()` would also drop the
             # `get_db` override set by tests/conftest.py, breaking every
@@ -286,10 +293,7 @@ class TestVersionRouter:
             "last_successful_update": "2024-12-15T10:30:00",
             "next_update_time": "2024-12-16T10:30:00",
             "last_error": None,
-            "retry_config": {
-                "max_attempts": 3,
-                "base_delay_seconds": 300
-            }
+            "retry_config": {"max_attempts": 3, "base_delay_seconds": 300},
         }
 
         # Mock admin user
@@ -302,7 +306,7 @@ class TestVersionRouter:
         app.dependency_overrides[get_current_user] = mock_admin_user
 
         try:
-            with patch('app.versions.router.version_update_scheduler') as mock_scheduler:
+            with patch("app.versions.router.version_update_scheduler") as mock_scheduler:
                 # Mock scheduler
                 mock_scheduler.get_status.return_value = mock_status
 
@@ -351,11 +355,13 @@ class TestVersionRouter:
 
     def test_get_supported_versions_database_error(self, client):
         """Test handling database errors in supported versions endpoint"""
-        with patch('app.versions.router.VersionRepository') as mock_repo_class:
+        with patch("app.versions.router.VersionRepository") as mock_repo_class:
             # Mock repository to raise exception
             mock_repo = Mock()
             mock_repo_class.return_value = mock_repo
-            mock_repo.get_all_active_versions = AsyncMock(side_effect=Exception("Database connection failed"))
+            mock_repo.get_all_active_versions = AsyncMock(
+                side_effect=Exception("Database connection failed")
+            )
 
             response = client.get("/api/v1/versions/supported")
 
@@ -365,11 +371,13 @@ class TestVersionRouter:
 
     def test_get_version_stats_database_error(self, client):
         """Test handling database errors in stats endpoint"""
-        with patch('app.versions.router.VersionRepository') as mock_repo_class:
+        with patch("app.versions.router.VersionRepository") as mock_repo_class:
             # Mock repository to raise exception
             mock_repo = Mock()
             mock_repo_class.return_value = mock_repo
-            mock_repo.get_version_stats = AsyncMock(side_effect=Exception("Database query failed"))
+            mock_repo.get_version_stats = AsyncMock(
+                side_effect=Exception("Database query failed")
+            )
 
             response = client.get("/api/v1/versions/stats")
 
@@ -391,9 +399,11 @@ class TestVersionRouter:
         app.dependency_overrides[get_current_user] = mock_admin_user
 
         try:
-            with patch('app.versions.router.version_update_scheduler') as mock_scheduler:
+            with patch("app.versions.router.version_update_scheduler") as mock_scheduler:
                 # Mock scheduler to raise exception
-                mock_scheduler.trigger_immediate_update = AsyncMock(side_effect=Exception("Scheduler failed"))
+                mock_scheduler.trigger_immediate_update = AsyncMock(
+                    side_effect=Exception("Scheduler failed")
+                )
 
                 response = client.post("/api/v1/versions/update")
 
@@ -453,6 +463,7 @@ class TestVersionRouter:
 # Integration-style tests
 # ===================
 
+
 class TestVersionRouterIntegration:
     """Integration-style tests for version router"""
 
@@ -473,24 +484,26 @@ class TestVersionRouterIntegration:
         mock_version.is_stable = True
         mock_version.build_number = None
         mock_version.is_active = True
-        mock_version.last_updated = datetime.utcnow()
-        mock_version.created_at = datetime.utcnow()
-        mock_version.updated_at = datetime.utcnow()
+        mock_version.last_updated = utcnow()
+        mock_version.created_at = utcnow()
+        mock_version.updated_at = utcnow()
 
         mock_versions = [mock_version]
 
         mock_stats = {
             "_total": {"total": 1, "active": 1},
-            "vanilla": {"total": 1, "active": 1}
+            "vanilla": {"total": 1, "active": 1},
         }
 
-        with patch('app.versions.router.VersionRepository') as mock_repo_class:
+        with patch("app.versions.router.VersionRepository") as mock_repo_class:
             mock_repo = Mock()
             mock_repo_class.return_value = mock_repo
             mock_repo.get_all_active_versions = AsyncMock(return_value=mock_versions)
             mock_repo.get_version_stats = AsyncMock(return_value=mock_stats)
             mock_repo.get_versions_by_type = AsyncMock(return_value=mock_versions)
-            mock_repo.get_version_by_type_and_version = AsyncMock(return_value=mock_versions[0])
+            mock_repo.get_version_by_type_and_version = AsyncMock(
+                return_value=mock_versions[0]
+            )
 
             # Test 1: Get all supported versions
             response1 = client.get("/api/v1/versions/supported")

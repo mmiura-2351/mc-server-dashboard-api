@@ -2,12 +2,12 @@
 Database models for Minecraft version management
 """
 
-from datetime import datetime
 from typing import Optional
 
 from sqlalchemy import Boolean, Column, DateTime, Index, Integer, String, Text
 
 from app.core.database import Base
+from app.core.datetime_utils import utcnow
 
 
 class MinecraftVersion(Base):
@@ -43,10 +43,8 @@ class MinecraftVersion(Base):
     )  # Active/inactive flag
 
     # Timestamps
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column(
-        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
-    )
+    created_at = Column(DateTime, default=utcnow, nullable=False)
+    updated_at = Column(DateTime, default=utcnow, onupdate=utcnow, nullable=False)
 
     # Indexes for performance
     __table_args__ = (
@@ -125,7 +123,7 @@ class VersionUpdateLog(Base):
     executed_by_user_id = Column(Integer, nullable=True)  # User ID for manual updates
 
     # Timestamps
-    started_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+    started_at = Column(DateTime, default=utcnow, nullable=False, index=True)
     completed_at = Column(DateTime, nullable=True)
 
     # Indexes for performance

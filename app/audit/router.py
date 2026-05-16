@@ -2,7 +2,7 @@ from datetime import datetime, timezone
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from sqlalchemy.orm import Session
 
 from app.audit.models import AuditLog
@@ -28,8 +28,7 @@ class AuditLogResponse(BaseModel):
     # Include user information if available
     user_email: Optional[str] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class AuditLogListResponse(BaseModel):

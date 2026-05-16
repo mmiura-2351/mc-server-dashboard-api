@@ -13,6 +13,7 @@ from typing import Dict, List, Optional
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
+from app.core.datetime_utils import utcnow
 from app.servers.models import ServerType
 from app.services.version_manager import minecraft_version_manager
 from app.versions.models import MinecraftVersion
@@ -144,7 +145,7 @@ class VersionUpdateService:
             )
             self.db.commit()
 
-            self._last_update_time = datetime.utcnow()
+            self._last_update_time = utcnow()
 
             success_msg = (
                 f"Version update completed: +{total_added} -{total_removed} ~{total_updated} "

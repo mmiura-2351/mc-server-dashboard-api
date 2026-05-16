@@ -2,12 +2,11 @@
 File edit history models for tracking file changes.
 """
 
-from datetime import datetime
-
 from sqlalchemy import BigInteger, Column, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import relationship
 
 from app.core.database import Base
+from app.core.datetime_utils import utcnow
 
 
 class FileEditHistory(Base):
@@ -29,7 +28,7 @@ class FileEditHistory(Base):
     editor_user_id = Column(
         Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=utcnow, nullable=False)
     description = Column(Text, nullable=True)  # Optional description of the edit
 
     # Relationships
