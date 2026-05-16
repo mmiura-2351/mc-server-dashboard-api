@@ -88,12 +88,25 @@ The project uses **pytest-xdist** with `--dist loadscope` for parallel execution
 
 ### Registration
 
-Markers must be declared in `pyproject.toml` (or `pytest.ini`) under `[tool.pytest.ini_options].markers` to prevent typos becoming silent no-ops:
+Markers must be declared in the pytest configuration so that typos become a hard error (`--strict-markers`) instead of silent no-ops. This project currently uses `pytest.ini`, so the registration goes there:
 
 ```ini
+# pytest.ini
+[tool:pytest]
 markers =
     slow: test is slow (>= 1s) or spawns a subprocess
     requires_java: test needs a working JRE on PATH
+```
+
+If the project later consolidates pytest config into `pyproject.toml`, the equivalent form is:
+
+```toml
+# pyproject.toml
+[tool.pytest.ini_options]
+markers = [
+    "slow: test is slow (>= 1s) or spawns a subprocess",
+    "requires_java: test needs a working JRE on PATH",
+]
 ```
 
 > **Note:** `slow` and `requires_java` are introduced by this document. Wiring them up in `pytest.ini` and adding the Java-detection skip helper is tracked by Issue #171 (pre-commit test scope) since both Issues share the goal of making the quick-feedback loop fast.
@@ -109,7 +122,7 @@ markers =
 | Real-process / OS-resource tests | `uv run pytest tests/infrastructure -m slow` |
 | Everything except slow | `uv run pytest -m 'not slow'` |
 | Full suite (CI) | `just test` |
-| Single test by path | `uv run pytest tests/unit/services/test_authorization_service.py::TestAuthorizationServiceServerAccess::test_admin_can_access` |
+| Single test by path | `uv run pytest tests/unit/services/test_authorization_service.py::TestAuthorizationServiceServerAccess::test_check_server_access_admin_user` |
 
 `just test` runs the full suite with the project's standard options (`-n auto --dist loadscope`). Use the path-scoped commands when iterating locally to keep the loop tight; rely on CI to catch slow-test regressions.
 
@@ -157,18 +170,18 @@ async def test_create_note_rejects_empty_title():
 from fastapi import status
 
 
-def test_create_note_via_api(client, normal_user_token):
+def test_create_note_via_api(client, user_headers):
     response = client.post(
         "/api/v1/notes",
         json={"title": "first", "body": "hello"},
-        headers={"Authorization": f"Bearer {normal_user_token}"},
+        headers=user_headers,
     )
 
     assert response.status_code == status.HTTP_201_CREATED
     assert response.json()["title"] == "first"
 ```
 
-The `client` and `*_token` fixtures are defined in `tests/conftest.py` and back onto the worker-scoped SQLite DB.
+The `client`, `user_headers`, and `admin_headers` fixtures are defined in `tests/conftest.py` and back onto the worker-scoped SQLite DB. `user_headers` / `admin_headers` return a ready-to-use `{"Authorization": "Bearer ..."}` dict — pass it directly to `headers=`, do not re-wrap it.
 
 ### 5.3 Infrastructure — real subprocess
 
