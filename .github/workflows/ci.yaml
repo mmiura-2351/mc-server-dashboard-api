@@ -66,6 +66,12 @@ jobs:
           enable-cache: true
           python-version: "3.13.3"
 
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
       - name: Set up just
         uses: extractions/setup-just@v2
 
