@@ -15,6 +15,14 @@ updates:
     commit-message:
       prefix: "chore"
       include: "scope"
+    # Supply-chain cooldown: do not open PRs for releases newer than the window.
+    # Security updates bypass cooldown automatically. See docs/DEPENDENCIES.md §5
+    # and Issue #194.
+    cooldown:
+      default-days: 7
+      semver-major-days: 14
+      include:
+        - "*"
     groups:
       production-dependencies:
         dependency-type: "production"

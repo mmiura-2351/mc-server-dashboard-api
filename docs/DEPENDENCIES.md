@@ -71,6 +71,27 @@
 
 セキュリティ対応は **`dependencies` ラベル + `security` ラベル**を付与する。
 
+### 5.1 サプライチェーン cooldown ポリシー
+
+リリース直後にメンテナアカウント乗っ取り・typosquatting・compromised release が発覚するケースに備え、**リリースから 7 日以内のバージョンは取り込まない**。発覚から修正・撤回までに数日かかるため、7 日のリスク窓を回避することで影響を最小化する。
+
+| ツール | 設定箇所 | 挙動 |
+|---|---|---|
+| `uv` | `pyproject.toml` の `[tool.uv].exclude-newer = "7 days"` | `uv lock` / `uv lock --upgrade` / `uv add` の解決時に 7 日以内のリリースを除外 (`uv sync` はロック通りに動くため影響なし) |
+| Dependabot | `.github/dependabot.yml` の `cooldown` | リリースから `default-days` (= 7)、メジャー更新は `semver-major-days` (= 14) 経過するまで PR を作成しない |
+
+#### Override 手順 (緊急 CVE 対応時)
+
+cooldown を bypass する必要がある場合は以下のいずれかで対応する。Override の理由 (CVE 番号・Advisory リンク) を PR 本文に明記すること。
+
+- **uv (ローカル)**: 特定パッケージのみ cooldown を外して更新する。
+
+  ```bash
+  uv lock --upgrade-package <pkg> --exclude-newer-package <pkg> false
+  ```
+
+- **Dependabot**: GitHub Security Advisory に紐づく **security update** は cooldown を自動で bypass するため、追加設定は不要。手動で取り込みたい場合はローカルで上記 `uv` コマンドを実行して PR を起票する。
+
 ## 6. Dependabot 運用
 
 現状の `.github/dependabot.yml` 設定をポリシーとして明文化する。
@@ -83,6 +104,7 @@
 | 同時 open PR 上限 | 2 |
 | コミット規約 | `chore(deps): ...` (scope 付き) |
 | 自動付与ラベル | `dependencies`, `python` |
+| cooldown | `default-days: 7` / `semver-major-days: 14` (§5.1 参照) |
 
 ### マージ方針
 
@@ -111,3 +133,4 @@
 - 親 Issue: [#150](https://github.com/mmiura-2351/mc-server-dashboard-api/issues/150) (ライブラリアップデート方針の整備と一括更新)
 - 本ドキュメント策定 Issue: [#161](https://github.com/mmiura-2351/mc-server-dashboard-api/issues/161) (B-1)
 - 関連: [#162](https://github.com/mmiura-2351/mc-server-dashboard-api/issues/162) (B-2: 指定スタイル統一)、[#164](https://github.com/mmiura-2351/mc-server-dashboard-api/issues/164) (B-4: メジャー更新の個別検証)
+- 関連: [#194](https://github.com/mmiura-2351/mc-server-dashboard-api/issues/194) (cooldown ポリシーの強制)

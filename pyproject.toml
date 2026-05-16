@@ -25,6 +25,12 @@ dependencies = [
     "starlette>=0.47.2,<0.48.0",
 ]
 
+[tool.uv]
+# Supply-chain cooldown: do not resolve packages released within the last 7 days.
+# Per docs/DEPENDENCIES.md §5 and Issue #194. Override per-package with
+# `--exclude-newer-package <pkg> false` when a hotfix is needed.
+exclude-newer = "7 days"
+
 [tool.uv.workspace]
 members = [
     "mc-server-dashboard-api",
