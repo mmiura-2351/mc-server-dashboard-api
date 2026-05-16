@@ -5,6 +5,7 @@ from typing import Any, Dict
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app import __version__
 from app.audit.router import router as audit_router
 from app.auth.router import router as auth_router
 
@@ -265,7 +266,11 @@ async def _cleanup_services():
         logger.info("All services shut down cleanly")
 
 
-app = FastAPI(lifespan=lifespan)
+app = FastAPI(
+    title="mc-server-dashboard-api",
+    version=__version__,
+    lifespan=lifespan,
+)
 
 
 @app.get("/health", tags=["health"])
