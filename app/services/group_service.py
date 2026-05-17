@@ -127,8 +127,8 @@ class GroupFileService:
             )
 
             # Build ops and whitelist data
-            ops_data = []
-            whitelist_data = []
+            ops_data: list[dict] = []
+            whitelist_data: list[dict] = []
 
             for group in server_groups:
                 players = group.get_players()

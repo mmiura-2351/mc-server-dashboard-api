@@ -53,14 +53,38 @@ repos:
         pass_filenames: false
         stages: [pre-push]
 
-# MyPy type checking - currently disabled due to extensive type annotation work needed
-# Will be re-enabled gradually as type coverage improves
-# - repo: https://github.com/pre-commit/mirrors-mypy
-#   rev: v1.13.0
-#   hooks:
-#     - id: mypy
-#       additional_dependencies:
-#         - types-python-dateutil
-#         - types-requests
-#       exclude: ^(tests/|migrations/)
-#       args: [--ignore-missing-imports, --scripts-are-modules, --no-strict-optional, --allow-untyped-defs, --allow-incomplete-defs, --no-warn-return-any, --allow-untyped-calls]
+  # MyPy type checking — re-enabled per Issue #86 with a relaxed config.
+  # Runs as a local hook against the project's uv-managed venv so plugins
+  # (pydantic.mypy) and runtime deps resolve correctly.
+  #
+  # Real-bug-class error codes (return / call-arg / var-annotated) are kept on;
+  # the disabled codes below are predominantly SQLAlchemy Column[T]-vs-T
+  # and Pydantic-schema noise that requires deeper refactors (tracked separately).
+  - repo: local
+    hooks:
+      - id: mypy
+        name: mypy (relaxed)
+        entry: uv run mypy app/
+        language: system
+        types: [python]
+        pass_filenames: false
+        args:
+          - --ignore-missing-imports
+          - --scripts-are-modules
+          - --no-strict-optional
+          - --allow-untyped-defs
+          - --allow-incomplete-defs
+          - --no-warn-return-any
+          - --allow-untyped-calls
+          - --disable-error-code=arg-type
+          - --disable-error-code=assignment
+          - --disable-error-code=return-value
+          - --disable-error-code=attr-defined
+          - --disable-error-code=index
+          - --disable-error-code=operator
+          - --disable-error-code=call-overload
+          - --disable-error-code=method-assign
+          - --disable-error-code=valid-type
+          - --disable-error-code=type-var
+          - --disable-error-code=typeddict-unknown-key
+          - --disable-error-code=import-untyped

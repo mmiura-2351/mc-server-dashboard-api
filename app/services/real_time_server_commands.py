@@ -382,7 +382,7 @@ class RealTimeServerCommandService:
                                     removed_player_names.add(player_name)
 
                     if removed_player_names:
-                        added_players = set()
+                        added_players: set[str] = set()
 
                         # Apply the diff to send deop commands for removed players
                         diff_success = await self.apply_op_diff_if_running(

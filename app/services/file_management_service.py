@@ -487,6 +487,8 @@ class FileOperationService:
             elif path.is_dir():
                 shutil.rmtree(path)
                 return "directory"
+            else:
+                raise FileNotFoundError(f"Path does not exist: {path}")
         except Exception as e:
             handle_file_error("delete", str(path), e)
 
@@ -601,7 +603,7 @@ class FileSearchService:
         max_results: int,
     ) -> List[Dict[str, Any]]:
         """Search files by filename"""
-        results = []
+        results: list[dict] = []
 
         for file_path in server_path.rglob("*"):
             if len(results) >= max_results:
@@ -628,7 +630,7 @@ class FileSearchService:
         max_results: int,
     ) -> List[Dict[str, Any]]:
         """Search in file content"""
-        results = []
+        results: list[dict] = []
 
         for file_path in server_path.rglob("*"):
             if len(results) >= max_results:

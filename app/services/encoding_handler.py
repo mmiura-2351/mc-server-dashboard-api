@@ -76,7 +76,7 @@ class EncodingHandler:
                 content = f.read()
             return content, "utf-8 (with replacement)"
         except Exception as e:
-            raise UnicodeDecodeError(
+            raise RuntimeError(
                 f"Could not decode file {file_path} with any common encoding"
             ) from e
 
