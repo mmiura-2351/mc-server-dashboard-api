@@ -67,8 +67,12 @@ def pytest_sessionfinish(session, exitstatus):
     # ResourceWarning under `-W error::ResourceWarning`).
     try:
         engine.dispose()
-    except Exception:
-        pass
+    except Exception as e:
+        # Surface failures via the warning summary so a real dispose regression
+        # is not silently swallowed during session teardown.
+        import warnings
+
+        warnings.warn(f"Failed to dispose testing engine: {e}")
     try:
         current_worker_db = get_worker_db_path()
         if os.path.exists(current_worker_db):
