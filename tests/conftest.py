@@ -62,6 +62,17 @@ def pytest_sessionfinish(session, exitstatus):
     テストセッション終了時にworker固有のテストデータベースファイルを削除
     Race conditionを避けるため、各workerが自分のファイルのみを削除
     """
+    # Dispose the shared SQLAlchemy engine so its pooled sqlite connections are
+    # closed deterministically rather than reaped by GC (which emits
+    # ResourceWarning under `-W error::ResourceWarning`).
+    try:
+        engine.dispose()
+    except Exception as e:
+        # Surface failures via the warning summary so a real dispose regression
+        # is not silently swallowed during session teardown.
+        import warnings
+
+        warnings.warn(f"Failed to dispose testing engine: {e}")
     try:
         current_worker_db = get_worker_db_path()
         if os.path.exists(current_worker_db):

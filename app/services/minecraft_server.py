@@ -75,21 +75,27 @@ class MinecraftServerManager:
             log_file_path.touch(exist_ok=True)
             error_file_path.touch(exist_ok=True)
 
-            # Create the process with proper detachment
+            # Create the process with proper detachment. Open the log files
+            # in a with-block so the parent's file handles are released even
+            # when Popen raises — the child inherits via FD duplication.
             import subprocess
 
-            process = subprocess.Popen(
-                cmd,
-                cwd=cwd,
-                env=env,
-                stdout=open(log_file_path, "w"),
-                stderr=open(error_file_path, "w"),
-                stdin=subprocess.DEVNULL,
-                start_new_session=True,  # Detach from parent session
-                preexec_fn=(
-                    os.setsid if hasattr(os, "setsid") else None
-                ),  # Create new process group
-            )
+            with (
+                open(log_file_path, "w") as stdout_f,
+                open(error_file_path, "w") as stderr_f,
+            ):
+                process = subprocess.Popen(
+                    cmd,
+                    cwd=cwd,
+                    env=env,
+                    stdout=stdout_f,
+                    stderr=stderr_f,
+                    stdin=subprocess.DEVNULL,
+                    start_new_session=True,  # Detach from parent session
+                    preexec_fn=(
+                        os.setsid if hasattr(os, "setsid") else None
+                    ),  # Create new process group
+                )
 
             daemon_pid = process.pid
             logger.info(

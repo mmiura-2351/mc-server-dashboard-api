@@ -57,9 +57,14 @@ class TestConnectionManagerFixed:
         """Test successful user connection to server"""
         server_id = 1
 
-        with patch(
-            "app.services.websocket_service.asyncio.create_task"
-        ) as mock_create_task:
+        # Replace _stream_server_logs with a sync Mock so connect() does not
+        # build a real coroutine that the patched create_task leaves un-awaited.
+        with (
+            patch.object(connection_manager, "_stream_server_logs", new=Mock()),
+            patch(
+                "app.services.websocket_service.asyncio.create_task"
+            ) as mock_create_task,
+        ):
             mock_task = Mock()
             mock_create_task.return_value = mock_task
 
@@ -98,7 +103,10 @@ class TestConnectionManagerFixed:
         user2 = Mock(spec=User)
         user2.username = "user2"
 
-        with patch("app.services.websocket_service.asyncio.create_task"):
+        with (
+            patch.object(connection_manager, "_stream_server_logs", new=Mock()),
+            patch("app.services.websocket_service.asyncio.create_task"),
+        ):
             await connection_manager.connect(ws1, server_id, user1)
             await connection_manager.connect(ws2, server_id, user2)
 
@@ -352,7 +360,13 @@ class TestWebSocketServiceFixed:
     @pytest.mark.asyncio
     async def test_start_monitoring_creates_task(self, ws_service):
         """Test starting monitoring creates background task"""
-        with patch("asyncio.create_task") as mock_create_task:
+        # Replace _monitor_server_status with a sync Mock so start_monitoring
+        # does not build a real coroutine that the patched create_task leaves
+        # un-awaited.
+        with (
+            patch.object(ws_service, "_monitor_server_status", new=Mock()),
+            patch("asyncio.create_task") as mock_create_task,
+        ):
             mock_task = Mock()
             mock_create_task.return_value = mock_task
 

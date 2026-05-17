@@ -971,21 +971,23 @@ class TestServerControlRouter:
         mock_manager.start_server = AsyncMock(return_value=False)
         mock_settings.JAVA_CHECK_TIMEOUT = 1
 
-        with patch("asyncio.wait_for", side_effect=asyncio.TimeoutError("Timeout")):
-            mock_process = Mock()
-            mock_process.communicate = AsyncMock(return_value=(b"Java 17", b""))
-            mock_subprocess.return_value = mock_process
+        # Raise TimeoutError from process.communicate() itself rather than
+        # patching asyncio.wait_for. Patching wait_for would short-circuit the
+        # await on communicate() and leave the inner coroutine un-awaited.
+        mock_process = Mock()
+        mock_process.communicate = AsyncMock(side_effect=asyncio.TimeoutError("Timeout"))
+        mock_subprocess.return_value = mock_process
 
-            with pytest.raises(HTTPException) as exc_info:
-                await start_server(
-                    server_id=mock_server.id,
-                    request=mock_request,
-                    current_user=admin_user,
-                    db=mock_db_session,
-                )
+        with pytest.raises(HTTPException) as exc_info:
+            await start_server(
+                server_id=mock_server.id,
+                request=mock_request,
+                current_user=admin_user,
+                db=mock_db_session,
+            )
 
-            assert exc_info.value.status_code == 500
-            assert "java executable not found" in exc_info.value.detail.lower()
+        assert exc_info.value.status_code == 500
+        assert "java executable not found" in exc_info.value.detail.lower()
 
     @pytest.mark.asyncio
     @patch("app.servers.routers.control.authorization_service")
