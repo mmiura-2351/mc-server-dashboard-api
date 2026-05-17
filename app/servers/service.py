@@ -33,7 +33,7 @@ from app.services.minecraft_server import minecraft_server_manager
 from app.services.server_properties_generator import server_properties_generator
 from app.services.version_manager import minecraft_version_manager
 from app.users.models import User
-from app.versions.repository import VersionRepository
+from app.versions.adapters.repository import SqlAlchemyVersionRepository
 
 logger = logging.getLogger(__name__)
 
@@ -210,7 +210,7 @@ class ServerJarService:
     ) -> bool:
         """Check if version is supported using database (FAST - ~10ms vs ~1000ms)"""
         try:
-            repo = VersionRepository(db)
+            repo = SqlAlchemyVersionRepository(db)
             db_version = await repo.get_version_by_type_and_version(server_type, version)
             if db_version is not None and db_version.is_active:
                 return True
@@ -225,7 +225,7 @@ class ServerJarService:
     ) -> Optional[str]:
         """Get download URL from database (FAST - ~10ms vs ~1000ms)"""
         try:
-            repo = VersionRepository(db)
+            repo = SqlAlchemyVersionRepository(db)
             db_version = await repo.get_version_by_type_and_version(server_type, version)
             if db_version and db_version.is_active and db_version.download_url:
                 return db_version.download_url
@@ -608,7 +608,7 @@ class ServerService:
     ) -> bool:
         """Check if version is supported using database (FAST - ~10ms vs ~1000ms)"""
         try:
-            repo = VersionRepository(db)
+            repo = SqlAlchemyVersionRepository(db)
             db_version = await repo.get_version_by_type_and_version(server_type, version)
             if db_version is not None and db_version.is_active:
                 return True

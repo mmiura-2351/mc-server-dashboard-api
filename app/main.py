@@ -28,7 +28,7 @@ from app.templates.router import router as templates_router
 
 # Import all models to ensure they are registered with SQLAlchemy
 from app.users.router import router as users_router
-from app.versions.router import router as versions_router
+from app.versions.api.router import router as versions_router
 from app.websockets.router import router as websockets_router
 
 logger = logging.getLogger(__name__)

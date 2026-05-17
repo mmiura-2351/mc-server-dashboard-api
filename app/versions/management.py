@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 from app.core.database import SessionLocal
 from app.core.datetime_utils import utcnow
 from app.servers.models import ServerType
-from app.versions.repository import VersionRepository
+from app.versions.adapters.repository import SqlAlchemyVersionRepository
 from app.versions.schemas import VersionUpdateResult
 from app.versions.service import VersionUpdateService
 
@@ -102,7 +102,7 @@ class VersionManagementService:
         """
         db_session = self._get_db_session()
         try:
-            repo = VersionRepository(db_session)
+            repo = SqlAlchemyVersionRepository(db_session)
 
             # Get counts by server type
             stats = {
@@ -119,7 +119,7 @@ class VersionManagementService:
                     stats["by_server_type"][server_type] = {
                         "count": count,
                         "latest_version": versions[0].version if versions else None,
-                        "last_updated": versions[0].last_updated if versions else None,
+                        "last_updated": versions[0].updated_at if versions else None,
                     }
                     stats["total_versions"] += count
                 except Exception as e:
@@ -136,7 +136,7 @@ class VersionManagementService:
             try:
                 latest_versions = repo.get_all_versions(limit=1)
                 if latest_versions:
-                    stats["last_update"] = latest_versions[0].last_updated
+                    stats["last_update"] = latest_versions[0].updated_at
             except Exception as e:
                 logger.warning(f"Error getting last update time: {e}")
                 stats["database_status"] = "degraded"
@@ -163,7 +163,7 @@ class VersionManagementService:
 
         db_session = self._get_db_session()
         try:
-            repo = VersionRepository(db_session)
+            repo = SqlAlchemyVersionRepository(db_session)
 
             cleanup_results = {
                 "total_removed": 0,
@@ -247,7 +247,7 @@ class VersionManagementService:
 
         db_session = self._get_db_session()
         try:
-            repo = VersionRepository(db_session)
+            repo = SqlAlchemyVersionRepository(db_session)
 
             validation_results = {
                 "status": "healthy",
