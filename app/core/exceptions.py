@@ -1,5 +1,5 @@
 import logging
-from typing import Any, Dict, Optional
+from typing import Any, Dict, NoReturn, Optional
 
 from fastapi import HTTPException, status
 
@@ -151,13 +151,13 @@ class MinecraftServerException(APIException):
         super().__init__(status.HTTP_500_INTERNAL_SERVER_ERROR, detail, log_level="error")
 
 
-def handle_database_error(operation: str, table: str, error: Exception) -> None:
+def handle_database_error(operation: str, table: str, error: Exception) -> NoReturn:
     """Utility function to handle and raise database errors consistently."""
     logger.error(f"Database {operation} failed for {table}: {str(error)}")
     raise DatabaseOperationException(operation, table, str(error))
 
 
-def handle_file_error(operation: str, file_path: str, error: Exception) -> None:
+def handle_file_error(operation: str, file_path: str, error: Exception) -> NoReturn:
     """Utility function to handle and raise file operation errors consistently."""
     logger.error(f"File {operation} failed for {file_path}: {str(error)}")
     raise FileOperationException(operation, file_path, str(error))

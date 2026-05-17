@@ -28,7 +28,7 @@ class ServerProcess:
 
     server_id: int
     process: asyncio.subprocess.Process
-    log_queue: asyncio.Queue
+    log_queue: asyncio.Queue[str]
     status: ServerStatus
     started_at: datetime
     pid: Optional[int] = None
@@ -518,7 +518,7 @@ class MinecraftServerManager:
 
             # Create a pseudo subprocess object for monitoring
             # Note: We can't fully recreate the original subprocess, but we can monitor the PID
-            log_queue = asyncio.Queue(maxsize=self.log_queue_size)
+            log_queue: asyncio.Queue[str] = asyncio.Queue(maxsize=self.log_queue_size)
 
             # Parse started_at time
             try:
@@ -1516,7 +1516,7 @@ class MinecraftServerManager:
                 )
 
             # Create server process tracking (without process object for daemon)
-            log_queue = asyncio.Queue(maxsize=self.log_queue_size)
+            log_queue: asyncio.Queue[str] = asyncio.Queue(maxsize=self.log_queue_size)
             server_process = ServerProcess(
                 server_id=server.id,
                 process=None,  # No process object for daemon processes

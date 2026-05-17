@@ -192,6 +192,7 @@ class MinecraftVersionManager:
                         release_date=release_date,
                         is_stable=True,
                     )
+                return None
         except Exception as e:
             logger.warning(
                 f"Failed to fetch vanilla version {version_data.get('id', 'unknown')}: {e}"
@@ -292,6 +293,7 @@ class MinecraftVersionManager:
                     is_stable=True,
                     build_number=latest_build["build"],
                 )
+            return None
         except aiohttp.ClientError as e:
             logger.warning(
                 f"HTTP error fetching Paper build for version {version_id}: {e}"

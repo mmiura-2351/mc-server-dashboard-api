@@ -42,8 +42,10 @@ class Server(Base):
     name = Column(String(100), nullable=False)
     description = Column(Text)
     minecraft_version = Column(String(20), nullable=False)
-    server_type = Column(Enum(ServerType), nullable=False)
-    status = Column(Enum(ServerStatus), default=ServerStatus.stopped)
+    server_type: Column[ServerType] = Column(Enum(ServerType), nullable=False)
+    status: Column[ServerStatus] = Column(
+        Enum(ServerStatus), default=ServerStatus.stopped
+    )
     directory_path = Column(String(500), nullable=False)
     port = Column(Integer, default=25565)
     max_memory = Column(Integer, default=1024)  # MB
@@ -100,8 +102,10 @@ class Backup(Base):
     description = Column(Text)
     file_path = Column(String(500), nullable=False)
     file_size = Column(BigInteger, nullable=False)  # bytes
-    backup_type = Column(Enum(BackupType), default=BackupType.manual)
-    status = Column(Enum(BackupStatus), default=BackupStatus.creating)
+    backup_type: Column[BackupType] = Column(Enum(BackupType), default=BackupType.manual)
+    status: Column[BackupStatus] = Column(
+        Enum(BackupStatus), default=BackupStatus.creating
+    )
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     # Relationships
@@ -132,7 +136,7 @@ class Template(Base):
     name = Column(String(100), nullable=False)
     description = Column(Text)
     minecraft_version = Column(String(20), nullable=False)
-    server_type = Column(Enum(ServerType), nullable=False)
+    server_type: Column[ServerType] = Column(Enum(ServerType), nullable=False)
     configuration = Column(JSON, nullable=False)  # server.properties and other settings
     default_groups = Column(JSON)  # Default group attachments
     created_by = Column(Integer, ForeignKey("users.id"), nullable=False)

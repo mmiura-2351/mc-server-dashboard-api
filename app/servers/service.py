@@ -693,7 +693,7 @@ class ServerService:
 
             # Attach groups if provided
             if request.attach_groups:
-                group_service = GroupService()
+                group_service = GroupService(db)
                 for group_type, group_ids in request.attach_groups.items():
                     for group_id in group_ids:
                         await group_service.attach_server_to_group(

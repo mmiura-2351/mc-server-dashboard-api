@@ -53,6 +53,7 @@ class MinecraftAPIService:
         except Exception as e:
             logger.error(f"Error fetching UUID for username {username}: {str(e)}")
             return None
+        return None
 
     @staticmethod
     async def get_username_from_uuid(uuid: str) -> Optional[str]:
