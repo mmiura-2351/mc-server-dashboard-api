@@ -1,8 +1,9 @@
 """Version Update Service (application layer).
 
 Orchestrates version updates from external APIs into persistence via the
-`VersionRepository` Port. This module depends only on `domain/` and must
-not import from `adapters/` or `api/`.
+`VersionRepository` Port and `UnitOfWork` Port. This module depends only
+on `domain/` and `app.services.version_manager` (the external API
+fetcher). It must not import from `adapters/` or `api/`.
 """
 
 import logging
@@ -13,37 +14,39 @@ from typing import Dict, List, Optional
 from app.core.datetime_utils import utcnow
 from app.servers.models import ServerType
 from app.services.version_manager import minecraft_version_manager
-from app.versions.domain.ports import VersionRepository
-from app.versions.models import MinecraftVersion
-from app.versions.schemas import (
-    MinecraftVersionCreate,
-    UpdateStatusResponse,
-    VersionStatsResponse,
-    VersionUpdateLogCreate,
-    VersionUpdateResult,
+from app.versions.domain.entities import (
+    CreateUpdateLogCommand,
+    CreateVersionCommand,
+    MinecraftVersionEntity,
+    VersionStatsEntity,
+    VersionUpdateLogEntity,
 )
+from app.versions.domain.ports import UnitOfWork
 
 logger = logging.getLogger(__name__)
 
 
 class VersionUpdateService:
-    """Service for updating version information from external APIs to database.
+    """Use cases over the version catalogue.
 
-    Receives a `VersionRepository` (Port) via constructor injection. The
-    concrete adapter is wired in `app.versions.api.dependencies`.
+    Receives a `UnitOfWork` factory via constructor injection. Each public
+    method opens a fresh UoW (one transaction) and persists atomically.
+    The concrete UoW adapter is wired in `app.versions.api.dependencies`.
     """
 
-    def __init__(self, repository: VersionRepository):
-        self.repository: VersionRepository = repository
+    def __init__(self, uow: UnitOfWork):
+        self._uow: UnitOfWork = uow
         self._update_running = False
         self._last_update_time: Optional[datetime] = None
+
+    # ----- Update orchestration -----
 
     async def update_versions(
         self,
         server_types: Optional[List[ServerType]] = None,
         force_refresh: bool = False,
         user_id: Optional[int] = None,
-    ) -> VersionUpdateResult:
+    ) -> "VersionUpdateResult":
         """Update version information from external APIs."""
         if self._update_running and not force_refresh:
             return VersionUpdateResult(
@@ -58,12 +61,17 @@ class VersionUpdateService:
         self._update_running = True
         start_time = time.time()
 
-        log_data = VersionUpdateLogCreate(
-            update_type="manual" if user_id else "automatic",
-            status="running",
-            executed_by_user_id=user_id,
-        )
-        update_log = await self.repository.create_update_log(log_data)
+        # Open the update log entry in its own transaction so other
+        # readers can observe that work has started.
+        async with self._uow as uow:
+            update_log = await uow.versions.create_update_log(
+                CreateUpdateLogCommand(
+                    update_type="manual" if user_id else "automatic",
+                    status="running",
+                    executed_by_user_id=user_id,
+                )
+            )
+            await uow.commit()
 
         total_added = 0
         total_updated = 0
@@ -105,20 +113,21 @@ class VersionUpdateService:
                 if total_added + total_updated > 0
                 else "failed"
             )
-            await self.repository.complete_update_log(
-                update_log.id,
-                status=status,
-                execution_time_ms=execution_time_ms,
-                error_message="; ".join(errors) if errors else None,
-            )
 
-            await self.repository.update_log_counts(
-                log_id=update_log.id,
-                versions_added=total_added,
-                versions_updated=total_updated,
-                versions_removed=total_removed,
-                external_api_calls=total_api_calls,
-            )
+            # Finalise the log: status + counts in one transaction so no
+            # observer sees status="success" with counts still at 0.
+            async with self._uow as uow:
+                await uow.versions.complete_update_log(
+                    update_log.id,
+                    status=status,
+                    execution_time_ms=execution_time_ms,
+                    error_message="; ".join(errors) if errors else None,
+                    versions_added=total_added,
+                    versions_updated=total_updated,
+                    versions_removed=total_removed,
+                    external_api_calls=total_api_calls,
+                )
+                await uow.commit()
 
             self._last_update_time = utcnow()
 
@@ -145,12 +154,18 @@ class VersionUpdateService:
             error_msg = f"Version update failed: {str(e)}"
             logger.error(error_msg)
 
-            await self.repository.complete_update_log(
-                update_log.id,
-                status="failed",
-                execution_time_ms=execution_time_ms,
-                error_message=error_msg,
-            )
+            async with self._uow as uow:
+                await uow.versions.complete_update_log(
+                    update_log.id,
+                    status="failed",
+                    execution_time_ms=execution_time_ms,
+                    error_message=error_msg,
+                    versions_added=total_added,
+                    versions_updated=total_updated,
+                    versions_removed=total_removed,
+                    external_api_calls=total_api_calls,
+                )
+                await uow.commit()
 
             return VersionUpdateResult(
                 success=False,
@@ -166,7 +181,7 @@ class VersionUpdateService:
     async def _update_server_type_versions(
         self, server_type: ServerType, force_refresh: bool = False
     ) -> Dict[str, int]:
-        """Update versions for a specific server type."""
+        """Update versions for a specific server type (one transaction)."""
         api_calls_count = 0
 
         try:
@@ -185,58 +200,62 @@ class VersionUpdateService:
                     "api_calls": api_calls_count,
                 }
 
-            current_versions = await self.repository.get_versions_by_type(server_type)
-            current_version_map = {v.version: v for v in current_versions}
+            async with self._uow as uow:
+                current_versions = await uow.versions.get_versions_by_type(server_type)
+                current_version_map = {v.version: v for v in current_versions}
 
-            added_count = 0
-            updated_count = 0
+                added_count = 0
+                updated_count = 0
 
-            external_version_ids: set[str] = set()
-            for ext_version in external_versions:
-                external_version_ids.add(ext_version.version)
+                external_version_ids: set[str] = set()
+                for ext_version in external_versions:
+                    external_version_ids.add(ext_version.version)
 
-                version_data = MinecraftVersionCreate(
-                    server_type=ext_version.server_type,
-                    version=ext_version.version,
-                    download_url=ext_version.download_url,
-                    release_date=ext_version.release_date,
-                    is_stable=ext_version.is_stable,
-                    build_number=ext_version.build_number,
-                )
-
-                if ext_version.version in current_version_map:
-                    current = current_version_map[ext_version.version]
-                    needs_update = (
-                        current.download_url != ext_version.download_url
-                        or current.is_stable != ext_version.is_stable
-                        or current.build_number != ext_version.build_number
-                        or not current.is_active
+                    command = CreateVersionCommand(
+                        server_type=ext_version.server_type,
+                        version=ext_version.version,
+                        download_url=ext_version.download_url,
+                        release_date=ext_version.release_date,
+                        is_stable=ext_version.is_stable,
+                        build_number=ext_version.build_number,
                     )
 
-                    if needs_update:
-                        await self.repository.upsert_version(version_data)
-                        updated_count += 1
-                        logger.debug(f"Updated {server_type.value} {ext_version.version}")
-                else:
-                    await self.repository.upsert_version(version_data)
-                    added_count += 1
-                    logger.debug(f"Added {server_type.value} {ext_version.version}")
+                    if ext_version.version in current_version_map:
+                        current = current_version_map[ext_version.version]
+                        needs_update = (
+                            current.download_url != ext_version.download_url
+                            or current.is_stable != ext_version.is_stable
+                            or current.build_number != ext_version.build_number
+                            or not current.is_active
+                        )
 
-            all_current_version_ids = [v.version for v in current_versions if v.is_active]
-            versions_to_deactivate = [
-                v_id
-                for v_id in all_current_version_ids
-                if v_id not in external_version_ids
-            ]
+                        if needs_update:
+                            await uow.versions.upsert_version(command)
+                            updated_count += 1
+                            logger.debug(
+                                f"Updated {server_type.value} {ext_version.version}"
+                            )
+                    else:
+                        await uow.versions.upsert_version(command)
+                        added_count += 1
+                        logger.debug(f"Added {server_type.value} {ext_version.version}")
 
-            removed_count = 0
-            if versions_to_deactivate:
-                removed_count = await self.repository.deactivate_versions(
-                    server_type, list(external_version_ids)
-                )
-                logger.debug(
-                    f"Deactivated {removed_count} {server_type.value} versions: {versions_to_deactivate}"
-                )
+                all_current = [v.version for v in current_versions if v.is_active]
+                to_deactivate = [
+                    v_id for v_id in all_current if v_id not in external_version_ids
+                ]
+
+                removed_count = 0
+                if to_deactivate:
+                    removed_count = await uow.versions.deactivate_versions(
+                        server_type, list(external_version_ids)
+                    )
+                    logger.debug(
+                        f"Deactivated {removed_count} {server_type.value} versions: "
+                        f"{to_deactivate}"
+                    )
+
+                await uow.commit()
 
             return {
                 "added": added_count,
@@ -249,88 +268,95 @@ class VersionUpdateService:
             logger.error(f"Error updating {server_type.value} versions: {e}")
             raise
 
-    async def get_update_status(self) -> UpdateStatusResponse:
-        """Get current update status and statistics."""
-        latest_log = await self.repository.get_latest_update_log()
+    # ----- Query use cases -----
 
-        stats = await self.repository.get_version_stats()
-        total_versions = stats.get("_total", {}).get("active", 0)
-        versions_by_type = {
-            k: v.get("active", 0) for k, v in stats.items() if k != "_total"
-        }
-
-        return UpdateStatusResponse(
+    async def get_update_status(self) -> "UpdateStatus":
+        async with self._uow as uow:
+            latest_log = await uow.versions.get_latest_update_log()
+            stats = await uow.versions.get_version_stats()
+        return UpdateStatus(
             last_update=latest_log,
-            total_versions=total_versions,
-            versions_by_type=versions_by_type,
+            total_versions=stats.active_versions,
+            versions_by_type={k: v["active"] for k, v in stats.by_server_type.items()},
             next_scheduled_update=None,
             is_update_running=self._update_running,
         )
 
     async def cleanup_old_versions(self, days_old: int = 30) -> int:
-        """Clean up old inactive versions to keep database size manageable."""
-        try:
-            removed_count = await self.repository.cleanup_old_versions(days_old)
-            if removed_count > 0:
-                logger.info(
-                    f"Cleaned up {removed_count} old inactive versions (>{days_old} days)"
-                )
-            return removed_count
-        except Exception as e:
-            logger.error(f"Error during version cleanup: {e}")
-            raise
+        async with self._uow as uow:
+            removed = await uow.versions.cleanup_old_versions(days_old)
+            await uow.commit()
+        if removed > 0:
+            logger.info(f"Cleaned up {removed} old inactive versions (>{days_old} days)")
+        return removed
 
     async def get_supported_versions(
         self, server_type: ServerType
-    ) -> List[MinecraftVersion]:
-        """Get supported versions from database (fast database lookup)."""
-        return await self.repository.get_versions_by_type(server_type)
+    ) -> List[MinecraftVersionEntity]:
+        async with self._uow as uow:
+            return await uow.versions.get_versions_by_type(server_type)
 
-    async def get_all_supported_versions(self) -> List[MinecraftVersion]:
-        """Get all supported versions from database (fast database lookup)."""
-        return await self.repository.get_all_active_versions()
+    async def get_all_supported_versions(self) -> List[MinecraftVersionEntity]:
+        async with self._uow as uow:
+            return await uow.versions.get_all_active_versions()
 
     async def get_version(
         self, server_type: ServerType, version: str
-    ) -> Optional[MinecraftVersion]:
-        """Get a specific version, or None if not found."""
-        return await self.repository.get_version_by_type_and_version(server_type, version)
+    ) -> Optional[MinecraftVersionEntity]:
+        async with self._uow as uow:
+            return await uow.versions.get_version_by_type_and_version(
+                server_type, version
+            )
 
     async def get_download_url(
         self, server_type: ServerType, version: str
     ) -> Optional[str]:
-        """Get download URL for a specific version from database."""
-        version_obj = await self.repository.get_version_by_type_and_version(
-            server_type, version
-        )
-        return version_obj.download_url if version_obj else None
+        entity = await self.get_version(server_type, version)
+        return entity.download_url if entity else None
 
-    async def get_version_stats(self) -> VersionStatsResponse:
-        """Get comprehensive version statistics by server type."""
-        stats = await self.repository.get_version_stats()
-        return VersionStatsResponse(
-            total_versions=stats["_total"]["total"],
-            active_versions=stats["_total"]["active"],
-            by_server_type={
-                server_type: {
-                    "total": data["total"],
-                    "active": data["active"],
-                }
-                for server_type, data in stats.items()
-                if server_type != "_total"
-            },
-        )
+    async def get_version_stats(self) -> VersionStatsEntity:
+        async with self._uow as uow:
+            return await uow.versions.get_version_stats()
 
     def is_version_supported(self, server_type: ServerType, version: str) -> bool:
-        """Check if a version is supported (delegates to legacy version manager)."""
         return minecraft_version_manager.is_version_supported(server_type, version)
 
     @property
     def is_update_running(self) -> bool:
-        """Check if an update operation is currently running."""
         return self._update_running
 
     @property
     def last_update_time(self) -> Optional[datetime]:
-        """Get the timestamp of the last successful update."""
         return self._last_update_time
+
+
+# -------------------------------------------------------------------------
+# Result DTOs
+# -------------------------------------------------------------------------
+#
+# These small dataclasses are the return types of high-level use cases.
+# Kept inline (rather than in `domain/entities.py`) because they describe
+# application-layer responses rather than persistence entities.
+
+from dataclasses import dataclass, field  # noqa: E402 — co-located with usages
+
+
+@dataclass(frozen=True)
+class VersionUpdateResult:
+    success: bool
+    message: str
+    log_id: Optional[int] = None
+    versions_added: int = 0
+    versions_updated: int = 0
+    versions_removed: int = 0
+    execution_time_ms: Optional[int] = None
+    errors: List[str] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class UpdateStatus:
+    last_update: Optional[VersionUpdateLogEntity]
+    total_versions: int
+    versions_by_type: Dict[str, int]
+    next_scheduled_update: Optional[datetime]
+    is_update_running: bool

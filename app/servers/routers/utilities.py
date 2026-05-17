@@ -33,11 +33,11 @@ async def get_supported_versions():
     try:
         from app.core.database import SessionLocal
         from app.servers.schemas import MinecraftVersionInfo
-        from app.versions.repository import VersionRepository
+        from app.versions.adapters.repository import SqlAlchemyVersionRepository
 
         # Use database instead of external APIs
         with SessionLocal() as db:
-            repo = VersionRepository(db)
+            repo = SqlAlchemyVersionRepository(db)
 
             # Get all active versions from database (FAST!)
             db_versions = await repo.get_all_active_versions()

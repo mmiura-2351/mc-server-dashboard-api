@@ -13,7 +13,7 @@ class TestUtilitiesRouterSimple:
     """Simplified test cases for utilities router endpoints"""
 
     @pytest.mark.asyncio
-    @patch("app.versions.repository.VersionRepository")
+    @patch("app.versions.adapters.repository.SqlAlchemyVersionRepository")
     async def test_get_supported_versions_success(self, mock_repo_class):
         """Test successful retrieval of supported versions"""
         from app.servers.routers.utilities import get_supported_versions
@@ -39,7 +39,7 @@ class TestUtilitiesRouterSimple:
         assert len(result.versions) >= 0
 
     @pytest.mark.asyncio
-    @patch("app.versions.repository.VersionRepository")
+    @patch("app.versions.adapters.repository.SqlAlchemyVersionRepository")
     async def test_get_supported_versions_error(self, mock_repo_class):
         """Test getting versions with service error"""
         from app.servers.routers.utilities import get_supported_versions
@@ -60,7 +60,7 @@ class TestUtilitiesRouterSimple:
 
     @pytest.mark.asyncio
     @patch("app.servers.routers.utilities.SupportedVersionsResponse")
-    @patch("app.versions.repository.VersionRepository")
+    @patch("app.versions.adapters.repository.SqlAlchemyVersionRepository")
     async def test_get_supported_versions_response_creation_error(
         self, mock_repo_class, mock_response_class
     ):
