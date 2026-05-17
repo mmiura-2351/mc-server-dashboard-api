@@ -191,7 +191,7 @@ class TestVersionUpdateService:
             )
         ]
 
-        with patch("app.versions.service.minecraft_version_manager") as mock_manager:
+        with patch("app.versions.application.service.minecraft_version_manager") as mock_manager:
             mock_manager.get_supported_versions = AsyncMock(return_value=mock_versions)
 
             result = await service._update_server_type_versions(ServerType.vanilla)
@@ -216,7 +216,7 @@ class TestVersionUpdateService:
             )
         ]
 
-        with patch("app.versions.service.minecraft_version_manager") as mock_manager:
+        with patch("app.versions.application.service.minecraft_version_manager") as mock_manager:
             mock_manager.get_supported_versions = AsyncMock(return_value=mock_versions)
 
             result = await service._update_server_type_versions(ServerType.vanilla)
@@ -240,7 +240,7 @@ class TestVersionUpdateService:
             )
         ]
 
-        with patch("app.versions.service.minecraft_version_manager") as mock_manager:
+        with patch("app.versions.application.service.minecraft_version_manager") as mock_manager:
             mock_manager.get_supported_versions = AsyncMock(return_value=mock_versions)
 
             result = await service._update_server_type_versions(ServerType.vanilla)
@@ -252,7 +252,7 @@ class TestVersionUpdateService:
     @pytest.mark.asyncio
     async def test_update_server_type_versions_api_failure(self, service):
         """Test handling of external API failure"""
-        with patch("app.versions.service.minecraft_version_manager") as mock_manager:
+        with patch("app.versions.application.service.minecraft_version_manager") as mock_manager:
             mock_manager.get_supported_versions = AsyncMock(
                 side_effect=Exception("API down")
             )
@@ -330,7 +330,7 @@ class TestVersionUpdateService:
 
     def test_is_version_supported_delegation(self, service):
         """Test that version support check delegates to original manager"""
-        with patch("app.versions.service.minecraft_version_manager") as mock_manager:
+        with patch("app.versions.application.service.minecraft_version_manager") as mock_manager:
             mock_manager.is_version_supported.return_value = True
 
             result = service.is_version_supported(ServerType.vanilla, "1.21.6")
