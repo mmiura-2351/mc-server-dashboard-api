@@ -1,4 +1,16 @@
-import secrets
+"""JWT primitives plus deprecated session-based refresh-token shims.
+
+The pure JWT helpers (`create_access_token`, `verify_token`) are the
+permanent home for token encode/decode logic; they have no persistence
+dependency and are imported widely across the app.
+
+The three refresh-token functions kept here are **deprecated shims**
+that forward to `app.auth.application.service.AuthService` while
+legacy callers (notably `app/auth/router.py` and the test suite that
+patches these names) migrate. New code should use `AuthService` via
+`Depends(get_auth_service)`.
+"""
+
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
@@ -6,6 +18,10 @@ from jose import JWTError, jwt
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
+
+# ---------------------------------------------------------------------------
+# JWT primitives (permanent — no persistence dependency)
+# ---------------------------------------------------------------------------
 
 
 def create_access_token(data: dict, expires_delta: timedelta = None):
@@ -31,50 +47,46 @@ def verify_token(token: str, credentials_exception):
         raise credentials_exception
 
 
+# ---------------------------------------------------------------------------
+# Deprecated refresh-token shims
+# ---------------------------------------------------------------------------
+#
+# These functions wrap the new `AuthService` so existing callers do not
+# break. They construct a `SqlAlchemyAuthUnitOfWork` from the caller's
+# `Session` and run the use case synchronously. To be removed once
+# `app/auth/router.py` and the test patches migrate to
+# `Depends(get_auth_service)` — see #221 follow-up.
+
+
+def _run(coro):
+    """Run *coro* on a fresh event loop. Synchronous shim only."""
+    import asyncio
+
+    return asyncio.run(coro)
+
+
 def create_refresh_token(user_id: int, db: Session) -> str:
-    """Generate refresh token and save to database"""
-    from app.users.models import RefreshToken
+    """Deprecated. Use `AuthService.create_refresh_token` via DI."""
+    from app.auth.adapters.uow import SqlAlchemyAuthUnitOfWork
+    from app.auth.application.service import AuthService
 
-    # Invalidate existing valid refresh tokens
-    db.query(RefreshToken).filter(
-        RefreshToken.user_id == user_id, RefreshToken.is_revoked.is_(False)
-    ).update({"is_revoked": True})
-
-    # Generate new refresh token
-    token = secrets.token_urlsafe(32)
-    expires_at = datetime.now(timezone.utc) + timedelta(
-        days=settings.REFRESH_TOKEN_EXPIRE_DAYS
-    )
-
-    refresh_token = RefreshToken(token=token, user_id=user_id, expires_at=expires_at)
-
-    db.add(refresh_token)
-    db.commit()
-
-    return token
+    service = AuthService(uow=SqlAlchemyAuthUnitOfWork(db=db))
+    return _run(service.create_refresh_token(user_id))
 
 
 def verify_refresh_token(token: str, db: Session) -> Optional[int]:
-    """Validate refresh token and return user ID"""
-    from app.users.models import RefreshToken
+    """Deprecated. Use `AuthService.verify_refresh_token` via DI."""
+    from app.auth.adapters.uow import SqlAlchemyAuthUnitOfWork
+    from app.auth.application.service import AuthService
 
-    refresh_token = db.query(RefreshToken).filter(RefreshToken.token == token).first()
-
-    if not refresh_token or not refresh_token.is_valid():
-        return None
-
-    return refresh_token.user_id
+    service = AuthService(uow=SqlAlchemyAuthUnitOfWork(db=db))
+    return _run(service.verify_refresh_token(token))
 
 
 def revoke_refresh_token(token: str, db: Session) -> bool:
-    """Invalidate refresh token"""
-    from app.users.models import RefreshToken
+    """Deprecated. Use `AuthService.revoke_refresh_token` via DI."""
+    from app.auth.adapters.uow import SqlAlchemyAuthUnitOfWork
+    from app.auth.application.service import AuthService
 
-    refresh_token = db.query(RefreshToken).filter(RefreshToken.token == token).first()
-
-    if refresh_token:
-        refresh_token.is_revoked = True
-        db.commit()
-        return True
-
-    return False
+    service = AuthService(uow=SqlAlchemyAuthUnitOfWork(db=db))
+    return _run(service.revoke_refresh_token(token))

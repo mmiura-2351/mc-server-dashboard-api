@@ -1,22 +1,24 @@
+"""FastAPI router for the auth domain.
+
+All endpoints depend on `AuthService` and `UserService` via DI — they
+never see SQLAlchemy directly.
+"""
+
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordRequestForm
-from passlib.context import CryptContext
 from pydantic import BaseModel
 
 from app.audit.service import AuditService
-from app.auth.auth import (
-    create_access_token,
-    create_refresh_token,
-    revoke_refresh_token,
-    verify_refresh_token,
-)
-from app.services.user import UserService
+from app.auth.api.dependencies import get_auth_service
+from app.auth.application.service import AuthService
+from app.auth.auth import create_access_token
 from app.types import DatabaseSession
+from app.users.api.dependencies import get_user_service
+from app.users.application.service import UserService
 
 router = APIRouter()
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 
 class RefreshTokenRequest(BaseModel):
@@ -30,17 +32,19 @@ class TokenResponse(BaseModel):
 
 
 @router.post("/token", response_model=TokenResponse)
-def login(
+async def login(
     form_data: Annotated[OAuth2PasswordRequestForm, Depends()],
     db: DatabaseSession,
     request: Request,
+    user_service: UserService = Depends(get_user_service),
+    auth_service: AuthService = Depends(get_auth_service),
 ):
-    service = UserService(db)
-    user = None
+    user_entity = None
     try:
-        user = service.authenticate_user(form_data.username, form_data.password)
-        if not user:
-            # Log failed authentication
+        user_entity = await user_service.authenticate_user(
+            form_data.username, form_data.password
+        )
+        if user_entity is None:
             AuditService.log_authentication_event(
                 db=db,
                 request=request,
@@ -56,26 +60,24 @@ def login(
                 detail="Incorrect username or password",
             )
 
-        access_token = create_access_token(data={"sub": user.username})
-        refresh_token = create_refresh_token(user.id, db)
+        access_token = create_access_token(data={"sub": user_entity.username})
+        refresh_token = await auth_service.create_refresh_token(user_entity.id)
 
-        # Log successful authentication
         AuditService.log_authentication_event(
             db=db,
             request=request,
             action="login",
-            user_id=user.id,
+            user_id=user_entity.id,
             details={
-                "username": user.username,
-                "user_role": user.role.value,
+                "username": user_entity.username,
+                "user_role": user_entity.role.value,
             },
             success=True,
         )
 
         return TokenResponse(access_token=access_token, refresh_token=refresh_token)
     except HTTPException as e:
-        # Log authentication failure if not already logged
-        if not user:
+        if user_entity is None:
             AuditService.log_authentication_event(
                 db=db,
                 request=request,
@@ -91,12 +93,15 @@ def login(
 
 
 @router.post("/refresh", response_model=TokenResponse)
-def refresh_access_token(
-    token_request: RefreshTokenRequest, db: DatabaseSession, request: Request
+async def refresh_access_token(
+    token_request: RefreshTokenRequest,
+    db: DatabaseSession,
+    request: Request,
+    user_service: UserService = Depends(get_user_service),
+    auth_service: AuthService = Depends(get_auth_service),
 ):
-    user_id = verify_refresh_token(token_request.refresh_token, db)
+    user_id = await auth_service.verify_refresh_token(token_request.refresh_token)
     if not user_id:
-        # Log failed token refresh
         AuditService.log_authentication_event(
             db=db,
             request=request,
@@ -109,10 +114,8 @@ def refresh_access_token(
             detail="Invalid or expired refresh token",
         )
 
-    service = UserService(db)
-    user = service.get_user_by_id(user_id)
-    if not user or not user.is_active:
-        # Log failed token refresh
+    user = await user_service.get_user_by_id(user_id)
+    if user is None or not user.is_active:
         AuditService.log_authentication_event(
             db=db,
             request=request,
@@ -122,14 +125,13 @@ def refresh_access_token(
             success=False,
         )
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found or inactive"
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="User not found or inactive",
         )
 
-    # Generate new access token and refresh token
     access_token = create_access_token(data={"sub": user.username})
-    new_refresh_token = create_refresh_token(user.id, db)
+    new_refresh_token = await auth_service.create_refresh_token(user.id)
 
-    # Log successful token refresh
     AuditService.log_authentication_event(
         db=db,
         request=request,
@@ -143,13 +145,15 @@ def refresh_access_token(
 
 
 @router.post("/logout")
-def logout(token_request: RefreshTokenRequest, db: DatabaseSession, request: Request):
-    # Extract user ID from refresh token before revoking
-    user_id = verify_refresh_token(token_request.refresh_token, db)
-
-    success = revoke_refresh_token(token_request.refresh_token, db)
+async def logout(
+    token_request: RefreshTokenRequest,
+    db: DatabaseSession,
+    request: Request,
+    auth_service: AuthService = Depends(get_auth_service),
+):
+    user_id = await auth_service.verify_refresh_token(token_request.refresh_token)
+    success = await auth_service.revoke_refresh_token(token_request.refresh_token)
     if not success:
-        # Log failed logout
         AuditService.log_authentication_event(
             db=db,
             request=request,
@@ -162,7 +166,6 @@ def logout(token_request: RefreshTokenRequest, db: DatabaseSession, request: Req
             status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid refresh token"
         )
 
-    # Log successful logout
     AuditService.log_authentication_event(
         db=db,
         request=request,
