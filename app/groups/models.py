@@ -31,7 +31,7 @@ class Group(Base):
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String(100), nullable=False)
     description = Column(Text)
-    type: "Column[GroupType]" = Column(Enum(GroupType), nullable=False)
+    type: Column[GroupType] = Column(Enum(GroupType), nullable=False)
     players = Column(JSON, nullable=False)  # Array of player objects
     owner_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     is_template = Column(Boolean, default=False)

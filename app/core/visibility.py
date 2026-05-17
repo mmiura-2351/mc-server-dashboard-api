@@ -56,16 +56,16 @@ class ResourceVisibility(Base):
     id = Column(Integer, primary_key=True, index=True)
 
     # Resource identification
-    resource_type: "Column[ResourceType]" = Column(
+    resource_type: Column[ResourceType] = Column(
         SQLEnum(ResourceType), nullable=False, index=True
     )
     resource_id = Column(Integer, nullable=False, index=True)
 
     # Visibility configuration
-    visibility_type: "Column[VisibilityType]" = Column(
+    visibility_type: Column[VisibilityType] = Column(
         SQLEnum(VisibilityType), nullable=False, default=VisibilityType.PRIVATE
     )
-    role_restriction: "Column[Role]" = Column(
+    role_restriction: Column[Role] = Column(
         SQLEnum(Role), nullable=True
     )  # For role_based visibility
 

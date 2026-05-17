@@ -603,7 +603,7 @@ class FileSearchService:
         max_results: int,
     ) -> List[Dict[str, Any]]:
         """Search files by filename"""
-        results: list[dict] = []
+        results: list[dict[str, Any]] = []
 
         for file_path in server_path.rglob("*"):
             if len(results) >= max_results:
@@ -630,7 +630,7 @@ class FileSearchService:
         max_results: int,
     ) -> List[Dict[str, Any]]:
         """Search in file content"""
-        results: list[dict] = []
+        results: list[dict[str, Any]] = []
 
         for file_path in server_path.rglob("*"):
             if len(results) >= max_results:

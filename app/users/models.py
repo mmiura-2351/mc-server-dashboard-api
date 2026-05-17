@@ -21,7 +21,7 @@ class User(Base):
     username = Column(String(50), unique=True, index=True)
     email = Column(String(255), unique=True, index=True)
     hashed_password = Column(String(255))
-    role: "Column[Role]" = Column(Enum(Role), default=Role.user)
+    role: Column[Role] = Column(Enum(Role), default=Role.user)
     is_active = Column(Boolean, default=True)
     is_approved = Column(Boolean, default=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())

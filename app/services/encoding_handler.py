@@ -34,8 +34,10 @@ class EncodingHandler:
             Tuple of (file_content, detected_encoding)
 
         Raises:
-            UnicodeDecodeError: If no encoding works
+            RuntimeError: If the fallback (utf-8 with errors="replace") itself fails
+                (typically because the file became unreadable, not a decode error).
             FileNotFoundError: If file doesn't exist
+            OSError: For other underlying I/O errors raised by the read path
         """
         # First, try to detect encoding using chardet
         try:

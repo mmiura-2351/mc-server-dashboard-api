@@ -87,7 +87,7 @@ class BackupScheduleLog(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     server_id = Column(Integer, ForeignKey("servers.id"), nullable=False, index=True)
-    action: "Column[ScheduleAction]" = Column(
+    action: Column[ScheduleAction] = Column(
         Enum(ScheduleAction), nullable=False, index=True
     )
     reason = Column(String(255), nullable=True)

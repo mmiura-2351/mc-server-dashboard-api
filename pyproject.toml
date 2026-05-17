@@ -121,17 +121,41 @@ precision = 2
 directory = "htmlcov"
 
 [tool.mypy]
+# Relaxed configuration re-enabling mypy in pre-commit (Issue #86).
+# Single source of truth: `uv run mypy app/` and the pre-commit hook share
+# this config so direct invocation and hook produce identical results.
+# Stricter settings will be re-introduced incrementally as follow-up issues
+# address the disabled error codes.
 python_version = "3.13"
+plugins = ["pydantic.mypy"]
+ignore_missing_imports = true
+scripts_are_modules = true
 check_untyped_defs = true
 disallow_untyped_defs = false
-disallow_incomplete_defs = true
+disallow_incomplete_defs = false
 disallow_untyped_decorators = false
 warn_redundant_casts = true
 warn_unused_ignores = true
-warn_return_any = true
-strict_optional = true
+warn_return_any = false
+strict_optional = false
 show_error_codes = true
-plugins = ["pydantic.mypy"]
+# Codes disabled at this stage are dominated by SQLAlchemy Column[T]-vs-T
+# mismatches and Pydantic schema artifacts that require dedicated refactors.
+# Each should be re-enabled by a follow-up issue.
+disable_error_code = [
+    "arg-type",
+    "assignment",
+    "return-value",
+    "attr-defined",
+    "index",
+    "operator",
+    "call-overload",
+    "method-assign",
+    "valid-type",
+    "type-var",
+    "typeddict-unknown-key",
+    "import-untyped",
+]
 
 [[tool.mypy.overrides]]
 module = [
