@@ -17,6 +17,23 @@ from app.services.minecraft_server import MinecraftServerManager, ServerProcess
 pytestmark = pytest.mark.slow
 
 
+def _fake_create_task(coro, *args, **kwargs):
+    """Stand-in for asyncio.create_task in tests that patch it out.
+
+    The production code passes a freshly-built coroutine in. If we simply return
+    a Mock, that coroutine is never scheduled and Python emits
+    "coroutine was never awaited" at GC. Closing the coroutine here suppresses
+    that warning while still returning a sync task-like Mock for cleanup helpers
+    (whose `.done()` returns True to short-circuit the cancel/await loop).
+    """
+    if asyncio.iscoroutine(coro):
+        coro.close()
+    fake_task = Mock()
+    fake_task.done = Mock(return_value=True)
+    fake_task.cancel = Mock()
+    return fake_task
+
+
 class TestDaemonLifecycleComprehensive:
     """Comprehensive tests for daemon process lifecycle management"""
 
@@ -143,12 +160,15 @@ class TestDaemonLifecycleComprehensive:
                                     with patch.object(
                                         manager, "_is_process_running", return_value=True
                                     ):
-                                        # Mock background task creation
+                                        # Mock background task creation. The fake
+                                        # create_task closes the production coroutine to avoid
+                                        # "never awaited" warnings, and returns a sync task-like
+                                        # Mock whose .done() returns True so the cleanup helper
+                                        # short-circuits.
                                         with patch(
-                                            "asyncio.create_task"
-                                        ) as mock_create_task:
-                                            mock_create_task.return_value = AsyncMock()
-
+                                            "asyncio.create_task",
+                                            side_effect=_fake_create_task,
+                                        ):
                                             result = await manager.start_server(
                                                 daemon_test_server, mock_db_session
                                             )
@@ -304,10 +324,8 @@ class TestDaemonLifecycleComprehensive:
             with patch.object(
                 manager, "_restore_process_from_pid", return_value=True
             ) as mock_restore:
-                # Mock background task creation
-                with patch("asyncio.create_task") as mock_create_task:
-                    mock_create_task.return_value = AsyncMock()
-
+                # Mock background task creation; see _fake_create_task for why.
+                with patch("asyncio.create_task", side_effect=_fake_create_task):
                     results = await manager.discover_and_restore_processes()
 
                     # Basic verification
@@ -409,12 +427,11 @@ class TestDaemonLifecycleComprehensive:
                                     with patch.object(
                                         manager, "_is_process_running", return_value=True
                                     ):
-                                        # Mock background tasks
+                                        # Mock background task creation; see _fake_create_task.
                                         with patch(
-                                            "asyncio.create_task"
-                                        ) as mock_create_task:
-                                            mock_create_task.return_value = AsyncMock()
-
+                                            "asyncio.create_task",
+                                            side_effect=_fake_create_task,
+                                        ):
                                             # Start server
                                             result = await manager.start_server(
                                                 daemon_test_server, mock_db_session

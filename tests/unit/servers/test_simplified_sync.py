@@ -27,6 +27,9 @@ def test_db():
         yield db
     finally:
         db.close()
+        # Dispose the engine so the underlying sqlite connections are released
+        # promptly instead of being reaped by GC (which emits ResourceWarning).
+        engine.dispose()
 
 
 @pytest.fixture

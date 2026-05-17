@@ -71,7 +71,6 @@ python_classes = ["Test*"]
 python_functions = ["test_*"]
 addopts = [
     "--tb=short",
-    "--disable-warnings",
     "-q",
     "-n", "auto",
     "--dist", "loadscope",
@@ -86,6 +85,8 @@ markers = [
 filterwarnings = [
     "error::DeprecationWarning",
     "error::PendingDeprecationWarning",
+    "error::RuntimeWarning",
+    "error::ResourceWarning",
     "ignore:'crypt' is deprecated:DeprecationWarning",
 ]
 

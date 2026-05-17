@@ -359,14 +359,20 @@ class TestMinecraftVersionManagerMissingCoverage:
             }
         )
 
-        # Mock gather to return an exception using AsyncMock
-        with patch("aiohttp.ClientSession", return_value=mock_session):
-            with patch("asyncio.gather", new_callable=AsyncMock) as mock_gather:
-                mock_gather.return_value = [Exception("Network error")]
-                result = await manager._get_vanilla_versions()
+        # Replace the per-version fetch helpers with plain Mocks so the list
+        # comprehensions inside _get_vanilla_versions do not produce real
+        # coroutines that the patched asyncio.gather will leave un-awaited.
+        with (
+            patch("aiohttp.ClientSession", return_value=mock_session),
+            patch.object(manager, "_fetch_vanilla_version_info", new=Mock()),
+            patch.object(manager, "_fetch_with_semaphore", new=Mock()),
+            patch("asyncio.gather", new_callable=AsyncMock) as mock_gather,
+        ):
+            mock_gather.return_value = [Exception("Network error")]
+            result = await manager._get_vanilla_versions()
 
-                # Should return empty list when all tasks fail
-                assert result == []
+            # Should return empty list when all tasks fail
+            assert result == []
 
     @pytest.mark.asyncio
     async def test_fetch_vanilla_version_info_no_server_download(self, manager):
@@ -411,17 +417,23 @@ class TestMinecraftVersionManagerMissingCoverage:
             {"https://api.papermc.io/v2/projects/paper": mock_response}
         )
 
-        # Mock gather to return exceptions using AsyncMock
-        with patch("aiohttp.ClientSession", return_value=mock_session):
-            with patch("asyncio.gather", new_callable=AsyncMock) as mock_gather:
-                mock_gather.return_value = [
-                    Exception("Network error"),
-                    Exception("Another error"),
-                ]
-                result = await manager._get_paper_versions()
+        # Replace the per-version fetch helpers with plain Mocks so the list
+        # comprehensions inside _get_paper_versions do not produce real
+        # coroutines that the patched asyncio.gather will leave un-awaited.
+        with (
+            patch("aiohttp.ClientSession", return_value=mock_session),
+            patch.object(manager, "_fetch_paper_version_info", new=Mock()),
+            patch.object(manager, "_fetch_with_semaphore", new=Mock()),
+            patch("asyncio.gather", new_callable=AsyncMock) as mock_gather,
+        ):
+            mock_gather.return_value = [
+                Exception("Network error"),
+                Exception("Another error"),
+            ]
+            result = await manager._get_paper_versions()
 
-                # Should return empty list when all tasks fail
-                assert result == []
+            # Should return empty list when all tasks fail
+            assert result == []
 
     @pytest.mark.asyncio
     async def test_fetch_paper_version_info_no_builds(self, manager):
@@ -468,11 +480,12 @@ class TestMinecraftVersionManagerMissingCoverage:
     async def test_get_forge_versions_raises_error_on_failure(self, manager):
         """Test _get_forge_versions raises RuntimeError when API fails"""
         with patch("aiohttp.ClientSession") as mock_session_class:
-            # Create a mock session that raises an exception during get()
+            # Create a mock session whose .get() returns a plain (non-async)
+            # context manager whose __aenter__ raises. session.get itself must
+            # be a sync Mock so it does not produce an un-awaited coroutine.
             mock_session = AsyncMock()
             mock_session_class.return_value.__aenter__.return_value = mock_session
 
-            # Create a proper mock response context manager
             class MockResponse:
                 async def __aenter__(self):
                     raise aiohttp.ClientError("API Error")
@@ -480,7 +493,7 @@ class TestMinecraftVersionManagerMissingCoverage:
                 async def __aexit__(self, *args):
                     pass
 
-            mock_session.get.return_value = MockResponse()
+            mock_session.get = Mock(return_value=MockResponse())
 
             with pytest.raises(RuntimeError, match="Error processing forge versions"):
                 await manager._get_forge_versions()
