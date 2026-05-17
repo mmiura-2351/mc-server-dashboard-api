@@ -67,7 +67,15 @@ class CreateVersionCommand:
 
 @dataclass(frozen=True)
 class UpdateVersionCommand:
-    """Sparse update fields. Use `MISSING` sentinel via Optional to skip."""
+    """Sparse update fields.
+
+    `None` means "leave the existing column untouched" — only non-`None`
+    fields are applied by the adapter. There is currently no way to set
+    a nullable column back to NULL through this command; if that case
+    arises, introduce a `MISSING` sentinel and switch `applied_fields`
+    to `value is not MISSING`. Tracked in PR #229 review item B as a
+    pilot-scope known limitation.
+    """
 
     download_url: Optional[str] = None
     release_date: Optional[datetime] = None
@@ -76,7 +84,11 @@ class UpdateVersionCommand:
     is_active: Optional[bool] = None
 
     def applied_fields(self) -> dict:
-        """Return only the fields the caller actually set (non-None)."""
+        """Return only the fields the caller actually set (i.e. non-`None`).
+
+        Note: a `None` argument is treated as "skip", not "set to NULL".
+        See the class docstring for the rationale.
+        """
         return {name: value for name, value in self.__dict__.items() if value is not None}
 
 

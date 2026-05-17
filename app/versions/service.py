@@ -31,16 +31,4 @@ class VersionUpdateService(_ApplicationVersionUpdateService):
         self.db: Session = db
 
 
-def get_version_update_service() -> VersionUpdateService:
-    """Build a `VersionUpdateService` with a freshly-obtained DB session.
-
-    Retained for callers that bypass FastAPI's `Depends`. New code should
-    use `app.versions.api.dependencies.get_version_service` instead.
-    """
-    from app.core.database import get_db
-
-    db = next(get_db())
-    return VersionUpdateService(db)
-
-
-__all__ = ["VersionUpdateService", "get_version_update_service"]
+__all__ = ["VersionUpdateService"]

@@ -293,7 +293,15 @@ class FakeUnitOfWork:
     Re-uses a single `FakeVersionRepository` instance across enters so
     test setup (priming the repo with data) carries through into the
     code-under-test. `commit` and `rollback` are tracked as call counts
-    for assertions; they do not actually unwind the in-memory state.
+    for assertions.
+
+    **Caveat (see PR #229 review item 9)**: `rollback()` does **not**
+    actually undo changes made to the in-memory store. The Fake's reads
+    and writes mutate the same `FakeVersionRepository` dictionaries
+    irrespective of the surrounding transaction. Tests of exception
+    paths therefore cannot rely on "the bad write disappeared after
+    rollback" — they should instead assert on the `rolled_back` counter
+    and/or use a hand-snapshotted state for before/after comparisons.
     """
 
     def __init__(
@@ -319,4 +327,5 @@ class FakeUnitOfWork:
         self.committed += 1
 
     async def rollback(self) -> None:
+        """Increment the rollback counter. Does NOT rewind state — see class docstring."""
         self.rolled_back += 1

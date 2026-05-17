@@ -14,12 +14,12 @@ from typing import Dict, List, Optional
 from app.core.datetime_utils import utcnow
 from app.servers.models import ServerType
 from app.services.version_manager import minecraft_version_manager
+from app.versions.application.results import UpdateStatus, VersionUpdateResult
 from app.versions.domain.entities import (
     CreateUpdateLogCommand,
     CreateVersionCommand,
     MinecraftVersionEntity,
     VersionStatsEntity,
-    VersionUpdateLogEntity,
 )
 from app.versions.domain.ports import UnitOfWork
 
@@ -46,7 +46,7 @@ class VersionUpdateService:
         server_types: Optional[List[ServerType]] = None,
         force_refresh: bool = False,
         user_id: Optional[int] = None,
-    ) -> "VersionUpdateResult":
+    ) -> VersionUpdateResult:
         """Update version information from external APIs."""
         if self._update_running and not force_refresh:
             return VersionUpdateResult(
@@ -270,7 +270,7 @@ class VersionUpdateService:
 
     # ----- Query use cases -----
 
-    async def get_update_status(self) -> "UpdateStatus":
+    async def get_update_status(self) -> UpdateStatus:
         async with self._uow as uow:
             latest_log = await uow.versions.get_latest_update_log()
             stats = await uow.versions.get_version_stats()
@@ -328,35 +328,3 @@ class VersionUpdateService:
     @property
     def last_update_time(self) -> Optional[datetime]:
         return self._last_update_time
-
-
-# -------------------------------------------------------------------------
-# Result DTOs
-# -------------------------------------------------------------------------
-#
-# These small dataclasses are the return types of high-level use cases.
-# Kept inline (rather than in `domain/entities.py`) because they describe
-# application-layer responses rather than persistence entities.
-
-from dataclasses import dataclass, field  # noqa: E402 — co-located with usages
-
-
-@dataclass(frozen=True)
-class VersionUpdateResult:
-    success: bool
-    message: str
-    log_id: Optional[int] = None
-    versions_added: int = 0
-    versions_updated: int = 0
-    versions_removed: int = 0
-    execution_time_ms: Optional[int] = None
-    errors: List[str] = field(default_factory=list)
-
-
-@dataclass(frozen=True)
-class UpdateStatus:
-    last_update: Optional[VersionUpdateLogEntity]
-    total_versions: int
-    versions_by_type: Dict[str, int]
-    next_scheduled_update: Optional[datetime]
-    is_update_running: bool

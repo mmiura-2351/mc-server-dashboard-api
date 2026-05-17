@@ -28,7 +28,14 @@ router = APIRouter(tags=["versions"])
 
 
 def _to_response(entity: MinecraftVersionEntity) -> MinecraftVersionResponse:
-    """Convert a domain entity to the API DTO."""
+    """Convert a domain entity to the API DTO.
+
+    NB: `MinecraftVersionResponse` exposes both `last_updated` and
+    `updated_at`, but the model only carries `updated_at`. Both response
+    fields are populated from the same `entity.updated_at` to preserve
+    the historical API surface. When the response schema is cleaned up
+    (followup), the `last_updated` field should be removed entirely.
+    """
     return MinecraftVersionResponse(
         id=entity.id,
         server_type=entity.server_type.value,
@@ -80,6 +87,15 @@ async def trigger_version_update(
     ),
     current_user: User = Depends(get_current_user),
 ) -> VersionUpdateResultSchema:
+    # NOTE: this endpoint delegates to the module-global
+    # `version_update_scheduler` rather than going through
+    # `Depends(get_version_service)`. The scheduler still constructs its
+    # own session via `SessionLocal` and the shim-form
+    # `VersionUpdateService(db)`. Porting the scheduler to the UoW Port is
+    # tracked as the second phase of #154 — follow-up sub-issues should
+    # not propagate this "scheduler exempt from DI" shape; introduce a
+    # `SchedulerPort` (or similar) and inject it via `Depends` before
+    # copying this pattern.
     if current_user.role != Role.admin:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
