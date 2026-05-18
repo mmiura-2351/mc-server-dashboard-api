@@ -43,6 +43,24 @@ class TestAuthRouter:
         assert response.status_code == status.HTTP_403_FORBIDDEN
         assert "Account pending approval" in response.json()["detail"]
 
+    def test_login_inactive_user(self, client, db, test_user):
+        """Deactivated user cannot authenticate (Resolves #232)."""
+        from app.users.models import User
+
+        # Deactivate the otherwise-valid, approved test user.
+        user = db.query(User).filter(User.id == test_user.id).first()
+        user.is_active = False
+        db.commit()
+
+        response = client.post(
+            "/api/v1/auth/token",
+            data={"username": "testuser", "password": "testpassword"},
+        )
+
+        # Service returns `None` → router maps to 401 (matches refresh-token
+        # path in `app/auth/api/router.py`).
+        assert response.status_code == status.HTTP_401_UNAUTHORIZED
+
     def test_login_admin_user(self, client, admin_user):
         """管理者ユーザーでのログイン成功"""
         response = client.post(

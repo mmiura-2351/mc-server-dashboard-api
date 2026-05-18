@@ -66,6 +66,13 @@ class UserService:
                     detail="Username already registered",
                 )
 
+            existing_email = await uow.users.get_by_email(email)
+            if existing_email is not None:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Email already registered",
+                )
+
             is_first_user = await uow.users.count() == 0
             role = Role.admin if is_first_user else Role.user
             is_approved = is_first_user
@@ -95,6 +102,11 @@ class UserService:
         async with self._uow as uow:
             user = await uow.users.get_by_username(username)
         if user is None or not pwd_context.verify(plain_password, user.hashed_password):
+            return None
+        # Deactivated accounts cannot authenticate. Mirrors the refresh-token
+        # path in `app/auth/api/router.py`, which treats `is_active=False` the
+        # same as "no such user" — the router maps `None` to 401.
+        if not user.is_active:
             return None
         if not user.is_approved:
             raise HTTPException(

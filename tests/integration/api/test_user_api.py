@@ -66,6 +66,20 @@ class TestUserRegistrationAPI:
 
         assert response.status_code == status.HTTP_400_BAD_REQUEST
 
+    def test_register_duplicate_email(self, client, test_user):
+        """Test registration with duplicate email (Resolves #231)."""
+        response = client.post(
+            "/api/v1/users/register",
+            json={
+                "username": "newuser",
+                "email": "test@example.com",  # already used by test_user
+                "password": "password123",
+            },
+        )
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert "email" in response.json()["detail"].lower()
+
 
 class TestUserProfileAPI:
     """Test user profile management API endpoints"""
