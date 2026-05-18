@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app import __version__
 from app.audit.router import router as audit_router
-from app.auth.router import router as auth_router
+from app.auth.api.router import router as auth_router
 
 # Import models to ensure they are registered with SQLAlchemy
 from app.backups.router import router as backups_router
@@ -27,7 +27,7 @@ from app.servers.routers import router as servers_router
 from app.templates.router import router as templates_router
 
 # Import all models to ensure they are registered with SQLAlchemy
-from app.users.router import router as users_router
+from app.users.api.router import router as users_router
 from app.versions.api.router import router as versions_router
 from app.websockets.router import router as websockets_router
 
