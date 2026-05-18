@@ -42,6 +42,17 @@ def _async_methods(obj: object) -> set[str]:
     }
 
 
+def _build_implementation(name: str) -> UserRepository:
+    # Constructed inside the test (not at parametrize-collection time) so
+    # pytest-xdist does not have to pickle SQLAlchemy mocks across worker
+    # boundaries — that path is what triggered the CI RecursionError.
+    if name == "fake":
+        return FakeUserRepository()
+    if name == "sqlalchemy":
+        return SqlAlchemyUserRepository(db=MagicMock(spec=Session))
+    raise ValueError(f"unknown implementation: {name}")
+
+
 @pytest.fixture
 def protocol_methods() -> set[str]:
     return _public_methods(UserRepository)
@@ -52,34 +63,20 @@ def protocol_async_methods() -> set[str]:
     return _async_methods(UserRepository)
 
 
-@pytest.mark.parametrize(
-    "implementation",
-    [
-        pytest.param(FakeUserRepository(), id="fake"),
-        pytest.param(
-            SqlAlchemyUserRepository(db=MagicMock(spec=Session)), id="sqlalchemy"
-        ),
-    ],
-)
+@pytest.mark.parametrize("impl_name", ["fake", "sqlalchemy"])
 def test_implementation_covers_protocol_methods(
-    implementation: UserRepository, protocol_methods: set[str]
+    impl_name: str, protocol_methods: set[str]
 ) -> None:
+    implementation = _build_implementation(impl_name)
     missing = protocol_methods - _public_methods(implementation)
     assert missing == set()
 
 
-@pytest.mark.parametrize(
-    "implementation",
-    [
-        pytest.param(FakeUserRepository(), id="fake"),
-        pytest.param(
-            SqlAlchemyUserRepository(db=MagicMock(spec=Session)), id="sqlalchemy"
-        ),
-    ],
-)
+@pytest.mark.parametrize("impl_name", ["fake", "sqlalchemy"])
 def test_async_methods_match_protocol(
-    implementation: UserRepository, protocol_async_methods: set[str]
+    impl_name: str, protocol_async_methods: set[str]
 ) -> None:
+    implementation = _build_implementation(impl_name)
     impl_async = _async_methods(implementation)
     diff = protocol_async_methods - impl_async
     assert diff == set()

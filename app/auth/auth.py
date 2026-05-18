@@ -11,6 +11,7 @@ patches these names) migrate. New code should use `AuthService` via
 `Depends(get_auth_service)`.
 """
 
+import secrets as _secrets
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
@@ -48,65 +49,59 @@ def verify_token(token: str, credentials_exception):
 
 
 # ---------------------------------------------------------------------------
-# Deprecated refresh-token shims
+# Deprecated synchronous refresh-token shims
 # ---------------------------------------------------------------------------
 #
-# These functions wrap the new `AuthService` so existing callers do not
-# break. They construct a `SqlAlchemyAuthUnitOfWork` from the caller's
-# `Session` and run the use case synchronously. To be removed once
-# `app/auth/router.py` and the test patches migrate to
-# `Depends(get_auth_service)` — see #221 follow-up.
-
-
-def _run(coro):
-    """Run *coro* synchronously on a fresh event loop.
-
-    Used only by the deprecated refresh-token shims below; raises a
-    descriptive `RuntimeError` if called from inside a running event
-    loop. The shims are scheduled for removal once
-    `tests/integration/test_refresh_token.py` stops importing the
-    function names — TODO(#222 follow-up): delete `_run`, the three
-    shim functions, and this comment block once that test migrates to
-    the FastAPI route-level fixtures.
-    """
-    import asyncio
-
-    try:
-        asyncio.get_running_loop()
-    except RuntimeError:
-        # No running loop — the normal sync-test / sync-FastAPI-thread case.
-        return asyncio.run(coro)
-    raise RuntimeError(
-        "app.auth.auth.create_refresh_token / verify_refresh_token / "
-        "revoke_refresh_token are synchronous shims and cannot be called "
-        "from within a running event loop. Use "
-        "`app.auth.application.service.AuthService` via "
-        "`Depends(get_auth_service)` instead."
-    )
+# These functions preserve the legacy `(user_id, db: Session)` /
+# `(token, db: Session)` signature for callers that have not yet
+# migrated to `AuthService` via `Depends(get_auth_service)`. They
+# execute the same SQL the new `SqlAlchemyRefreshTokenRepository` would,
+# but synchronously — no event loop is created. This keeps the contract
+# identical for `tests/integration/test_refresh_token.py` and avoids the
+# pytest-xdist worker instability we saw when the shims were
+# `asyncio.run` wrappers (PR #230 CI run #26035042275).
+#
+# TODO (#222 follow-up): delete this block once that integration test
+# either migrates to FastAPI route-level fixtures or to AuthService
+# directly.
 
 
 def create_refresh_token(user_id: int, db: Session) -> str:
     """Deprecated. Use `AuthService.create_refresh_token` via DI."""
-    from app.auth.adapters.uow import SqlAlchemyAuthUnitOfWork
-    from app.auth.application.service import AuthService
+    from app.core.config import settings as _settings
+    from app.users.models import RefreshToken as _RefreshToken
 
-    service = AuthService(uow=SqlAlchemyAuthUnitOfWork(db=db))
-    return _run(service.create_refresh_token(user_id))
+    # Revoke previously-active refresh tokens for this user.
+    db.query(_RefreshToken).filter(
+        _RefreshToken.user_id == user_id, _RefreshToken.is_revoked.is_(False)
+    ).update({"is_revoked": True}, synchronize_session=False)
+
+    token = _secrets.token_urlsafe(32)
+    expires_at = datetime.now(timezone.utc) + timedelta(
+        days=_settings.REFRESH_TOKEN_EXPIRE_DAYS
+    )
+    db.add(_RefreshToken(token=token, user_id=user_id, expires_at=expires_at))
+    db.commit()
+    return token
 
 
 def verify_refresh_token(token: str, db: Session) -> Optional[int]:
     """Deprecated. Use `AuthService.verify_refresh_token` via DI."""
-    from app.auth.adapters.uow import SqlAlchemyAuthUnitOfWork
-    from app.auth.application.service import AuthService
+    from app.users.models import RefreshToken as _RefreshToken
 
-    service = AuthService(uow=SqlAlchemyAuthUnitOfWork(db=db))
-    return _run(service.verify_refresh_token(token))
+    row = db.query(_RefreshToken).filter(_RefreshToken.token == token).first()
+    if row is None or not row.is_valid():
+        return None
+    return row.user_id
 
 
 def revoke_refresh_token(token: str, db: Session) -> bool:
     """Deprecated. Use `AuthService.revoke_refresh_token` via DI."""
-    from app.auth.adapters.uow import SqlAlchemyAuthUnitOfWork
-    from app.auth.application.service import AuthService
+    from app.users.models import RefreshToken as _RefreshToken
 
-    service = AuthService(uow=SqlAlchemyAuthUnitOfWork(db=db))
-    return _run(service.revoke_refresh_token(token))
+    row = db.query(_RefreshToken).filter(_RefreshToken.token == token).first()
+    if row is None:
+        return False
+    row.is_revoked = True
+    db.commit()
+    return True

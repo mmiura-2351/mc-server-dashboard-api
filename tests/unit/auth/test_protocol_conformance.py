@@ -37,33 +37,26 @@ def _async_methods(obj: object) -> set[str]:
     }
 
 
-@pytest.mark.parametrize(
-    "implementation",
-    [
-        pytest.param(FakeRefreshTokenRepository(), id="fake"),
-        pytest.param(
-            SqlAlchemyRefreshTokenRepository(db=MagicMock(spec=Session)),
-            id="sqlalchemy",
-        ),
-    ],
-)
-def test_implementation_covers_protocol_methods(
-    implementation: RefreshTokenRepository,
-) -> None:
+def _build_implementation(name: str) -> RefreshTokenRepository:
+    # Constructed inside the test (not at parametrize-collection time) so
+    # pytest-xdist does not have to pickle SQLAlchemy mocks across worker
+    # boundaries — see PR #230 review follow-up for the CI failure.
+    if name == "fake":
+        return FakeRefreshTokenRepository()
+    if name == "sqlalchemy":
+        return SqlAlchemyRefreshTokenRepository(db=MagicMock(spec=Session))
+    raise ValueError(f"unknown implementation: {name}")
+
+
+@pytest.mark.parametrize("impl_name", ["fake", "sqlalchemy"])
+def test_implementation_covers_protocol_methods(impl_name: str) -> None:
+    implementation = _build_implementation(impl_name)
     missing = _public_methods(RefreshTokenRepository) - _public_methods(implementation)
     assert missing == set()
 
 
-@pytest.mark.parametrize(
-    "implementation",
-    [
-        pytest.param(FakeRefreshTokenRepository(), id="fake"),
-        pytest.param(
-            SqlAlchemyRefreshTokenRepository(db=MagicMock(spec=Session)),
-            id="sqlalchemy",
-        ),
-    ],
-)
-def test_async_methods_match_protocol(implementation: RefreshTokenRepository) -> None:
+@pytest.mark.parametrize("impl_name", ["fake", "sqlalchemy"])
+def test_async_methods_match_protocol(impl_name: str) -> None:
+    implementation = _build_implementation(impl_name)
     diff = _async_methods(RefreshTokenRepository) - _async_methods(implementation)
     assert diff == set()
