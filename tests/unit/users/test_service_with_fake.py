@@ -70,6 +70,14 @@ class TestRegisterUser:
             await service.register_user("alice", "alice2@x.com", "pw1234")
         assert exc.value.status_code == 400
 
+    @pytest.mark.asyncio
+    async def test_duplicate_email_rejected(self, service: UserService) -> None:
+        await service.register_user("alice", "shared@x.com", "pw1234")
+        with pytest.raises(HTTPException) as exc:
+            await service.register_user("bob", "shared@x.com", "pw1234")
+        assert exc.value.status_code == 400
+        assert "email" in exc.value.detail.lower()
+
 
 class TestAuthenticate:
     @pytest.mark.asyncio
@@ -98,6 +106,19 @@ class TestAuthenticate:
         with pytest.raises(HTTPException) as exc:
             await service.authenticate_user("alice", "pw1234")
         assert exc.value.status_code == 403
+
+    @pytest.mark.asyncio
+    async def test_inactive_user_returns_none(
+        self, service: UserService, uow: FakeUsersUnitOfWork
+    ) -> None:
+        from app.users.domain.entities import UpdateUserCommand
+
+        await service.register_user("admin", "admin@x.com", "pw1234")
+        admin = await uow.users.get_by_username("admin")
+        assert admin is not None and admin.id is not None
+        # Deactivating an otherwise-valid, approved account must block login.
+        await uow.users.update(admin.id, UpdateUserCommand(is_active=False))
+        assert await service.authenticate_user("admin", "pw1234") is None
 
 
 class TestAdminActions:
