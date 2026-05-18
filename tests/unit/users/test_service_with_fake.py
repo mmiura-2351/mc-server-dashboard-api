@@ -110,6 +110,37 @@ class TestAdminActions:
         assert exc.value.status_code == 403
 
     @pytest.mark.asyncio
+    async def test_delete_admin_succeeds_when_another_admin_exists(
+        self, service: UserService, uow: FakeUsersUnitOfWork
+    ) -> None:
+        """Symmetric counter-case to `test_delete_last_admin_blocked`.
+
+        With two admins, deleting one should succeed (the last-admin
+        guard only kicks in when there is exactly one).
+        """
+        from app.users.domain.entities import CreateUserCommand
+
+        password = "supersecret"
+        hashed = pwd_context.hash(password)
+        for username in ("admin-a", "admin-b"):
+            await uow.users.create(
+                CreateUserCommand(
+                    username=username,
+                    email=f"{username}@x.com",
+                    hashed_password=hashed,
+                    role=Role.admin,
+                    is_approved=True,
+                )
+            )
+        admin_a = await uow.users.get_by_username("admin-a")
+        assert admin_a is not None
+
+        await service.delete_user_account(admin_a, plain_password=password)
+
+        assert await uow.users.get_by_username("admin-a") is None
+        assert await uow.users.count_by_role(Role.admin) == 1
+
+    @pytest.mark.asyncio
     async def test_delete_last_admin_blocked(
         self, service: UserService, uow: FakeUsersUnitOfWork
     ) -> None:

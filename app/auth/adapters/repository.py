@@ -49,11 +49,13 @@ class SqlAlchemyRefreshTokenRepository:
         return _to_entity(row)
 
     async def revoke_active_for_user(self, user_id: int) -> int:
-        # SQLAlchemy 1.x style `update()` returns row count.
+        # SQLAlchemy bulk `update()` returns the row count. We pass
+        # `synchronize_session=False` because we never read the affected
+        # rows back in the same UoW — the UoW commits and exits.
         return (
             self.db.query(RefreshToken)
             .filter(RefreshToken.user_id == user_id, RefreshToken.is_revoked.is_(False))
-            .update({"is_revoked": True})
+            .update({"is_revoked": True}, synchronize_session=False)
         )
 
     async def revoke(self, token: str) -> bool:

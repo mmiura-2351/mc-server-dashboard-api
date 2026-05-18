@@ -13,6 +13,7 @@ from typing import List
 from fastapi import HTTPException, status
 from passlib.context import CryptContext
 
+from app.auth.auth import create_access_token
 from app.users.application.results import UserWithToken
 from app.users.domain.entities import (
     CreateUserCommand,
@@ -177,8 +178,6 @@ class UserService:
         new_username: str | None,
         new_email: str | None,
     ) -> UserWithToken:
-        from app.auth.auth import create_access_token  # local import: api-layer concern
-
         username_changed = False
         async with self._uow as uow:
             command_kwargs: dict = {}
@@ -223,8 +222,6 @@ class UserService:
         current_plain_password: str,
         new_plain_password: str,
     ) -> UserWithToken:
-        from app.auth.auth import create_access_token
-
         if not pwd_context.verify(current_plain_password, current_user.hashed_password):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,

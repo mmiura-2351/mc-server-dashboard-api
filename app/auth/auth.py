@@ -59,10 +59,30 @@ def verify_token(token: str, credentials_exception):
 
 
 def _run(coro):
-    """Run *coro* on a fresh event loop. Synchronous shim only."""
+    """Run *coro* synchronously on a fresh event loop.
+
+    Used only by the deprecated refresh-token shims below; raises a
+    descriptive `RuntimeError` if called from inside a running event
+    loop. The shims are scheduled for removal once
+    `tests/integration/test_refresh_token.py` stops importing the
+    function names — TODO(#222 follow-up): delete `_run`, the three
+    shim functions, and this comment block once that test migrates to
+    the FastAPI route-level fixtures.
+    """
     import asyncio
 
-    return asyncio.run(coro)
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        # No running loop — the normal sync-test / sync-FastAPI-thread case.
+        return asyncio.run(coro)
+    raise RuntimeError(
+        "app.auth.auth.create_refresh_token / verify_refresh_token / "
+        "revoke_refresh_token are synchronous shims and cannot be called "
+        "from within a running event loop. Use "
+        "`app.auth.application.service.AuthService` via "
+        "`Depends(get_auth_service)` instead."
+    )
 
 
 def create_refresh_token(user_id: int, db: Session) -> str:

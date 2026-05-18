@@ -25,7 +25,14 @@ router = APIRouter()
 
 
 def _to_entity(user: User) -> UserEntity:
-    """Adapt an ORM `User` to the pure `UserEntity` the service expects."""
+    """Adapt an ORM `User` to the pure `UserEntity` the service expects.
+
+    This helper exists *only* because the documented pilot deviation in
+    `app/auth/dependencies.py:get_current_user` still returns the ORM
+    `User`. Once `get_current_user` is migrated to return `UserEntity`
+    (see PR description's "Known pilot deviations"), every call site
+    here drops the wrapping and this function disappears.
+    """
     return UserEntity(
         id=user.id,
         username=user.username,
@@ -97,7 +104,7 @@ async def change_role(
 
 
 @router.get("/me", response_model=schemas.User)
-def get_current_user_info(current_user: User = Depends(get_current_user)):
+async def get_current_user_info(current_user: User = Depends(get_current_user)):
     return current_user
 
 
