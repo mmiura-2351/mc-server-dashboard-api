@@ -49,8 +49,16 @@ def _extract_ip_address(request: Request) -> Optional[str]:
     return None
 
 
-def _writer(db: Session, request: Request) -> SqlAlchemyAuditWriter:
-    return SqlAlchemyAuditWriter(db=db, tracker=get_audit_tracker(request))
+def _writer(request: Request) -> SqlAlchemyAuditWriter:
+    """Build a writer for a single legacy call.
+
+    The caller's `db` is no longer threaded into the writer — see #240
+    and `SqlAlchemyAuditWriter` for the transaction-isolation rationale.
+    The static `AuditService.log_*` signatures still accept `db` for
+    backward compatibility with 30+ existing callsites; the parameter
+    is intentionally unused.
+    """
+    return SqlAlchemyAuditWriter(tracker=get_audit_tracker(request))
 
 
 class AuditService:
@@ -70,7 +78,7 @@ class AuditService:
             "success": success,
             **(details or {}),
         }
-        _writer(db, request).record(
+        _writer(request).record(
             AuditEventCommand(
                 action=f"auth_{action}_{'success' if success else 'failure'}",
                 resource_type="authentication",
@@ -95,7 +103,7 @@ class AuditService:
             "performed_by": current_user_id,
             **(details or {}),
         }
-        _writer(db, request).record(
+        _writer(request).record(
             AuditEventCommand(
                 action=f"user_{action}",
                 resource_type="user",
@@ -117,7 +125,7 @@ class AuditService:
     ):
         user_id = user_id or get_current_user_id()
         audit_details = {"server_id": server_id, **(details or {})}
-        _writer(db, request).record(
+        _writer(request).record(
             AuditEventCommand(
                 action=f"server_{action}",
                 resource_type="server",
@@ -145,7 +153,7 @@ class AuditService:
             "success": success,
             "output_length": len(output) if output else 0,
         }
-        _writer(db, request).record(
+        _writer(request).record(
             AuditEventCommand(
                 action=f"server_command_{'success' if success else 'failure'}",
                 resource_type="server",
@@ -172,7 +180,7 @@ class AuditService:
             "backup_id": backup_id,
             **(details or {}),
         }
-        _writer(db, request).record(
+        _writer(request).record(
             AuditEventCommand(
                 action=f"backup_{action}",
                 resource_type="backup",
@@ -194,7 +202,7 @@ class AuditService:
     ):
         user_id = user_id or get_current_user_id()
         audit_details = {"group_id": group_id, **(details or {})}
-        _writer(db, request).record(
+        _writer(request).record(
             AuditEventCommand(
                 action=f"group_{action}",
                 resource_type="group",
@@ -216,7 +224,7 @@ class AuditService:
     ):
         user_id = user_id or get_current_user_id()
         audit_details = {"template_id": template_id, **(details or {})}
-        _writer(db, request).record(
+        _writer(request).record(
             AuditEventCommand(
                 action=f"template_{action}",
                 resource_type="template",
@@ -244,7 +252,7 @@ class AuditService:
             "file_name": file_path.split("/")[-1] if "/" in file_path else file_path,
             **(details or {}),
         }
-        _writer(db, request).record(
+        _writer(request).record(
             AuditEventCommand(
                 action=f"file_{action}",
                 resource_type="file",
@@ -274,7 +282,7 @@ class AuditService:
             "resource_id": resource_id,
             **(details or {}),
         }
-        _writer(db, request).record(
+        _writer(request).record(
             AuditEventCommand(
                 action=f"permission_check_{'granted' if granted else 'denied'}",
                 resource_type="permission",
@@ -302,7 +310,7 @@ class AuditService:
             "admin_action": action,
             **(details or {}),
         }
-        _writer(db, request).record(
+        _writer(request).record(
             AuditEventCommand(
                 action=f"admin_{action}",
                 resource_type="admin_action",
@@ -330,7 +338,7 @@ class AuditService:
             "user_agent": request.headers.get("User-Agent", "Unknown"),
             **(details or {}),
         }
-        _writer(db, request).record(
+        _writer(request).record(
             AuditEventCommand(
                 action=f"security_{event_type}",
                 resource_type="security",

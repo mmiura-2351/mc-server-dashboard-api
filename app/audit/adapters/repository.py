@@ -18,7 +18,7 @@ preserves the pre-#223 behaviour:
 import json
 import logging
 from datetime import datetime, timedelta, timezone
-from typing import List, Optional
+from typing import Callable, List, Optional
 
 from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload
@@ -186,19 +186,47 @@ class SqlAlchemyAuditRepository:
 class SqlAlchemyAuditWriter:
     """SQLAlchemy-backed `AuditWriter`.
 
-    Construction is per-request (or per-call from the legacy facade)
-    because the optional `tracker` is request-scoped. The class is
-    intentionally tiny — it does no formatting; callers (or the
-    legacy facade) compose `AuditEventCommand` and hand it over.
+    The direct-write path uses a **fresh** session (via
+    `app.core.database.SessionLocal`) so the audit insert is
+    transactionally isolated from any caller-side pending writes.
+    Previously the writer reused the caller's session and called
+    `commit()` on it, which silently committed any in-flight business
+    operation state (Resolves #240).
+
+    The tracker path is unchanged: when an `AuditTracker` is present
+    (typical FastAPI request flow), events are appended to the
+    tracker and flushed by the middleware at request end.
+
+    **SQLite caveat**: when the *caller* holds an open write transaction
+    (e.g. a pending `INSERT` in the request's session), the fresh session
+    used by the direct-write path will block on SQLite's file-level lock.
+    The `except` swallow then silently drops the audit record.  In practice
+    the tracker path dominates all FastAPI request flows, so the direct-write
+    path is only hit when there is no `AuditTracker` (e.g. background jobs or
+    tests).  Production deployments on PostgreSQL are unaffected — row-level
+    locking means the two sessions do not contend.
     """
 
-    def __init__(self, db: Session, tracker: Optional[object] = None) -> None:
+    def __init__(
+        self,
+        tracker: Optional[object] = None,
+        session_factory: Optional[Callable[[], Session]] = None,
+    ) -> None:
         # `tracker` is typed as `object` to avoid a hard import from the
         # middleware layer into the domain adapter — duck-typed on
         # `add_event`. The concrete type is
         # `app.middleware.audit_middleware.AuditTracker`.
-        self._db = db
         self._tracker = tracker
+        # `session_factory` is injectable so tests can point the
+        # direct-write path at a known engine. Defaults to the
+        # application `SessionLocal`, which conftest binds to the
+        # worker-scoped test SQLite via `DATABASE_URL`.
+        if session_factory is None:
+            from app.core.database import SessionLocal as _SessionLocal
+
+            self._session_factory: Callable[[], Session] = _SessionLocal
+        else:
+            self._session_factory = session_factory
 
     def record(self, command: AuditEventCommand) -> None:
         try:
@@ -216,23 +244,29 @@ class SqlAlchemyAuditWriter:
                 )
                 return
 
-            audit_log = AuditLog.create_log(
-                action=command.action,
-                resource_type=command.resource_type,
-                user_id=command.user_id,
-                resource_id=command.resource_id,
-                details=command.details,
-                ip_address=command.ip_address,
-            )
-            self._db.add(audit_log)
-            self._db.commit()
-            logger.debug(
-                "Created audit log: %s on %s:%s by user %s",
-                command.action,
-                command.resource_type,
-                command.resource_id,
-                command.user_id,
-            )
+            # Separate session so audit writes never commit the
+            # caller's pending transaction state.
+            db = self._session_factory()
+            try:
+                audit_log = AuditLog.create_log(
+                    action=command.action,
+                    resource_type=command.resource_type,
+                    user_id=command.user_id,
+                    resource_id=command.resource_id,
+                    details=command.details,
+                    ip_address=command.ip_address,
+                )
+                db.add(audit_log)
+                db.commit()
+                logger.debug(
+                    "Created audit log: %s on %s:%s by user %s",
+                    command.action,
+                    command.resource_type,
+                    command.resource_id,
+                    command.user_id,
+                )
+            finally:
+                db.close()
         except Exception as exc:
             # Audit must never break the caller — log and swallow.
             logger.error(
@@ -242,10 +276,6 @@ class SqlAlchemyAuditWriter:
                 command.resource_id,
                 exc,
             )
-            # Roll back any partial write; ignore everything (the
-            # session may itself be the source of the original
-            # exception, in which case `rollback` may also throw).
-            try:
-                self._db.rollback()
-            except Exception:
-                pass
+            # No rollback needed: the direct-write path owns a fresh
+            # session that was closed in `finally`; the tracker path
+            # mutates only in-memory state.

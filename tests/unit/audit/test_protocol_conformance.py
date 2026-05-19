@@ -24,7 +24,7 @@ from tests.unit.audit.fakes import FakeAuditRepository, FakeAuditWriter
 if TYPE_CHECKING:
     _real_repo: AuditRepository = SqlAlchemyAuditRepository(db=MagicMock(spec=Session))
     _fake_repo: AuditRepository = FakeAuditRepository()
-    _real_writer: AuditWriter = SqlAlchemyAuditWriter(db=MagicMock(spec=Session))
+    _real_writer: AuditWriter = SqlAlchemyAuditWriter()
     _fake_writer: AuditWriter = FakeAuditWriter()
 
 
@@ -60,7 +60,7 @@ def _build_writer(name: str) -> AuditWriter:
     if name == "fake":
         return FakeAuditWriter()
     if name == "sqlalchemy":
-        return SqlAlchemyAuditWriter(db=MagicMock(spec=Session))
+        return SqlAlchemyAuditWriter()
     raise ValueError(f"unknown writer implementation: {name}")
 
 
