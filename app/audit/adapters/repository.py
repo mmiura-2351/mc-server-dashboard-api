@@ -245,7 +245,7 @@ class SqlAlchemyAuditWriter:
 
     def record(self, command: AuditEventCommand) -> None:
         try:
-            if self._tracker is not None and hasattr(self._tracker, "add_event"):
+            if self._tracker is not None:
                 # Tracker is request-scoped — let the middleware flush
                 # the batch at request end. The tracker carries its own
                 # `ip_address`, so the one on the command is ignored
