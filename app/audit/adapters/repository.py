@@ -196,6 +196,15 @@ class SqlAlchemyAuditWriter:
     The tracker path is unchanged: when an `AuditTracker` is present
     (typical FastAPI request flow), events are appended to the
     tracker and flushed by the middleware at request end.
+
+    **SQLite caveat**: when the *caller* holds an open write transaction
+    (e.g. a pending `INSERT` in the request's session), the fresh session
+    used by the direct-write path will block on SQLite's file-level lock.
+    The `except` swallow then silently drops the audit record.  In practice
+    the tracker path dominates all FastAPI request flows, so the direct-write
+    path is only hit when there is no `AuditTracker` (e.g. background jobs or
+    tests).  Production deployments on PostgreSQL are unaffected — row-level
+    locking means the two sessions do not contend.
     """
 
     def __init__(
