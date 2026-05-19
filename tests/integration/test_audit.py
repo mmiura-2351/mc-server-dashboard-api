@@ -1,3 +1,4 @@
+import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
@@ -282,8 +283,13 @@ class TestAuditLogging:
         # We can't directly test this without checking the audit logs,
         # but we verify the middleware is working
 
-    def test_audit_log_retention_and_querying(self, db: Session):
+    @pytest.mark.asyncio
+    async def test_audit_log_retention_and_querying(self, db: Session):
         """Test audit log querying and filtering capabilities"""
+        from app.audit.adapters.repository import SqlAlchemyAuditRepository
+        from app.audit.application.query_service import AuditQueryService
+        from app.audit.domain.entities import LogFilters
+
         # Create test audit logs
         for i in range(10):
             audit_log = AuditLog.create_log(
@@ -297,23 +303,30 @@ class TestAuditLogging:
 
         db.commit()
 
+        service = AuditQueryService(SqlAlchemyAuditRepository(db))
+
         # Test filtering by user
-        user_1_logs = AuditService.get_audit_logs(db, user_id=1, limit=100)
+        user_1_logs, _ = await service.list_logs(
+            LogFilters(user_id=1), page=1, page_size=100
+        )
         assert len(user_1_logs) == 5  # Every even index
 
         # Test filtering by action
-        action_logs = AuditService.get_audit_logs(db, action="test_action_1", limit=100)
+        action_logs, _ = await service.list_logs(
+            LogFilters(action="test_action_1"), page=1, page_size=100
+        )
         assert len(action_logs) == 1
 
         # Test pagination
-        page_1 = AuditService.get_audit_logs(db, limit=3, offset=0)
-        page_2 = AuditService.get_audit_logs(db, limit=3, offset=3)
+        page_1, _ = await service.list_logs(LogFilters(), page=1, page_size=3)
+        page_2, _ = await service.list_logs(LogFilters(), page=2, page_size=3)
 
         assert len(page_1) == 3
         assert len(page_2) == 3
         assert page_1[0].id != page_2[0].id  # Different records
 
-    def test_high_priority_security_events(self, db: Session, mock_request):
+    @pytest.mark.asyncio
+    async def test_high_priority_security_events(self, db: Session, mock_request):
         """Test logging of high-priority security events"""
         # Clear existing security logs
         db.query(AuditLog).filter(AuditLog.resource_type == "security").delete()
@@ -337,14 +350,20 @@ class TestAuditLogging:
 
         # Verify critical security events are properly logged
         # First check all security events
-        all_security_alerts = AuditService.get_security_alerts(db, limit=10)
+        from app.audit.adapters.repository import SqlAlchemyAuditRepository
+        from app.audit.application.query_service import AuditQueryService
+
+        service = AuditQueryService(SqlAlchemyAuditRepository(db))
+        all_security_alerts = await service.list_security_alerts(
+            severity=None, limit=10
+        )
 
         # In test environments, DB behavior may be different
         if all_security_alerts:
             assert len(all_security_alerts) >= 1
-            # Check the details manually since JSON filtering might not work in SQLite tests
+            # AuditLogEntity carries `.details` as a dict already.
             alert = all_security_alerts[0]
-            details = alert.get_details()
+            details = alert.details or {}
             assert details["severity"] == "critical"
             assert details["event_type"] == "failed_authentication"
         else:
