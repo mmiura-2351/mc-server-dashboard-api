@@ -29,7 +29,8 @@ from sqlalchemy.orm import sessionmaker  # noqa: E402
 
 from app.core.database import Base, get_db  # noqa: E402
 from app.main import app  # noqa: E402
-from app.services.user import UserService  # noqa: E402
+from app.users.adapters.uow import SqlAlchemyUsersUnitOfWork  # noqa: E402
+from app.users.application.service import UserService  # noqa: E402
 from app.users.models import Role, User  # noqa: E402
 
 SQLALCHEMY_DATABASE_URL = f"sqlite:///{test_db_path}"
@@ -197,7 +198,7 @@ def operator_user(db):
 @pytest.fixture
 def user_service(db):
     """UserServiceのインスタンスを提供"""
-    return UserService(db)
+    return UserService(uow=SqlAlchemyUsersUnitOfWork(db=db))
 
 
 @pytest.fixture
