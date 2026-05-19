@@ -10,9 +10,11 @@ Uses the real worker-scoped SQLite test session. Confirms:
 - Statistics aggregate consistently with the underlying rows.
 """
 
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
+from unittest.mock import MagicMock
 
 import pytest
+from sqlalchemy.orm import Session
 
 from app.audit.adapters.repository import (
     SqlAlchemyAuditRepository,
@@ -26,6 +28,18 @@ from app.users.models import Role, User
 @pytest.fixture
 def repository(db):
     return SqlAlchemyAuditRepository(db)
+
+
+@pytest.fixture
+def truncate_audit_logs(db):
+    """Delete all AuditLog rows before the test, then yield.
+
+    Allows statistics tests to assert exact integer counts without
+    interference from residue left by other tests in the shared session.
+    """
+    db.query(AuditLog).delete()
+    db.commit()
+    yield
 
 
 @pytest.fixture
@@ -76,13 +90,8 @@ async def test_writer_persists_event(db, writer, seeded_user) -> None:
 
 
 @pytest.mark.asyncio
-async def test_writer_swallows_errors(db) -> None:
-    """Audit is fire-and-forget: failures on either path must not propagate.
-
-    Exercised here on the tracker path (the cheaper of the two — a
-    fault-injecting `session_factory` for the direct path is the
-    target of #244).
-    """
+async def test_writer_swallows_tracker_errors(db) -> None:
+    """Tracker path: a raising add_event must be swallowed (Resolves #244)."""
 
     class _ExplodingTracker:
         def add_event(self, **_):
@@ -90,7 +99,20 @@ async def test_writer_swallows_errors(db) -> None:
 
     _ = db
     bad_writer = SqlAlchemyAuditWriter(tracker=_ExplodingTracker())
-    # Must not raise; failure logged and discarded.
+    bad_writer.record(AuditEventCommand(action="x", resource_type="t"))
+
+
+@pytest.mark.asyncio
+async def test_writer_swallows_direct_write_errors(db) -> None:
+    """Direct-write path: a broken session_factory must be swallowed (Resolves #244)."""
+
+    def _exploding_factory() -> Session:
+        session = MagicMock(spec=Session)
+        session.add.side_effect = RuntimeError("boom")
+        return session
+
+    _ = db
+    bad_writer = SqlAlchemyAuditWriter(tracker=None, session_factory=_exploding_factory)
     bad_writer.record(AuditEventCommand(action="x", resource_type="t"))
 
 
@@ -129,15 +151,11 @@ async def test_writer_does_not_commit_callers_session(db) -> None:
     db.add(extra)
     db.flush()  # assigns an id but stays inside the open transaction
 
-    writer.record(
-        AuditEventCommand(action="server_start_240", resource_type="server")
-    )
+    writer.record(AuditEventCommand(action="server_start_240", resource_type="server"))
 
     db.rollback()
 
-    assert (
-        db.query(User).filter(User.username == "must-not-persist").first() is None
-    )
+    assert db.query(User).filter(User.username == "must-not-persist").first() is None
 
 
 @pytest.mark.asyncio
@@ -151,9 +169,7 @@ async def test_list_logs_returns_entities_with_user_email(
             user_id=seeded_user.id,
         )
     )
-    logs = await repository.list_logs(
-        LogFilters(action="user_event"), limit=10, offset=0
-    )
+    logs = await repository.list_logs(LogFilters(action="user_event"), limit=10, offset=0)
     assert len(logs) == 1
     assert logs[0].user_id == seeded_user.id
     assert logs[0].user_email == seeded_user.email
@@ -163,9 +179,7 @@ async def test_list_logs_returns_entities_with_user_email(
 async def test_count_logs_matches_list(db, writer, repository) -> None:
     for i in range(3):
         writer.record(
-            AuditEventCommand(
-                action=f"countable_{i}", resource_type="t", user_id=99
-            )
+            AuditEventCommand(action=f"countable_{i}", resource_type="t", user_id=99)
         )
     n = await repository.count_logs(LogFilters(user_id=99, action="countable"))
     assert n == 3
@@ -188,9 +202,7 @@ async def test_list_user_activity(db, writer, repository, seeded_user) -> None:
 
 
 @pytest.mark.asyncio
-async def test_security_alerts_filtered_by_resource_type(
-    db, writer, repository
-) -> None:
+async def test_security_alerts_filtered_by_resource_type(db, writer, repository) -> None:
     writer.record(
         AuditEventCommand(
             action="security_x",
@@ -198,21 +210,18 @@ async def test_security_alerts_filtered_by_resource_type(
             details={"severity": "critical"},
         )
     )
-    writer.record(
-        AuditEventCommand(action="other", resource_type="server")
-    )
+    writer.record(AuditEventCommand(action="other", resource_type="server"))
     alerts = await repository.list_security_alerts(severity=None, limit=10)
     assert all(a.resource_type == "security" for a in alerts)
     assert any(a.action == "security_x" for a in alerts)
 
 
 @pytest.mark.asyncio
-async def test_statistics_consistency(db, writer, repository) -> None:
-    # Seed a few rows. Exact comparisons across the shared test
-    # database would be fragile (other tests can leave residue
-    # depending on isolation), so this test only checks the
-    # invariants that must hold regardless of preceding state.
-    now = datetime.now(timezone.utc)
+async def test_statistics_consistency(
+    db, writer, repository, truncate_audit_logs
+) -> None:
+    # Truncated by fixture — exact counts are reliable.
+    _ = datetime.now(timezone.utc)
     writer.record(
         AuditEventCommand(
             action="stats_seed_recent",
@@ -223,13 +232,7 @@ async def test_statistics_consistency(db, writer, repository) -> None:
 
     stats = await repository.get_statistics()
 
-    # The seeded recent action must show up in the 24h bucket.
-    assert stats.recent_logs_24h >= 1
-    # Total is monotonic in seeded rows.
-    assert stats.total_logs >= stats.recent_logs_24h
-    # All "most_active_users_30d" entries are (user_id, positive count).
-    for uid, count in stats.most_active_users_30d:
-        assert uid is not None
-        assert count > 0
-    # `now` is unused here but documents the temporal anchor.
-    _ = now
+    assert stats.total_logs == 1
+    assert stats.recent_logs_24h == 1
+    assert stats.security_events_7d == 0
+    assert stats.most_active_users_30d == [(1234, 1)]
