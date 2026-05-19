@@ -14,7 +14,6 @@ from datetime import datetime, timezone
 from unittest.mock import MagicMock
 
 import pytest
-from sqlalchemy.orm import Session
 
 from app.audit.adapters.repository import (
     SqlAlchemyAuditRepository,
@@ -106,8 +105,8 @@ async def test_writer_swallows_tracker_errors(db) -> None:
 async def test_writer_swallows_direct_write_errors(db) -> None:
     """Direct-write path: a broken session_factory must be swallowed (Resolves #244)."""
 
-    def _exploding_factory() -> Session:
-        session = MagicMock(spec=Session)
+    def _exploding_factory():
+        session = MagicMock()
         session.add.side_effect = RuntimeError("boom")
         return session
 
