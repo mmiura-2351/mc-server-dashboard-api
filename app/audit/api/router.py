@@ -54,9 +54,12 @@ class AuditLogListResponse(BaseModel):
 def _entity_to_response(entity: AuditLogEntity) -> AuditLogResponse:
     # `created_at` is non-Optional on the response but Optional on the
     # entity (matches the DB column nullability). In practice the DB
-    # always populates it via `server_default=func.now()`, so a
-    # `None` here would indicate a row created mid-write — surface it
-    # as the current timestamp rather than crashing the response.
+    # always populates it via `server_default=func.now()`, so a `None`
+    # here would indicate persistence-layer corruption — assert rather
+    # than fabricate a fresh timestamp.
+    assert entity.created_at is not None, (
+        f"audit_log id={entity.id} has NULL created_at — DB schema invariant violated"
+    )
     return AuditLogResponse(
         id=entity.id,
         user_id=entity.user_id,
@@ -65,7 +68,7 @@ def _entity_to_response(entity: AuditLogEntity) -> AuditLogResponse:
         resource_id=entity.resource_id,
         details=entity.details,
         ip_address=entity.ip_address,
-        created_at=entity.created_at or datetime.now(timezone.utc),
+        created_at=entity.created_at,
         user_email=entity.user_email,
     )
 

@@ -341,4 +341,4 @@ class AuditService:
         )
 
 
-__all__ = ["AuditService", "_extract_ip_address"]
+__all__ = ["AuditService"]

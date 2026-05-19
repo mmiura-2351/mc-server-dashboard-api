@@ -34,11 +34,13 @@ from app.audit.models import AuditLog
 logger = logging.getLogger(__name__)
 
 
-def _log_to_entity(row: AuditLog, *, include_user_email: bool = True) -> AuditLogEntity:
+def _log_to_entity(row: AuditLog) -> AuditLogEntity:
     """Convert an `AuditLog` ORM row to an entity.
 
     `details` is normalised to `dict` regardless of how the column came
-    back (SQLite stores JSON as a string).
+    back (SQLite stores JSON as a string). `user_email` is filled in
+    when the join populated `row.user`; callers that don't need it can
+    leave the relationship un-eagerloaded.
     """
     details = row.details
     if isinstance(details, str):
@@ -47,9 +49,7 @@ def _log_to_entity(row: AuditLog, *, include_user_email: bool = True) -> AuditLo
         except (TypeError, ValueError):
             details = None
 
-    email: Optional[str] = None
-    if include_user_email and row.user is not None:
-        email = row.user.email
+    email = row.user.email if row.user is not None else None
 
     return AuditLogEntity(
         id=row.id,
