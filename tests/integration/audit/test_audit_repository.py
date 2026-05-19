@@ -10,7 +10,7 @@ Uses the real worker-scoped SQLite test session. Confirms:
 - Statistics aggregate consistently with the underlying rows.
 """
 
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 
 import pytest
 
@@ -129,15 +129,11 @@ async def test_writer_does_not_commit_callers_session(db) -> None:
     db.add(extra)
     db.flush()  # assigns an id but stays inside the open transaction
 
-    writer.record(
-        AuditEventCommand(action="server_start_240", resource_type="server")
-    )
+    writer.record(AuditEventCommand(action="server_start_240", resource_type="server"))
 
     db.rollback()
 
-    assert (
-        db.query(User).filter(User.username == "must-not-persist").first() is None
-    )
+    assert db.query(User).filter(User.username == "must-not-persist").first() is None
 
 
 @pytest.mark.asyncio
@@ -151,9 +147,7 @@ async def test_list_logs_returns_entities_with_user_email(
             user_id=seeded_user.id,
         )
     )
-    logs = await repository.list_logs(
-        LogFilters(action="user_event"), limit=10, offset=0
-    )
+    logs = await repository.list_logs(LogFilters(action="user_event"), limit=10, offset=0)
     assert len(logs) == 1
     assert logs[0].user_id == seeded_user.id
     assert logs[0].user_email == seeded_user.email
@@ -163,9 +157,7 @@ async def test_list_logs_returns_entities_with_user_email(
 async def test_count_logs_matches_list(db, writer, repository) -> None:
     for i in range(3):
         writer.record(
-            AuditEventCommand(
-                action=f"countable_{i}", resource_type="t", user_id=99
-            )
+            AuditEventCommand(action=f"countable_{i}", resource_type="t", user_id=99)
         )
     n = await repository.count_logs(LogFilters(user_id=99, action="countable"))
     assert n == 3
@@ -188,9 +180,7 @@ async def test_list_user_activity(db, writer, repository, seeded_user) -> None:
 
 
 @pytest.mark.asyncio
-async def test_security_alerts_filtered_by_resource_type(
-    db, writer, repository
-) -> None:
+async def test_security_alerts_filtered_by_resource_type(db, writer, repository) -> None:
     writer.record(
         AuditEventCommand(
             action="security_x",
@@ -198,12 +188,32 @@ async def test_security_alerts_filtered_by_resource_type(
             details={"severity": "critical"},
         )
     )
-    writer.record(
-        AuditEventCommand(action="other", resource_type="server")
-    )
+    writer.record(AuditEventCommand(action="other", resource_type="server"))
     alerts = await repository.list_security_alerts(severity=None, limit=10)
     assert all(a.resource_type == "security" for a in alerts)
     assert any(a.action == "security_x" for a in alerts)
+
+
+@pytest.mark.asyncio
+async def test_security_alerts_filtered_by_severity(db, writer, repository) -> None:
+    """Severity filter must work on SQLite (json_extract path — Resolves #241)."""
+    writer.record(
+        AuditEventCommand(
+            action="sev_critical",
+            resource_type="security",
+            details={"severity": "critical"},
+        )
+    )
+    writer.record(
+        AuditEventCommand(
+            action="sev_warning",
+            resource_type="security",
+            details={"severity": "warning"},
+        )
+    )
+    critical_alerts = await repository.list_security_alerts(severity="critical", limit=10)
+    assert any(a.action == "sev_critical" for a in critical_alerts)
+    assert not any(a.action == "sev_warning" for a in critical_alerts)
 
 
 @pytest.mark.asyncio
