@@ -10,8 +10,6 @@ Uses the real worker-scoped SQLite test session. Confirms:
 - Statistics aggregate consistently with the underlying rows.
 """
 
-from unittest.mock import MagicMock
-
 import pytest
 
 from app.audit.adapters.repository import (
@@ -104,15 +102,27 @@ async def test_writer_swallows_tracker_errors(db) -> None:
 
 @pytest.mark.asyncio
 async def test_writer_swallows_direct_write_errors(db) -> None:
-    """Direct-write path: a broken session_factory must be swallowed (Resolves #244)."""
+    """Direct-write path: a broken session_factory must be swallowed (Resolves #244).
 
-    def _exploding_factory():
-        session = MagicMock()
-        session.add.side_effect = RuntimeError("boom")
-        return session
+    A hand-rolled fake (not `MagicMock(spec=Session)`) is used here: pytest-xdist
+    pickles items across worker boundaries, and pickling a SQLAlchemy `Session`
+    mock recurses through Session's complex metaclass machinery and trips
+    Python's recursion limit (see the comment in
+    `tests/unit/users/test_protocol_conformance.py::_build_implementation`).
+    """
+
+    class _ExplodingSession:
+        def add(self, *args, **kwargs):
+            raise RuntimeError("boom")
+
+        def commit(self) -> None:
+            pass
+
+        def close(self) -> None:
+            pass
 
     _ = db
-    bad_writer = SqlAlchemyAuditWriter(tracker=None, session_factory=_exploding_factory)
+    bad_writer = SqlAlchemyAuditWriter(tracker=None, session_factory=_ExplodingSession)
     bad_writer.record(AuditEventCommand(action="x", resource_type="t"))
 
 
