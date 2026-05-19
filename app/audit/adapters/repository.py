@@ -111,10 +111,15 @@ class SqlAlchemyAuditRepository:
             .filter(AuditLog.resource_type == "security")
         )
         if severity:
-            # Matches the legacy JSON-path filter exactly. Works on
-            # Postgres (`->>` operator); SQLite falls back to a no-op
-            # match — the legacy behaviour kept this same caveat.
-            query = query.filter(AuditLog.details.op("->>")('"severity"') == severity)
+            # Dialect-aware JSON path: SQLite uses json_extract(), Postgres
+            # uses the native ->> operator (Resolves #241).
+            dialect = self._db.bind.dialect.name if self._db.bind else "sqlite"
+            if dialect == "postgresql":
+                query = query.filter(AuditLog.details.op("->>")('"severity"') == severity)
+            else:
+                query = query.filter(
+                    func.json_extract(AuditLog.details, "$.severity") == severity
+                )
         rows = query.order_by(AuditLog.created_at.desc()).limit(limit).all()
         return [_log_to_entity(r) for r in rows]
 
