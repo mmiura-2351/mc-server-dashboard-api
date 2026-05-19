@@ -18,7 +18,7 @@ preserves the pre-#223 behaviour:
 import json
 import logging
 from datetime import datetime, timedelta, timezone
-from typing import Callable, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Protocol
 
 from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload
@@ -32,6 +32,25 @@ from app.audit.domain.entities import (
 from app.audit.models import AuditLog
 
 logger = logging.getLogger(__name__)
+
+
+class AuditTrackerProtocol(Protocol):
+    """Structural interface for the request-scoped AuditTracker.
+
+    Declared here to avoid a hard import from `app.middleware` into the
+    adapter layer. `app.middleware.audit_middleware.AuditTracker` satisfies
+    this protocol structurally — no inheritance needed. Mypy will catch
+    drift on either side without creating an import cycle.
+    """
+
+    def add_event(
+        self,
+        action: str,
+        resource_type: str,
+        resource_id: Optional[int] = None,
+        details: Optional[Dict[str, Any]] = None,
+        user_id: Optional[int] = None,
+    ) -> None: ...
 
 
 def _log_to_entity(row: AuditLog) -> AuditLogEntity:
@@ -209,13 +228,9 @@ class SqlAlchemyAuditWriter:
 
     def __init__(
         self,
-        tracker: Optional[object] = None,
+        tracker: Optional[AuditTrackerProtocol] = None,
         session_factory: Optional[Callable[[], Session]] = None,
     ) -> None:
-        # `tracker` is typed as `object` to avoid a hard import from the
-        # middleware layer into the domain adapter — duck-typed on
-        # `add_event`. The concrete type is
-        # `app.middleware.audit_middleware.AuditTracker`.
         self._tracker = tracker
         # `session_factory` is injectable so tests can point the
         # direct-write path at a known engine. Defaults to the
@@ -230,7 +245,7 @@ class SqlAlchemyAuditWriter:
 
     def record(self, command: AuditEventCommand) -> None:
         try:
-            if self._tracker is not None and hasattr(self._tracker, "add_event"):
+            if self._tracker is not None:
                 # Tracker is request-scoped — let the middleware flush
                 # the batch at request end. The tracker carries its own
                 # `ip_address`, so the one on the command is ignored
