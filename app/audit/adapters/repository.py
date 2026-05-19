@@ -231,10 +231,19 @@ class SqlAlchemyAuditWriter:
     def record(self, command: AuditEventCommand) -> None:
         try:
             if self._tracker is not None and hasattr(self._tracker, "add_event"):
-                # Tracker is request-scoped — let the middleware flush
-                # the batch at request end. The tracker carries its own
-                # `ip_address`, so the one on the command is ignored
-                # here (matches pre-#223 behaviour).
+                # Tracker carries its own ip_address from the request
+                # middleware. Warn when the command specifies a different one
+                # so future callers (WebSocket, queued events) can catch the
+                # mismatch early (Resolves #239).
+                tracker_ip = getattr(self._tracker, "ip_address", None)
+                if command.ip_address is not None and command.ip_address != tracker_ip:
+                    logger.warning(
+                        "AuditEventCommand.ip_address %r differs from tracker "
+                        "ip_address %r for action %r — tracker value will be used",
+                        command.ip_address,
+                        tracker_ip,
+                        command.action,
+                    )
                 self._tracker.add_event(
                     action=command.action,
                     resource_type=command.resource_type,
