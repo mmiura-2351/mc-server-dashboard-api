@@ -81,6 +81,22 @@ class ServerRepository(Protocol):
     async def save(self, server: Server) -> None: ...
 ```
 
+#### Port method signatures: `async` by default, sync when justified
+
+Public methods on `domain/ports.py` Protocols are `async def` by default. This keeps the application layer compatible with future migration to async SQLAlchemy and matches the FastAPI route-handler shape.
+
+A Port **may** declare **sync** methods if all three of the following hold:
+
+1. The operation is fire-and-forget — callers do not need to await a result and the operation does not yield to other tasks.
+2. The underlying I/O is sync and migration to async is not on the roadmap for that adapter.
+3. Every existing callsite is already sync, so declaring `async def` would force `asyncio.run` shims at the call sites with no payoff.
+
+If only some of the above hold, default to `async def`.
+
+The canonical exception today is `AuditWriter.record` in `app/audit/domain/ports.py`: audit writes are fire-and-forget against a sync SQLAlchemy session, issued from 30+ existing sync callsites that already live inside `async def` route handlers. The rationale is documented in that Port's docstring, and `tests/unit/audit/test_protocol_conformance.py::test_writer_methods_are_sync` pins the choice so a future refactor cannot silently flip it.
+
+When introducing a new sync Port, mirror that pattern: explain the three-condition justification in the Port's docstring, and add a conformance test that asserts the sync shape.
+
 ### 4.2 `application/` — Use cases
 
 **Responsibility**: Orchestrate domain logic into application use cases.

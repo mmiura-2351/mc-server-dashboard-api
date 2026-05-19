@@ -30,7 +30,13 @@ def repository(db):
 
 @pytest.fixture
 def writer(db):
-    return SqlAlchemyAuditWriter(db=db, tracker=None)
+    """Writer pointed at the worker-scoped test SQLite.
+
+    The fixture takes `db` purely to ensure conftest's `Base.metadata.create_all`
+    has run before the writer's first call constructs its own session.
+    """
+    _ = db
+    return SqlAlchemyAuditWriter(tracker=None)
 
 
 @pytest.fixture
@@ -70,19 +76,68 @@ async def test_writer_persists_event(db, writer, seeded_user) -> None:
 
 
 @pytest.mark.asyncio
-async def test_writer_swallows_errors(db, writer) -> None:
-    """A bad command must not raise — audit is fire-and-forget."""
+async def test_writer_swallows_errors(db) -> None:
+    """Audit is fire-and-forget: failures on either path must not propagate.
 
-    class _Bomb:
-        def __getattr__(self, name):
+    Exercised here on the tracker path (the cheaper of the two — a
+    fault-injecting `session_factory` for the direct path is the
+    target of #244).
+    """
+
+    class _ExplodingTracker:
+        def add_event(self, **_):
             raise RuntimeError("boom")
 
-    # Hand the writer something that explodes on attribute access; the
-    # writer's try/except must keep this from propagating.
-    writer._db = _Bomb()  # type: ignore[attr-defined]
+    _ = db
+    bad_writer = SqlAlchemyAuditWriter(tracker=_ExplodingTracker())
+    # Must not raise; failure logged and discarded.
+    bad_writer.record(AuditEventCommand(action="x", resource_type="t"))
+
+
+@pytest.mark.asyncio
+async def test_writer_does_not_commit_callers_session(db) -> None:
+    """#240: audit must not commit caller's pending transaction.
+
+    Scenario:
+      1. Caller stages an uncommitted row.
+      2. Caller invokes the audit writer (direct path — no tracker).
+      3. Caller rolls back.
+
+    Expected: caller's row is **not** persisted. (Pre-#240 the writer
+    called `commit()` on the caller's session, which persisted the
+    caller's pending row as a side effect.)
+
+    The audit row's own persistence is not asserted here: on SQLite
+    the caller's pending write holds a file-level lock, so the
+    writer's fresh session blocks and the fire-and-forget swallow
+    drops the audit row. Postgres avoids the lock contention. This
+    test focuses on the property that matters for #240 — caller
+    transaction isolation — and leaves the SQLite-vs-Postgres
+    persistence story to integration runs against the production
+    backend.
+    """
+    writer = SqlAlchemyAuditWriter(tracker=None)
+
+    extra = User(
+        username="must-not-persist",
+        email="must-not-persist@example.com",
+        hashed_password="x",
+        role=Role.user,
+        is_active=True,
+        is_approved=True,
+    )
+    db.add(extra)
+    db.flush()  # assigns an id but stays inside the open transaction
+
     writer.record(
-        AuditEventCommand(action="x", resource_type="t")
-    )  # must not raise
+        AuditEventCommand(action="server_start_240", resource_type="server")
+    )
+
+    db.rollback()
+
+    assert (
+        db.query(User).filter(User.username == "must-not-persist").first() is None
+    )
 
 
 @pytest.mark.asyncio
