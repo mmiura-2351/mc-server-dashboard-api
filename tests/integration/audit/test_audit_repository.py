@@ -10,7 +10,6 @@ Uses the real worker-scoped SQLite test session. Confirms:
 - Statistics aggregate consistently with the underlying rows.
 """
 
-from datetime import datetime, timezone
 from unittest.mock import MagicMock
 
 import pytest
@@ -39,6 +38,8 @@ def truncate_audit_logs(db):
     db.query(AuditLog).delete()
     db.commit()
     yield
+    # No explicit teardown: the function-scoped `db` fixture in conftest
+    # already deletes all rows from every table after each test.
 
 
 @pytest.fixture
@@ -220,7 +221,6 @@ async def test_statistics_consistency(
     db, writer, repository, truncate_audit_logs
 ) -> None:
     # Truncated by fixture — exact counts are reliable.
-    _ = datetime.now(timezone.utc)
     writer.record(
         AuditEventCommand(
             action="stats_seed_recent",
