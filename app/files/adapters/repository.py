@@ -202,17 +202,11 @@ class SqlAlchemyFileHistoryRepository:
         )
         self.db.add(row)
         self.db.flush()
-        # Re-load with eager editor relation so the returned entity carries
-        # editor_username without triggering a lazy SELECT later.
+        # Populate the `editor` relation so `_history_to_entity` resolves
+        # `editor_username` without a stray lazy SELECT. `refresh` issues
+        # one targeted load instead of re-SELECTing the whole row.
         if row.editor_user_id is not None:
-            refreshed = (
-                self.db.query(FileEditHistory)
-                .options(joinedload(FileEditHistory.editor))
-                .filter(FileEditHistory.id == row.id)
-                .first()
-            )
-            if refreshed is not None:
-                row = refreshed
+            self.db.refresh(row, attribute_names=["editor"])
         return _history_to_entity(row)
 
     async def delete_by_id(self, record_id: int) -> bool:

@@ -9,7 +9,7 @@ the cross-domain `ServerReadPort`. This module depends only on
 
 import hashlib
 import logging
-from datetime import datetime, timedelta
+from datetime import timedelta
 from pathlib import Path
 from typing import List, Optional, Tuple
 
@@ -95,7 +95,7 @@ class FileHistoryService:
                 version_num = max_version + 1
 
             file_extension = Path(normalized_path).suffix
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            timestamp = utcnow().strftime("%Y%m%d_%H%M%S")
             backup_filename = f"v{version_num:03d}_{timestamp}{file_extension}"
             backup_file_path = history_dir / backup_filename
 

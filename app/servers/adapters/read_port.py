@@ -19,7 +19,13 @@ class SqlAlchemyServerReadPort:
         self._db = db
 
     async def get_directory_path(self, server_id: int) -> Optional[str]:
-        row = self._db.query(Server.directory_path).filter(Server.id == server_id).first()
+        # Primary-key lookup; `one_or_none` documents the intent that at
+        # most one row can match, matching the Port's `Optional[str]`.
+        row = (
+            self._db.query(Server.directory_path)
+            .filter(Server.id == server_id)
+            .one_or_none()
+        )
         if row is None:
             return None
         return row.directory_path
