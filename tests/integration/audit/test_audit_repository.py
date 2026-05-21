@@ -302,6 +302,97 @@ async def test_security_alerts_filtered_by_resource_type(db, writer, repository)
     assert any(a.action == "security_x" for a in alerts)
 
 
+@pytest.mark.asyncio
+async def test_security_alerts_filtered_by_severity(db, writer, repository) -> None:
+    """Severity filter must work on SQLite (json_extract path — Resolves #241)."""
+    writer.record(
+        AuditEventCommand(
+            action="sev_critical",
+            resource_type="security",
+            details={"severity": "critical"},
+        )
+    )
+    writer.record(
+        AuditEventCommand(
+            action="sev_warning",
+            resource_type="security",
+            details={"severity": "warning"},
+        )
+    )
+    critical_alerts = await repository.list_security_alerts(severity="critical", limit=10)
+    assert any(a.action == "sev_critical" for a in critical_alerts)
+    assert not any(a.action == "sev_warning" for a in critical_alerts)
+
+
+@pytest.mark.asyncio
+async def test_security_alerts_severity_emits_postgres_operator() -> None:
+    """PostgreSQL dialect must emit the native `->>` JSON operator.
+
+    The conftest session binds to SQLite, so the dialect-branch test
+    above only covers the json_extract path. Stub the session's dialect
+    to `postgresql`, capture the filter expression, and confirm the
+    compiled SQL contains `->>` — proves the Postgres branch is
+    reachable without needing a real Postgres backend (Resolves #241).
+    """
+    from unittest.mock import MagicMock
+
+    from sqlalchemy.dialects import postgresql
+
+    db = MagicMock()
+    db.bind.dialect.name = "postgresql"
+    query = MagicMock()
+    query.options.return_value = query
+    query.filter.return_value = query
+    query.order_by.return_value = query
+    query.limit.return_value = query
+    query.all.return_value = []
+    db.query.return_value = query
+
+    repo = SqlAlchemyAuditRepository(db)
+    await repo.list_security_alerts(severity="critical", limit=10)
+
+    # Locate the severity filter by inspecting the compiled SQL of each
+    # `.filter(...)` call rather than by positional index — survives
+    # future refactors that reorder filters or fold them into a helper.
+    def _compile(expr) -> str:
+        return str(
+            expr.compile(
+                dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True}
+            )
+        )
+
+    severity_compiled = [
+        _compile(call.args[0])
+        for call in query.filter.call_args_list
+        if "severity" in _compile(call.args[0])
+    ]
+    assert len(severity_compiled) == 1, query.filter.call_args_list
+    assert "->>" in severity_compiled[0]
+    assert "json_extract" not in severity_compiled[0]
+
+
+@pytest.mark.asyncio
+async def test_security_alerts_severity_rejects_unknown_dialect() -> None:
+    """Unknown dialects must raise rather than silently return empty.
+
+    Routing every non-Postgres dialect through `json_extract` would
+    reintroduce the silent-no-match failure mode #241 was filed
+    against — just for a different backend.
+    """
+    from unittest.mock import MagicMock
+
+    db = MagicMock()
+    db.bind.dialect.name = "mysql"
+    query = MagicMock()
+    query.options.return_value = query
+    query.filter.return_value = query
+    db.query.return_value = query
+
+    repo = SqlAlchemyAuditRepository(db)
+    with pytest.raises(NotImplementedError, match="mysql"):
+        await repo.list_security_alerts(severity="critical", limit=10)
+
+
 _STATS_USER_ID = 1234
 
 
