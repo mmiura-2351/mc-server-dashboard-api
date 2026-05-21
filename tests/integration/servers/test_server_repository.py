@@ -9,8 +9,6 @@ The two status-write methods (`update_status`,
 `with_transaction`; for those, no manual commit is required.
 """
 
-from datetime import datetime, timedelta, timezone
-
 import pytest
 from sqlalchemy import event
 from sqlalchemy.exc import OperationalError
@@ -26,7 +24,6 @@ from app.servers.domain.entities import (
     UpdateServerCommand,
 )
 from app.servers.models import Server, ServerStatus, ServerType
-
 
 # ---------------------------------------------------------------------------
 # Fixtures and helpers
@@ -98,12 +95,8 @@ class TestServerRepositoryReads:
         assert await repository.get(99999) is None
 
     @pytest.mark.asyncio
-    async def test_get_soft_deleted_excluded_by_default(
-        self, repository, db, admin_user
-    ):
-        row = _seed_server(
-            db, admin_user.id, name="sd", port=25567, is_deleted=True
-        )
+    async def test_get_soft_deleted_excluded_by_default(self, repository, db, admin_user):
+        row = _seed_server(db, admin_user.id, name="sd", port=25567, is_deleted=True)
         assert await repository.get(row.id) is None
         assert await repository.get(row.id, include_deleted=True) is not None
 
@@ -118,9 +111,7 @@ class TestServerRepositoryReads:
     async def test_get_by_name_soft_deleted_excluded_by_default(
         self, repository, db, admin_user
     ):
-        _seed_server(
-            db, admin_user.id, name="byname-sd", port=25569, is_deleted=True
-        )
+        _seed_server(db, admin_user.id, name="byname-sd", port=25569, is_deleted=True)
         assert await repository.get_by_name("byname-sd") is None
         entity = await repository.get_by_name("byname-sd", include_deleted=True)
         assert entity is not None
@@ -130,9 +121,7 @@ class TestServerRepositoryReads:
         assert await repository.get_by_name("does-not-exist") is None
 
     @pytest.mark.asyncio
-    async def test_list_paged_filters_and_orders(
-        self, repository, db, admin_user
-    ):
+    async def test_list_paged_filters_and_orders(self, repository, db, admin_user):
         a = _seed_server(db, admin_user.id, name="lp-a", port=25570)
         b = _seed_server(db, admin_user.id, name="lp-b", port=25571)
         c = _seed_server(db, admin_user.id, name="lp-c", port=25572)
@@ -194,9 +183,7 @@ class TestServerRepositoryReads:
         self, repository, db, admin_user
     ):
         _seed_server(db, admin_user.id, name="lpd-live", port=25576)
-        _seed_server(
-            db, admin_user.id, name="lpd-dead", port=25577, is_deleted=True
-        )
+        _seed_server(db, admin_user.id, name="lpd-dead", port=25577, is_deleted=True)
 
         live_page = await repository.list_paged(
             ServerListSpec(owner_id=admin_user.id, page=1, size=10)
@@ -283,9 +270,7 @@ class TestServerRepositoryReads:
         assert names == {"lbp-run", "lbp-start"}
 
     @pytest.mark.asyncio
-    async def test_list_by_port_specific_port(
-        self, repository, db, admin_user
-    ):
+    async def test_list_by_port_specific_port(self, repository, db, admin_user):
         _seed_server(
             db,
             admin_user.id,
@@ -300,9 +285,7 @@ class TestServerRepositoryReads:
             port=25631,
             status=ServerStatus.running,
         )
-        rows = await repository.list_by_port(
-            port=25630, statuses=[ServerStatus.running]
-        )
+        rows = await repository.list_by_port(port=25630, statuses=[ServerStatus.running])
         assert [r.name for r in rows] == ["lbp-a"]
 
     @pytest.mark.asyncio
@@ -329,9 +312,7 @@ class TestServerRepositoryReads:
         assert [r.id for r in rows] == [b.id]
 
     @pytest.mark.asyncio
-    async def test_list_by_ids_returns_only_matching(
-        self, repository, db, admin_user
-    ):
+    async def test_list_by_ids_returns_only_matching(self, repository, db, admin_user):
         a = _seed_server(db, admin_user.id, name="bi-a", port=25650)
         b = _seed_server(db, admin_user.id, name="bi-b", port=25651)
         _seed_server(db, admin_user.id, name="bi-c", port=25652)
@@ -357,9 +338,7 @@ class TestServerRepositoryReads:
 
 class TestServerRepositoryWrites:
     @pytest.mark.asyncio
-    async def test_add_inserts_row_with_owner_populated(
-        self, repository, db, admin_user
-    ):
+    async def test_add_inserts_row_with_owner_populated(self, repository, db, admin_user):
         entity = await repository.add(
             CreateServerCommand(
                 name="created",
@@ -400,18 +379,13 @@ class TestServerRepositoryWrites:
         )
         # Without our explicit commit the row must roll back
         db.rollback()
-        assert (
-            db.query(Server).filter(Server.name == "staged-only").one_or_none()
-            is None
-        )
+        assert db.query(Server).filter(Server.name == "staged-only").one_or_none() is None
 
     @pytest.mark.asyncio
     async def test_update_sparse_only_changes_applied_fields(
         self, repository, db, admin_user
     ):
-        row = _seed_server(
-            db, admin_user.id, name="upd", port=25710, description="old"
-        )
+        row = _seed_server(db, admin_user.id, name="upd", port=25710, description="old")
         original_max_memory = row.max_memory
 
         updated = await repository.update(
@@ -427,9 +401,7 @@ class TestServerRepositoryWrites:
 
     @pytest.mark.asyncio
     async def test_update_unknown_returns_none(self, repository):
-        result = await repository.update(
-            99999, UpdateServerCommand(name="ghost")
-        )
+        result = await repository.update(99999, UpdateServerCommand(name="ghost"))
         assert result is None
 
     @pytest.mark.asyncio
@@ -465,9 +437,7 @@ class TestServerRepositoryWrites:
 
 class TestServerRepositoryStatusWrites:
     @pytest.mark.asyncio
-    async def test_update_status_sets_value(
-        self, repository, db, admin_user
-    ):
+    async def test_update_status_sets_value(self, repository, db, admin_user):
         row = _seed_server(db, admin_user.id, name="us", port=25730)
         result = await repository.update_status(row.id, ServerStatus.running)
         assert result is not None
@@ -481,9 +451,7 @@ class TestServerRepositoryStatusWrites:
 
     @pytest.mark.asyncio
     async def test_update_status_unknown_returns_none(self, repository):
-        assert (
-            await repository.update_status(99999, ServerStatus.running) is None
-        )
+        assert await repository.update_status(99999, ServerStatus.running) is None
 
     @pytest.mark.asyncio
     async def test_update_status_retries_on_operational_error(
@@ -493,17 +461,21 @@ class TestServerRepositoryStatusWrites:
         `with_transaction` retries. Confirms M-8 / D-5 wiring."""
         row = _seed_server(db, admin_user.id, name="usret", port=25731)
 
-        original_commit = Session.commit
+        # Bind the original method to the specific session instance so
+        # the patched callable carries no implicit `self` — and so the
+        # patch does not bleed into other concurrently-running tests
+        # via the `Session` class (parallel-execution flake guard).
+        original_commit = db.commit
         calls = {"n": 0}
 
-        def flaky_commit(self_):
+        def flaky_commit():
             calls["n"] += 1
             if calls["n"] == 1:
                 # Simulate a transient lock/disconnect that should retry.
                 raise OperationalError("simulated", {}, Exception("flake"))
-            return original_commit(self_)
+            return original_commit()
 
-        monkeypatch.setattr(Session, "commit", flaky_commit)
+        monkeypatch.setattr(db, "commit", flaky_commit)
 
         result = await repository.update_status(row.id, ServerStatus.error)
         assert result is not None
@@ -601,8 +573,7 @@ class TestServerRepositoryEagerLoading:
         # the time we touch `owner_username` the value is already a
         # plain string on the dataclass.
         assert user_selects_per_access == [], (
-            f"Per-row owner lookup detected at access time: "
-            f"{user_selects_per_access}"
+            f"Per-row owner lookup detected at access time: {user_selects_per_access}"
         )
 
 
@@ -647,17 +618,23 @@ class TestServerRepositorySanity:
         assert entity.name == "no-owner-load"
         assert entity.owner_id == admin_user.id
 
-    def test_repository_get_uses_one_or_none(self):
-        """Documentation guard: `get` and `get_by_name` rely on
-        `one_or_none` semantics. If anyone replaces the call with
-        `first()` they should think twice — `one_or_none` enforces the
-        invariant that names / ids are unique."""
-        # Read the source as text and assert it mentions one_or_none —
-        # cheap and adequate for a docs guard.
+    def test_get_uses_one_or_none(self):
+        """`get(id)` is a primary-key lookup; `one_or_none()` is a
+        defensive guard against duplicate ids."""
         import inspect as _inspect
 
-        src = _inspect.getsource(SqlAlchemyServerRepository)
+        src = _inspect.getsource(SqlAlchemyServerRepository.get)
         assert "one_or_none()" in src
+
+    def test_get_by_name_uses_first(self):
+        """`Server.name` is *not* a DB-level unique constraint
+        (uniqueness is enforced at the application layer), so
+        `get_by_name` uses `.first()` rather than `one_or_none()` to
+        avoid raising on legacy duplicates."""
+        import inspect as _inspect
+
+        src = _inspect.getsource(SqlAlchemyServerRepository.get_by_name)
+        assert ".first()" in src
 
 
 # ---------------------------------------------------------------------------
@@ -685,15 +662,11 @@ class TestServerRepositoryListByPortDeletedHandling:
             status=ServerStatus.running,
             is_deleted=True,
         )
-        rows = await repository.list_by_port(
-            port=25810, statuses=[ServerStatus.running]
-        )
+        rows = await repository.list_by_port(port=25810, statuses=[ServerStatus.running])
         assert [r.name for r in rows] == ["lbpd-live"]
 
     @pytest.mark.asyncio
-    async def test_list_by_port_include_deleted(
-        self, repository, db, admin_user
-    ):
+    async def test_list_by_port_include_deleted(self, repository, db, admin_user):
         _seed_server(
             db,
             admin_user.id,
@@ -716,8 +689,3 @@ class TestServerRepositoryListByPortDeletedHandling:
         )
         names = {r.name for r in rows}
         assert names == {"lbpdi-live", "lbpdi-dead"}
-
-
-# Suppress lint complaints about the future-imported timedelta/datetime
-# being unused; they are kept so this file is ready for follow-up tests.
-_ = (datetime, timedelta, timezone)

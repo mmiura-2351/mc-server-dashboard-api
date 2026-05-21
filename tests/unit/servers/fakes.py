@@ -25,7 +25,7 @@ from app.servers.domain.entities import (
 from app.servers.models import ServerStatus, ServerType
 
 
-def _utcnow() -> datetime:
+def utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
 
@@ -118,7 +118,7 @@ class FakeServerRepository:
     # ----- Writes (stage-only) -----
 
     async def add(self, command: CreateServerCommand) -> ServerEntity:
-        now = _utcnow()
+        now = utcnow()
         entity = ServerEntity(
             id=self._next_id,
             name=command.name,
@@ -150,7 +150,7 @@ class FakeServerRepository:
         applied = command.applied_fields()
         if not applied:
             return existing
-        updated = replace(existing, **applied, updated_at=_utcnow())
+        updated = replace(existing, **applied, updated_at=utcnow())
         self._records[server_id] = updated
         return updated
 
@@ -162,7 +162,7 @@ class FakeServerRepository:
             existing,
             is_deleted=True,
             status=ServerStatus.stopped,
-            updated_at=_utcnow(),
+            updated_at=utcnow(),
         )
         return True
 
@@ -174,7 +174,7 @@ class FakeServerRepository:
         existing = self._records.get(server_id)
         if existing is None:
             return None
-        updated = replace(existing, status=status, updated_at=_utcnow())
+        updated = replace(existing, status=status, updated_at=utcnow())
         self._records[server_id] = updated
         return updated
 
@@ -253,7 +253,7 @@ def make_server_entity(
     only spell out what they care about. Mirrors
     `tests.unit.backups.fakes.make_backup_entity`.
     """
-    now = _utcnow()
+    now = utcnow()
     return ServerEntity(
         id=id,
         name=name,
@@ -278,5 +278,5 @@ __all__ = [
     "FakeServerRepository",
     "FakeServersUnitOfWork",
     "make_server_entity",
-    "_utcnow",
+    "utcnow",
 ]

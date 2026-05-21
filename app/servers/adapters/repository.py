@@ -24,7 +24,7 @@ forbidden.
 
 from typing import List, Mapping, Optional
 
-from sqlalchemy.orm import Query, Session, joinedload
+from sqlalchemy.orm import Session, joinedload
 
 from app.core.database_utils import with_transaction
 from app.servers.domain.entities import (
@@ -72,6 +72,7 @@ def _server_to_entity(row: Server) -> ServerEntity:
         updated_at=row.updated_at,
         description=row.description,
         template_id=row.template_id,
+        # Defensive against legacy NULL rows; ORM returns bool today.
         is_deleted=bool(row.is_deleted),
         owner_username=owner_username,
     )
@@ -87,13 +88,13 @@ class SqlAlchemyServerRepository:
     # Internal helpers
     # ===================
 
-    def _base_query(self, *, with_owner: bool = True) -> Query:
-        query: Query = self._db.query(Server)
+    def _base_query(self, *, with_owner: bool = True):
+        query = self._db.query(Server)
         if with_owner:
             query = query.options(joinedload(Server.owner))
         return query
 
-    def _exclude_deleted(self, query: Query, include_deleted: bool) -> Query:
+    def _exclude_deleted(self, query, include_deleted: bool):
         if include_deleted:
             return query
         return query.filter(Server.is_deleted.is_(False))

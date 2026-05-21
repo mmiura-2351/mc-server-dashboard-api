@@ -108,10 +108,9 @@ class CreateServerCommand:
 class UpdateServerCommand:
     """Sparse update for an existing server row.
 
-    A field set to `None` is treated as "leave column untouched". For
-    fields whose legitimate value is `None` (`description`,
-    `template_id`), use `applied_fields()` to inspect what the caller
-    actually set; the adapter setattrs only the returned keys.
+    `None` always means "leave column untouched". There is no way to
+    clear (set to NULL) a column via this command; future commands may
+    add sentinel-based clearing semantics if needed.
     """
 
     name: Optional[str] = None
