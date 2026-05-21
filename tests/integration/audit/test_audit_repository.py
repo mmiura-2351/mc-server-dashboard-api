@@ -10,7 +10,7 @@ Uses the real worker-scoped SQLite test session. Confirms:
 - Statistics aggregate consistently with the underlying rows.
 """
 
-from datetime import datetime, timezone
+import logging
 
 import pytest
 
@@ -26,6 +26,20 @@ from app.users.models import Role, User
 @pytest.fixture
 def repository(db):
     return SqlAlchemyAuditRepository(db)
+
+
+@pytest.fixture
+def truncate_audit_logs(db):
+    """Delete all AuditLog rows before the test, then yield.
+
+    Allows statistics tests to assert exact integer counts without
+    interference from residue left by other tests in the shared session.
+    """
+    db.query(AuditLog).delete()
+    db.commit()
+    yield
+    # No explicit teardown: the function-scoped `db` fixture in conftest
+    # already deletes all rows from every table after each test.
 
 
 @pytest.fixture
@@ -76,13 +90,8 @@ async def test_writer_persists_event(db, writer, seeded_user) -> None:
 
 
 @pytest.mark.asyncio
-async def test_writer_swallows_errors(db) -> None:
-    """Audit is fire-and-forget: failures on either path must not propagate.
-
-    Exercised here on the tracker path (the cheaper of the two — a
-    fault-injecting `session_factory` for the direct path is the
-    target of #244).
-    """
+async def test_writer_swallows_tracker_errors(db) -> None:
+    """Tracker path: a raising add_event must be swallowed (Resolves #244)."""
 
     class _ExplodingTracker:
         def add_event(self, **_):
@@ -90,8 +99,107 @@ async def test_writer_swallows_errors(db) -> None:
 
     _ = db
     bad_writer = SqlAlchemyAuditWriter(tracker=_ExplodingTracker())
-    # Must not raise; failure logged and discarded.
     bad_writer.record(AuditEventCommand(action="x", resource_type="t"))
+
+
+@pytest.mark.asyncio
+async def test_writer_swallows_direct_write_errors(db) -> None:
+    """Direct-write path: a broken session_factory must be swallowed (Resolves #244).
+
+    A hand-rolled fake (not `MagicMock(spec=Session)`) is used here: pytest-xdist
+    pickles items across worker boundaries, and pickling a SQLAlchemy `Session`
+    mock recurses through Session's complex metaclass machinery and trips
+    Python's recursion limit (see the comment in
+    `tests/unit/users/test_protocol_conformance.py::_build_implementation`).
+    """
+
+    class _ExplodingSession:
+        def add(self, instance) -> None:
+            raise RuntimeError("boom")
+
+        def commit(self) -> None:
+            pass
+
+        def close(self) -> None:
+            pass
+
+    _ = db
+    bad_writer = SqlAlchemyAuditWriter(tracker=None, session_factory=_ExplodingSession)
+    bad_writer.record(AuditEventCommand(action="x", resource_type="t"))
+
+
+class _TrackerSpy:
+    """Captures `add_event` kwargs so the mismatch-warning tests can prove
+    the tracker value still wins after the warning is emitted (#239)."""
+
+    def __init__(self, ip_address: str | None) -> None:
+        self.ip_address = ip_address
+        self.calls: list[dict] = []
+
+    def add_event(self, **kwargs) -> None:
+        self.calls.append(kwargs)
+
+
+@pytest.mark.asyncio
+async def test_writer_warns_on_ip_address_mismatch(caplog) -> None:
+    """Tracker path: divergent ip_address emits exactly one WARNING and
+    the tracker's value is still the one forwarded to `add_event`
+    (Resolves #239)."""
+    spy = _TrackerSpy(ip_address="1.2.3.4")
+    writer = SqlAlchemyAuditWriter(tracker=spy)
+
+    with caplog.at_level(logging.WARNING, logger="app.audit.adapters.repository"):
+        writer.record(
+            AuditEventCommand(action="y", resource_type="t", ip_address="10.0.0.99")
+        )
+
+    warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
+    assert len(warnings) == 1
+    record = warnings[0]
+    assert record.command_ip == "10.0.0.99"
+    assert record.tracker_ip == "1.2.3.4"
+    assert record.action == "y"
+    # Tracker value still wins: add_event is invoked with the command's
+    # kwargs (which carry no ip_address) — tracker.ip_address is what
+    # `AuditTracker.add_event` stamps onto the event downstream.
+    assert spy.calls == [
+        {
+            "action": "y",
+            "resource_type": "t",
+            "resource_id": None,
+            "details": None,
+            "user_id": None,
+        }
+    ]
+
+
+@pytest.mark.asyncio
+async def test_writer_does_not_warn_when_ip_address_matches(caplog) -> None:
+    """No warning when command and tracker agree on ip_address (#239)."""
+    spy = _TrackerSpy(ip_address="1.2.3.4")
+    writer = SqlAlchemyAuditWriter(tracker=spy)
+
+    with caplog.at_level(logging.WARNING, logger="app.audit.adapters.repository"):
+        writer.record(
+            AuditEventCommand(action="y", resource_type="t", ip_address="1.2.3.4")
+        )
+
+    assert [r for r in caplog.records if r.levelno == logging.WARNING] == []
+    assert len(spy.calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_writer_does_not_warn_when_command_ip_is_none(caplog) -> None:
+    """No warning when command carries no ip_address — the tracker
+    value is simply used and no comparison fires (#239)."""
+    spy = _TrackerSpy(ip_address="1.2.3.4")
+    writer = SqlAlchemyAuditWriter(tracker=spy)
+
+    with caplog.at_level(logging.WARNING, logger="app.audit.adapters.repository"):
+        writer.record(AuditEventCommand(action="y", resource_type="t"))
+
+    assert [r for r in caplog.records if r.levelno == logging.WARNING] == []
+    assert len(spy.calls) == 1
 
 
 @pytest.mark.asyncio
@@ -217,29 +325,86 @@ async def test_security_alerts_filtered_by_severity(db, writer, repository) -> N
 
 
 @pytest.mark.asyncio
-async def test_statistics_consistency(db, writer, repository) -> None:
-    # Seed a few rows. Exact comparisons across the shared test
-    # database would be fragile (other tests can leave residue
-    # depending on isolation), so this test only checks the
-    # invariants that must hold regardless of preceding state.
-    now = datetime.now(timezone.utc)
+async def test_security_alerts_severity_emits_postgres_operator() -> None:
+    """PostgreSQL dialect must emit the native `->>` JSON operator.
+
+    The conftest session binds to SQLite, so the dialect-branch test
+    above only covers the json_extract path. Stub the session's dialect
+    to `postgresql`, capture the filter expression, and confirm the
+    compiled SQL contains `->>` — proves the Postgres branch is
+    reachable without needing a real Postgres backend (Resolves #241).
+    """
+    from unittest.mock import MagicMock
+
+    from sqlalchemy.dialects import postgresql
+
+    db = MagicMock()
+    db.bind.dialect.name = "postgresql"
+    query = MagicMock()
+    query.options.return_value = query
+    query.filter.return_value = query
+    query.order_by.return_value = query
+    query.limit.return_value = query
+    query.all.return_value = []
+    db.query.return_value = query
+
+    repo = SqlAlchemyAuditRepository(db)
+    await repo.list_security_alerts(severity="critical", limit=10)
+
+    # First filter call is resource_type=='security'; the severity
+    # filter is the second one. Compile against the postgresql dialect
+    # so the operator renders as plain SQL text.
+    severity_expr = query.filter.call_args_list[1].args[0]
+    compiled = str(
+        severity_expr.compile(
+            dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True}
+        )
+    )
+    assert "->>" in compiled
+    assert "json_extract" not in compiled
+
+
+@pytest.mark.asyncio
+async def test_security_alerts_severity_rejects_unknown_dialect() -> None:
+    """Unknown dialects must raise rather than silently return empty.
+
+    Routing every non-Postgres dialect through `json_extract` would
+    reintroduce the silent-no-match failure mode #241 was filed
+    against — just for a different backend.
+    """
+    from unittest.mock import MagicMock
+
+    db = MagicMock()
+    db.bind.dialect.name = "mysql"
+    query = MagicMock()
+    query.options.return_value = query
+    query.filter.return_value = query
+    db.query.return_value = query
+
+    repo = SqlAlchemyAuditRepository(db)
+    with pytest.raises(NotImplementedError, match="mysql"):
+        await repo.list_security_alerts(severity="critical", limit=10)
+
+
+_STATS_USER_ID = 1234
+
+
+@pytest.mark.asyncio
+async def test_statistics_consistency(
+    db, writer, repository, truncate_audit_logs
+) -> None:
+    # Truncated by fixture — exact counts are reliable.
     writer.record(
         AuditEventCommand(
             action="stats_seed_recent",
             resource_type="server",
-            user_id=1234,
+            user_id=_STATS_USER_ID,
         )
     )
 
     stats = await repository.get_statistics()
 
-    # The seeded recent action must show up in the 24h bucket.
-    assert stats.recent_logs_24h >= 1
-    # Total is monotonic in seeded rows.
-    assert stats.total_logs >= stats.recent_logs_24h
-    # All "most_active_users_30d" entries are (user_id, positive count).
-    for uid, count in stats.most_active_users_30d:
-        assert uid is not None
-        assert count > 0
-    # `now` is unused here but documents the temporal anchor.
-    _ = now
+    assert stats.total_logs == 1
+    assert stats.recent_logs_24h == 1
+    assert stats.security_events_7d == 0
+    assert stats.most_active_users_30d == [(_STATS_USER_ID, 1)]

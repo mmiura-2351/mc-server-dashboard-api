@@ -18,7 +18,7 @@ preserves the pre-#223 behaviour:
 import json
 import logging
 from datetime import datetime, timedelta, timezone
-from typing import Callable, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Protocol
 
 from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload
@@ -32,6 +32,32 @@ from app.audit.domain.entities import (
 from app.audit.models import AuditLog
 
 logger = logging.getLogger(__name__)
+
+
+class AuditTrackerProtocol(Protocol):
+    """Structural interface for the request-scoped AuditTracker.
+
+    Declared here to avoid a hard import from `app.middleware` into the
+    adapter layer. `app.middleware.audit_middleware.AuditTracker` satisfies
+    this protocol structurally — no inheritance needed. Mypy will catch
+    drift on either side without creating an import cycle.
+
+    `ip_address` is declared so the writer's mismatch warning path
+    (Resolves #239) can read it via static attribute access rather than
+    `getattr` — mypy then enforces the contract on every tracker
+    implementation.
+    """
+
+    ip_address: Optional[str]
+
+    def add_event(
+        self,
+        action: str,
+        resource_type: str,
+        resource_id: Optional[int] = None,
+        details: Optional[Dict[str, Any]] = None,
+        user_id: Optional[int] = None,
+    ) -> None: ...
 
 
 def _log_to_entity(row: AuditLog) -> AuditLogEntity:
@@ -112,13 +138,20 @@ class SqlAlchemyAuditRepository:
         )
         if severity:
             # Dialect-aware JSON path: SQLite uses json_extract(), Postgres
-            # uses the native ->> operator (Resolves #241).
-            dialect = self._db.bind.dialect.name if self._db.bind else "sqlite"
+            # uses the native ->> operator (Resolves #241). Unknown dialects
+            # fail loud rather than silently returning empty results — the
+            # silent-empty mode is exactly the bug #241 was filed against.
+            assert self._db.bind is not None, "Session must be bound to an engine"
+            dialect = self._db.bind.dialect.name
             if dialect == "postgresql":
                 query = query.filter(AuditLog.details.op("->>")('"severity"') == severity)
-            else:
+            elif dialect == "sqlite":
                 query = query.filter(
                     func.json_extract(AuditLog.details, "$.severity") == severity
+                )
+            else:
+                raise NotImplementedError(
+                    f"severity filter not implemented for dialect: {dialect}"
                 )
         rows = query.order_by(AuditLog.created_at.desc()).limit(limit).all()
         return [_log_to_entity(r) for r in rows]
@@ -214,13 +247,9 @@ class SqlAlchemyAuditWriter:
 
     def __init__(
         self,
-        tracker: Optional[object] = None,
+        tracker: Optional[AuditTrackerProtocol] = None,
         session_factory: Optional[Callable[[], Session]] = None,
     ) -> None:
-        # `tracker` is typed as `object` to avoid a hard import from the
-        # middleware layer into the domain adapter — duck-typed on
-        # `add_event`. The concrete type is
-        # `app.middleware.audit_middleware.AuditTracker`.
         self._tracker = tracker
         # `session_factory` is injectable so tests can point the
         # direct-write path at a known engine. Defaults to the
@@ -235,11 +264,26 @@ class SqlAlchemyAuditWriter:
 
     def record(self, command: AuditEventCommand) -> None:
         try:
-            if self._tracker is not None and hasattr(self._tracker, "add_event"):
-                # Tracker is request-scoped — let the middleware flush
-                # the batch at request end. The tracker carries its own
-                # `ip_address`, so the one on the command is ignored
-                # here (matches pre-#223 behaviour).
+            if self._tracker is not None:
+                # Tracker is request-scoped and carries its own
+                # `ip_address` from the middleware; that value wins
+                # (matches pre-#223 behaviour). Warn when the command
+                # disagrees so callers outside the request flow
+                # (WebSocket, queued events) can spot the mismatch
+                # early (Resolves #239).
+                if (
+                    command.ip_address is not None
+                    and command.ip_address != self._tracker.ip_address
+                ):
+                    logger.warning(
+                        "AuditEventCommand.ip_address differs from tracker — "
+                        "tracker value will be used",
+                        extra={
+                            "command_ip": command.ip_address,
+                            "tracker_ip": self._tracker.ip_address,
+                            "action": command.action,
+                        },
+                    )
                 self._tracker.add_event(
                     action=command.action,
                     resource_type=command.resource_type,
