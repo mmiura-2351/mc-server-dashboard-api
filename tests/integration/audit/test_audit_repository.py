@@ -112,7 +112,7 @@ async def test_writer_swallows_direct_write_errors(db) -> None:
     """
 
     class _ExplodingSession:
-        def add(self, *args, **kwargs):
+        def add(self, instance) -> None:
             raise RuntimeError("boom")
 
         def commit(self) -> None:
@@ -226,6 +226,9 @@ async def test_security_alerts_filtered_by_resource_type(db, writer, repository)
     assert any(a.action == "security_x" for a in alerts)
 
 
+_STATS_USER_ID = 1234
+
+
 @pytest.mark.asyncio
 async def test_statistics_consistency(
     db, writer, repository, truncate_audit_logs
@@ -235,7 +238,7 @@ async def test_statistics_consistency(
         AuditEventCommand(
             action="stats_seed_recent",
             resource_type="server",
-            user_id=1234,
+            user_id=_STATS_USER_ID,
         )
     )
 
@@ -244,4 +247,4 @@ async def test_statistics_consistency(
     assert stats.total_logs == 1
     assert stats.recent_logs_24h == 1
     assert stats.security_events_7d == 0
-    assert stats.most_active_users_30d == [(1234, 1)]
+    assert stats.most_active_users_30d == [(_STATS_USER_ID, 1)]
