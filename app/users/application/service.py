@@ -21,7 +21,7 @@ from app.users.domain.entities import (
     UserEntity,
 )
 from app.users.domain.ports import UsersUnitOfWork
-from app.users.models import Role
+from app.users.domain.value_objects import Role
 
 # The password hasher is a pure CPU operation with no I/O — its presence
 # in the application layer does not violate the framework-isolation rule.

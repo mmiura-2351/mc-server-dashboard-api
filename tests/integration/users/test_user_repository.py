@@ -10,7 +10,8 @@ import pytest
 
 from app.users.adapters.repository import SqlAlchemyUserRepository
 from app.users.domain.entities import CreateUserCommand, UpdateUserCommand
-from app.users.models import Role, User
+from app.users.domain.value_objects import Role
+from app.users.models import User
 
 
 @pytest.fixture
@@ -134,9 +135,7 @@ async def test_update_sparse(repository, existing_user, db):
 
 @pytest.mark.asyncio
 async def test_update_missing_returns_none(repository):
-    assert (
-        await repository.update(9999, UpdateUserCommand(email="x@example.com")) is None
-    )
+    assert await repository.update(9999, UpdateUserCommand(email="x@example.com")) is None
 
 
 @pytest.mark.asyncio

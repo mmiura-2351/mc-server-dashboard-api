@@ -13,7 +13,8 @@ from app.servers.models import Server, ServerStatus, ServerType
 from app.servers.schemas import ServerUpdateRequest
 from app.servers.service import server_service
 from app.services.minecraft_server import minecraft_server_manager
-from app.users.models import Role, User
+from app.users.domain.value_objects import Role
+from app.users.models import User
 
 
 @pytest.fixture

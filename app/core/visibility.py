@@ -21,7 +21,7 @@ from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 
 from app.core.database import Base
-from app.users.models import Role
+from app.users.domain.value_objects import Role
 
 
 class VisibilityType(str, Enum):

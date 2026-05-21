@@ -17,7 +17,8 @@ from app.core.visibility import (
     VisibilityType,
 )
 from app.services.visibility_service import VisibilityService
-from app.users.models import Role, User
+from app.users.domain.value_objects import Role
+from app.users.models import User
 
 
 class TestVisibilityServiceResourceAccess:
@@ -556,7 +557,7 @@ class TestVisibilityServiceEdgeCases:
 
     def test_role_hierarchy_edge_cases(self, visibility_service, db):
         """Test role hierarchy edge cases"""
-        from app.users.models import Role
+        from app.users.domain.value_objects import Role
 
         # Create users with different roles
         admin_user = User(id=1, role=Role.admin, username="admin", email="admin@test.com")

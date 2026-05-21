@@ -21,7 +21,7 @@ from app.users.domain.entities import (
     UpdateUserCommand,
     UserEntity,
 )
-from app.users.models import Role
+from app.users.domain.value_objects import Role
 
 
 class UserRepository(Protocol):

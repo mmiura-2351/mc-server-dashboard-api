@@ -37,7 +37,8 @@ def test_test_isolation_simple_data(db):
     """テスト間でのデータ分離を確認（シンプルテスト1）"""
     from passlib.context import CryptContext
 
-    from app.users.models import Role, User
+    from app.users.domain.value_objects import Role
+    from app.users.models import User
 
     pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto", bcrypt__rounds=4)
 
@@ -62,7 +63,8 @@ def test_test_isolation_different_data(db):
     """テスト間でのデータ分離を確認（シンプルテスト2）"""
     from passlib.context import CryptContext
 
-    from app.users.models import Role, User
+    from app.users.domain.value_objects import Role
+    from app.users.models import User
 
     pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto", bcrypt__rounds=4)
 

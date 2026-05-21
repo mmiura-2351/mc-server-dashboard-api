@@ -1,16 +1,14 @@
 """Pure domain entities for the users module.
 
 These dataclasses are the language the application layer speaks. They have
-no SQLAlchemy, Pydantic, FastAPI, or any framework dependency beyond
-`Role` (a stdlib `enum.Enum` whose import-site happens to be the ORM
-module — see `__init__.py`).
+no SQLAlchemy, Pydantic, FastAPI, or any framework dependency.
 """
 
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Optional
 
-from app.users.models import Role
+from app.users.domain.value_objects import Role
 
 
 @dataclass(frozen=True)

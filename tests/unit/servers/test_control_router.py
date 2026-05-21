@@ -19,7 +19,8 @@ from app.servers.routers.control import (
     stop_server,
 )
 from app.servers.schemas import ServerCommandRequest
-from app.users.models import Role, User
+from app.users.domain.value_objects import Role
+from app.users.models import User
 
 
 class TestServerControlRouter:

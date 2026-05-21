@@ -37,7 +37,8 @@ from app.core.exceptions import (
 from app.servers.models import BackupStatus, BackupType
 from app.services.authorization_service import authorization_service
 from app.services.backup_service import backup_service
-from app.users.models import Role, User
+from app.users.domain.value_objects import Role
+from app.users.models import User
 
 router = APIRouter(tags=["backups"])
 

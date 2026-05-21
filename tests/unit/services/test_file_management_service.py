@@ -11,7 +11,8 @@ from app.core.exceptions import (
 )
 from app.servers.models import Server
 from app.services.file_management_service import file_management_service
-from app.users.models import Role, User
+from app.users.domain.value_objects import Role
+from app.users.models import User
 
 
 class TestFileManagementService:

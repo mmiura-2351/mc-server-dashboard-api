@@ -10,7 +10,7 @@ from app.users.domain.entities import (
     UpdateUserCommand,
     UserEntity,
 )
-from app.users.models import Role
+from app.users.domain.value_objects import Role
 
 
 class FakeUserRepository:
@@ -51,9 +51,7 @@ class FakeUserRepository:
     async def count_by_role(self, role: Role) -> int:
         return sum(1 for u in self._users.values() if u.role == role)
 
-    async def email_exists_for_other_user(
-        self, email: str, exclude_user_id: int
-    ) -> bool:
+    async def email_exists_for_other_user(self, email: str, exclude_user_id: int) -> bool:
         return any(
             u.email == email and u.id != exclude_user_id for u in self._users.values()
         )
@@ -99,9 +97,7 @@ class FakeUsersUnitOfWork:
     counts the call but does not unwind in-memory state.
     """
 
-    def __init__(
-        self, users: Optional[FakeUserRepository] = None
-    ) -> None:
+    def __init__(self, users: Optional[FakeUserRepository] = None) -> None:
         self.users: FakeUserRepository = users or FakeUserRepository()
         self.committed = 0
         self.rolled_back = 0

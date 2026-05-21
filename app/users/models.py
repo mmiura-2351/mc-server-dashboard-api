@@ -1,4 +1,3 @@
-import enum
 from datetime import datetime, timezone
 
 from sqlalchemy import Boolean, Column, DateTime, Enum, ForeignKey, Integer, String, Text
@@ -6,12 +5,7 @@ from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 
 from app.core.database import Base
-
-
-class Role(enum.Enum):
-    admin = "admin"
-    operator = "operator"
-    user = "user"
+from app.users.domain.value_objects import Role
 
 
 class User(Base):

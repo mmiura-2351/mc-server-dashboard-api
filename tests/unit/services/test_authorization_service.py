@@ -13,7 +13,8 @@ from sqlalchemy.orm import Session
 
 from app.servers.models import Backup, Server, ServerStatus, ServerType
 from app.services.authorization_service import AuthorizationService, authorization_service
-from app.users.models import Role, User
+from app.users.domain.value_objects import Role
+from app.users.models import User
 
 
 @pytest.fixture

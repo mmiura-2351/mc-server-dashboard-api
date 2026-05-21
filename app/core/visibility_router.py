@@ -24,7 +24,8 @@ from app.groups.models import Group
 from app.servers.models import Server
 from app.services.visibility_migration_service import VisibilityMigrationService
 from app.services.visibility_service import VisibilityService
-from app.users.models import Role, User
+from app.users.domain.value_objects import Role
+from app.users.models import User
 
 logger = logging.getLogger(__name__)
 

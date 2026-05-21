@@ -11,7 +11,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from app.auth.dependencies import get_current_user
 from app.servers.models import ServerType
-from app.users.models import Role, User
+from app.users.domain.value_objects import Role
+from app.users.models import User
 from app.versions.api.dependencies import get_version_service
 from app.versions.application.service import VersionUpdateService
 from app.versions.domain.entities import MinecraftVersionEntity

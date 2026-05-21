@@ -16,7 +16,8 @@ from app.users.domain.entities import (
     UpdateUserCommand,
     UserEntity,
 )
-from app.users.models import Role, User
+from app.users.domain.value_objects import Role
+from app.users.models import User
 
 
 def _user_to_entity(u: User) -> UserEntity:

@@ -15,7 +15,8 @@ from app.services.websocket_service import (
     WebSocketService,
     websocket_service,
 )
-from app.users.models import Role, User
+from app.users.domain.value_objects import Role
+from app.users.models import User
 
 
 class TestConnectionManagerFixed:

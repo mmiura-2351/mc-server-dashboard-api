@@ -8,7 +8,8 @@ from sqlalchemy import and_
 from sqlalchemy.orm import Session
 
 from app.servers.models import Server, ServerType, Template
-from app.users.models import Role, User
+from app.users.domain.value_objects import Role
+from app.users.models import User
 
 logger = logging.getLogger(__name__)
 

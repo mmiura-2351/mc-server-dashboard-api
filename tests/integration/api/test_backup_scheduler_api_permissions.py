@@ -6,7 +6,8 @@ from app.auth.auth import create_access_token
 from app.backups.models import BackupSchedule
 from app.main import app
 from app.servers.models import Server
-from app.users.models import Role, User
+from app.users.domain.value_objects import Role
+from app.users.models import User
 
 
 class TestBackupSchedulerAPIPermissions:
