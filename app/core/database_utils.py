@@ -240,17 +240,35 @@ def migrate_file_history_unique_index(engine: Any) -> None:
         ).fetchall()
 
         if dup_check:
+            # Total distinct duplicate-key groups, so the operator-facing
+            # message can report "showing first 10 of N" instead of just
+            # the first slice (operators were anchoring on the sample
+            # length and underestimating the scope of the cleanup).
+            total_dup_count = (
+                conn.execute(
+                    text(
+                        "SELECT COUNT(*) FROM ("
+                        "  SELECT 1 FROM file_edit_history"
+                        "   GROUP BY server_id, file_path, version_number"
+                        "  HAVING COUNT(*) > 1"
+                        ") AS dup_groups"
+                    )
+                ).scalar()
+                or 0
+            )
+
             sample = "\n".join(
                 f"  server_id={row[0]}, file_path={row[1]!r}, "
                 f"version_number={row[2]}, count={row[3]}"
                 for row in dup_check
             )
+            shown = min(len(dup_check), total_dup_count)
             error_msg = (
-                "Cannot create UNIQUE INDEX on file_edit_history: existing "
-                "duplicate rows detected.\n"
+                f"Cannot create UNIQUE INDEX on file_edit_history: "
+                f"{total_dup_count} duplicate row group(s) detected.\n"
                 "Maintainer action required: manually deduplicate before "
                 "next deploy.\n"
-                "Affected rows (first 10):\n"
+                f"Affected rows (showing first {shown} of {total_dup_count}):\n"
                 f"{sample}\n\n"
                 "Suggested inspection query:\n"
                 "  SELECT * FROM file_edit_history\n"

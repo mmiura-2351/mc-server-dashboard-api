@@ -164,3 +164,100 @@ async def test_migrate_is_idempotent_on_clean_table(tmp_path):
         migrate_file_history_unique_index(engine)
     finally:
         engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_toctou_retry_fires_on_sqlite_unique_violation(
+    db, tmp_path, server, admin_user, monkeypatch
+):
+    """Regression: the retry loop must engage when SQLite reports a
+    UNIQUE-constraint failure on `file_edit_history`.
+
+    Reviewer feedback on PR #266 flagged that the original detector did
+    a substring match for the index name
+    `uq_file_edit_history_server_path_version`, which is fine for
+    Postgres/MySQL (they name the constraint in the error message) but
+    silently failed on SQLite — SQLite's message only lists the
+    columns:
+
+        UNIQUE constraint failed:
+            file_edit_history.server_id,
+            file_edit_history.file_path,
+            file_edit_history.version_number
+
+    With that substring-only matcher the retry path was effectively
+    dead code on the project's development & test dialect. This test
+    pins the SQLite shape by forcing `reserve_next_version_number` to
+    return a colliding value on the first attempt and the next free
+    one on the second; the persisted `version_number` and the call
+    count together prove (a) the IntegrityError was recognised as a
+    version-collision and (b) exactly one retry occurred.
+    """
+    from app.files.adapters.repository import SqlAlchemyFileHistoryRepository
+
+    # Pre-seed (server_id=server.id, file_path="x.txt", version_number=1)
+    # so that any insert reusing version_number=1 fails the UNIQUE check.
+    db.add(
+        FileEditHistory(
+            server_id=server.id,
+            file_path="x.txt",
+            version_number=1,
+            backup_file_path="/tmp/seed",
+            file_size=1,
+            content_hash="seed",
+            editor_user_id=admin_user.id,
+        )
+    )
+    db.commit()
+
+    counter = {"n": 0}
+    original_reserve = SqlAlchemyFileHistoryRepository.reserve_next_version_number
+
+    async def fake_reserve(self, server_id: int, file_path: str) -> int:
+        counter["n"] += 1
+        if counter["n"] == 1:
+            return 1  # collision with the seeded row
+        # Defer to the real implementation for subsequent attempts so
+        # we exercise the genuine MAX+1 path on retry.
+        return await original_reserve(self, server_id, file_path)
+
+    monkeypatch.setattr(
+        SqlAlchemyFileHistoryRepository,
+        "reserve_next_version_number",
+        fake_reserve,
+    )
+
+    uow = SqlAlchemyFilesUnitOfWork(db=db)
+    server_read = SqlAlchemyServerReadPort(db=db)
+    service = FileHistoryService(
+        uow=uow,
+        server_read=server_read,
+        history_base_dir=tmp_path,
+        max_versions_per_file=1000,
+        auto_cleanup_days=999,
+    )
+
+    result = await service.create_version_backup(
+        server_id=server.id,
+        file_path="x.txt",
+        content="retry-me",
+        user_id=admin_user.id,
+    )
+
+    assert result is not None, "Retry succeeded — second attempt should persist"
+    assert result.version_number == 2, (
+        "Second attempt must advance to the next free version number"
+    )
+    assert counter["n"] == 2, (
+        f"Expected exactly 2 reservations (collision + retry); got {counter['n']}"
+    )
+
+    # Both the seeded row and the retried insert should be present, with
+    # distinct version_numbers — no duplicates landed.
+    rows = (
+        db.query(FileEditHistory)
+        .filter_by(server_id=server.id, file_path="x.txt")
+        .order_by(FileEditHistory.version_number)
+        .all()
+    )
+    assert [r.version_number for r in rows] == [1, 2]

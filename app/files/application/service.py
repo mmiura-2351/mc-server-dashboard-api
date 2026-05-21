@@ -40,6 +40,36 @@ _VERSION_RESERVATION_RETRIES = 3
 _VERSION_UNIQUE_INDEX_NAME = "uq_file_edit_history_server_path_version"
 
 
+def _is_version_unique_violation(e: IntegrityError) -> bool:
+    """Detect that an `IntegrityError` stems from the file_edit_history
+    UNIQUE constraint on `(server_id, file_path, version_number)`.
+
+    Works for both SQLite and Postgres/MySQL:
+
+    - **Postgres / MySQL** name the constraint in the error message, so
+      the index name (`uq_file_edit_history_server_path_version`)
+      appears verbatim.
+    - **SQLite** only reports the affected columns, e.g.::
+
+          UNIQUE constraint failed: file_edit_history.server_id,
+              file_edit_history.file_path,
+              file_edit_history.version_number
+
+      so we additionally match the column-list shape. Without this
+      branch the retry loop never engages on SQLite — which is the
+      development and test default dialect — and the regression that
+      motivated PR #266 silently re-appears.
+    """
+    err_text = str(e.orig) + " " + str(e)
+    if _VERSION_UNIQUE_INDEX_NAME in err_text:
+        return True
+    return (
+        "UNIQUE constraint failed" in err_text
+        and "file_edit_history" in err_text
+        and "version_number" in err_text
+    )
+
+
 class FileHistoryService:
     """Use cases over the file-history catalogue.
 
@@ -205,9 +235,9 @@ class FileHistoryService:
                             f"{backup_file_path}: {unlink_err}"
                         )
                 if (
-                    _VERSION_UNIQUE_INDEX_NAME in str(e.orig)
-                    or _VERSION_UNIQUE_INDEX_NAME in str(e)
-                ) and attempt < _VERSION_RESERVATION_RETRIES - 1:
+                    _is_version_unique_violation(e)
+                    and attempt < _VERSION_RESERVATION_RETRIES - 1
+                ):
                     logger.warning(
                         f"TOCTOU collision on version_number for "
                         f"{normalized_path} (attempt {attempt + 1}/"
