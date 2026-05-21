@@ -752,6 +752,11 @@ class BackupService:
 
         # If template name is provided, create template from restored server
         if template_name:
+            # `TemplateService` is the legacy-shim alias for
+            # `_LegacyTemplateFacade`; zero-arg construction is preserved
+            # so this callsite did not have to change in #225. Migrating
+            # backup_service itself to DI is out of scope (tracked
+            # under #228).
             from app.services.template_service import TemplateService
 
             # Get the target server

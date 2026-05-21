@@ -17,6 +17,7 @@ from app.files.domain.entities import (
     FileHistoryEntity,
     FileHistoryStatsEntity,
 )
+from app.servers.domain.entities import ServerEntity
 
 
 class FakeFileHistoryRepository:
@@ -201,13 +202,33 @@ class FakeFilesUnitOfWork:
 
 
 class FakeServerReadPort:
-    """Dict-backed `ServerReadPort` for unit tests."""
+    """Dict-backed `ServerReadPort` for unit tests.
 
-    def __init__(self, paths: Optional[Dict[int, Optional[str]]] = None) -> None:
+    Stores per-server `directory_path` and (optionally) a full
+    `ServerEntity` snapshot consumed by `ServerReadPort.get`. The two
+    stores are independent so that tests which only exercise the
+    file-history surface can stay terse, while templates tests can seed
+    a full entity.
+    """
+
+    def __init__(
+        self,
+        paths: Optional[Dict[int, Optional[str]]] = None,
+        servers: Optional[Dict[int, ServerEntity]] = None,
+    ) -> None:
         self._paths: Dict[int, Optional[str]] = dict(paths or {})
+        self._servers: Dict[int, ServerEntity] = dict(servers or {})
 
     async def get_directory_path(self, server_id: int) -> Optional[str]:
         return self._paths.get(server_id)
 
+    async def get(self, server_id: int) -> Optional[ServerEntity]:
+        return self._servers.get(server_id)
+
     def set_path(self, server_id: int, path: Optional[str]) -> None:
         self._paths[server_id] = path
+
+    def set_server(self, server: ServerEntity) -> None:
+        """Register a `ServerEntity` and mirror its `directory_path`."""
+        self._servers[server.id] = server
+        self._paths[server.id] = server.directory_path

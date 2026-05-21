@@ -113,11 +113,18 @@ def test_async_methods_match_protocol(
 def test_server_read_port_implementations(
     implementation: ServerReadPort,
 ) -> None:
-    """`ServerReadPort` has a single async method; pin its shape."""
+    """`ServerReadPort` exposes two async methods; pin their shape.
+
+    `get_directory_path` was added for #224 (files), `get` was added for
+    #225 (templates). Both methods must be `async`; if either ever flips
+    to sync the conformance check fails before silently broken `@patch`
+    callsites can be merged.
+    """
     expected = _public_methods(ServerReadPort)
     missing = expected - _public_methods(implementation)
     assert missing == set()
     assert inspect.iscoroutinefunction(getattr(implementation, "get_directory_path"))
+    assert inspect.iscoroutinefunction(getattr(implementation, "get"))
 
 
 def test_protocol_imports_succeed() -> None:

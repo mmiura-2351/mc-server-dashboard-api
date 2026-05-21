@@ -13,16 +13,25 @@ breakage churn.
 
 from typing import Optional, Protocol
 
+from app.servers.domain.entities import ServerEntity
+
 
 class ServerReadPort(Protocol):
     """Minimal cross-domain read view of Server.
 
     TBD(#154-8): introduced for #224 (files) — the file-history service
-    needs a server's on-disk directory path during a restore. Once #228
-    rebuilds the servers domain into the standard layout, this Port
-    will gain a full `get(server_id) -> ServerEntity | None`, plus
-    whatever else the consumers in #154-5 / #154-6 / #154-7 require.
-    Until then, *only* the method below is sanctioned.
+    needs a server's on-disk directory path during a restore. The
+    `get(server_id)` method below was added for #225 (templates) to
+    return a small read-only snapshot used to extract template metadata.
+    Once #228 rebuilds the servers domain into the standard layout, this
+    Port will be replaced with the full `ServerRepository` / final
+    `ServerReadPort` shape. Until then, *only* the methods below are
+    sanctioned.
     """
 
     async def get_directory_path(self, server_id: int) -> Optional[str]: ...
+
+    # TBD(#154-8): added for #225 (templates). Returns the minimal
+    # `ServerEntity` view used by `TemplateService.create_template_from_server`.
+    # The full surface lands with the servers domain refactor in #228.
+    async def get(self, server_id: int) -> Optional[ServerEntity]: ...

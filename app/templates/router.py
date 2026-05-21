@@ -7,11 +7,14 @@ from app.auth.dependencies import get_current_user
 from app.core.database import get_db
 from app.servers.models import ServerType
 from app.services.authorization_service import authorization_service
-from app.services.template_service import (
+from app.templates.api.dependencies import get_template_service
+from app.templates.application.service import (
+    TemplateService as _ApplicationTemplateService,
+)
+from app.templates.domain.exceptions import (
     TemplateAccessError,
     TemplateError,
     TemplateNotFoundError,
-    template_service,
 )
 from app.templates.schemas import (
     TemplateCloneRequest,
@@ -22,9 +25,14 @@ from app.templates.schemas import (
     TemplateStatisticsResponse,
     TemplateUpdateRequest,
 )
+from app.users.domain.value_objects import Role
 from app.users.models import User
 
 router = APIRouter(tags=["templates"])
+
+
+def _is_admin(user: User) -> bool:
+    return user.role == Role.admin
 
 
 @router.post(
@@ -37,6 +45,7 @@ async def create_template_from_server(
     request: TemplateCreateFromServerRequest,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
+    template_service: _ApplicationTemplateService = Depends(get_template_service),
 ):
     """
     Create a template from an existing server
@@ -60,21 +69,22 @@ async def create_template_from_server(
                 detail="Only operators and admins can create templates",
             )
 
-        template = await template_service.create_template_from_server(
+        entity = await template_service.create_template_from_server(
             server_id=server_id,
             name=request.name,
-            db=db,
-            creator=current_user,
+            creator_id=current_user.id,
             description=request.description,
             is_public=request.is_public,
         )
 
-        return TemplateResponse.from_orm(template)
+        return TemplateResponse.from_entity(entity)
 
     except TemplateNotFoundError as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
     except TemplateError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -86,7 +96,7 @@ async def create_template_from_server(
 async def create_custom_template(
     request: TemplateCreateCustomRequest,
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    template_service: _ApplicationTemplateService = Depends(get_template_service),
 ):
     """
     Create a custom template with specified configuration
@@ -109,22 +119,23 @@ async def create_custom_template(
                 detail="Only operators and admins can create templates",
             )
 
-        template = await template_service.create_custom_template(
+        entity = await template_service.create_custom_template(
             name=request.name,
             minecraft_version=request.minecraft_version,
             server_type=request.server_type,
             configuration=request.configuration,
-            db=db,
-            creator=current_user,
+            creator_id=current_user.id,
             description=request.description,
             default_groups=request.default_groups,
             is_public=request.is_public,
         )
 
-        return TemplateResponse.from_orm(template)
+        return TemplateResponse.from_entity(entity)
 
     except TemplateError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -144,7 +155,7 @@ async def list_templates(
     page: int = Query(1, ge=1, description="Page number"),
     size: int = Query(50, ge=1, le=100, description="Page size"),
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    template_service: _ApplicationTemplateService = Depends(get_template_service),
 ):
     """
     List templates with filtering
@@ -153,9 +164,9 @@ async def list_templates(
     and their own private templates. Admins can see all templates.
     """
     try:
-        result = template_service.list_templates(
-            user=current_user,
-            db=db,
+        page_result = await template_service.list_templates(
+            viewer_id=current_user.id,
+            viewer_is_admin=_is_admin(current_user),
             minecraft_version=minecraft_version,
             server_type=server_type,
             is_public=is_public,
@@ -164,14 +175,14 @@ async def list_templates(
         )
 
         template_responses = [
-            TemplateResponse.from_orm(template) for template in result["templates"]
+            TemplateResponse.from_entity(entity) for entity in page_result.entities
         ]
 
         return TemplateListResponse(
             templates=template_responses,
-            total=result["total"],
-            page=result["page"],
-            size=result["size"],
+            total=page_result.total,
+            page=page_result.page,
+            size=page_result.size,
         )
 
     except Exception as e:
@@ -181,11 +192,35 @@ async def list_templates(
         )
 
 
+@router.get("/statistics", response_model=TemplateStatisticsResponse)
+async def get_template_statistics(
+    current_user: User = Depends(get_current_user),
+    template_service: _ApplicationTemplateService = Depends(get_template_service),
+):
+    """
+    Get template usage statistics
+
+    Returns statistics about templates accessible to the current user.
+    Includes total counts and distribution by server type.
+    """
+    try:
+        stats = await template_service.get_template_statistics(
+            viewer_id=current_user.id, viewer_is_admin=_is_admin(current_user)
+        )
+        return TemplateStatisticsResponse(**stats)
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get template statistics: {str(e)}",
+        )
+
+
 @router.get("/{template_id}", response_model=TemplateResponse)
 async def get_template(
     template_id: int,
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    template_service: _ApplicationTemplateService = Depends(get_template_service),
 ):
     """
     Get template details by ID
@@ -194,13 +229,17 @@ async def get_template(
     Users can only access public templates or their own templates.
     """
     try:
-        template = template_service.get_template(template_id, current_user, db)
-        if not template:
+        entity = await template_service.get_template(
+            template_id,
+            viewer_id=current_user.id,
+            viewer_is_admin=_is_admin(current_user),
+        )
+        if entity is None:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND, detail="Template not found"
             )
 
-        return TemplateResponse.from_orm(template)
+        return TemplateResponse.from_entity(entity)
 
     except TemplateAccessError as e:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
@@ -218,7 +257,7 @@ async def update_template(
     template_id: int,
     request: TemplateUpdateRequest,
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    template_service: _ApplicationTemplateService = Depends(get_template_service),
 ):
     """
     Update template
@@ -227,10 +266,10 @@ async def update_template(
     Users can only update their own templates unless they are admin.
     """
     try:
-        template = template_service.update_template(
+        entity = await template_service.update_template(
             template_id=template_id,
-            db=db,
-            user=current_user,
+            viewer_id=current_user.id,
+            viewer_is_admin=_is_admin(current_user),
             name=request.name,
             description=request.description,
             configuration=request.configuration,
@@ -238,17 +277,19 @@ async def update_template(
             is_public=request.is_public,
         )
 
-        if not template:
+        if entity is None:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND, detail="Template not found"
             )
 
-        return TemplateResponse.from_orm(template)
+        return TemplateResponse.from_entity(entity)
 
     except TemplateAccessError as e:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
     except TemplateError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -260,7 +301,7 @@ async def update_template(
 async def delete_template(
     template_id: int,
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    template_service: _ApplicationTemplateService = Depends(get_template_service),
 ):
     """
     Delete template
@@ -270,7 +311,11 @@ async def delete_template(
     Cannot delete templates that are currently in use by servers.
     """
     try:
-        success = template_service.delete_template(template_id, current_user, db)
+        success = await template_service.delete_template(
+            template_id,
+            viewer_id=current_user.id,
+            viewer_is_admin=_is_admin(current_user),
+        )
         if not success:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND, detail="Template not found"
@@ -280,32 +325,12 @@ async def delete_template(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
     except TemplateError as e:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to delete template: {str(e)}",
-        )
-
-
-@router.get("/statistics", response_model=TemplateStatisticsResponse)
-async def get_template_statistics(
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
-    """
-    Get template usage statistics
-
-    Returns statistics about templates accessible to the current user.
-    Includes total counts and distribution by server type.
-    """
-    try:
-        stats = template_service.get_template_statistics(current_user, db)
-        return TemplateStatisticsResponse(**stats)
-
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to get template statistics: {str(e)}",
         )
 
 
@@ -318,7 +343,7 @@ async def clone_template(
     template_id: int,
     request: TemplateCloneRequest,
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    template_service: _ApplicationTemplateService = Depends(get_template_service),
 ):
     """
     Clone an existing template
@@ -334,27 +359,33 @@ async def clone_template(
                 detail="Only operators and admins can create templates",
             )
 
-        # Get the original template
-        original_template = template_service.get_template(template_id, current_user, db)
-        if not original_template:
+        # NOTE: preserves the legacy router behaviour, which composes
+        # `get_template` + `create_custom_template` rather than calling
+        # `TemplateService.clone_template` (the latter is retained on the
+        # service for shim parity but unused by this endpoint). See PR
+        # description for the rationale.
+        original_entity = await template_service.get_template(
+            template_id,
+            viewer_id=current_user.id,
+            viewer_is_admin=_is_admin(current_user),
+        )
+        if original_entity is None:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND, detail="Template not found"
             )
 
-        # Create new template with copied configuration
-        cloned_template = await template_service.create_custom_template(
+        cloned_entity = await template_service.create_custom_template(
             name=request.name,
-            minecraft_version=original_template.minecraft_version,
-            server_type=original_template.server_type,
-            configuration=original_template.get_configuration(),
-            db=db,
-            creator=current_user,
-            description=request.description or f"Cloned from {original_template.name}",
-            default_groups=original_template.get_default_groups(),
+            minecraft_version=original_entity.minecraft_version,
+            server_type=original_entity.server_type,
+            configuration=original_entity.configuration,
+            creator_id=current_user.id,
+            description=request.description or f"Cloned from {original_entity.name}",
+            default_groups=original_entity.default_groups,
             is_public=request.is_public,
         )
 
-        return TemplateResponse.from_orm(cloned_template)
+        return TemplateResponse.from_entity(cloned_entity)
 
     except TemplateAccessError as e:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
