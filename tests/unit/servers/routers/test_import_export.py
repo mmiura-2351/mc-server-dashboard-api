@@ -3,10 +3,26 @@ Essential test coverage for import_export router
 Focus on critical edge cases for improved coverage
 """
 
-from unittest.mock import Mock, patch
+from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 from fastapi import HTTPException, UploadFile
+
+from app.servers.domain.ports import ServerRepository
+
+
+@pytest.fixture
+def mock_server_repo() -> AsyncMock:
+    """Defensive `ServerRepository` mock for import_server unit tests.
+
+    `import_server` accepts a `server_repo: ServerRepository =
+    Depends(get_server_repository)` parameter (added in PR #266 to
+    replace the broken port-conflict scan). When unit tests invoke the
+    handler directly they must supply this Port explicitly — otherwise
+    they implicitly rely on the FastAPI Depends default value, which
+    only resolves through the framework.
+    """
+    return AsyncMock(spec=ServerRepository)
 
 
 class TestImportExportRouter:
@@ -30,7 +46,7 @@ class TestImportExportRouter:
         assert "Failed to export server" in str(exc_info.value.detail)
 
     @pytest.mark.asyncio
-    async def test_import_server_file_too_large(self, admin_user):
+    async def test_import_server_file_too_large(self, admin_user, mock_server_repo):
         """Test import server with file size exceeding limit (176 line)"""
         from app.servers.routers.import_export import import_server
 
@@ -46,13 +62,16 @@ class TestImportExportRouter:
                 file=mock_file,
                 current_user=admin_user,
                 db=Mock(),
+                server_repo=mock_server_repo,
             )
 
         assert exc_info.value.status_code == 413
         assert "File too large" in str(exc_info.value.detail)
 
     @pytest.mark.asyncio
-    async def test_import_server_invalid_file_extension(self, admin_user):
+    async def test_import_server_invalid_file_extension(
+        self, admin_user, mock_server_repo
+    ):
         """Test import server with invalid file extension"""
         from app.servers.routers.import_export import import_server
 
@@ -68,6 +87,7 @@ class TestImportExportRouter:
                 file=mock_file,
                 current_user=admin_user,
                 db=Mock(),
+                server_repo=mock_server_repo,
             )
 
         assert exc_info.value.status_code == 400

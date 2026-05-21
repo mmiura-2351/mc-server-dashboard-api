@@ -116,6 +116,15 @@ async def _initialize_database():
     try:
         logger.info("Initializing database tables...")
         Base.metadata.create_all(bind=engine)
+
+        # Idempotent migration: add UNIQUE index protecting
+        # file_edit_history.version_number against TOCTOU races.
+        # Aborts startup if pre-existing duplicates are detected so
+        # operators can deduplicate before retrying.
+        from app.core.database_utils import migrate_file_history_unique_index
+
+        migrate_file_history_unique_index(engine)
+
         service_status.database_ready = True
         logger.info("Database tables initialized successfully")
     except Exception as e:

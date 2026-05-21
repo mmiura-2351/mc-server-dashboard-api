@@ -50,6 +50,23 @@ class FileHistoryRepository(Protocol):
 
     async def get_max_version_number(self, server_id: int, file_path: str) -> int: ...
 
+    async def reserve_next_version_number(self, server_id: int, file_path: str) -> int:
+        """Compute the next available `version_number` for the given
+        (server_id, file_path).
+
+        Callers MUST use this inside an active `FilesUnitOfWork`
+        transaction. The returned value is race-free at the time of
+        CALL, but the surrounding UoW commit may still raise
+        `IntegrityError` if a concurrent writer reserves the same
+        number first — the UNIQUE constraint
+        `uq_file_edit_history_server_path_version` is the final guard.
+
+        Application code is expected to catch that `IntegrityError`
+        and retry. See `FileHistoryService.create_version_backup`
+        for the canonical retry pattern.
+        """
+        ...
+
     async def get_excess_versions(
         self, server_id: int, file_path: str, keep: int
     ) -> List[FileHistoryEntity]: ...

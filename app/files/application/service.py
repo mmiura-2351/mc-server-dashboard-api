@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import List, Optional, Tuple
 
 import aiofiles
+from sqlalchemy.exc import IntegrityError
 
 from app.core.datetime_utils import utcnow
 from app.core.exceptions import (
@@ -31,6 +32,42 @@ from app.files.domain.ports import FilesUnitOfWork
 from app.servers.domain.ports import ServerReadPort
 
 logger = logging.getLogger(__name__)
+
+# Maximum attempts when retrying after a TOCTOU collision on
+# file_edit_history.version_number. Three attempts cover any realistic
+# concurrent-writer pile-up; beyond that we surface the IntegrityError.
+_VERSION_RESERVATION_RETRIES = 3
+_VERSION_UNIQUE_INDEX_NAME = "uq_file_edit_history_server_path_version"
+
+
+def _is_version_unique_violation(e: IntegrityError) -> bool:
+    """Detect that an `IntegrityError` stems from the file_edit_history
+    UNIQUE constraint on `(server_id, file_path, version_number)`.
+
+    Works for both SQLite and Postgres/MySQL:
+
+    - **Postgres / MySQL** name the constraint in the error message, so
+      the index name (`uq_file_edit_history_server_path_version`)
+      appears verbatim.
+    - **SQLite** only reports the affected columns, e.g.::
+
+          UNIQUE constraint failed: file_edit_history.server_id,
+              file_edit_history.file_path,
+              file_edit_history.version_number
+
+      so we additionally match the column-list shape. Without this
+      branch the retry loop never engages on SQLite — which is the
+      development and test default dialect — and the regression that
+      motivated PR #266 silently re-appears.
+    """
+    err_text = str(e.orig) + " " + str(e)
+    if _VERSION_UNIQUE_INDEX_NAME in err_text:
+        return True
+    return (
+        "UNIQUE constraint failed" in err_text
+        and "file_edit_history" in err_text
+        and "version_number" in err_text
+    )
 
 
 class FileHistoryService:
@@ -74,6 +111,14 @@ class FileHistoryService:
 
         Returns the persisted entity, or `None` if the content matches
         the latest version (no backup was created).
+
+        Concurrency: reserve-and-insert of `version_number` is wrapped
+        in a single UoW with retries. The UNIQUE constraint
+        `uq_file_edit_history_server_path_version` is the final guard
+        against the TOCTOU race between two writers reserving the same
+        number simultaneously. Each retry recomputes the version number
+        and writes a new on-disk backup file (orphans from the prior
+        attempt are unlinked best-effort).
         """
         try:
             normalized_path = self._normalize_file_path(file_path)
@@ -82,41 +127,22 @@ class FileHistoryService:
             history_dir.mkdir(parents=True, exist_ok=True)
 
             content_hash = hashlib.sha256(content.encode("utf-8")).hexdigest()
-
-            async with self._uow as uow:
-                latest = await uow.files_history.get_latest(server_id, normalized_path)
-                if latest is not None and latest.content_hash == content_hash:
-                    logger.info(f"Skipping backup for {file_path} - content unchanged")
-                    return None
-
-                max_version = await uow.files_history.get_max_version_number(
-                    server_id, normalized_path
-                )
-                version_num = max_version + 1
-
-            file_extension = Path(normalized_path).suffix
-            timestamp = utcnow().strftime("%Y%m%d_%H%M%S")
-            backup_filename = f"v{version_num:03d}_{timestamp}{file_extension}"
-            backup_file_path = history_dir / backup_filename
-
-            async with aiofiles.open(backup_file_path, "w", encoding="utf-8") as f:
-                await f.write(content)
-
             file_size = len(content.encode("utf-8"))
-            command = CreateHistoryCommand(
+
+            entity, version_num = await self._reserve_and_persist(
                 server_id=server_id,
-                file_path=normalized_path,
-                version_number=version_num,
-                backup_file_path=str(backup_file_path),
-                file_size=file_size,
+                file_path=file_path,
+                normalized_path=normalized_path,
+                history_dir=history_dir,
+                content=content,
                 content_hash=content_hash,
-                editor_user_id=user_id,
+                file_size=file_size,
+                user_id=user_id,
                 description=description,
             )
-
-            async with self._uow as uow:
-                entity = await uow.files_history.add(command)
-                await uow.commit()
+            if entity is None:
+                # Content matched the latest version — nothing persisted.
+                return None
 
             await self._cleanup_excess_versions(server_id, normalized_path)
 
@@ -126,6 +152,105 @@ class FileHistoryService:
         except Exception as e:
             logger.error(f"Failed to create backup for {file_path}: {e}")
             raise FileOperationException("backup", file_path, str(e))
+
+    async def _reserve_and_persist(
+        self,
+        *,
+        server_id: int,
+        file_path: str,
+        normalized_path: str,
+        history_dir: Path,
+        content: str,
+        content_hash: str,
+        file_size: int,
+        user_id: Optional[int],
+        description: Optional[str],
+    ) -> Tuple[Optional[FileHistoryEntity], int]:
+        """Reserve next version + write backup file + INSERT row,
+        retrying on UNIQUE-constraint races.
+
+        Returns `(entity, version_num)`, or `(None, 0)` when the
+        latest stored version already matches `content_hash` (i.e.
+        no backup was created).
+        """
+        last_error: Optional[IntegrityError] = None
+        for attempt in range(_VERSION_RESERVATION_RETRIES):
+            backup_file_path: Optional[Path] = None
+            try:
+                async with self._uow as uow:
+                    # 1. Skip when the existing latest already matches.
+                    latest = await uow.files_history.get_latest(
+                        server_id, normalized_path
+                    )
+                    if latest is not None and latest.content_hash == content_hash:
+                        logger.info(
+                            f"Skipping backup for {file_path} - content unchanged"
+                        )
+                        return None, 0
+
+                    # 2. Reserve the version number inside the same tx.
+                    version_num = await uow.files_history.reserve_next_version_number(
+                        server_id, normalized_path
+                    )
+
+                    # 3. Write the backup file to disk. This happens
+                    # inside the UoW context but outside the SQL tx
+                    # itself; on retry we will unlink and rewrite.
+                    file_extension = Path(normalized_path).suffix
+                    timestamp = utcnow().strftime("%Y%m%d_%H%M%S")
+                    backup_filename = f"v{version_num:03d}_{timestamp}{file_extension}"
+                    backup_file_path = history_dir / backup_filename
+                    async with aiofiles.open(
+                        backup_file_path, "w", encoding="utf-8"
+                    ) as f:
+                        await f.write(content)
+
+                    # 4. Stage the INSERT — UNIQUE constraint catches
+                    # any concurrent writer that snuck in before us.
+                    command = CreateHistoryCommand(
+                        server_id=server_id,
+                        file_path=normalized_path,
+                        version_number=version_num,
+                        backup_file_path=str(backup_file_path),
+                        file_size=file_size,
+                        content_hash=content_hash,
+                        editor_user_id=user_id,
+                        description=description,
+                    )
+                    entity = await uow.files_history.add(command)
+                    await uow.commit()
+                    return entity, version_num
+
+            except IntegrityError as e:
+                last_error = e
+                # Best-effort cleanup of the orphan backup file from
+                # this failed attempt — the row never landed so the
+                # on-disk file is unreferenced.
+                if backup_file_path is not None:
+                    try:
+                        backup_file_path.unlink(missing_ok=True)
+                    except OSError as unlink_err:
+                        logger.warning(
+                            f"Failed to clean up orphan backup file "
+                            f"{backup_file_path}: {unlink_err}"
+                        )
+                if (
+                    _is_version_unique_violation(e)
+                    and attempt < _VERSION_RESERVATION_RETRIES - 1
+                ):
+                    logger.warning(
+                        f"TOCTOU collision on version_number for "
+                        f"{normalized_path} (attempt {attempt + 1}/"
+                        f"{_VERSION_RESERVATION_RETRIES}); retrying"
+                    )
+                    continue
+                raise
+
+        # Should not be reachable — the loop either returns or raises —
+        # but defensively re-raise the last error if it ever falls
+        # through. `assert` would be silently dropped under -O.
+        assert last_error is not None
+        raise last_error
 
     async def get_file_history(
         self,
