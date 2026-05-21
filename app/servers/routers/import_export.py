@@ -17,12 +17,13 @@ from fastapi import (
     status,
 )
 from fastapi.responses import FileResponse
-from sqlalchemy import and_
 from sqlalchemy.orm import Session
 
 from app.auth.dependencies import get_current_user
 from app.core.database import get_db
-from app.servers.models import Server, ServerStatus, ServerType
+from app.servers.api.dependencies import get_server_repository
+from app.servers.domain.ports import ServerRepository
+from app.servers.models import ServerStatus, ServerType
 from app.servers.schemas import (
     ServerCreateRequest,
     ServerImportRequest,
@@ -155,6 +156,7 @@ async def import_server(
     background_tasks: BackgroundTasks = None,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
+    server_repo: ServerRepository = Depends(get_server_repository),
 ):
     """
     Import a server from an exported ZIP file
@@ -241,18 +243,19 @@ async def import_server(
                         detail=f"Invalid export file: missing {field} in metadata",
                     )
 
-            # Find available port (only check running servers)
-            used_ports = (
-                db.query(Server.port)
-                .filter(
-                    and_(
-                        not Server.is_deleted,
-                        Server.status.in_([ServerStatus.running, ServerStatus.starting]),
-                    )
-                )
-                .all()
+            # Find available port (only check running servers).
+            # Previous implementation applied Python's `not` to the
+            # SQLAlchemy is_deleted Column, which always evaluates to
+            # False, so `used_ports` was permanently empty and port
+            # 25565 was always offered even when occupied. Route
+            # through the Server Repository's
+            # `list_by_port(port=None, statuses=...)` which excludes
+            # soft-deleted rows by default.
+            used_servers = await server_repo.list_by_port(
+                port=None,
+                statuses=[ServerStatus.running, ServerStatus.starting],
             )
-            used_ports = {port[0] for port in used_ports}
+            used_ports = {s.port for s in used_servers}
 
             port = 25565
             while port in used_ports:

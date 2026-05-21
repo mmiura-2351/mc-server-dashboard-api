@@ -120,6 +120,24 @@ class SqlAlchemyFileHistoryRepository:
         )
         return latest or 0
 
+    async def reserve_next_version_number(self, server_id: int, file_path: str) -> int:
+        """Return the next available version number for the given key.
+
+        Wraps `MAX(version_number) + 1` via `COALESCE` so an empty
+        result set yields `1`. Caller must be inside an active UoW
+        transaction; the surrounding UNIQUE constraint catches any
+        race that slips between this read and the corresponding INSERT.
+        """
+        max_version = (
+            self.db.query(func.coalesce(func.max(FileEditHistory.version_number), 0))
+            .filter(
+                FileEditHistory.server_id == server_id,
+                FileEditHistory.file_path == file_path,
+            )
+            .scalar()
+        )
+        return int(max_version or 0) + 1
+
     async def get_excess_versions(
         self, server_id: int, file_path: str, keep: int
     ) -> List[FileHistoryEntity]:

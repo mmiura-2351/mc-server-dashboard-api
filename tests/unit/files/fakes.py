@@ -73,6 +73,10 @@ class FakeFileHistoryRepository:
         latest = await self.get_latest(server_id, file_path)
         return latest.version_number if latest else 0
 
+    async def reserve_next_version_number(self, server_id: int, file_path: str) -> int:
+        """Mirror the SQL adapter's `MAX + 1` semantics in-memory."""
+        return await self.get_max_version_number(server_id, file_path) + 1
+
     async def get_excess_versions(
         self, server_id: int, file_path: str, keep: int
     ) -> List[FileHistoryEntity]:

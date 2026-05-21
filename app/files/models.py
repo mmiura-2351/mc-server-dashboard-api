@@ -2,7 +2,16 @@
 File edit history models for tracking file changes.
 """
 
-from sqlalchemy import BigInteger, Column, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import (
+    BigInteger,
+    Column,
+    DateTime,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy.orm import relationship
 
 from app.core.database import Base
@@ -13,6 +22,18 @@ class FileEditHistory(Base):
     """File edit history tracking model"""
 
     __tablename__ = "file_edit_history"
+    __table_args__ = (
+        # Guards the TOCTOU race in `reserve_next_version_number` →
+        # `add`. Two concurrent writers could each compute the same
+        # MAX+1; the surrounding application-layer retry catches the
+        # `IntegrityError` raised on commit.
+        UniqueConstraint(
+            "server_id",
+            "file_path",
+            "version_number",
+            name="uq_file_edit_history_server_path_version",
+        ),
+    )
 
     id = Column(Integer, primary_key=True, index=True)
     server_id = Column(

@@ -206,6 +206,78 @@ def batch_query(
     return results
 
 
+def migrate_file_history_unique_index(engine: Any) -> None:
+    """Idempotent migration: ensure `uq_file_edit_history_server_path_version`
+    is present on `file_edit_history (server_id, file_path, version_number)`.
+
+    Behaviour:
+    1. SELECT existing duplicate rows. If any are found, log a
+       maintainer-actionable error listing the first 10 offenders and
+       raise `RuntimeError` to abort startup before any DDL is issued
+       — installing a UNIQUE index on a table with duplicates would
+       fail anyway, but failing fast with a readable message saves
+       operators from chasing a cryptic SQLite/MySQL error.
+    2. If no duplicates exist, execute
+       `CREATE UNIQUE INDEX IF NOT EXISTS` so the migration is safe
+       to re-run on already-migrated databases.
+
+    Called once during application startup, immediately after
+    `Base.metadata.create_all`.
+    """
+    from sqlalchemy import text
+
+    with engine.connect() as conn:
+        # Pre-check: detect any existing duplicate (server_id, file_path,
+        # version_number) tuples that would block the unique index.
+        dup_check = conn.execute(
+            text(
+                "SELECT server_id, file_path, version_number, COUNT(*) AS cnt "
+                "FROM file_edit_history "
+                "GROUP BY server_id, file_path, version_number "
+                "HAVING COUNT(*) > 1 "
+                "LIMIT 10"
+            )
+        ).fetchall()
+
+        if dup_check:
+            sample = "\n".join(
+                f"  server_id={row[0]}, file_path={row[1]!r}, "
+                f"version_number={row[2]}, count={row[3]}"
+                for row in dup_check
+            )
+            error_msg = (
+                "Cannot create UNIQUE INDEX on file_edit_history: existing "
+                "duplicate rows detected.\n"
+                "Maintainer action required: manually deduplicate before "
+                "next deploy.\n"
+                "Affected rows (first 10):\n"
+                f"{sample}\n\n"
+                "Suggested inspection query:\n"
+                "  SELECT * FROM file_edit_history\n"
+                "   WHERE (server_id, file_path, version_number) IN (\n"
+                "     SELECT server_id, file_path, version_number\n"
+                "       FROM file_edit_history\n"
+                "      GROUP BY server_id, file_path, version_number\n"
+                "      HAVING COUNT(*) > 1\n"
+                "   );\n"
+            )
+            logger.error(error_msg)
+            raise RuntimeError(
+                "file_edit_history contains duplicate (server_id, file_path, "
+                "version_number) rows; migration aborted"
+            )
+
+        # No duplicates — safe to (re)create the unique index.
+        conn.execute(
+            text(
+                "CREATE UNIQUE INDEX IF NOT EXISTS "
+                "uq_file_edit_history_server_path_version "
+                "ON file_edit_history (server_id, file_path, version_number)"
+            )
+        )
+        conn.commit()
+
+
 def safe_commit(session: Session, raise_on_error: bool = False) -> bool:
     """
     Safely commit a session with proper error handling.
