@@ -6,12 +6,15 @@ from sqlalchemy.orm import Session
 
 from app.auth.dependencies import get_current_user
 from app.core.database import get_db
+from app.files.api.dependencies import get_file_history_service
+from app.files.application.service import FileHistoryService
 from app.files.schemas import (
     DeleteVersionResponse,
     DirectoryCreateRequest,
     DirectoryCreateResponse,
     FileDeleteResponse,
     FileHistoryListResponse,
+    FileHistoryRecord,
     FileInfoResponse,
     FileListResponse,
     FileReadResponse,
@@ -28,7 +31,6 @@ from app.files.schemas import (
     ServerFileHistoryStatsResponse,
 )
 from app.services.authorization_service import authorization_service
-from app.services.file_history_service import file_history_service
 from app.services.file_management_service import file_management_service
 from app.types import FileType
 from app.users.domain.value_objects import Role
@@ -251,6 +253,7 @@ async def get_file_edit_history(
     ),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
+    file_history_service: FileHistoryService = Depends(get_file_history_service),
 ):
     """Get edit history for a file"""
     # Check server access
@@ -258,11 +261,13 @@ async def get_file_edit_history(
 
     # Get file history
     history = await file_history_service.get_file_history(
-        server_id=server_id, file_path=file_path, limit=limit, db=db
+        server_id=server_id, file_path=file_path, limit=limit
     )
 
     return FileHistoryListResponse(
-        file_path=file_path, total_versions=len(history), history=history
+        file_path=file_path,
+        total_versions=len(history),
+        history=[FileHistoryRecord.model_validate(entity) for entity in history],
     )
 
 
@@ -276,14 +281,15 @@ async def get_file_version_content(
     version: int,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
+    file_history_service: FileHistoryService = Depends(get_file_history_service),
 ):
     """Get content of specific version"""
     # Check server access
     authorization_service.check_server_access(server_id, current_user, db)
 
     # Get version content
-    content, history_record = await file_history_service.get_version_content(
-        server_id=server_id, file_path=file_path, version_number=version, db=db
+    content, history_entity = await file_history_service.get_version_content(
+        server_id=server_id, file_path=file_path, version_number=version
     )
 
     return FileVersionContentResponse(
@@ -291,9 +297,9 @@ async def get_file_version_content(
         version_number=version,
         content=content,
         encoding="utf-8",
-        created_at=history_record.created_at,
-        editor_username=history_record.editor.username if history_record.editor else None,
-        description=history_record.description,
+        created_at=history_entity.created_at,
+        editor_username=history_entity.editor_username,
+        description=history_entity.description,
     )
 
 
@@ -308,6 +314,7 @@ async def restore_from_version(
     request: RestoreFromVersionRequest,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
+    file_history_service: FileHistoryService = Depends(get_file_history_service),
 ):
     """Restore file from specific version"""
     # Check permissions (Phase 1: all users can restore files)
@@ -325,7 +332,6 @@ async def restore_from_version(
         user_id=current_user.id,
         create_backup_before_restore=request.create_backup_before_restore,
         description=request.description,
-        db=db,
     )
 
     # Get updated file info
@@ -352,6 +358,7 @@ async def delete_file_version(
     version: int,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
+    file_history_service: FileHistoryService = Depends(get_file_history_service),
 ):
     """Delete specific version (admin only)"""
     # Check admin permissions
@@ -363,7 +370,7 @@ async def delete_file_version(
 
     # Delete version
     await file_history_service.delete_version(
-        server_id=server_id, file_path=file_path, version_number=version, db=db
+        server_id=server_id, file_path=file_path, version_number=version
     )
 
     return DeleteVersionResponse(
@@ -380,15 +387,24 @@ async def get_server_file_history_stats(
     server_id: int,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
+    file_history_service: FileHistoryService = Depends(get_file_history_service),
 ):
     """Get file edit history statistics for server"""
     # Check server access
     authorization_service.check_server_access(server_id, current_user, db)
 
     # Get statistics
-    stats = await file_history_service.get_server_statistics(server_id=server_id, db=db)
+    stats = await file_history_service.get_server_statistics(server_id=server_id)
 
-    return ServerFileHistoryStatsResponse(**stats)
+    return ServerFileHistoryStatsResponse(
+        server_id=stats.server_id,
+        total_files_with_history=stats.total_files_with_history,
+        total_versions=stats.total_versions,
+        total_storage_used=stats.total_storage_used,
+        oldest_version_date=stats.oldest_version_date,
+        most_edited_file=stats.most_edited_file,
+        most_edited_file_versions=stats.most_edited_file_versions,
+    )
 
 
 # General endpoints (must come after specific ones)
