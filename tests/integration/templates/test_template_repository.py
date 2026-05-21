@@ -7,7 +7,7 @@ on its own (the UoW owns transactions in production), so write-path
 tests call `db.commit()` explicitly after staging changes.
 """
 
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 import pytest
 
@@ -35,7 +35,7 @@ def _seed_template(
     is_public: bool = False,
     server_type: ServerType = ServerType.vanilla,
     minecraft_version: str = "1.20.1",
-    configuration: Dict[str, Any] = None,
+    configuration: Optional[Dict[str, Any]] = None,
 ) -> Template:
     row = Template(
         name=name,

@@ -125,9 +125,14 @@ class TemplateService:
                     await self._create_template_files(entity.id, server_dir)
                     await uow.commit()
             except Exception:
-                # If archive creation failed after the row was staged,
-                # the UoW __aexit__ rolls back; nothing to clean on
-                # disk yet (the archive write is the failing step).
+                # Known limitation (legacy behaviour, NOT introduced by
+                # #225/#256): `_create_template_files` writes the
+                # `template_{id}_files.tar.gz` archive to disk before
+                # `await uow.commit()`. If the commit subsequently fails,
+                # the DB row is rolled back but the on-disk archive is
+                # left orphaned. Safe remediation needs atomic-rename
+                # staging or a janitor sweep — tracked by #228
+                # punch-list B (orphan-on-failure archive files).
                 raise
 
             logger.info(

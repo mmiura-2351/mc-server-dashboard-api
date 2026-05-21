@@ -142,7 +142,8 @@ class TemplateResponse(BaseModel):
 
         The entity already carries materialised `configuration`,
         `default_groups`, and `creator_name`, so no ORM lookups are
-        performed here. Preferred over `from_orm` for new callsites.
+        performed here. This is the single supported constructor; the
+        legacy Pydantic-v1 `from_orm` shim was removed in #256.
         """
         # The TemplateResponse fields are non-Optional for `id`,
         # `created_at`, `updated_at`; entities returned by the
@@ -164,48 +165,6 @@ class TemplateResponse(BaseModel):
             created_at=entity.created_at,
             updated_at=entity.updated_at,
             creator_name=entity.creator_name,
-        )
-
-    @classmethod
-    def from_orm(cls, template) -> "TemplateResponse":
-        """Create TemplateResponse from an ORM model or domain entity.
-
-        Retained as a backward-compatible alias so legacy callers
-        (notably `app.services.backup_service`, which still returns a
-        `Template` ORM row via the shim) keep working. New code should
-        prefer `from_entity`.
-        """
-        # Domain entities have `configuration` as a plain attribute;
-        # ORM rows expose `get_configuration()`. Dispatch dynamically so
-        # both shapes work without explicit isinstance checks.
-        get_configuration = getattr(template, "get_configuration", None)
-        configuration = (
-            get_configuration() if callable(get_configuration) else template.configuration
-        )
-        get_default_groups = getattr(template, "get_default_groups", None)
-        default_groups = (
-            get_default_groups()
-            if callable(get_default_groups)
-            else template.default_groups
-        )
-        creator_name = getattr(template, "creator_name", None)
-        if creator_name is None:
-            creator = getattr(template, "creator", None)
-            creator_name = creator.username if creator else None
-
-        return cls(
-            id=template.id,
-            name=template.name,
-            description=template.description,
-            minecraft_version=template.minecraft_version,
-            server_type=template.server_type,
-            configuration=configuration,
-            default_groups=default_groups,
-            created_by=template.created_by,
-            is_public=template.is_public,
-            created_at=template.created_at,
-            updated_at=template.updated_at,
-            creator_name=creator_name,
         )
 
     model_config = ConfigDict(from_attributes=True)

@@ -78,6 +78,19 @@ def test_legacy_create_template_from_server_requires_db():
         coro.send(None)
 
 
+def test_legacy_create_template_from_server_requires_creator():
+    """Pin the second legacy security contract: even when a `db=` session
+    is supplied, omitting `creator=` must raise `TemplateError`. The
+    `db` check runs first, so we pass a sentinel session to reach the
+    `creator is None` branch."""
+    sentinel_db = object()  # never touched: creator check raises first
+    coro = shim_module.template_service.create_template_from_server(
+        server_id=1, name="x", db=sentinel_db, creator=None
+    )
+    with pytest.raises(TemplateError, match="Creator user is required"):
+        coro.send(None)
+
+
 def test_legacy_create_template_from_server_is_async():
     """Pin async-ness so a refactor cannot accidentally drop it."""
     method = shim_module.template_service.create_template_from_server

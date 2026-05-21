@@ -8,7 +8,9 @@ from app.core.database import get_db
 from app.servers.models import ServerType
 from app.services.authorization_service import authorization_service
 from app.templates.api.dependencies import get_template_service
-from app.templates.application.service import TemplateService
+from app.templates.application.service import (
+    TemplateService as _ApplicationTemplateService,
+)
 from app.templates.domain.exceptions import (
     TemplateAccessError,
     TemplateError,
@@ -43,7 +45,7 @@ async def create_template_from_server(
     request: TemplateCreateFromServerRequest,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
-    template_service: TemplateService = Depends(get_template_service),
+    template_service: _ApplicationTemplateService = Depends(get_template_service),
 ):
     """
     Create a template from an existing server
@@ -94,7 +96,7 @@ async def create_template_from_server(
 async def create_custom_template(
     request: TemplateCreateCustomRequest,
     current_user: User = Depends(get_current_user),
-    template_service: TemplateService = Depends(get_template_service),
+    template_service: _ApplicationTemplateService = Depends(get_template_service),
 ):
     """
     Create a custom template with specified configuration
@@ -153,7 +155,7 @@ async def list_templates(
     page: int = Query(1, ge=1, description="Page number"),
     size: int = Query(50, ge=1, le=100, description="Page size"),
     current_user: User = Depends(get_current_user),
-    template_service: TemplateService = Depends(get_template_service),
+    template_service: _ApplicationTemplateService = Depends(get_template_service),
 ):
     """
     List templates with filtering
@@ -193,7 +195,7 @@ async def list_templates(
 @router.get("/statistics", response_model=TemplateStatisticsResponse)
 async def get_template_statistics(
     current_user: User = Depends(get_current_user),
-    template_service: TemplateService = Depends(get_template_service),
+    template_service: _ApplicationTemplateService = Depends(get_template_service),
 ):
     """
     Get template usage statistics
@@ -218,7 +220,7 @@ async def get_template_statistics(
 async def get_template(
     template_id: int,
     current_user: User = Depends(get_current_user),
-    template_service: TemplateService = Depends(get_template_service),
+    template_service: _ApplicationTemplateService = Depends(get_template_service),
 ):
     """
     Get template details by ID
@@ -255,7 +257,7 @@ async def update_template(
     template_id: int,
     request: TemplateUpdateRequest,
     current_user: User = Depends(get_current_user),
-    template_service: TemplateService = Depends(get_template_service),
+    template_service: _ApplicationTemplateService = Depends(get_template_service),
 ):
     """
     Update template
@@ -299,7 +301,7 @@ async def update_template(
 async def delete_template(
     template_id: int,
     current_user: User = Depends(get_current_user),
-    template_service: TemplateService = Depends(get_template_service),
+    template_service: _ApplicationTemplateService = Depends(get_template_service),
 ):
     """
     Delete template
@@ -341,7 +343,7 @@ async def clone_template(
     template_id: int,
     request: TemplateCloneRequest,
     current_user: User = Depends(get_current_user),
-    template_service: TemplateService = Depends(get_template_service),
+    template_service: _ApplicationTemplateService = Depends(get_template_service),
 ):
     """
     Clone an existing template

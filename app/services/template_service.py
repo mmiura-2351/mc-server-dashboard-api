@@ -33,7 +33,6 @@ from app.templates.domain.exceptions import (
     TemplateError,
     TemplateNotFoundError,
 )
-from app.users.domain.value_objects import Role
 from app.users.models import User
 
 __all__ = [
@@ -64,10 +63,6 @@ class _LegacyTemplateFacade:
             server_read=SqlAlchemyServerReadPort(db),
             templates_directory=self.templates_directory,
         )
-
-    @staticmethod
-    def _is_admin(user: User) -> bool:
-        return user.role == Role.admin
 
     async def create_template_from_server(
         self,
