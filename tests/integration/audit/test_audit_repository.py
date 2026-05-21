@@ -351,17 +351,24 @@ async def test_security_alerts_severity_emits_postgres_operator() -> None:
     repo = SqlAlchemyAuditRepository(db)
     await repo.list_security_alerts(severity="critical", limit=10)
 
-    # First filter call is resource_type=='security'; the severity
-    # filter is the second one. Compile against the postgresql dialect
-    # so the operator renders as plain SQL text.
-    severity_expr = query.filter.call_args_list[1].args[0]
-    compiled = str(
-        severity_expr.compile(
-            dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True}
+    # Locate the severity filter by inspecting the compiled SQL of each
+    # `.filter(...)` call rather than by positional index — survives
+    # future refactors that reorder filters or fold them into a helper.
+    def _compile(expr) -> str:
+        return str(
+            expr.compile(
+                dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True}
+            )
         )
-    )
-    assert "->>" in compiled
-    assert "json_extract" not in compiled
+
+    severity_compiled = [
+        _compile(call.args[0])
+        for call in query.filter.call_args_list
+        if "severity" in _compile(call.args[0])
+    ]
+    assert len(severity_compiled) == 1, query.filter.call_args_list
+    assert "->>" in severity_compiled[0]
+    assert "json_extract" not in severity_compiled[0]
 
 
 @pytest.mark.asyncio
