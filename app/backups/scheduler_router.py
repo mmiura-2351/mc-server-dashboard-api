@@ -1,6 +1,9 @@
-"""
-New backup scheduler API endpoints
-Server owner and admin access permission support
+"""Backup scheduler REST API router.
+
+Uses `BackupSchedulerService` via the lifespan-scoped
+`get_backup_scheduler_service` dependency. The legacy `db.query` paths
+for `BackupScheduleLog` and `User` are gone (the adapter joins both
+via `joinedload(executed_by)`).
 """
 
 from typing import List
@@ -9,7 +12,17 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from app.auth.dependencies import get_current_user
-from app.backups.models import BackupScheduleLog
+from app.backups.api._mappers import (
+    backup_schedule_entity_to_response,
+    backup_schedule_log_entity_to_response,
+    scheduler_status_to_response,
+)
+from app.backups.api.dependencies import get_backup_scheduler_service
+from app.backups.application.scheduler import BackupSchedulerService
+from app.backups.domain.exceptions import (
+    BackupScheduleAlreadyExistsError,
+    BackupScheduleNotFoundError,
+)
 from app.backups.schemas import (
     BackupScheduleLogResponse,
     BackupScheduleRequest,
@@ -19,7 +32,6 @@ from app.backups.schemas import (
 )
 from app.core.database import get_db
 from app.services.authorization_service import authorization_service
-from app.services.backup_scheduler import backup_scheduler
 from app.users.domain.value_objects import Role
 from app.users.models import User
 
@@ -36,27 +48,13 @@ async def create_backup_schedule(
     request: BackupScheduleRequest,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
+    scheduler: BackupSchedulerService = Depends(get_backup_scheduler_service),
 ):
-    """
-    Create a backup schedule for a server
-
-    Create an automated backup schedule for the specified server.
-    Only server owners and admins can create schedules.
-
-    - **interval_hours**: How often to create backups (1-168 hours)
-    - **max_backups**: Maximum number of backups to keep (1-30)
-    - **enabled**: Whether the schedule is active
-    - **only_when_running**: Only backup when server is running
-    """
+    """Create a backup schedule for a server."""
     try:
-        # Check server access
         authorization_service.check_server_access(server_id, current_user, db)
 
-        # All authenticated users can create backup schedules (Phase 1: shared resource model)
-        # No role restriction - all users can create backup schedules
-
-        schedule = await backup_scheduler.create_schedule(
-            db=db,
+        entity = await scheduler.create_schedule(
             server_id=server_id,
             interval_hours=request.interval_hours,
             max_backups=request.max_backups,
@@ -64,24 +62,13 @@ async def create_backup_schedule(
             only_when_running=request.only_when_running,
             executed_by_user_id=current_user.id,
         )
+        return backup_schedule_entity_to_response(entity)
 
-        return BackupScheduleResponse.model_validate(schedule)
-
-    except ValueError as e:
-        if "already has" in str(e):
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail=str(e),
-            )
-        elif "not found" in str(e):
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=str(e),
-            )
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(e),
-        )
+    except BackupScheduleAlreadyExistsError as e:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
+    except BackupScheduleNotFoundError as e:
+        # server-not-found case (raised from the create path)
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
     except HTTPException:
         raise
     except Exception as e:
@@ -99,26 +86,19 @@ async def get_backup_schedule(
     server_id: int,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
+    scheduler: BackupSchedulerService = Depends(get_backup_scheduler_service),
 ):
-    """
-    Get backup schedule for a server
-
-    Returns the backup schedule configuration for the specified server.
-    Server owners and admins can access schedules.
-    """
+    """Get backup schedule for a server."""
     try:
-        # Check server access (owner or admin)
         authorization_service.check_server_access(server_id, current_user, db)
 
-        schedule = await backup_scheduler.get_schedule(db=db, server_id=server_id)
-
-        if not schedule:
+        entity = await scheduler.get_schedule(server_id=server_id)
+        if not entity:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"No backup schedule found for server {server_id}",
             )
-
-        return BackupScheduleResponse.model_validate(schedule)
+        return backup_schedule_entity_to_response(entity)
 
     except HTTPException:
         raise
@@ -138,22 +118,13 @@ async def update_backup_schedule(
     request: BackupScheduleUpdateRequest,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
+    scheduler: BackupSchedulerService = Depends(get_backup_scheduler_service),
 ):
-    """
-    Update backup schedule for a server
-
-    Updates the backup schedule settings for a server.
-    Only server owners and admins can update schedules.
-    """
+    """Update backup schedule for a server."""
     try:
-        # Check server access
         authorization_service.check_server_access(server_id, current_user, db)
 
-        # All authenticated users can update backup schedules (Phase 1: shared resource model)
-        # No role restriction - all users can update backup schedules
-
-        schedule = await backup_scheduler.update_schedule(
-            db=db,
+        entity = await scheduler.update_schedule(
             server_id=server_id,
             interval_hours=request.interval_hours,
             max_backups=request.max_backups,
@@ -161,19 +132,10 @@ async def update_backup_schedule(
             only_when_running=request.only_when_running,
             executed_by_user_id=current_user.id,
         )
+        return backup_schedule_entity_to_response(entity)
 
-        return BackupScheduleResponse.model_validate(schedule)
-
-    except ValueError as e:
-        if "not found" in str(e):
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=str(e),
-            )
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(e),
-        )
+    except BackupScheduleNotFoundError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
     except HTTPException:
         raise
     except Exception as e:
@@ -191,26 +153,15 @@ async def delete_backup_schedule(
     server_id: int,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
+    scheduler: BackupSchedulerService = Depends(get_backup_scheduler_service),
 ):
-    """
-    Delete backup schedule for a server
-
-    Removes the backup schedule for the specified server.
-    Only server owners and admins can delete schedules.
-    """
+    """Delete backup schedule for a server."""
     try:
-        # Check server access
         authorization_service.check_server_access(server_id, current_user, db)
 
-        # All authenticated users can delete backup schedules (Phase 1: shared resource model)
-        # No role restriction - all users can delete backup schedules
-
-        success = await backup_scheduler.delete_schedule(
-            db=db,
-            server_id=server_id,
-            executed_by_user_id=current_user.id,
+        success = await scheduler.delete_schedule(
+            server_id=server_id, executed_by_user_id=current_user.id
         )
-
         if not success:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -236,44 +187,14 @@ async def get_backup_schedule_logs(
     size: int = Query(50, ge=1, le=100, description="Page size"),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
+    scheduler: BackupSchedulerService = Depends(get_backup_scheduler_service),
 ):
-    """
-    Get backup schedule logs for a server
-
-    Returns the history of backup schedule operations for the specified server.
-    Server owners and admins can access logs.
-    """
+    """Get backup schedule logs for a server."""
     try:
-        # Check server access (owner or admin)
         authorization_service.check_server_access(server_id, current_user, db)
 
-        # Calculate offset
-        offset = (page - 1) * size
-
-        # Query logs
-        logs = (
-            db.query(BackupScheduleLog)
-            .filter(BackupScheduleLog.server_id == server_id)
-            .order_by(BackupScheduleLog.created_at.desc())
-            .offset(offset)
-            .limit(size)
-            .all()
-        )
-
-        # Create response with user information
-        log_responses = []
-        for log in logs:
-            log_data = BackupScheduleLogResponse.from_orm(log)
-
-            # Add username if executed by a user
-            if log.executed_by_user_id:
-                user = db.query(User).filter(User.id == log.executed_by_user_id).first()
-                if user:
-                    log_data.executed_by_username = user.username
-
-            log_responses.append(log_data)
-
-        return log_responses
+        logs = await scheduler.list_logs_for_server(server_id, page=page, size=size)
+        return [backup_schedule_log_entity_to_response(log) for log in logs]
 
     except HTTPException:
         raise
@@ -290,42 +211,20 @@ async def get_backup_schedule_logs(
 )
 async def get_scheduler_status(
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    scheduler: BackupSchedulerService = Depends(get_backup_scheduler_service),
 ):
-    """
-    Get backup scheduler status (admin only)
-
-    Returns the current status of the backup scheduler including
-    total schedules, enabled schedules, and system information.
-    """
+    """Get backup scheduler status (admin only)."""
     try:
-        # Only admins can view scheduler status
         if current_user.role != Role.admin:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Only admins can view scheduler status",
             )
 
-        # Get all schedules
-        all_schedules = await backup_scheduler.list_schedules(db=db)
-        enabled_schedules = await backup_scheduler.list_schedules(
-            db=db, enabled_only=True
-        )
+        all_schedules = await scheduler.list_schedules()
+        enabled_schedules = await scheduler.list_schedules(enabled_only=True)
 
-        # Find next execution time
-        next_execution = None
-        if enabled_schedules:
-            next_times = [s.next_backup_at for s in enabled_schedules if s.next_backup_at]
-            if next_times:
-                next_execution = min(next_times)
-
-        return SchedulerStatusResponse(
-            is_running=backup_scheduler.is_running,
-            total_schedules=len(all_schedules),
-            enabled_schedules=len(enabled_schedules),
-            cache_size=backup_scheduler.cache_size,
-            next_execution=next_execution,
-        )
+        return scheduler_status_to_response(scheduler, all_schedules, enabled_schedules)
 
     except HTTPException:
         raise
@@ -343,27 +242,18 @@ async def get_scheduler_status(
 async def list_all_backup_schedules(
     enabled_only: bool = Query(False, description="Only return enabled schedules"),
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    scheduler: BackupSchedulerService = Depends(get_backup_scheduler_service),
 ):
-    """
-    List all backup schedules (admin only)
-
-    Returns a list of all backup schedules in the system.
-    Only admins can access this endpoint.
-    """
+    """List all backup schedules (admin only)."""
     try:
-        # Only admins can list all schedules
         if current_user.role != Role.admin:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Only admins can list all backup schedules",
             )
 
-        schedules = await backup_scheduler.list_schedules(
-            db=db, enabled_only=enabled_only
-        )
-
-        return [BackupScheduleResponse.from_orm(schedule) for schedule in schedules]
+        schedules = await scheduler.list_schedules(enabled_only=enabled_only)
+        return [backup_schedule_entity_to_response(s) for s in schedules]
 
     except HTTPException:
         raise

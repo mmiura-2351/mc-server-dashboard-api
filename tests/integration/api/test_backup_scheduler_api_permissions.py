@@ -3,11 +3,34 @@ from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
 from app.auth.auth import create_access_token
+from app.backups import backup_scheduler_instance
+from app.backups.adapters.uow import SqlAlchemyBackupsUnitOfWork
+from app.backups.application.scheduler import BackupSchedulerService
 from app.backups.models import BackupSchedule
 from app.main import app
+from app.servers.adapters.read_port import SqlAlchemyServerReadPort
 from app.servers.models import Server
 from app.users.domain.value_objects import Role
 from app.users.models import User
+
+
+@pytest.fixture(autouse=True)
+def _bootstrap_scheduler_instance(db: Session):
+    """Provision a `BackupSchedulerService` bound to the test session.
+
+    The production lifespan callback (`_initialize_backup_scheduler`)
+    does this for real deployments; in the test harness we install a
+    per-test instance so the DI-resolved `get_backup_scheduler_service`
+    returns something usable. Cleared in teardown so tests stay
+    isolated.
+    """
+    scheduler = BackupSchedulerService(
+        uow_factory=lambda: SqlAlchemyBackupsUnitOfWork(db=db),
+        server_read_factory=lambda: SqlAlchemyServerReadPort(db),
+    )
+    backup_scheduler_instance.set(scheduler)
+    yield
+    backup_scheduler_instance.clear()
 
 
 class TestBackupSchedulerAPIPermissions:
@@ -220,9 +243,7 @@ class TestBackupSchedulerAPIPermissions:
         db.commit()
 
         # Clear scheduler cache to avoid conflicts with other tests
-        from app.services.backup_scheduler import backup_scheduler
-
-        backup_scheduler.clear_cache()
+        backup_scheduler_instance.get().clear_cache()
 
         # Create schedule
         schedule = BackupSchedule(

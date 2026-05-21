@@ -153,12 +153,30 @@ async def _initialize_database_integration():
 
 
 async def _initialize_backup_scheduler():
-    """Initialize backup scheduler - optional service"""
+    """Initialize backup scheduler - optional service.
+
+    Builds a hexagonal `BackupSchedulerService` from
+    `make_backup_scheduler()` and stores it in
+    `backup_scheduler_instance` so request handlers and the legacy
+    `_SchedulerProxy` shim both resolve the same singleton.
+    """
     try:
         logger.info("Starting backup scheduler...")
-        from app.services.backup_scheduler import backup_scheduler
+        from app.backups import backup_scheduler_instance
+        from app.backups.api.dependencies import make_backup_scheduler
 
-        await backup_scheduler.start_scheduler()
+        scheduler = make_backup_scheduler()
+        backup_scheduler_instance.set(scheduler)
+        try:
+            await scheduler.start_scheduler()
+        except Exception:
+            # Partial-failure recovery: the holder was already populated
+            # above. If `start_scheduler` fails we must clear it so the
+            # next health-check / dependency lookup raises the explicit
+            # "not initialised" RuntimeError rather than returning a
+            # half-constructed scheduler.
+            backup_scheduler_instance.clear()
+            raise
         service_status.backup_scheduler_ready = True
         logger.info("Backup scheduler started successfully")
 
@@ -228,9 +246,11 @@ async def _cleanup_services():
     if service_status.backup_scheduler_ready:
         try:
             logger.info("Stopping backup scheduler...")
-            from app.services.backup_scheduler import backup_scheduler
+            from app.backups import backup_scheduler_instance
 
-            await backup_scheduler.stop_scheduler()
+            scheduler = backup_scheduler_instance.get()
+            await scheduler.stop_scheduler()
+            backup_scheduler_instance.clear()
             logger.info("Backup scheduler stopped successfully")
         except Exception as e:
             logger.error(f"Error stopping backup scheduler: {e}")
