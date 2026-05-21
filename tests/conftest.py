@@ -31,7 +31,8 @@ from app.core.database import Base, get_db  # noqa: E402
 from app.main import app  # noqa: E402
 from app.users.adapters.uow import SqlAlchemyUsersUnitOfWork  # noqa: E402
 from app.users.application.service import UserService  # noqa: E402
-from app.users.models import Role, User  # noqa: E402
+from app.users.domain.value_objects import Role  # noqa: E402
+from app.users.models import User  # noqa: E402
 
 SQLALCHEMY_DATABASE_URL = f"sqlite:///{test_db_path}"
 

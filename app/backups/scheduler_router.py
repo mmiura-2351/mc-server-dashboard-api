@@ -20,7 +20,8 @@ from app.backups.schemas import (
 from app.core.database import get_db
 from app.services.authorization_service import authorization_service
 from app.services.backup_scheduler import backup_scheduler
-from app.users.models import Role, User
+from app.users.domain.value_objects import Role
+from app.users.models import User
 
 router = APIRouter(tags=["backup-scheduler"])
 

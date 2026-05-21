@@ -10,7 +10,7 @@ from typing import List, Optional
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.core.visibility import ResourceType, VisibilityType
-from app.users.models import Role
+from app.users.domain.value_objects import Role
 
 
 class VisibilityUpdateRequest(BaseModel):

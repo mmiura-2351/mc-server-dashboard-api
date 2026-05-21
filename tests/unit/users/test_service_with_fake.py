@@ -9,7 +9,7 @@ from fastapi import HTTPException
 
 from app.users.application.service import UserService, pwd_context
 from app.users.domain.entities import UserEntity
-from app.users.models import Role
+from app.users.domain.value_objects import Role
 from tests.unit.users.fakes import FakeUsersUnitOfWork
 
 

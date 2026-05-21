@@ -13,7 +13,8 @@ from app.core.security import PathValidator, SecurityError
 from app.groups.models import Group, GroupType, ServerGroup
 from app.servers.models import Server
 from app.services.real_time_server_commands import real_time_server_commands
-from app.users.models import Role, User
+from app.users.domain.value_objects import Role
+from app.users.models import User
 
 logger = logging.getLogger(__name__)
 

@@ -6,7 +6,8 @@ from sqlalchemy.orm import Session
 
 from app.auth.adapters.uow import SqlAlchemyAuthUnitOfWork
 from app.auth.application.service import AuthService
-from app.users.models import RefreshToken, Role, User
+from app.users.domain.value_objects import Role
+from app.users.models import RefreshToken, User
 
 
 def _make_auth_service(db: Session) -> AuthService:

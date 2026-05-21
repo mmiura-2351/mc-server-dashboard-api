@@ -12,7 +12,8 @@ from app.servers.models import ServerType
 from app.servers.schemas import SupportedVersionsResponse
 from app.services.jar_cache_manager import jar_cache_manager
 from app.services.java_compatibility import java_compatibility_service
-from app.users.models import Role, User
+from app.users.domain.value_objects import Role
+from app.users.models import User
 
 logger = logging.getLogger(__name__)
 

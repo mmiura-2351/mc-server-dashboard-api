@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.core.visibility import ResourceType, VisibilityType
 from app.services.visibility_service import VisibilityService
-from app.users.models import Role
+from app.users.domain.value_objects import Role
 
 
 class TestVisibilityServiceRoleValidation:

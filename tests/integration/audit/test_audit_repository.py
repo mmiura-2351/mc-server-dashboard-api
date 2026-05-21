@@ -20,7 +20,8 @@ from app.audit.adapters.repository import (
 )
 from app.audit.domain.entities import AuditEventCommand, LogFilters
 from app.audit.models import AuditLog
-from app.users.models import Role, User
+from app.users.domain.value_objects import Role
+from app.users.models import User
 
 
 @pytest.fixture

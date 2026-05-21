@@ -24,7 +24,8 @@ from app.servers.service import (
     ServerTemplateService,
     ServerValidationService,
 )
-from app.users.models import Role, User
+from app.users.domain.value_objects import Role
+from app.users.models import User
 
 
 class TestServerSecurityValidator:

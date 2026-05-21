@@ -1,7 +1,7 @@
 import pytest
 from fastapi import HTTPException
 
-from app.users.models import Role
+from app.users.domain.value_objects import Role
 
 
 class TestUserService:

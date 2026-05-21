@@ -5,7 +5,8 @@ from fastapi import HTTPException, Request, status
 from sqlalchemy.orm import Session
 
 from app.servers.models import Backup, Server
-from app.users.models import Role, User
+from app.users.domain.value_objects import Role
+from app.users.models import User
 
 
 class AuthorizationService:

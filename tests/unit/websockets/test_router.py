@@ -10,7 +10,8 @@ from unittest.mock import AsyncMock, Mock, patch
 import pytest
 from fastapi import HTTPException, WebSocket
 
-from app.users.models import Role, User
+from app.users.domain.value_objects import Role
+from app.users.models import User
 from app.websockets.router import (
     websocket_notifications,
     websocket_server_logs,

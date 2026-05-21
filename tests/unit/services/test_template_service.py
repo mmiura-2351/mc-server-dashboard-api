@@ -18,7 +18,8 @@ from app.services.template_service import (
     TemplateService,
     template_service,
 )
-from app.users.models import Role, User
+from app.users.domain.value_objects import Role
+from app.users.models import User
 
 
 class TestTemplateServiceEnhancedCoverage:

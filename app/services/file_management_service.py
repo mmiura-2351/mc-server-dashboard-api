@@ -20,7 +20,8 @@ from app.servers.models import Server
 from app.services.encoding_handler import EncodingHandler
 from app.services.file_history_service import file_history_service
 from app.types import FileType
-from app.users.models import Role, User
+from app.users.domain.value_objects import Role
+from app.users.models import User
 
 logger = logging.getLogger(__name__)
 

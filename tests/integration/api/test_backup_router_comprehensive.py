@@ -12,7 +12,8 @@ from app.core.exceptions import (
     ServerNotFoundException,
 )
 from app.servers.models import Backup, BackupStatus, BackupType, Server, ServerType
-from app.users.models import Role, User
+from app.users.domain.value_objects import Role
+from app.users.models import User
 
 
 def get_auth_headers(username: str):

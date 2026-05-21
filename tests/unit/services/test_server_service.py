@@ -5,7 +5,8 @@ from fastapi import HTTPException
 
 from app.servers.models import Server, ServerStatus, ServerType
 from app.services.server_service import ServerService, server_service
-from app.users.models import Role, User
+from app.users.domain.value_objects import Role
+from app.users.models import User
 
 
 class TestServerService:
