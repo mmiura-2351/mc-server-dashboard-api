@@ -1,9 +1,12 @@
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.servers.models import ServerType
+
+if TYPE_CHECKING:
+    from app.templates.domain.entities import TemplateEntity
 
 
 class TemplateCreateFromServerRequest(BaseModel):
@@ -134,21 +137,75 @@ class TemplateResponse(BaseModel):
     creator_name: Optional[str] = None
 
     @classmethod
+    def from_entity(cls, entity: "TemplateEntity") -> "TemplateResponse":
+        """Create TemplateResponse from a domain `TemplateEntity`.
+
+        The entity already carries materialised `configuration`,
+        `default_groups`, and `creator_name`, so no ORM lookups are
+        performed here. Preferred over `from_orm` for new callsites.
+        """
+        # The TemplateResponse fields are non-Optional for `id`,
+        # `created_at`, `updated_at`; entities returned by the
+        # application service after a successful read or write always
+        # have these set.
+        assert entity.id is not None
+        assert entity.created_at is not None
+        assert entity.updated_at is not None
+        return cls(
+            id=entity.id,
+            name=entity.name,
+            description=entity.description,
+            minecraft_version=entity.minecraft_version,
+            server_type=entity.server_type,
+            configuration=entity.configuration,
+            default_groups=entity.default_groups,
+            created_by=entity.created_by,
+            is_public=entity.is_public,
+            created_at=entity.created_at,
+            updated_at=entity.updated_at,
+            creator_name=entity.creator_name,
+        )
+
+    @classmethod
     def from_orm(cls, template) -> "TemplateResponse":
-        """Create TemplateResponse from ORM model"""
+        """Create TemplateResponse from an ORM model or domain entity.
+
+        Retained as a backward-compatible alias so legacy callers
+        (notably `app.services.backup_service`, which still returns a
+        `Template` ORM row via the shim) keep working. New code should
+        prefer `from_entity`.
+        """
+        # Domain entities have `configuration` as a plain attribute;
+        # ORM rows expose `get_configuration()`. Dispatch dynamically so
+        # both shapes work without explicit isinstance checks.
+        get_configuration = getattr(template, "get_configuration", None)
+        configuration = (
+            get_configuration() if callable(get_configuration) else template.configuration
+        )
+        get_default_groups = getattr(template, "get_default_groups", None)
+        default_groups = (
+            get_default_groups()
+            if callable(get_default_groups)
+            else template.default_groups
+        )
+        creator_name = getattr(template, "creator_name", None)
+        if creator_name is None:
+            creator = getattr(template, "creator", None)
+            creator_name = creator.username if creator else None
+
         return cls(
             id=template.id,
             name=template.name,
             description=template.description,
             minecraft_version=template.minecraft_version,
             server_type=template.server_type,
-            configuration=template.get_configuration(),
-            default_groups=template.get_default_groups(),
+            configuration=configuration,
+            default_groups=default_groups,
             created_by=template.created_by,
             is_public=template.is_public,
             created_at=template.created_at,
             updated_at=template.updated_at,
-            creator_name=template.creator.username if template.creator else None,
+            creator_name=creator_name,
         )
 
     model_config = ConfigDict(from_attributes=True)

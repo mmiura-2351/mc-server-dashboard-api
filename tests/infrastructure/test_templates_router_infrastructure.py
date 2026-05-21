@@ -21,15 +21,15 @@ class TestTemplatesRouterConfiguration:
 
     def test_router_imports(self):
         """Test basic router imports and initialization"""
+        from app.templates.api.dependencies import get_template_service
         from app.templates.router import (
             get_current_user,
             get_db,
             router,
-            template_service,
         )
 
         assert router is not None
-        assert template_service is not None
+        assert get_template_service is not None
         assert get_current_user is not None
         assert get_db is not None
 
@@ -154,17 +154,17 @@ class TestTemplatesRouterServices:
     """Test templates router service integration"""
 
     def test_template_service_import(self):
-        """Test that template_service is properly imported"""
-        from app.templates.router import template_service
+        """Test that the template service dependency is importable"""
+        from app.templates.api.dependencies import get_template_service
 
-        assert template_service is not None
+        assert get_template_service is not None
 
     def test_template_service_available(self):
-        """Test that template service methods are accessible"""
-        from app.templates.router import template_service
+        """Test that template service dependency is callable"""
+        from app.templates.api.dependencies import get_template_service
 
         # Just test that we can access it
-        assert template_service is not None
+        assert callable(get_template_service)
 
 
 class TestTemplatesRouterHTTPStatus:
