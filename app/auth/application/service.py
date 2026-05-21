@@ -23,8 +23,7 @@ class AuthService:
         """Issue a fresh refresh token for *user_id*.
 
         Any still-active refresh token of the same user is revoked first
-        so each user has at most one valid token at a time (matches the
-        legacy behaviour in `app.auth.auth.create_refresh_token`).
+        so each user has at most one valid token at a time.
         """
         async with self._uow as uow:
             await uow.refresh_tokens.revoke_active_for_user(user_id)
