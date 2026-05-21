@@ -1,13 +1,32 @@
+"""Groups HTTP router.
+
+Each endpoint depends on `get_group_service` and dispatches to the
+hexagonal `GroupService` (`app.groups.application.service`). Domain
+exceptions are mapped to HTTPException at the boundary so the
+application layer never imports FastAPI.
+"""
+
 import logging
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy.orm import Session
 
 from app.auth.dependencies import get_current_user
-from app.core.database import get_db
+from app.groups.api.dependencies import get_group_service
+from app.groups.application.service import GroupService as _ApplicationGroupService
+from app.groups.domain.exceptions import (
+    GroupAccessError,
+    GroupAlreadyExistsError,
+    GroupHasAttachmentsError,
+    GroupNotFoundError,
+    PlayerNotFoundInGroup,
+    ServerGroupAttachmentExistsError,
+    ServerGroupAttachmentNotFoundError,
+    ServerNotFoundForAttachment,
+)
 from app.groups.models import GroupType
 from app.groups.schemas import (
+    AttachedGroupResponse,
     AttachedServerResponse,
     GroupCreateRequest,
     GroupListResponse,
@@ -18,43 +37,59 @@ from app.groups.schemas import (
     ServerAttachRequest,
     ServerGroupsResponse,
 )
-from app.services.group_service import GroupService
+from app.users.domain.value_objects import Role
 from app.users.models import User
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["groups"])
 
 
+def _is_admin(user: User) -> bool:
+    return user.role == Role.admin
+
+
+def _entity_to_response(entity) -> GroupResponse:
+    """Build a `GroupResponse` from a `GroupEntity` (domain) row."""
+    from app.groups.schemas import PlayerSchema
+
+    players = [
+        PlayerSchema(
+            uuid=player.get("uuid", ""),
+            username=player.get("username", ""),
+            added_at=player.get("added_at"),
+        )
+        for player in entity.players
+    ]
+    return GroupResponse(
+        id=entity.id,
+        name=entity.name,
+        description=entity.description,
+        type=entity.type,
+        players=players,
+        owner_id=entity.owner_id,
+        is_template=entity.is_template,
+        created_at=entity.created_at,
+        updated_at=entity.updated_at,
+    )
+
+
 @router.post("", response_model=GroupResponse, status_code=status.HTTP_201_CREATED)
 async def create_group(
     request: GroupCreateRequest,
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    group_service: _ApplicationGroupService = Depends(get_group_service),
 ):
-    """
-    Create a new group
-
-    Creates a group for managing OP or whitelist players that can be
-    attached to multiple servers.
-
-    - **name**: Unique group name for the user
-    - **group_type**: Either 'op' or 'whitelist'
-    - **description**: Optional group description
-    """
+    """Create a new group for managing OP or whitelist players."""
     try:
-        # Phase 1: All authenticated users can create groups
-        # No permission check needed - all authenticated users can create groups
-
-        group_service = GroupService(db)
-        group = group_service.create_group(
-            user=current_user,
+        entity = await group_service.create_group(
+            actor_id=current_user.id,
             name=request.name,
             group_type=request.group_type,
             description=request.description,
         )
-
-        return GroupResponse.from_orm(group)
-
+        return _entity_to_response(entity)
+    except GroupAlreadyExistsError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     except HTTPException:
         raise
     except Exception as e:
@@ -68,21 +103,15 @@ async def create_group(
 async def list_groups(
     group_type: Optional[GroupType] = Query(None, description="Filter by group type"),
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    group_service: _ApplicationGroupService = Depends(get_group_service),
 ):
-    """
-    List user's groups
-
-    Returns all groups owned by the current user, optionally filtered by type.
-    """
+    """List groups visible to the current user (Phase 1 = all groups)."""
     try:
-        group_service = GroupService(db)
-        groups = group_service.get_user_groups(current_user, group_type)
-
-        group_responses = [GroupResponse.from_orm(group) for group in groups]
-
-        return GroupListResponse(groups=group_responses, total=len(group_responses))
-
+        entities = await group_service.list_groups(
+            actor_id=current_user.id, group_type=group_type
+        )
+        responses = [_entity_to_response(e) for e in entities]
+        return GroupListResponse(groups=responses, total=len(responses))
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -94,19 +123,18 @@ async def list_groups(
 async def get_group(
     group_id: int,
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    group_service: _ApplicationGroupService = Depends(get_group_service),
 ):
-    """
-    Get group details
-
-    Returns detailed information about a specific group including all players.
-    """
+    """Get group details by id."""
     try:
-        group_service = GroupService(db)
-        group = group_service.get_group_by_id(current_user, group_id)
-
-        return GroupResponse.from_orm(group)
-
+        entity = await group_service.get_group(
+            actor_id=current_user.id, group_id=group_id
+        )
+        return _entity_to_response(entity)
+    except GroupNotFoundError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+    except GroupAccessError as e:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
     except HTTPException:
         raise
     except Exception as e:
@@ -121,24 +149,23 @@ async def update_group(
     group_id: int,
     request: GroupUpdateRequest,
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    group_service: _ApplicationGroupService = Depends(get_group_service),
 ):
-    """
-    Update group information
-
-    Updates group name and description. Group type cannot be changed.
-    """
+    """Update group name / description."""
     try:
-        group_service = GroupService(db)
-        group = group_service.update_group(
-            user=current_user,
+        entity = await group_service.update_group(
+            actor_id=current_user.id,
             group_id=group_id,
             name=request.name,
             description=request.description,
         )
-
-        return GroupResponse.from_orm(group)
-
+        return _entity_to_response(entity)
+    except GroupNotFoundError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+    except GroupAlreadyExistsError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    except GroupAccessError as e:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
     except HTTPException:
         raise
     except Exception as e:
@@ -152,17 +179,17 @@ async def update_group(
 async def delete_group(
     group_id: int,
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    group_service: _ApplicationGroupService = Depends(get_group_service),
 ):
-    """
-    Delete a group
-
-    Deletes a group if it's not attached to any servers.
-    """
+    """Delete a group (refuses if still attached to any server)."""
     try:
-        group_service = GroupService(db)
-        group_service.delete_group(current_user, group_id)
-
+        await group_service.delete_group(actor_id=current_user.id, group_id=group_id)
+    except GroupNotFoundError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+    except GroupHasAttachmentsError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    except GroupAccessError as e:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
     except HTTPException:
         raise
     except Exception as e:
@@ -180,25 +207,23 @@ async def add_player_to_group(
     group_id: int,
     request: PlayerAddRequest,
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    group_service: _ApplicationGroupService = Depends(get_group_service),
 ):
-    """
-    Add a player to a group
-
-    Adds a player by UUID and username to the group. If the player
-    already exists, updates their username.
-    """
+    """Add (or upsert) a player into a group."""
     try:
-        group_service = GroupService(db)
-        group = await group_service.add_player_to_group(
-            user=current_user,
+        entity = await group_service.add_player(
+            actor_id=current_user.id,
             group_id=group_id,
             uuid=request.uuid,
             username=request.username,
         )
-
-        return GroupResponse.from_orm(group)
-
+        return _entity_to_response(entity)
+    except GroupNotFoundError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+    except GroupAccessError as e:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     except HTTPException:
         raise
     except Exception as e:
@@ -217,21 +242,20 @@ async def remove_player_from_group(
     group_id: int,
     player_uuid: str,
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    group_service: _ApplicationGroupService = Depends(get_group_service),
 ):
-    """
-    Remove a player from a group
-
-    Removes a player by UUID from the group.
-    """
+    """Remove a player from a group."""
     try:
-        group_service = GroupService(db)
-        group = await group_service.remove_player_from_group(
-            user=current_user, group_id=group_id, uuid=player_uuid
+        entity = await group_service.remove_player(
+            actor_id=current_user.id, group_id=group_id, uuid=player_uuid
         )
-
-        return GroupResponse.from_orm(group)
-
+        return _entity_to_response(entity)
+    except GroupNotFoundError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+    except PlayerNotFoundInGroup as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+    except GroupAccessError as e:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
     except HTTPException:
         raise
     except Exception as e:
@@ -249,25 +273,26 @@ async def attach_group_to_server(
     group_id: int,
     request: ServerAttachRequest,
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    group_service: _ApplicationGroupService = Depends(get_group_service),
 ):
-    """
-    Attach a group to a server
-
-    Attaches this group to a server with optional priority.
-    Higher priority groups are processed first.
-    """
+    """Attach a group to a server (admin or server-owner only)."""
     try:
-        group_service = GroupService(db)
         await group_service.attach_group_to_server(
-            user=current_user,
+            actor_id=current_user.id,
+            actor_is_admin=_is_admin(current_user),
             server_id=request.server_id,
             group_id=group_id,
             priority=request.priority,
         )
-
         return {"message": f"Group {group_id} attached to server {request.server_id}"}
-
+    except ServerNotFoundForAttachment as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+    except GroupNotFoundError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+    except ServerGroupAttachmentExistsError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    except GroupAccessError as e:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
     except HTTPException:
         raise
     except Exception as e:
@@ -282,21 +307,25 @@ async def detach_group_from_server(
     group_id: int,
     server_id: int,
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    group_service: _ApplicationGroupService = Depends(get_group_service),
 ):
-    """
-    Detach a group from a server
-
-    Removes the attachment between this group and the specified server.
-    """
+    """Detach a group from a server (admin or server-owner only)."""
     try:
-        group_service = GroupService(db)
         await group_service.detach_group_from_server(
-            user=current_user, server_id=server_id, group_id=group_id
+            actor_id=current_user.id,
+            actor_is_admin=_is_admin(current_user),
+            server_id=server_id,
+            group_id=group_id,
         )
-
         return {"message": f"Group {group_id} detached from server {server_id}"}
-
+    except ServerNotFoundForAttachment as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+    except GroupNotFoundError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+    except ServerGroupAttachmentNotFoundError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+    except GroupAccessError as e:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
     except HTTPException:
         raise
     except Exception as e:
@@ -310,21 +339,28 @@ async def detach_group_from_server(
 async def get_group_servers(
     group_id: int,
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    group_service: _ApplicationGroupService = Depends(get_group_service),
 ):
-    """
-    Get servers attached to a group
-
-    Returns all servers that have this group attached.
-    """
+    """Return servers this group is attached to."""
     try:
-        group_service = GroupService(db)
-        servers = group_service.get_group_servers(current_user, group_id)
-
-        server_responses = [AttachedServerResponse(**server) for server in servers]
-
-        return GroupServersResponse(group_id=group_id, servers=server_responses)
-
+        views = await group_service.get_group_servers(
+            actor_id=current_user.id, group_id=group_id
+        )
+        responses = [
+            AttachedServerResponse(
+                id=v.id,
+                name=v.name,
+                status=v.status.value,
+                priority=v.priority,
+                attached_at=v.attached_at.isoformat(),
+            )
+            for v in views
+        ]
+        return GroupServersResponse(group_id=group_id, servers=responses)
+    except GroupNotFoundError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+    except GroupAccessError as e:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
     except HTTPException:
         raise
     except Exception as e:
@@ -334,30 +370,35 @@ async def get_group_servers(
         )
 
 
-# Server Groups Endpoint (for getting groups attached to a server)
+# Server Groups Endpoint
 
 
 @router.get("/servers/{server_id}", response_model=ServerGroupsResponse)
 async def get_server_groups(
     server_id: int,
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    group_service: _ApplicationGroupService = Depends(get_group_service),
 ):
-    """
-    Get groups attached to a server
-
-    Returns all groups attached to the specified server.
-    """
+    """Return groups attached to the specified server."""
     try:
-        group_service = GroupService(db)
-        groups = group_service.get_server_groups(current_user, server_id)
-
-        from app.groups.schemas import AttachedGroupResponse
-
-        group_responses = [AttachedGroupResponse(**group) for group in groups]
-
-        return ServerGroupsResponse(server_id=server_id, groups=group_responses)
-
+        views = await group_service.get_server_groups(
+            actor_id=current_user.id, server_id=server_id
+        )
+        responses = [
+            AttachedGroupResponse(
+                id=v.id,
+                name=v.name,
+                description=v.description,
+                type=v.type.value,
+                priority=v.priority,
+                attached_at=v.attached_at.isoformat(),
+                player_count=v.player_count,
+            )
+            for v in views
+        ]
+        return ServerGroupsResponse(server_id=server_id, groups=responses)
+    except ServerNotFoundForAttachment as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
     except HTTPException:
         raise
     except Exception as e:
