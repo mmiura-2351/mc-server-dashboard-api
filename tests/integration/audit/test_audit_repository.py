@@ -10,6 +10,8 @@ Uses the real worker-scoped SQLite test session. Confirms:
 - Statistics aggregate consistently with the underlying rows.
 """
 
+import logging
+
 import pytest
 
 from app.audit.adapters.repository import (
@@ -124,6 +126,80 @@ async def test_writer_swallows_direct_write_errors(db) -> None:
     _ = db
     bad_writer = SqlAlchemyAuditWriter(tracker=None, session_factory=_ExplodingSession)
     bad_writer.record(AuditEventCommand(action="x", resource_type="t"))
+
+
+class _TrackerSpy:
+    """Captures `add_event` kwargs so the mismatch-warning tests can prove
+    the tracker value still wins after the warning is emitted (#239)."""
+
+    def __init__(self, ip_address: str | None) -> None:
+        self.ip_address = ip_address
+        self.calls: list[dict] = []
+
+    def add_event(self, **kwargs) -> None:
+        self.calls.append(kwargs)
+
+
+@pytest.mark.asyncio
+async def test_writer_warns_on_ip_address_mismatch(caplog) -> None:
+    """Tracker path: divergent ip_address emits exactly one WARNING and
+    the tracker's value is still the one forwarded to `add_event`
+    (Resolves #239)."""
+    spy = _TrackerSpy(ip_address="1.2.3.4")
+    writer = SqlAlchemyAuditWriter(tracker=spy)
+
+    with caplog.at_level(logging.WARNING, logger="app.audit.adapters.repository"):
+        writer.record(
+            AuditEventCommand(action="y", resource_type="t", ip_address="10.0.0.99")
+        )
+
+    warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
+    assert len(warnings) == 1
+    record = warnings[0]
+    assert record.command_ip == "10.0.0.99"
+    assert record.tracker_ip == "1.2.3.4"
+    assert record.action == "y"
+    # Tracker value still wins: add_event is invoked with the command's
+    # kwargs (which carry no ip_address) — tracker.ip_address is what
+    # `AuditTracker.add_event` stamps onto the event downstream.
+    assert spy.calls == [
+        {
+            "action": "y",
+            "resource_type": "t",
+            "resource_id": None,
+            "details": None,
+            "user_id": None,
+        }
+    ]
+
+
+@pytest.mark.asyncio
+async def test_writer_does_not_warn_when_ip_address_matches(caplog) -> None:
+    """No warning when command and tracker agree on ip_address (#239)."""
+    spy = _TrackerSpy(ip_address="1.2.3.4")
+    writer = SqlAlchemyAuditWriter(tracker=spy)
+
+    with caplog.at_level(logging.WARNING, logger="app.audit.adapters.repository"):
+        writer.record(
+            AuditEventCommand(action="y", resource_type="t", ip_address="1.2.3.4")
+        )
+
+    assert [r for r in caplog.records if r.levelno == logging.WARNING] == []
+    assert len(spy.calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_writer_does_not_warn_when_command_ip_is_none(caplog) -> None:
+    """No warning when command carries no ip_address — the tracker
+    value is simply used and no comparison fires (#239)."""
+    spy = _TrackerSpy(ip_address="1.2.3.4")
+    writer = SqlAlchemyAuditWriter(tracker=spy)
+
+    with caplog.at_level(logging.WARNING, logger="app.audit.adapters.repository"):
+        writer.record(AuditEventCommand(action="y", resource_type="t"))
+
+    assert [r for r in caplog.records if r.levelno == logging.WARNING] == []
+    assert len(spy.calls) == 1
 
 
 @pytest.mark.asyncio

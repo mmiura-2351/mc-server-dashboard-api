@@ -41,7 +41,14 @@ class AuditTrackerProtocol(Protocol):
     adapter layer. `app.middleware.audit_middleware.AuditTracker` satisfies
     this protocol structurally — no inheritance needed. Mypy will catch
     drift on either side without creating an import cycle.
+
+    `ip_address` is declared so the writer's mismatch warning path
+    (Resolves #239) can read it via static attribute access rather than
+    `getattr` — mypy then enforces the contract on every tracker
+    implementation.
     """
+
+    ip_address: Optional[str]
 
     def add_event(
         self,
@@ -246,10 +253,25 @@ class SqlAlchemyAuditWriter:
     def record(self, command: AuditEventCommand) -> None:
         try:
             if self._tracker is not None:
-                # Tracker is request-scoped — let the middleware flush
-                # the batch at request end. The tracker carries its own
-                # `ip_address`, so the one on the command is ignored
-                # here (matches pre-#223 behaviour).
+                # Tracker is request-scoped and carries its own
+                # `ip_address` from the middleware; that value wins
+                # (matches pre-#223 behaviour). Warn when the command
+                # disagrees so callers outside the request flow
+                # (WebSocket, queued events) can spot the mismatch
+                # early (Resolves #239).
+                if (
+                    command.ip_address is not None
+                    and command.ip_address != self._tracker.ip_address
+                ):
+                    logger.warning(
+                        "AuditEventCommand.ip_address differs from tracker — "
+                        "tracker value will be used",
+                        extra={
+                            "command_ip": command.ip_address,
+                            "tracker_ip": self._tracker.ip_address,
+                            "action": command.action,
+                        },
+                    )
                 self._tracker.add_event(
                     action=command.action,
                     resource_type=command.resource_type,
