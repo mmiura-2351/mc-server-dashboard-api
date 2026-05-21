@@ -207,8 +207,10 @@ class FakeServerReadPort:
     Stores per-server `directory_path` and (optionally) a full
     `ServerEntity` snapshot consumed by `ServerReadPort.get`. The two
     stores are independent so that tests which only exercise the
-    file-history surface can stay terse, while templates tests can seed
-    a full entity.
+    file-history surface can stay terse, while templates / groups
+    tests can seed a full entity (including `owner_id`, which the
+    groups domain reads to apply the "admin-or-server-owner" rule —
+    see `app.groups.application.service._can_manage_server_groups`).
     """
 
     def __init__(

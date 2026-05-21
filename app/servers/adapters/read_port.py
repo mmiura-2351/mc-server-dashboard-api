@@ -58,4 +58,5 @@ class SqlAlchemyServerReadPort:
             port=row.port,
             max_memory=row.max_memory,
             max_players=row.max_players,
+            owner_id=row.owner_id,
         )

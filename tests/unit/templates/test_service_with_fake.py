@@ -85,6 +85,7 @@ async def test_create_template_from_server_happy_path(
             port=25565,
             max_memory=1024,
             max_players=20,
+            owner_id=42,
         )
     )
 
@@ -131,6 +132,7 @@ async def test_create_template_from_server_missing_directory(
             port=25565,
             max_memory=1024,
             max_players=20,
+            owner_id=1,
         )
     )
     with pytest.raises(TemplateCreationError):
@@ -198,6 +200,7 @@ async def test_apply_template_to_server_with_archive(
             port=25565,
             max_memory=1024,
             max_players=20,
+            owner_id=1,
         )
     )
     # Create a template via service so archive exists
