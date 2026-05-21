@@ -25,6 +25,7 @@ from app.groups.application.file_syncer import (
     GroupFileSyncer,
     _build_ops_and_whitelist,
 )
+from app.groups.domain.entities import AttachServerGroupCommand
 from app.groups.models import GroupType
 from app.servers.domain.entities import ServerEntity
 from app.servers.models import ServerType
@@ -35,7 +36,6 @@ from tests.unit.groups.fakes import (
     RecordingRealTimeCommands,
     make_group_entity,
 )
-
 
 # ---------------------------------------------------------------------------
 # Pure-function content correctness
@@ -183,10 +183,10 @@ async def test_update_server_files_writes_ops_and_whitelist(
         )
     )
     await server_group_repo.attach(
-        type("C", (), {"server_id": 1, "group_id": op_group.id, "priority": 1})()
+        AttachServerGroupCommand(server_id=1, group_id=op_group.id, priority=1)
     )
     await server_group_repo.attach(
-        type("C", (), {"server_id": 1, "group_id": wl_group.id, "priority": 0})()
+        AttachServerGroupCommand(server_id=1, group_id=wl_group.id, priority=0)
     )
 
     await syncer.update_server_files(1)
@@ -257,7 +257,7 @@ async def test_update_server_files_realtime_failure_swallowed(
         )
     )
     await server_group_repo.attach(
-        type("C", (), {"server_id": 1, "group_id": op_group.id, "priority": 0})()
+        AttachServerGroupCommand(server_id=1, group_id=op_group.id, priority=0)
     )
 
     rt_commands.sync_op_should_raise = RuntimeError("boom")

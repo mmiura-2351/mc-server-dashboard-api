@@ -9,12 +9,12 @@ correctness.
 
 from pathlib import Path
 from typing import Any
-from unittest.mock import AsyncMock
 
 import pytest
 
 from app.groups.application.file_syncer import GroupFileSyncer
 from app.groups.application.service import GroupService
+from app.groups.domain.entities import AttachServerGroupCommand
 from app.groups.domain.exceptions import (
     GroupAccessError,
     GroupAlreadyExistsError,
@@ -37,7 +37,6 @@ from tests.unit.groups.fakes import (
     RecordingRealTimeCommands,
     make_group_entity,
 )
-
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -267,8 +266,7 @@ async def test_delete_group_refuses_when_attached(
 ):
     group_repo.seed(make_group_entity(id=1, owner_id=1))
     await server_group_repo.attach(
-        # Use the AttachServerGroupCommand directly via the fake
-        type("C", (), {"server_id": 1, "group_id": 1, "priority": 0})()
+        AttachServerGroupCommand(server_id=1, group_id=1, priority=0)
     )
     with pytest.raises(GroupHasAttachmentsError):
         await service.delete_group(actor_id=1, group_id=1)

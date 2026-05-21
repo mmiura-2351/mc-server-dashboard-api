@@ -227,10 +227,7 @@ async def add_player_to_group(
     except HTTPException:
         raise
     except Exception as e:
-        import traceback
-
         logger.error(f"Failed to add player to group: {str(e)}")
-        logger.error(f"Traceback: {traceback.format_exc()}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to add player to group: {str(e)}",

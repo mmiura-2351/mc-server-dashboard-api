@@ -64,7 +64,7 @@ class _LegacyGroupFacade:
         # — the AttributeError-equivalent surfaces on attribute access.
         self._db = db
 
-    def attach_server_to_group(self, *args: Any, **kwargs: Any) -> Any:
+    async def attach_server_to_group(self, *args: Any, **kwargs: Any) -> Any:
         """Always raises.
 
         The legacy `app/servers/service.py:699` call expected this
@@ -75,6 +75,10 @@ class _LegacyGroupFacade:
         is `attach_group_to_server(server_id=..., group_id=..., priority=0)`
         on the hexagonal `GroupService`; see the follow-up issue linked
         from the #226 PR.
+
+        Declared `async` to satisfy the project's D-1 rule (no sync
+        public service methods on the new boundary); awaiting still
+        raises before any await point.
         """
         raise NotImplementedError(
             "attach_server_to_group is not a valid method; use "

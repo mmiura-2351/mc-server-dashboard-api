@@ -31,7 +31,6 @@ from app.groups.domain.exceptions import (
     GroupAlreadyExistsError,
     GroupHasAttachmentsError,
     GroupNotFoundError,
-    PlayerNotFoundInGroup,
     ServerGroupAttachmentExistsError,
     ServerGroupAttachmentNotFoundError,
     ServerNotFoundForAttachment,
@@ -399,6 +398,8 @@ class GroupService:
         if server is None:
             raise ServerNotFoundForAttachment(f"Server {server_id} not found")
 
+        # NB: access check before group lookup to avoid leaking existence to
+        # non-owners (legacy parity).
         if not _can_manage_server_groups(actor_id, actor_is_admin, server):
             raise GroupAccessError(
                 "Only server owners and admins can attach groups to servers"
@@ -587,6 +588,8 @@ class GroupService:
         attached to. Best-effort: failures are logged but never raised.
         """
         try:
+            # NB: re-enters the request-scoped UoW (db=session mode);
+            # commands fan out after exit by design.
             async with self._uow as uow:
                 attached = await uow.server_groups.list_server_dirs_for_group(group_id)
             for server_id, directory_path in attached:
@@ -602,11 +605,3 @@ class GroupService:
                 f"Failed to send real-time commands for group {group_id} "
                 f"({change_type}): {cmd_error}"
             )
-
-    # Re-exports for shim convenience (keeps backward compat without
-    # circular imports through `app.services.group_service`).
-    __all__ = ("GroupService",)
-
-    # `PlayerNotFoundInGroup` is referenced here so the import isn't
-    # pruned by linters even when no method body uses it.
-    _unused_exceptions = (PlayerNotFoundInGroup,)

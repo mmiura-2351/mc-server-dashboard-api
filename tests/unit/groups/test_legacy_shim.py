@@ -11,8 +11,6 @@ re-exports so a future cleanup cannot silently break the contract.
 
 import pytest
 
-from app.services import group_service as shim_module
-from app.services.group_service import _LegacyGroupFacade
 from app.groups.domain.exceptions import (
     GroupAccessError,
     GroupAlreadyExistsError,
@@ -24,6 +22,8 @@ from app.groups.domain.exceptions import (
     ServerGroupAttachmentNotFoundError,
     ServerNotFoundForAttachment,
 )
+from app.services import group_service as shim_module
+from app.services.group_service import _LegacyGroupFacade
 
 
 def test_group_service_alias_is_facade_class():
@@ -35,13 +35,14 @@ def test_group_service_alias_is_facade_class():
     assert isinstance(instance, _LegacyGroupFacade)
 
 
-def test_attach_server_to_group_raises_not_implemented():
+@pytest.mark.asyncio
+async def test_attach_server_to_group_raises_not_implemented():
     """Pin the latent-bug visibility contract: the legacy call shape
     used by `app/servers/service.py:699` must raise — silently
     swallowing the bug would be worse than reporting it."""
     instance = shim_module.GroupService(db=object())
     with pytest.raises(NotImplementedError, match="attach_server_to_group"):
-        instance.attach_server_to_group(group_id=1, server_id=1, db=object())
+        await instance.attach_server_to_group(group_id=1, server_id=1, db=object())
 
 
 def test_shim_reexports_exception_classes():

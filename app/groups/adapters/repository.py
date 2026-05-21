@@ -148,6 +148,7 @@ class SqlAlchemyGroupRepository:
         if row is None:
             return False
         self.db.delete(row)
+        self.db.flush()
         return True
 
     # ===================
@@ -306,4 +307,5 @@ class SqlAlchemyServerGroupRepository:
         if row is None:
             return False
         self.db.delete(row)
+        self.db.flush()
         return True
