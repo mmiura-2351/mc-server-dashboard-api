@@ -101,9 +101,7 @@ class TestRestore:
             await svc.restore_backup(99)
 
     @pytest.mark.asyncio
-    async def test_restore_non_completed_raises(
-        self, uow, server_read, tmp_backup_dir
-    ):
+    async def test_restore_non_completed_raises(self, uow, server_read, tmp_backup_dir):
         uow.backups.seed(
             make_backup_entity(id=1, server_id=1, status=BackupStatus.creating)
         )
@@ -155,9 +153,7 @@ class TestDelete:
 
 class TestScheduledBackup:
     @pytest.mark.asyncio
-    async def test_unknown_server_returns_none(
-        self, uow, server_read, tmp_backup_dir
-    ):
+    async def test_unknown_server_returns_none(self, uow, server_read, tmp_backup_dir):
         svc = _make_service(uow, server_read, tmp_backup_dir)
         result = await svc.create_scheduled_backup(99)
         assert result is None
@@ -194,7 +190,9 @@ class TestCreateBackup:
         # Disable running-server warning (no manager call needed)
         monkeypatch.setattr(svc, "_log_running_server_warning", lambda sid: None)
 
-        entity = await svc.create_backup(server_id=1, name="b", backup_type=BackupType.manual)
+        entity = await svc.create_backup(
+            server_id=1, name="b", backup_type=BackupType.manual
+        )
         assert entity is not None
         assert entity.status == BackupStatus.completed
         assert entity.file_size > 0

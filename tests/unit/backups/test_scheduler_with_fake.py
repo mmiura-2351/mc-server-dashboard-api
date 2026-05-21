@@ -75,17 +75,13 @@ class TestCreateSchedule:
         uow.schedules.seed_schedule(make_schedule_entity(id=1, server_id=1))
         scheduler = _make_scheduler(uow, server_read)
         with pytest.raises(BackupScheduleAlreadyExistsError):
-            await scheduler.create_schedule(
-                server_id=1, interval_hours=6, max_backups=5
-            )
+            await scheduler.create_schedule(server_id=1, interval_hours=6, max_backups=5)
 
     @pytest.mark.asyncio
     async def test_unknown_server_raises(self, uow, server_read):
         scheduler = _make_scheduler(uow, server_read)
         with pytest.raises(BackupScheduleNotFoundError):
-            await scheduler.create_schedule(
-                server_id=99, interval_hours=6, max_backups=5
-            )
+            await scheduler.create_schedule(server_id=99, interval_hours=6, max_backups=5)
 
     @pytest.mark.asyncio
     async def test_log_failure_rolls_back_atomically(self, uow, server_read):
@@ -97,9 +93,7 @@ class TestCreateSchedule:
         scheduler = _make_scheduler(uow, server_read)
 
         with pytest.raises(RuntimeError, match="forced log failure"):
-            await scheduler.create_schedule(
-                server_id=1, interval_hours=6, max_backups=5
-            )
+            await scheduler.create_schedule(server_id=1, interval_hours=6, max_backups=5)
 
         # No commit fired (atomic-or-nothing)
         assert uow.committed == 0
@@ -115,9 +109,7 @@ class TestUpdateAndCache:
     @pytest.mark.asyncio
     async def test_update_writes_log_and_invalidates_cache(self, uow, server_read):
         uow.schedules.seed_schedule(
-            make_schedule_entity(
-                id=1, server_id=1, interval_hours=6, max_backups=5
-            )
+            make_schedule_entity(id=1, server_id=1, interval_hours=6, max_backups=5)
         )
         scheduler = _make_scheduler(uow, server_read)
 
@@ -179,14 +171,10 @@ class TestReads:
         past = FROZEN_NOW - timedelta(hours=1)
         future = FROZEN_NOW + timedelta(hours=1)
         uow.schedules.seed_schedule(
-            make_schedule_entity(
-                id=1, server_id=1, enabled=True, next_backup_at=past
-            )
+            make_schedule_entity(id=1, server_id=1, enabled=True, next_backup_at=past)
         )
         uow.schedules.seed_schedule(
-            make_schedule_entity(
-                id=2, server_id=2, enabled=True, next_backup_at=future
-            )
+            make_schedule_entity(id=2, server_id=2, enabled=True, next_backup_at=future)
         )
         scheduler = _make_scheduler(uow, server_read)
         due = await scheduler.get_due_schedules()
@@ -216,3 +204,155 @@ class TestProperties:
         scheduler._schedule_cache[5] = make_schedule_entity(id=5, server_id=5)
         scheduler.clear_cache()
         assert scheduler.cache_size == 0
+
+
+# ---------------------------------------------------------------------------
+# _should_execute_backup
+#
+# Pin the current behaviour of the execution-decision helper so it does
+# not silently regress when the scheduler tick loop is implemented in a
+# follow-up PR. The comment in scheduler.py marks this as "kept for
+# unit-test coverage"; these tests make that claim true.
+# ---------------------------------------------------------------------------
+
+
+class TestShouldExecuteBackup:
+    @pytest.mark.asyncio
+    async def test_returns_true_when_due_and_running_check_disabled(
+        self, uow, server_read
+    ):
+        scheduler = _make_scheduler(uow, server_read)
+        past = FROZEN_NOW - timedelta(minutes=5)
+        schedule = make_schedule_entity(
+            id=1,
+            server_id=1,
+            enabled=True,
+            only_when_running=False,
+            next_backup_at=past,
+        )
+        ok, reason = await scheduler._should_execute_backup(schedule)
+        assert ok is True
+        assert reason == "Ready for backup"
+
+    @pytest.mark.asyncio
+    async def test_returns_false_when_disabled(self, uow, server_read):
+        scheduler = _make_scheduler(uow, server_read)
+        past = FROZEN_NOW - timedelta(minutes=5)
+        schedule = make_schedule_entity(
+            id=1,
+            server_id=1,
+            enabled=False,
+            only_when_running=False,
+            next_backup_at=past,
+        )
+        ok, reason = await scheduler._should_execute_backup(schedule)
+        assert ok is False
+        assert "disabled" in reason.lower()
+
+    @pytest.mark.asyncio
+    async def test_returns_false_when_not_yet_due(self, uow, server_read):
+        scheduler = _make_scheduler(uow, server_read)
+        future = FROZEN_NOW + timedelta(hours=1)
+        schedule = make_schedule_entity(
+            id=1,
+            server_id=1,
+            enabled=True,
+            only_when_running=False,
+            next_backup_at=future,
+        )
+        ok, reason = await scheduler._should_execute_backup(schedule)
+        assert ok is False
+        assert "Not yet time" in reason
+
+    @pytest.mark.asyncio
+    async def test_returns_true_when_no_next_backup_at(self, uow, server_read):
+        """A freshly-created schedule without a `next_backup_at` is
+        considered eligible — the gating is purely the future-time
+        check, not a non-null guard.
+        """
+        scheduler = _make_scheduler(uow, server_read)
+        schedule = make_schedule_entity(
+            id=1,
+            server_id=1,
+            enabled=True,
+            only_when_running=False,
+            next_backup_at=None,
+        )
+        ok, reason = await scheduler._should_execute_backup(schedule)
+        assert ok is True
+        assert reason == "Ready for backup"
+
+    @pytest.mark.asyncio
+    async def test_only_when_running_blocks_if_server_not_running(
+        self, uow, server_read, monkeypatch
+    ):
+        scheduler = _make_scheduler(uow, server_read)
+        past = FROZEN_NOW - timedelta(minutes=5)
+        schedule = make_schedule_entity(
+            id=1,
+            server_id=1,
+            enabled=True,
+            only_when_running=True,
+            next_backup_at=past,
+        )
+
+        from app.servers.models import ServerStatus
+
+        # Patch the module-level singleton's status lookup to return
+        # `stopped`; we want the gate to refuse execution.
+        monkeypatch.setattr(
+            "app.backups.application.scheduler.minecraft_server_manager.get_server_status",
+            lambda _server_id: ServerStatus.stopped,
+        )
+        ok, reason = await scheduler._should_execute_backup(schedule)
+        assert ok is False
+        assert "not running" in reason.lower()
+
+    @pytest.mark.asyncio
+    async def test_only_when_running_passes_if_server_running(
+        self, uow, server_read, monkeypatch
+    ):
+        scheduler = _make_scheduler(uow, server_read)
+        past = FROZEN_NOW - timedelta(minutes=5)
+        schedule = make_schedule_entity(
+            id=1,
+            server_id=1,
+            enabled=True,
+            only_when_running=True,
+            next_backup_at=past,
+        )
+
+        from app.servers.models import ServerStatus
+
+        monkeypatch.setattr(
+            "app.backups.application.scheduler.minecraft_server_manager.get_server_status",
+            lambda _server_id: ServerStatus.running,
+        )
+        ok, reason = await scheduler._should_execute_backup(schedule)
+        assert ok is True
+        assert reason == "Ready for backup"
+
+    @pytest.mark.asyncio
+    async def test_server_status_lookup_failure_blocks_execution(
+        self, uow, server_read, monkeypatch
+    ):
+        scheduler = _make_scheduler(uow, server_read)
+        past = FROZEN_NOW - timedelta(minutes=5)
+        schedule = make_schedule_entity(
+            id=1,
+            server_id=1,
+            enabled=True,
+            only_when_running=True,
+            next_backup_at=past,
+        )
+
+        def _boom(_server_id):  # pragma: no cover - exercised via patch
+            raise RuntimeError("status backend unavailable")
+
+        monkeypatch.setattr(
+            "app.backups.application.scheduler.minecraft_server_manager.get_server_status",
+            _boom,
+        )
+        ok, reason = await scheduler._should_execute_backup(schedule)
+        assert ok is False
+        assert "Failed to get server status" in reason

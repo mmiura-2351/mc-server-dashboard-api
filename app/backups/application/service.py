@@ -34,11 +34,25 @@ from app.core.exceptions import (
 )
 from app.core.security import SecurityError, TarExtractor
 from app.servers.domain.ports import ServerReadPort
-from app.servers.models import BackupStatus, BackupType, Server
+
+# `BackupStatus` / `BackupType` are runtime-required (used as values, not
+# just type annotations) — we accept the cross-domain enum import as a
+# documented deviation (see `docs/ARCHITECTURE.md` adoption notes). The
+# `Server` ORM class is only referenced from type annotations, so it
+# stays under TYPE_CHECKING to keep the application layer free of ORM
+# imports at runtime.
+from app.servers.models import BackupStatus, BackupType
+
+# `minecraft_server_manager` is the legacy module-level singleton; it is
+# *called* at runtime (`get_server_status`) so it cannot move under
+# TYPE_CHECKING. Cross-domain process-state lookup will move behind a
+# Port in a follow-up (#154-9).
 from app.services.minecraft_server import minecraft_server_manager
 
 if TYPE_CHECKING:
     from fastapi import UploadFile
+
+    from app.servers.models import Server
 
 logger = logging.getLogger(__name__)
 
@@ -73,7 +87,7 @@ class BackupService:
     # Helpers
     # ===================
 
-    async def _get_server_or_raise(self, server_id: int) -> Server:
+    async def _get_server_or_raise(self, server_id: int) -> "Server":
         """Resolve a server via `ServerReadPort`, raising the legacy
         `ServerNotFoundException` on miss.
 

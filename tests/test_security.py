@@ -550,7 +550,12 @@ class TestBackupServiceSecurity:
             # Create mock database session
             mock_db = Mock()
 
-            # Mock the validation service
+            # NOTE: After PR #264 the BackupValidationService shim is preserved
+            # for import-time compatibility, but its methods raise
+            # NotImplementedError; the actual validation logic moved into
+            # BackupService inline checks. The patch below is a no-op
+            # interceptor — this test still verifies tar-safety via
+            # TarExtractor.validate_archive_safety, not the patched validator.
             with patch(
                 "app.services.backup_service.BackupValidationService.validate_server_for_backup"
             ) as mock_validate:

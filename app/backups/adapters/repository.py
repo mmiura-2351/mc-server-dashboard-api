@@ -38,6 +38,7 @@ from app.backups.domain.entities import (
     UpdateBackupScheduleCommand,
 )
 from app.backups.models import BackupSchedule, BackupScheduleLog
+from app.core.datetime_utils import utcnow
 from app.servers.models import Backup, BackupStatus
 
 
@@ -317,8 +318,6 @@ class SqlAlchemyBackupScheduleRepository:
         # Bump updated_at explicitly: the legacy code did this manually
         # (the column has `onupdate=utcnow` but the schedule's tests
         # depend on the manual bump for deterministic ordering).
-        from app.core.datetime_utils import utcnow
-
         row.updated_at = utcnow()
         self.db.flush()
         return _schedule_to_entity(row)

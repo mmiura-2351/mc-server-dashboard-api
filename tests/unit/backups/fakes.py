@@ -74,9 +74,7 @@ class FakeBackupRepository:
             size=spec.size,
         )
 
-    async def get_statistics(
-        self, server_id: Optional[int] = None
-    ) -> BackupStatistics:
+    async def get_statistics(self, server_id: Optional[int] = None) -> BackupStatistics:
         rows = list(self._records.values())
         if server_id is not None:
             rows = [r for r in rows if r.server_id == server_id]
@@ -168,14 +166,10 @@ class FakeBackupScheduleRepository:
 
     # ----- Reads -----
 
-    async def find_by_server(
-        self, server_id: int
-    ) -> Optional[BackupScheduleEntity]:
+    async def find_by_server(self, server_id: int) -> Optional[BackupScheduleEntity]:
         return self._schedules.get(server_id)
 
-    async def list(
-        self, enabled_only: bool = False
-    ) -> List[BackupScheduleEntity]:
+    async def list(self, enabled_only: bool = False) -> List[BackupScheduleEntity]:
         rows = list(self._schedules.values())
         if enabled_only:
             rows = [r for r in rows if r.enabled]
@@ -201,9 +195,7 @@ class FakeBackupScheduleRepository:
 
     # ----- Writes -----
 
-    async def add(
-        self, command: CreateBackupScheduleCommand
-    ) -> BackupScheduleEntity:
+    async def add(self, command: CreateBackupScheduleCommand) -> BackupScheduleEntity:
         now = _utcnow()
         entity = BackupScheduleEntity(
             id=self._next_schedule_id,

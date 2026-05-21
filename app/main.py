@@ -163,11 +163,20 @@ async def _initialize_backup_scheduler():
     try:
         logger.info("Starting backup scheduler...")
         from app.backups import backup_scheduler_instance
-        from app.backups.application.factories import make_backup_scheduler
+        from app.backups.api.dependencies import make_backup_scheduler
 
         scheduler = make_backup_scheduler()
         backup_scheduler_instance.set(scheduler)
-        await scheduler.start_scheduler()
+        try:
+            await scheduler.start_scheduler()
+        except Exception:
+            # Partial-failure recovery: the holder was already populated
+            # above. If `start_scheduler` fails we must clear it so the
+            # next health-check / dependency lookup raises the explicit
+            # "not initialised" RuntimeError rather than returning a
+            # half-constructed scheduler.
+            backup_scheduler_instance.clear()
+            raise
         service_status.backup_scheduler_ready = True
         logger.info("Backup scheduler started successfully")
 

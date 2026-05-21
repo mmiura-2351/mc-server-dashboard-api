@@ -1,6 +1,11 @@
-"""Smoke tests for the factory helpers."""
+"""Smoke tests for the factory helpers.
 
-from app.backups.application.factories import (
+The helpers live in `app.backups.api.dependencies` (not under
+`application/`) so the application layer never imports from
+`adapters/` or SQLAlchemy. See `docs/ARCHITECTURE.md` §4.2.
+"""
+
+from app.backups.api.dependencies import (
     make_backup_scheduler,
     make_backup_service,
 )
