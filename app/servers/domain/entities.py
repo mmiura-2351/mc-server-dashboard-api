@@ -1,35 +1,66 @@
-"""Pure domain entities for the servers domain (minimal seed).
+"""Pure domain entities for the servers domain.
 
-This is a stub introduced for #225 (templates) so that the
-cross-domain `ServerReadPort.get` method can return a typed value
-without the templates use case knowing about SQLAlchemy.
+This module is the language the application layer speaks. The dataclasses
+have no SQLAlchemy, Pydantic, FastAPI, or any framework dependency — only
+the Python standard library (plus `ServerType` / `ServerStatus`, both
+`enum.Enum`, see deviation notes in `app.servers.domain.__init__`).
 
-TBD(#154-8): the full `ServerEntity` and accompanying `ServerRepository`
-land in Issue #228. Only the fields the templates domain genuinely
-consumes today are included here; do not speculatively expand the
-surface.
+The application service receives and returns these types. Adapters convert
+to/from ORM rows; the api layer converts to/from Pydantic DTOs.
+
+TBD(#154-8): expanded under #228 (PR 1/3). The original 9-field
+read-only seed introduced for #224 / #225 / #226 is preserved as a
+prefix of the new shape; the additional columns (`status`,
+`created_at`, `updated_at`, `description`, `template_id`,
+`is_deleted`, `owner_username`) are added with defaults so the
+existing cross-domain construction sites (e.g.
+`app.servers.adapters.read_port.SqlAlchemyServerReadPort`, the
+groups / templates / files unit-test fakes) keep compiling without
+edits. The full required-vs-default distinction will be tightened
+once PR #2 rewires the runtime to construct `ServerEntity` through
+the new `ServerRepository`.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional
 
-from app.servers.models import ServerType  # known deviation, see #235 / #228
+from app.servers.models import ServerStatus, ServerType  # known deviation, #235/#228
+
+
+def _epoch_utc() -> datetime:
+    """Stable placeholder timestamp for entities constructed without one.
+
+    Used as a `field(default_factory=...)` for `created_at` / `updated_at`
+    so the existing 9-field `ServerEntity(...)` call sites (the legacy
+    `ServerReadPort` adapter and the cross-domain test fakes) continue
+    to compile during PR #1. Adapters built under #228 always populate
+    these from the ORM row, so this placeholder is unreachable from
+    production paths.
+    """
+    return datetime(1970, 1, 1, tzinfo=timezone.utc)
+
+
+# ---------------------------------------------------------------------------
+# Server aggregate
+# ---------------------------------------------------------------------------
 
 
 @dataclass(frozen=True)
 class ServerEntity:
-    """Read-only cross-domain view of a Server row.
+    """A persisted Server row.
 
-    Only the fields consumed by today's cross-domain callers are
-    exposed. When #228 finalises the servers domain, this dataclass
-    will be replaced (or absorbed) by the proper `ServerEntity`.
+    `owner_username` is denormalised onto the entity because several
+    wire responses surface it and the SQLAlchemy adapter eager-loads
+    `Server.owner` via `joinedload` to avoid a per-row N+1. Adapters
+    that do not eager-load the owner (or that intentionally skip the
+    JOIN) leave the field as `None`.
 
-    `owner_id` was added in #226 (groups) so the groups application
-    layer can enforce the "only the server owner + admins may
-    attach/detach groups" rule without the router doing business
-    logic. Carries the `TBD(#154-8)` marker like the surrounding
-    fields.
+    Frozen + dataclass-based: callers mutate by copying via
+    `dataclasses.replace(...)`.
     """
 
+    # ----- Identity / config (required from inception, #224-#226) -----
     id: int
     name: str
     directory_path: str
@@ -38,8 +69,81 @@ class ServerEntity:
     port: int
     max_memory: int
     max_players: int
-    # TBD(#154-8): added for #226 (groups). Needed so the groups
-    # application service can apply `can_manage_server_groups`
-    # (admin OR server-owner) without leaking ORM rows through the
-    # router. See `app.groups.application.service`.
     owner_id: int
+
+    # ----- Lifecycle columns (#228, see module docstring on defaults) -----
+    status: ServerStatus = ServerStatus.stopped
+    created_at: datetime = field(default_factory=_epoch_utc)
+    updated_at: datetime = field(default_factory=_epoch_utc)
+
+    # ----- Optional columns -----
+    description: Optional[str] = None
+    template_id: Optional[int] = None
+    is_deleted: bool = False
+    owner_username: Optional[str] = None
+
+
+@dataclass(frozen=True)
+class CreateServerCommand:
+    """Inputs to persist a new server row.
+
+    The adapter relies on the database to populate `id`, `status`
+    (defaulted to `stopped` server-side), `created_at`, and
+    `updated_at`.
+    """
+
+    name: str
+    directory_path: str
+    minecraft_version: str
+    server_type: ServerType
+    port: int
+    max_memory: int
+    max_players: int
+    owner_id: int
+    description: Optional[str] = None
+    template_id: Optional[int] = None
+
+
+@dataclass(frozen=True)
+class UpdateServerCommand:
+    """Sparse update for an existing server row.
+
+    A field set to `None` is treated as "leave column untouched". For
+    fields whose legitimate value is `None` (`description`,
+    `template_id`), use `applied_fields()` to inspect what the caller
+    actually set; the adapter setattrs only the returned keys.
+    """
+
+    name: Optional[str] = None
+    description: Optional[str] = None
+    minecraft_version: Optional[str] = None
+    port: Optional[int] = None
+    max_memory: Optional[int] = None
+    max_players: Optional[int] = None
+    template_id: Optional[int] = None
+
+    def applied_fields(self) -> Dict[str, Any]:
+        """Return only the fields the caller actually set (non-None)."""
+        return {k: v for k, v in self.__dict__.items() if v is not None}
+
+
+@dataclass(frozen=True)
+class ServerListSpec:
+    """Inputs for `ServerRepository.list_paged`."""
+
+    owner_id: Optional[int] = None
+    status: Optional[ServerStatus] = None
+    server_type: Optional[ServerType] = None
+    include_deleted: bool = False
+    page: int = 1
+    size: int = 50
+
+
+@dataclass(frozen=True)
+class ServerListPage:
+    """Read result for `ServerRepository.list_paged`."""
+
+    entities: List[ServerEntity]
+    total: int
+    page: int
+    size: int
