@@ -1,16 +1,31 @@
-"""Fixed comprehensive tests for backup router endpoints"""
+"""Fixed comprehensive tests for backup router endpoints.
+
+Migrated under #227: the legacy `@patch("app.services.backup_service.backup_service.X")`
+sites are replaced by `app.dependency_overrides[get_backup_service]`
+fixtures (D-4). The service is mocked with `AsyncMock(spec=BackupService)`
+so async method semantics (and signature checks) carry through.
+"""
 
 from datetime import datetime
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
+import pytest
 from fastapi import status
 
 from app.auth.auth import create_access_token
+from app.backups.api.dependencies import get_backup_service
+from app.backups.application.service import BackupService
+from app.backups.domain.entities import (
+    BackupEntity,
+    BackupListPage,
+    BackupStatistics,
+)
 from app.core.exceptions import (
     BackupNotFoundException,
     FileOperationException,
     ServerNotFoundException,
 )
+from app.main import app
 from app.servers.models import Backup, BackupStatus, BackupType, Server, ServerType
 from app.users.domain.value_objects import Role
 from app.users.models import User
@@ -22,10 +37,53 @@ def get_auth_headers(username: str):
     return {"Authorization": f"Bearer {token}"}
 
 
+def make_entity(
+    *,
+    id: int,
+    server_id: int,
+    name: str,
+    backup_type: BackupType = BackupType.manual,
+    status: BackupStatus = BackupStatus.completed,
+    file_path: str = "/backups/x.tar.gz",
+    file_size: int = 1024,
+    description=None,
+    server_name=None,
+    minecraft_version=None,
+    created_at=None,
+) -> BackupEntity:
+    """Helper to build a domain entity for AsyncMock return values."""
+    return BackupEntity(
+        id=id,
+        server_id=server_id,
+        name=name,
+        description=description,
+        file_path=file_path,
+        file_size=file_size,
+        backup_type=backup_type,
+        status=status,
+        created_at=created_at or datetime.now(),
+        server_name=server_name,
+        minecraft_version=minecraft_version,
+    )
+
+
+@pytest.fixture
+def mock_backup_service():
+    """Replace the DI-injected `BackupService` with an AsyncMock.
+
+    The fixture installs the override on the shared `app.dependency_overrides`
+    dict; it is removed in teardown so other tests are not affected.
+    """
+    mock = AsyncMock(spec=BackupService)
+    app.dependency_overrides[get_backup_service] = lambda: mock
+    yield mock
+    app.dependency_overrides.pop(get_backup_service, None)
+
+
 class TestBackupRouterFixed:
     """Fixed comprehensive test backup router endpoints with proper mocking"""
 
-    def test_create_backup_success(self, client, test_user, db):
+    def test_create_backup_success(self, client, test_user, db, mock_backup_service):
         """Test successful backup creation with proper mocks"""
         # Update test user to operator role
         test_user.role = Role.operator
@@ -46,32 +104,20 @@ class TestBackupRouterFixed:
         db.add(server)
         db.commit()
 
-        # Create expected backup response
-        expected_backup = Backup(
-            id=1,
-            server_id=1,
-            name="Test Backup",
-            description="Test description",
-            backup_type=BackupType.manual,
-            status=BackupStatus.completed,
-            file_path="/backups/test.tar.gz",
-            file_size=1024,
-            created_at=datetime.now(),
-        )
-
-        with (
-            patch(
-                "app.services.authorization_service.authorization_service.check_server_access"
-            ) as mock_auth,
-            patch(
-                "app.services.backup_service.backup_service.create_backup"
-            ) as mock_create,
-        ):
-            # Mock authorization to return the server (indicating access granted)
+        with patch(
+            "app.services.authorization_service.authorization_service.check_server_access"
+        ) as mock_auth:
             mock_auth.return_value = server
-
-            # Mock backup creation to return expected backup
-            mock_create.return_value = expected_backup
+            mock_backup_service.create_backup.return_value = make_entity(
+                id=1,
+                server_id=1,
+                name="Test Backup",
+                description="Test description",
+                backup_type=BackupType.manual,
+                status=BackupStatus.completed,
+                file_path="/backups/test.tar.gz",
+                file_size=1024,
+            )
 
             response = client.post(
                 "/api/v1/backups/servers/1/backups",
@@ -89,9 +135,8 @@ class TestBackupRouterFixed:
             assert data["backup_type"] == "manual"
             assert data["status"] == "completed"
 
-            # Verify service calls with correct parameters
             mock_auth.assert_called_once()
-            mock_create.assert_called_once()
+            mock_backup_service.create_backup.assert_called_once()
 
     def test_create_backup_not_forbidden_for_regular_user(self, client, test_user, db):
         """Test that regular users are not forbidden from creating backups (Phase 1: shared resource model)"""
@@ -149,7 +194,9 @@ class TestBackupRouterFixed:
 
             assert response.status_code == status.HTTP_404_NOT_FOUND
 
-    def test_create_backup_file_operation_error(self, client, test_user, db):
+    def test_create_backup_file_operation_error(
+        self, client, test_user, db, mock_backup_service
+    ):
         """Test backup creation with file operation error"""
         test_user.role = Role.operator
         db.commit()
@@ -167,16 +214,11 @@ class TestBackupRouterFixed:
         db.add(server)
         db.commit()
 
-        with (
-            patch(
-                "app.services.authorization_service.authorization_service.check_server_access"
-            ) as mock_auth,
-            patch(
-                "app.services.backup_service.backup_service.create_backup"
-            ) as mock_create,
-        ):
+        with patch(
+            "app.services.authorization_service.authorization_service.check_server_access"
+        ) as mock_auth:
             mock_auth.return_value = server
-            mock_create.side_effect = FileOperationException(
+            mock_backup_service.create_backup.side_effect = FileOperationException(
                 "create", "backup", "Failed to create backup"
             )
 
@@ -192,9 +234,8 @@ class TestBackupRouterFixed:
             assert response.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
             assert "Failed to create backup" in response.json()["detail"]
 
-    def test_list_server_backups(self, client, test_user, db):
+    def test_list_server_backups(self, client, test_user, db, mock_backup_service):
         """Test listing backups for a specific server"""
-        # Create test server
         server = Server(
             id=1,
             name="Test Server",
@@ -208,43 +249,33 @@ class TestBackupRouterFixed:
         db.add(server)
         db.commit()
 
-        # Mock backup list response
-        mock_backups = [
-            Backup(
-                id=1,
-                server_id=1,
-                name="Backup 1",
-                backup_type=BackupType.manual,
-                status=BackupStatus.completed,
-                file_path="/backups/backup1.tar.gz",
-                file_size=1024,
-                created_at=datetime.now(),
-            ),
-            Backup(
-                id=2,
-                server_id=1,
-                name="Backup 2",
-                backup_type=BackupType.scheduled,
-                status=BackupStatus.completed,
-                file_path="/backups/backup2.tar.gz",
-                file_size=2048,
-                created_at=datetime.now(),
-            ),
-        ]
-
-        with (
-            patch(
-                "app.services.authorization_service.authorization_service.check_server_access"
-            ) as mock_auth,
-            patch("app.services.backup_service.backup_service.list_backups") as mock_list,
-        ):
+        with patch(
+            "app.services.authorization_service.authorization_service.check_server_access"
+        ) as mock_auth:
             mock_auth.return_value = server
-            mock_list.return_value = {
-                "backups": mock_backups,
-                "total": 2,
-                "page": 1,
-                "size": 50,
-            }
+            mock_backup_service.list_backups.return_value = BackupListPage(
+                entities=[
+                    make_entity(
+                        id=1,
+                        server_id=1,
+                        name="Backup 1",
+                        backup_type=BackupType.manual,
+                        file_path="/backups/backup1.tar.gz",
+                        file_size=1024,
+                    ),
+                    make_entity(
+                        id=2,
+                        server_id=1,
+                        name="Backup 2",
+                        backup_type=BackupType.scheduled,
+                        file_path="/backups/backup2.tar.gz",
+                        file_size=2048,
+                    ),
+                ],
+                total=2,
+                page=1,
+                size=50,
+            )
 
             response = client.get(
                 "/api/v1/backups/servers/1/backups",
@@ -257,11 +288,12 @@ class TestBackupRouterFixed:
             assert len(data["backups"]) == 2
             assert data["backups"][0]["name"] == "Backup 1"
 
-            # Verify service calls
             mock_auth.assert_called_once()
-            mock_list.assert_called_once()
+            mock_backup_service.list_backups.assert_called_once()
 
-    def test_list_server_backups_with_pagination(self, client, test_user, db):
+    def test_list_server_backups_with_pagination(
+        self, client, test_user, db, mock_backup_service
+    ):
         """Test listing backups with pagination parameters"""
         server = Server(
             id=1,
@@ -276,19 +308,13 @@ class TestBackupRouterFixed:
         db.add(server)
         db.commit()
 
-        with (
-            patch(
-                "app.services.authorization_service.authorization_service.check_server_access"
-            ) as mock_auth,
-            patch("app.services.backup_service.backup_service.list_backups") as mock_list,
-        ):
+        with patch(
+            "app.services.authorization_service.authorization_service.check_server_access"
+        ) as mock_auth:
             mock_auth.return_value = server
-            mock_list.return_value = {
-                "backups": [],
-                "total": 0,
-                "page": 2,
-                "size": 10,
-            }
+            mock_backup_service.list_backups.return_value = BackupListPage(
+                entities=[], total=0, page=2, size=10
+            )
 
             response = client.get(
                 "/api/v1/backups/servers/1/backups?page=2&size=10&backup_type=manual",
@@ -300,33 +326,24 @@ class TestBackupRouterFixed:
             assert data["page"] == 2
             assert data["size"] == 10
 
-            # Verify service was called with correct parameters
-            mock_list.assert_called_once()
-            call_kwargs = mock_list.call_args.kwargs
+            mock_backup_service.list_backups.assert_called_once()
+            call_kwargs = mock_backup_service.list_backups.call_args.kwargs
             assert call_kwargs["server_id"] == 1
             assert call_kwargs["backup_type"] == BackupType.manual
             assert call_kwargs["page"] == 2
             assert call_kwargs["size"] == 10
 
-    def test_list_all_backups_admin_only(self, client, admin_user):
+    def test_list_all_backups_admin_only(self, client, admin_user, mock_backup_service):
         """Test that only admins can list all backups"""
-        with patch(
-            "app.services.backup_service.backup_service.list_backups"
-        ) as mock_list:
-            mock_list.return_value = {
-                "backups": [],
-                "total": 0,
-                "page": 1,
-                "size": 50,
-            }
+        mock_backup_service.list_backups.return_value = BackupListPage(
+            entities=[], total=0, page=1, size=50
+        )
 
-            response = client.get(
-                "/api/v1/backups/backups", headers=get_auth_headers(admin_user.username)
-            )
-            assert response.status_code == status.HTTP_200_OK
-
-            # Verify service was called without server_id (for all backups)
-            mock_list.assert_called_once()
+        response = client.get(
+            "/api/v1/backups/backups", headers=get_auth_headers(admin_user.username)
+        )
+        assert response.status_code == status.HTTP_200_OK
+        mock_backup_service.list_backups.assert_called_once()
 
     def test_list_all_backups_forbidden_for_non_admin(self, client, test_user):
         """Test that non-admins cannot list all backups"""
@@ -379,7 +396,7 @@ class TestBackupRouterFixed:
             )
             assert response.status_code == status.HTTP_404_NOT_FOUND
 
-    def test_delete_backup(self, client, test_user, db):
+    def test_delete_backup(self, client, test_user, db, mock_backup_service):
         """Test deleting a backup as server owner"""
         # Create a server owned by test_user
         server = Server(
@@ -416,23 +433,19 @@ class TestBackupRouterFixed:
             patch(
                 "app.services.authorization_service.authorization_service.can_delete_backup"
             ) as mock_can_delete,
-            patch(
-                "app.services.backup_service.backup_service.delete_backup"
-            ) as mock_delete,
         ):
             mock_auth.return_value = backup
             mock_can_delete.return_value = True  # Server owner can delete
-            mock_delete.return_value = True
+            mock_backup_service.delete_backup.return_value = True
 
             response = client.delete(
                 "/api/v1/backups/backups/1", headers=get_auth_headers(test_user.username)
             )
             assert response.status_code == status.HTTP_204_NO_CONTENT
 
-            # Verify service calls
             mock_auth.assert_called_once()
             mock_can_delete.assert_called_once()
-            mock_delete.assert_called_once()
+            mock_backup_service.delete_backup.assert_called_once()
 
     def test_delete_backup_forbidden_for_regular_user(self, client, test_user, db):
         """Test that regular users cannot delete backups they don't own"""
@@ -498,7 +511,9 @@ class TestBackupRouterFixed:
                 in response.json()["detail"]
             )
 
-    def test_backup_statistics_server_specific(self, client, test_user, db):
+    def test_backup_statistics_server_specific(
+        self, client, test_user, db, mock_backup_service
+    ):
         """Test getting backup statistics for specific server"""
         server = Server(
             id=1,
@@ -513,24 +528,16 @@ class TestBackupRouterFixed:
         db.add(server)
         db.commit()
 
-        mock_stats = {
-            "total_backups": 5,
-            "completed_backups": 4,
-            "failed_backups": 1,
-            "total_size_bytes": 1024000,
-            "total_size_mb": 1024.0,
-        }
-
-        with (
-            patch(
-                "app.services.authorization_service.authorization_service.check_server_access"
-            ) as mock_auth,
-            patch(
-                "app.services.backup_service.backup_service.get_backup_statistics"
-            ) as mock_stats_call,
-        ):
+        with patch(
+            "app.services.authorization_service.authorization_service.check_server_access"
+        ) as mock_auth:
             mock_auth.return_value = server
-            mock_stats_call.return_value = mock_stats
+            mock_backup_service.get_backup_statistics.return_value = BackupStatistics(
+                total_backups=5,
+                completed_backups=4,
+                failed_backups=1,
+                total_size_bytes=1024000,
+            )
 
             response = client.get(
                 "/api/v1/backups/servers/1/backups/statistics",
@@ -542,36 +549,29 @@ class TestBackupRouterFixed:
             assert data["total_backups"] == 5
             assert data["completed_backups"] == 4
 
-            # Verify service calls
             mock_auth.assert_called_once()
-            mock_stats_call.assert_called_once()
+            mock_backup_service.get_backup_statistics.assert_called_once()
 
-    def test_global_backup_statistics_admin_only(self, client, admin_user):
+    def test_global_backup_statistics_admin_only(
+        self, client, admin_user, mock_backup_service
+    ):
         """Test getting global backup statistics (admin only)"""
-        mock_stats = {
-            "total_backups": 50,
-            "completed_backups": 45,
-            "failed_backups": 5,
-            "total_size_bytes": 10240000,
-            "total_size_mb": 10240.0,
-        }
+        mock_backup_service.get_backup_statistics.return_value = BackupStatistics(
+            total_backups=50,
+            completed_backups=45,
+            failed_backups=5,
+            total_size_bytes=10240000,
+        )
 
-        with patch(
-            "app.services.backup_service.backup_service.get_backup_statistics"
-        ) as mock_stats_call:
-            mock_stats_call.return_value = mock_stats
+        response = client.get(
+            "/api/v1/backups/backups/statistics",
+            headers=get_auth_headers(admin_user.username),
+        )
 
-            response = client.get(
-                "/api/v1/backups/backups/statistics",
-                headers=get_auth_headers(admin_user.username),
-            )
-
-            assert response.status_code == status.HTTP_200_OK
-            data = response.json()
-            assert data["total_backups"] == 50
-
-            # Should be called without server_id for global stats
-            mock_stats_call.assert_called_once()
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert data["total_backups"] == 50
+        mock_backup_service.get_backup_statistics.assert_called_once()
 
     def test_global_backup_statistics_forbidden_for_non_admin(self, client, test_user):
         """Test that non-admins cannot access global backup statistics"""
@@ -584,45 +584,40 @@ class TestBackupRouterFixed:
             "Only admins can view global backup statistics" in response.json()["detail"]
         )
 
-    def test_create_scheduled_backups_admin_only(self, client, admin_user):
+    def test_create_scheduled_backups_admin_only(
+        self, client, admin_user, mock_backup_service
+    ):
         """Test creating scheduled backups (admin only)"""
-        mock_backup1 = Backup(
-            id=1,
-            server_id=1,
-            name="Scheduled Backup 1",
-            backup_type=BackupType.scheduled,
-            status=BackupStatus.completed,
-            file_path="/backups/scheduled1.tar.gz",
-            file_size=1024,
-            created_at=datetime.now(),
+        mock_backup_service.create_scheduled_backup.side_effect = [
+            make_entity(
+                id=1,
+                server_id=1,
+                name="Scheduled Backup 1",
+                backup_type=BackupType.scheduled,
+                file_path="/backups/scheduled1.tar.gz",
+                file_size=1024,
+            ),
+            make_entity(
+                id=2,
+                server_id=2,
+                name="Scheduled Backup 2",
+                backup_type=BackupType.scheduled,
+                file_path="/backups/scheduled2.tar.gz",
+                file_size=2048,
+            ),
+        ]
+
+        response = client.post(
+            "/api/v1/backups/backups/scheduled",
+            json={"server_ids": [1, 2]},
+            headers=get_auth_headers(admin_user.username),
         )
-        mock_backup2 = Backup(
-            id=2,
-            server_id=2,
-            name="Scheduled Backup 2",
-            backup_type=BackupType.scheduled,
-            status=BackupStatus.completed,
-            file_path="/backups/scheduled2.tar.gz",
-            file_size=2048,
-            created_at=datetime.now(),
-        )
 
-        with patch(
-            "app.services.backup_service.backup_service.create_scheduled_backup"
-        ) as mock_create:
-            mock_create.side_effect = [mock_backup1, mock_backup2]
-
-            response = client.post(
-                "/api/v1/backups/backups/scheduled",
-                json={"server_ids": [1, 2]},
-                headers=get_auth_headers(admin_user.username),
-            )
-
-            assert response.status_code == status.HTTP_200_OK
-            data = response.json()
-            assert data["success"] is True
-            assert data["details"]["total_created"] == 2
-            assert data["details"]["created_backups"] == [1, 2]
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert data["success"] is True
+        assert data["details"]["total_created"] == 2
+        assert data["details"]["created_backups"] == [1, 2]
 
     def test_create_scheduled_backups_forbidden_for_non_admin(self, client, test_user):
         """Test that non-admins cannot create scheduled backups"""

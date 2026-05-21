@@ -363,31 +363,34 @@ class TestApplicationStartupShutdown:
     @pytest.mark.asyncio
     async def test_cleanup_services_success(self):
         """Test successful service cleanup"""
+        # `backup_scheduler` is now resolved through the lifespan-scoped
+        # `backup_scheduler_instance` holder (#227); patch the holder
+        # so `_cleanup_services` sees a mock instance.
+        mock_scheduler = AsyncMock()
+        mock_scheduler.stop_scheduler = AsyncMock()
+
         with (
             patch(
                 "app.services.minecraft_server.minecraft_server_manager"
             ) as mock_mc_manager,
-            patch(
-                "app.services.backup_scheduler.backup_scheduler"
-            ) as mock_backup_scheduler,
+            patch("app.backups.backup_scheduler_instance") as mock_holder,
             patch("app.services.websocket_service.websocket_service") as mock_ws_service,
             patch("app.main.service_status") as mock_status,
             patch("app.main.logger") as mock_logger,
         ):
             from app.main import _cleanup_services
 
-            # Mock successful shutdown
+            mock_holder.get.return_value = mock_scheduler
+            mock_holder.clear = lambda: None
             mock_mc_manager.shutdown_all = AsyncMock()
-            mock_backup_scheduler.stop_scheduler = AsyncMock()
             mock_ws_service.stop_monitoring = AsyncMock()
             mock_status.backup_scheduler_ready = True
             mock_status.websocket_service_ready = True
 
             await _cleanup_services()
 
-            # Verify shutdown calls
             mock_mc_manager.shutdown_all.assert_called_once()
-            mock_backup_scheduler.stop_scheduler.assert_called_once()
+            mock_scheduler.stop_scheduler.assert_called_once()
             mock_ws_service.stop_monitoring.assert_called_once()
             mock_logger.info.assert_called_with("All services shut down cleanly")
 
