@@ -5,15 +5,11 @@ is the only layer that knows about the SQLAlchemy ORM and the
 `Template` columns; it converts ORM rows to/from `TemplateEntity` so
 the application layer never sees ORM types.
 
-The `Template` ORM class currently lives at
-`app.servers.models.Template` for historical reasons (no Alembic;
-relocating the owning module needs careful import-ordering with the
-`Server.template` back-population). The model is functionally a
-templates-domain table; the import direction here
-(`templates.adapters` → `servers.models`) is an artefact of file
-placement, not a cross-domain Port bypass per `docs/ARCHITECTURE.md`
-§4.3. Follow-up: see the issue linked from the #225 PR description for
-the planned `app/templates/models.py` relocation.
+The `Template` ORM class lives at `app.templates.models.Template`
+(relocated in Issue #255). `Server` is still imported from
+`app.servers.models` because templates-side queries need to filter on
+the servers FK; that direction is allowed per
+`docs/ARCHITECTURE.md` §4.3.
 
 Per the UnitOfWork pattern, repository methods **do not commit**. They
 stage changes on the session and rely on the surrounding
@@ -25,7 +21,7 @@ from typing import Dict, Optional
 from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload
 
-from app.servers.models import Server, ServerType, Template
+from app.servers.models import Server, ServerType
 from app.templates.domain.entities import (
     CreateTemplateCommand,
     TemplateEntity,
@@ -33,6 +29,7 @@ from app.templates.domain.entities import (
     TemplateListSpec,
     UpdateTemplateCommand,
 )
+from app.templates.models import Template
 
 
 def _template_to_entity(row: Template) -> TemplateEntity:

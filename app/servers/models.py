@@ -1,8 +1,4 @@
-import json
-from typing import Any, Dict, List
-
 from sqlalchemy import (
-    JSON,
     BigInteger,
     Boolean,
     Column,
@@ -33,7 +29,6 @@ __all__ = [
     "ServerConfiguration",
     "ServerStatus",
     "ServerType",
-    "Template",
 ]
 
 
@@ -119,43 +114,9 @@ class ServerConfiguration(Base):
     __table_args__ = (UniqueConstraint("server_id", "configuration_key"),)
 
 
-class Template(Base):
-    __tablename__ = "templates"
-
-    id = Column(Integer, primary_key=True, index=True)
-    name = Column(String(100), nullable=False)
-    description = Column(Text)
-    minecraft_version = Column(String(20), nullable=False)
-    server_type: Column[ServerType] = Column(Enum(ServerType), nullable=False)
-    configuration = Column(JSON, nullable=False)  # server.properties and other settings
-    default_groups = Column(JSON)  # Default group attachments
-    created_by = Column(Integer, ForeignKey("users.id"), nullable=False)
-    is_public = Column(Boolean, default=False)
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-    updated_at = Column(
-        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
-    )
-
-    # Relationships
-    creator = relationship("User", back_populates="templates")
-    servers = relationship("Server", back_populates="template")
-
-    def get_configuration(self) -> Dict[str, Any]:
-        """Get configuration as Python dict"""
-        if isinstance(self.configuration, str):
-            return json.loads(self.configuration)
-        return self.configuration or {}
-
-    def set_configuration(self, config: Dict[str, Any]) -> None:
-        """Set configuration from Python dict"""
-        self.configuration = config
-
-    def get_default_groups(self) -> Dict[str, List[int]]:
-        """Get default groups as Python dict"""
-        if isinstance(self.default_groups, str):
-            return json.loads(self.default_groups)
-        return self.default_groups or {"op_groups": [], "whitelist_groups": []}
-
-    def set_default_groups(self, groups: Dict[str, List[int]]) -> None:
-        """Set default groups from Python dict"""
-        self.default_groups = groups
+# NOTE: The `Template` ORM class was relocated to `app.templates.models`
+# in Issue #255. The `Server.template` relationship above uses a
+# string-based class reference, which SQLAlchemy resolves at
+# mapper-configuration time; `app/templates/__init__.py` eagerly imports
+# `app.templates.models` so the class is registered before
+# `Base.metadata.create_all()` runs.

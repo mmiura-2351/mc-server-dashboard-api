@@ -11,7 +11,7 @@ from typing import Any, Dict, Optional
 
 import pytest
 
-from app.servers.models import Server, ServerStatus, ServerType, Template
+from app.servers.models import Server, ServerStatus, ServerType
 from app.templates.adapters.repository import SqlAlchemyTemplateRepository
 from app.templates.adapters.uow import SqlAlchemyTemplatesUnitOfWork
 from app.templates.domain.entities import (
@@ -19,6 +19,7 @@ from app.templates.domain.entities import (
     TemplateListSpec,
     UpdateTemplateCommand,
 )
+from app.templates.models import Template
 from app.users.models import User
 
 
