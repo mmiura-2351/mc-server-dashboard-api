@@ -100,16 +100,19 @@ async def _initialize_services():
     # 1. Initialize database (critical - app cannot function without it)
     await _initialize_database()
 
-    # 2. Initialize database integration (important but not critical)
+    # 2. Backfill Phase 2 visibility rows for legacy resources (best-effort)
+    await _initialize_visibility_migration()
+
+    # 3. Initialize database integration (important but not critical)
     await _initialize_database_integration()
 
-    # 3. Initialize backup scheduler (optional - can be started later)
+    # 4. Initialize backup scheduler (optional - can be started later)
     await _initialize_backup_scheduler()
 
-    # 4. Initialize WebSocket service (optional - real-time features)
+    # 5. Initialize WebSocket service (optional - real-time features)
     await _initialize_websocket_service()
 
-    # 5. Initialize version update scheduler (optional - background updates)
+    # 6. Initialize version update scheduler (optional - background updates)
     await _initialize_version_update_scheduler()
 
 
@@ -134,6 +137,76 @@ async def _initialize_database():
         service_status.failed_services.append("database")
         # Database failure is critical - re-raise to prevent startup
         raise RuntimeError(f"Critical database initialization failed: {e}") from e
+
+
+async def _initialize_visibility_migration():
+    """Backfill Phase 2 visibility rows for legacy servers/groups.
+
+    Runs `VisibilityMigrationService.migrate_all_resources` at lifespan
+    startup so that resources created before the Phase 2 visibility
+    feature landed (or by a code path that forgot to assign a default
+    row) receive the canonical PUBLIC default. The underlying service is
+    idempotent: the cross-domain query (`list_missing_*`) returns the
+    empty set once every resource already has a visibility row, so
+    re-running on every boot is cheap when the system is steady-state
+    (see `app/core/visibility/application/migration.py`).
+
+    Failure handling: this is a best-effort backfill, not a critical
+    boot step. Any exception is logged at WARNING and startup continues;
+    operators can re-trigger manually through the
+    ``POST /api/v1/visibility/migration/execute`` admin endpoint
+    (mounted by #312).
+    """
+    try:
+        logger.info("Running visibility migration backfill...")
+        import time
+
+        from app.core.database import SessionLocal
+        from app.core.visibility.api.dependencies import (
+            make_visibility_migration_service,
+        )
+
+        db = SessionLocal()
+        try:
+            service = make_visibility_migration_service(db)
+            started = time.monotonic()
+            counts = await service.migrate_all_resources()
+            elapsed = time.monotonic() - started
+        finally:
+            db.close()
+
+        # Slow-startup guard: flag boots where the backfill noticeably
+        # delays startup so operators investigating long lifespans have
+        # a breadcrumb. Threshold mirrors the
+        # `PerformanceMonitoringMiddleware` slow-request default.
+        if elapsed >= 1.0:
+            logger.warning(
+                "Visibility migration backfill took %.2fs "
+                "(servers=%d, groups=%d, total=%d)",
+                elapsed,
+                counts.get("servers", 0),
+                counts.get("groups", 0),
+                counts.get("total", 0),
+            )
+        else:
+            logger.info(
+                "Visibility migration backfill completed in %.2fs "
+                "(servers=%d, groups=%d, total=%d)",
+                elapsed,
+                counts.get("servers", 0),
+                counts.get("groups", 0),
+                counts.get("total", 0),
+            )
+    except Exception as e:
+        logger.warning(
+            "Visibility migration backfill failed; startup continues. "
+            "Re-trigger manually via POST /api/v1/visibility/migration/execute. "
+            "error=%s",
+            e,
+        )
+        # Intentionally not added to `failed_services`: this is a
+        # best-effort backfill, not a tracked service. Health checks
+        # remain unaffected.
 
 
 async def _initialize_database_integration():
