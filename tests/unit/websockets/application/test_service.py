@@ -119,7 +119,8 @@ class TestConnectionManagerFixed:
             assert connection_manager.user_connections[ws1] == user1
             assert connection_manager.user_connections[ws2] == user2
 
-    def test_disconnect_existing_connection(
+    @pytest.mark.asyncio
+    async def test_disconnect_existing_connection(
         self, connection_manager, mock_websocket, mock_user
     ):
         """Test disconnecting existing connection"""
@@ -129,27 +130,35 @@ class TestConnectionManagerFixed:
         connection_manager.active_connections[server_id] = {mock_websocket}
         connection_manager.user_connections[mock_websocket] = mock_user
 
-        # Mock log task
-        mock_task = Mock()
-        mock_task.cancel = Mock()
-        connection_manager.server_log_tasks[server_id] = mock_task
+        # Real cancellable task so disconnect can await it.
+        async def _noop():
+            try:
+                await asyncio.sleep(60)
+            except asyncio.CancelledError:
+                raise
 
-        connection_manager.disconnect(mock_websocket, server_id)
+        real_task = asyncio.create_task(_noop())
+        connection_manager.server_log_tasks[server_id] = real_task
+
+        await connection_manager.disconnect(mock_websocket, server_id)
 
         # Verify connection was removed
         assert server_id not in connection_manager.active_connections
         assert mock_websocket not in connection_manager.user_connections
 
-        # Verify log task was cancelled
-        mock_task.cancel.assert_called_once()
+        # Verify log task was cancelled and awaited (done)
+        assert real_task.cancelled()
         assert server_id not in connection_manager.server_log_tasks
 
-    def test_disconnect_nonexistent_connection(self, connection_manager, mock_websocket):
+    @pytest.mark.asyncio
+    async def test_disconnect_nonexistent_connection(
+        self, connection_manager, mock_websocket
+    ):
         """Test disconnecting connection that doesn't exist"""
         server_id = 999
 
         # Should not raise exception
-        connection_manager.disconnect(mock_websocket, server_id)
+        await connection_manager.disconnect(mock_websocket, server_id)
 
         # State should remain clean
         assert connection_manager.active_connections == {}
@@ -313,8 +322,10 @@ class TestConnectionManagerFixed:
         mock_server_manager = Mock()
         mock_server_manager.server_dir = Path("/servers/test")
 
-        # Setup active connections
+        # Setup active connections + log task entry (loop termination
+        # condition reads from server_log_tasks).
         connection_manager.active_connections[server_id] = {Mock()}
+        connection_manager.server_log_tasks[server_id] = Mock()
 
         with (
             patch("app.websockets.application.service.minecraft_server_manager") as mock_mgr,
@@ -433,8 +444,12 @@ class TestWebSocketServiceFixed:
             patch(
                 "app.websockets.application.service.SqlAlchemyServerReadPort"
             ) as mock_port_cls,
-            patch.object(ws_service.connection_manager, "connect") as mock_connect,
-            patch.object(ws_service.connection_manager, "disconnect") as mock_disconnect,
+            patch.object(
+                ws_service.connection_manager, "connect", new_callable=AsyncMock
+            ) as mock_connect,
+            patch.object(
+                ws_service.connection_manager, "disconnect", new_callable=AsyncMock
+            ) as mock_disconnect,
             patch.object(ws_service, "_send_initial_status") as mock_initial_status,
         ):
             mock_port = mock_port_cls.return_value

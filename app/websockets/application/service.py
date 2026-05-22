@@ -31,21 +31,37 @@ class ConnectionManager:
 
         # Start log streaming for this server if not already started
         if server_id not in self.server_log_tasks:
-            self.server_log_tasks[server_id] = asyncio.create_task(
-                self._stream_server_logs(server_id)
-            )
+            task = asyncio.create_task(self._stream_server_logs(server_id))
+            # Attach done-callback so unexpected exceptions in the background
+            # task are surfaced via the logger (otherwise asyncio swallows
+            # them when the orphan task is garbage collected).
+            task.add_done_callback(self._on_log_task_done)
+            self.server_log_tasks[server_id] = task
 
         logger.info(f"WebSocket connected for server {server_id} by user {user.username}")
 
-    def disconnect(self, websocket: WebSocket, server_id: int):
+    def _on_log_task_done(self, task: asyncio.Task) -> None:
+        """Surface unexpected exceptions from background log-streaming tasks.
+
+        Cancellation is the normal termination path (triggered by
+        :meth:`disconnect`) and is intentionally ignored here.
+        """
+        if task.cancelled():
+            return
+        exc = task.exception()
+        if exc is not None:
+            logger.warning(
+                "Log streaming task ended with exception: %s", exc, exc_info=exc
+            )
+
+    async def disconnect(self, websocket: WebSocket, server_id: int):
+        task_to_await: Optional[asyncio.Task] = None
         if server_id in self.active_connections:
             self.active_connections[server_id].discard(websocket)
 
             # Stop log streaming if no more connections for this server
             if not self.active_connections[server_id]:
-                if server_id in self.server_log_tasks:
-                    self.server_log_tasks[server_id].cancel()
-                    del self.server_log_tasks[server_id]
+                task_to_await = self.server_log_tasks.pop(server_id, None)
                 del self.active_connections[server_id]
 
         if websocket in self.user_connections:
@@ -54,6 +70,22 @@ class ConnectionManager:
             logger.info(
                 f"WebSocket disconnected for server {server_id} by user {user.username}"
             )
+
+        # Await the cancelled task outside the bookkeeping block so the
+        # state is fully consistent before we yield control back to the
+        # event loop. This is required to avoid "coroutine was never
+        # awaited" warnings and to ensure the task actually releases its
+        # resources before we return.
+        if task_to_await is not None and not task_to_await.done():
+            task_to_await.cancel()
+            try:
+                await task_to_await
+            except asyncio.CancelledError:
+                pass
+            except Exception as e:  # pragma: no cover - defensive
+                logger.warning(
+                    f"Log streaming task for server {server_id} raised on shutdown: {e}"
+                )
 
     async def send_to_server_connections(self, server_id: int, message: dict):
         if server_id in self.active_connections:
@@ -67,7 +99,7 @@ class ConnectionManager:
 
             # Remove disconnected connections
             for connection in disconnected:
-                self.disconnect(connection, server_id)
+                await self.disconnect(connection, server_id)
 
     async def send_personal_message(self, websocket: WebSocket, message: dict):
         try:
@@ -132,7 +164,12 @@ class ConnectionManager:
                 # Start from the end of the file
                 f.seek(0, 2)
 
-                while server_id in self.active_connections:
+                # Use server_log_tasks as the loop termination signal:
+                # disconnect() pops the task before removing active_connections,
+                # so this avoids a race where the loop body briefly observes
+                # the connection set as already-removed and exits before
+                # cancellation propagates.
+                while server_id in self.server_log_tasks:
                     line = f.readline()
                     if line:
                         # Send log line to all connected clients
@@ -231,7 +268,7 @@ class WebSocketService:
         except Exception as e:
             logger.error(f"WebSocket error: {e}")
         finally:
-            self.connection_manager.disconnect(websocket, server_id)
+            await self.connection_manager.disconnect(websocket, server_id)
 
     async def _send_initial_status(self, websocket: WebSocket, server_id: int):
         """Send initial server status when client connects"""
