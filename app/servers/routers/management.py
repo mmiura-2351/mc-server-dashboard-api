@@ -18,6 +18,7 @@ from app.servers.api.dependencies import (
     get_server_service,
 )
 from app.servers.application.authorization import AuthorizationService
+from app.servers.application.minecraft_server import minecraft_server_manager
 from app.servers.application.service import (
     ServerService,
 )
@@ -31,7 +32,6 @@ from app.servers.schemas import (
     ServerResponse,
     ServerUpdateRequest,
 )
-from app.services.minecraft_server import minecraft_server_manager
 from app.users.models import User
 
 # `server_service` re-exported above is the legacy module-level default

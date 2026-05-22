@@ -65,6 +65,10 @@ from app.servers.adapters._legacy_helpers import (
     update_server_status_legacy,
     validate_server_operation_legacy,
 )
+from app.servers.application.minecraft_server import minecraft_server_manager
+from app.servers.application.server_properties_generator import (
+    server_properties_generator,
+)
 from app.servers.domain.entities import (
     CreateServerCommand,
     ServerListSpec,
@@ -76,15 +80,13 @@ from app.servers.models import (
     ServerType,
 )
 from app.servers.schemas import ServerCreateRequest, ServerResponse, ServerUpdateRequest
-from app.services.jar_cache_manager import jar_cache_manager
-from app.services.java_compatibility import java_compatibility_service
-from app.services.minecraft_server import minecraft_server_manager
-from app.services.server_properties_generator import server_properties_generator
-from app.services.version_manager import minecraft_version_manager
 from app.templates.application.service import TemplateService
 from app.users.domain.value_objects import Role
 from app.users.models import User
 from app.versions.adapters.repository import SqlAlchemyVersionRepository
+from app.versions.application.jar_cache_manager import jar_cache_manager
+from app.versions.application.java_compatibility import java_compatibility_service
+from app.versions.application.version_manager import minecraft_version_manager
 
 logger = logging.getLogger(__name__)
 

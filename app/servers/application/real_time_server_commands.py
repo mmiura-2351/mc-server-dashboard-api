@@ -5,8 +5,8 @@ from typing import Set
 
 from app.core.security import FileOperationValidator, SecurityError
 from app.groups.models import GroupType
+from app.servers.application.minecraft_server import minecraft_server_manager
 from app.servers.models import ServerStatus
-from app.services.minecraft_server import minecraft_server_manager
 
 logger = logging.getLogger(__name__)
 

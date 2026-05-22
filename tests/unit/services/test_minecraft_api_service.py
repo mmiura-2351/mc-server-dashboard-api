@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, Mock, patch
 import aiohttp
 import pytest
 
-from app.services.minecraft_api_service import MinecraftAPIService
+from app.versions.application.minecraft_api_service import MinecraftAPIService
 
 
 class TestMinecraftAPIService:

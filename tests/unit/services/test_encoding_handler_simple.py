@@ -9,7 +9,7 @@ from unittest.mock import patch
 
 import pytest
 
-from app.services.encoding_handler import EncodingHandler
+from app.files.application.encoding_handler import EncodingHandler
 
 
 class TestEncodingHandlerSimple:

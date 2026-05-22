@@ -3,7 +3,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from app.services.java_compatibility import (
+from app.versions.application.java_compatibility import (
     JavaCompatibilityService,
     JavaVersionInfo,
     java_compatibility_service,

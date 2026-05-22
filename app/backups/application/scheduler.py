@@ -29,9 +29,9 @@ from app.backups.domain.exceptions import (
 )
 from app.backups.domain.ports import BackupsUnitOfWork
 from app.backups.models import ScheduleAction
+from app.servers.application.minecraft_server import minecraft_server_manager
 from app.servers.domain.ports import ServerReadPort
 from app.servers.models import ServerStatus
-from app.services.minecraft_server import minecraft_server_manager
 
 ServerReadPortFactory = Callable[[], ServerReadPort]
 

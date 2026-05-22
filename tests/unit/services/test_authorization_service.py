@@ -30,7 +30,7 @@ from fastapi import HTTPException, status  # noqa: E402
 from sqlalchemy.orm import Session  # noqa: E402
 
 from app.servers.models import Backup, Server, ServerStatus, ServerType  # noqa: E402
-from app.services.authorization_service import AuthorizationService  # noqa: E402
+from app.servers.application.authorization import AuthorizationService  # noqa: E402
 from app.users.domain.value_objects import Role  # noqa: E402
 from app.users.models import User  # noqa: E402
 

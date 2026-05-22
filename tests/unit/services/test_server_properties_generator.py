@@ -1,6 +1,6 @@
 from app.servers.models import Server, ServerType
 from app.servers.schemas import ServerCreateRequest
-from app.services.server_properties_generator import ServerPropertiesGenerator
+from app.servers.application.server_properties_generator import ServerPropertiesGenerator
 
 
 class TestServerPropertiesGenerator:

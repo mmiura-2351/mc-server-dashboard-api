@@ -78,7 +78,7 @@ class GroupFileSyncer:
         # Import the production singleton lazily so importing this
         # module does not pull in the websocket service chain.
         if real_time_commands is None:
-            from app.services.real_time_server_commands import (
+            from app.servers.application.real_time_server_commands import (
                 real_time_server_commands,
             )
 

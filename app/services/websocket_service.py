@@ -8,7 +8,7 @@ from fastapi import WebSocket, WebSocketDisconnect
 from sqlalchemy.orm import Session
 
 from app.servers.adapters.read_port import SqlAlchemyServerReadPort
-from app.services.minecraft_server import minecraft_server_manager
+from app.servers.application.minecraft_server import minecraft_server_manager
 from app.users.models import User
 
 logger = logging.getLogger(__name__)

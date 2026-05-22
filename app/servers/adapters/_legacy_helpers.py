@@ -33,9 +33,9 @@ from app.core.exceptions import (
     handle_database_error,
 )
 from app.core.security import PathValidator, SecurityError
+from app.servers.application.minecraft_server import minecraft_server_manager
 from app.servers.models import Server, ServerStatus, ServerType
 from app.servers.schemas import ServerCreateRequest, ServerResponse
-from app.services.minecraft_server import minecraft_server_manager
 from app.users.domain.value_objects import Role
 from app.users.models import User
 

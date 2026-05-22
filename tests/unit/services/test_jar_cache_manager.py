@@ -7,7 +7,7 @@ from unittest.mock import patch
 import pytest
 
 from app.servers.models import ServerType
-from app.services.jar_cache_manager import JarCacheManager
+from app.versions.application.jar_cache_manager import JarCacheManager
 from tests.infrastructure.test_aiohttp_mocks import (
     MockAiohttpResponse,
     MockAiohttpSession,

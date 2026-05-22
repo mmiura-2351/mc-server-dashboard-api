@@ -10,10 +10,10 @@ from fastapi import (
 from app.auth.dependencies import get_current_user
 from app.servers.models import ServerType
 from app.servers.schemas import SupportedVersionsResponse
-from app.services.jar_cache_manager import jar_cache_manager
-from app.services.java_compatibility import java_compatibility_service
 from app.users.domain.value_objects import Role
 from app.users.models import User
+from app.versions.application.jar_cache_manager import jar_cache_manager
+from app.versions.application.java_compatibility import java_compatibility_service
 
 logger = logging.getLogger(__name__)
 

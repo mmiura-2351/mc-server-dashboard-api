@@ -25,7 +25,7 @@ from app.core.visibility import (  # noqa: E402
     ResourceVisibility,
     VisibilityType,
 )
-from app.services.visibility_service import VisibilityService  # noqa: E402
+from app.core.visibility.application.service import VisibilityService  # noqa: E402
 from app.users.domain.value_objects import Role  # noqa: E402
 from app.users.models import User  # noqa: E402
 

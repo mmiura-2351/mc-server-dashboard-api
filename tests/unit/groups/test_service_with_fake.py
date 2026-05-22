@@ -328,7 +328,7 @@ async def test_add_player_resolves_username_from_uuid(
     placeholder."""
     group_repo.seed(make_group_entity(id=1, owner_id=1))
 
-    from app.services import minecraft_api_service as mapi
+    from app.versions.application import minecraft_api_service as mapi
 
     async def _fake_get_username_from_uuid(uuid: str) -> Any:
         return None  # simulate API miss
@@ -358,7 +358,7 @@ async def test_add_player_offline_uuid_fallback_from_username(
     service falls back to `generate_offline_uuid`."""
     group_repo.seed(make_group_entity(id=1, owner_id=1))
 
-    from app.services import minecraft_api_service as mapi
+    from app.versions.application import minecraft_api_service as mapi
 
     async def _fake_get_uuid_from_username(name: str) -> Any:
         return None  # simulate API miss

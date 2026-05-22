@@ -32,7 +32,7 @@ class TestServerManagementRouter:
 
     def test_create_server_authorization_check(self, test_user):
         """Test that regular users pass authorization check for server creation (Phase 1: shared resource model)"""
-        from app.services.authorization_service import AuthorizationService
+        from app.servers.application.authorization import AuthorizationService
 
         # Phase 1: Regular users should be able to create servers
         assert AuthorizationService.can_create_server(test_user) is True, (

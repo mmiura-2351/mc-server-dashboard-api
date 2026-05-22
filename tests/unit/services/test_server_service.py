@@ -4,7 +4,8 @@ import pytest
 from fastapi import HTTPException
 
 from app.servers.models import Server, ServerStatus, ServerType
-from app.services.server_service import ServerService, server_service
+from app.servers.application.service import ServerService
+from app.servers.application.service import _server_service_legacy as server_service
 from app.users.domain.value_objects import Role
 from app.users.models import User
 

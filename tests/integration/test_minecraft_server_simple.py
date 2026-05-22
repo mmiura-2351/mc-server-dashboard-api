@@ -13,8 +13,8 @@ import pytest
 from sqlalchemy.orm import Session
 
 from app.servers.models import Server, ServerStatus, ServerType
-from app.services.java_compatibility import JavaVersionInfo
-from app.services.minecraft_server import MinecraftServerManager, ServerProcess
+from app.versions.application.java_compatibility import JavaVersionInfo
+from app.servers.application.minecraft_server import MinecraftServerManager, ServerProcess
 
 pytestmark = pytest.mark.slow
 

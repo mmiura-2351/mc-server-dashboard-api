@@ -16,8 +16,8 @@ from app.core.exceptions import (
     ServerNotFoundException,
     handle_file_error,
 )
+from app.files.application.encoding_handler import EncodingHandler
 from app.servers.models import Server
-from app.services.encoding_handler import EncodingHandler
 from app.services.file_history_service import file_history_service
 from app.types import FileType
 from app.users.domain.value_objects import Role

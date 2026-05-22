@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock, Mock, patch
 import pytest
 
 from app.servers.models import ServerType
-from app.services.version_manager import MinecraftVersionManager, VersionInfo
+from app.versions.application.version_manager import MinecraftVersionManager, VersionInfo
 from tests.infrastructure.test_aiohttp_mocks import (
     MockAiohttpResponse,
     MockAiohttpSession,

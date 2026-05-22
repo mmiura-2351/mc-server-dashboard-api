@@ -19,7 +19,7 @@ pytestmark = pytest.mark.skip(
 from sqlalchemy.orm import Session  # noqa: E402
 
 from app.core.visibility import ResourceType, VisibilityType  # noqa: E402
-from app.services.visibility_service import VisibilityService  # noqa: E402
+from app.core.visibility.application.service import VisibilityService  # noqa: E402
 from app.users.domain.value_objects import Role  # noqa: E402
 
 

@@ -664,7 +664,7 @@ class TestServiceIntegrationBasic:
         assert backup_scheduler is not None
 
         # Test minecraft server manager import
-        from app.services.minecraft_server import minecraft_server_manager
+        from app.servers.application.minecraft_server import minecraft_server_manager
 
         assert minecraft_server_manager is not None
 

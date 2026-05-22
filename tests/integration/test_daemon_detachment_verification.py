@@ -14,7 +14,7 @@ import psutil
 import pytest
 
 from app.servers.models import Server, ServerStatus, ServerType
-from app.services.minecraft_server import MinecraftServerManager, ServerProcess
+from app.servers.application.minecraft_server import MinecraftServerManager, ServerProcess
 
 pytestmark = pytest.mark.slow
 
