@@ -11,9 +11,9 @@ import pytest
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import FileOperationException
+from app.servers.application.service import ServerJarService, ServerService
 from app.servers.models import ServerType
 from app.servers.schemas import ServerCreateRequest
-from app.servers.service import ServerJarService, ServerService
 from app.users.domain.value_objects import Role
 from app.users.models import User
 from app.versions.models import MinecraftVersion

@@ -13,16 +13,16 @@ from app.core.exceptions import (
     InvalidRequestException,
     ServerNotFoundException,
 )
-from app.servers.models import Server, ServerType
-from app.servers.schemas import ServerCreateRequest, ServerUpdateRequest
-from app.servers.service import (
+from app.servers.adapters._legacy_helpers import ServerValidationService
+from app.servers.application.service import (
     ServerDatabaseService,
     ServerFileSystemService,
     ServerJarService,
     ServerSecurityValidator,
     ServerService,
-    ServerValidationService,
 )
+from app.servers.models import Server, ServerType
+from app.servers.schemas import ServerCreateRequest, ServerUpdateRequest
 from app.users.domain.value_objects import Role
 from app.users.models import User
 

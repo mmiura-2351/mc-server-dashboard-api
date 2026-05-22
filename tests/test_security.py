@@ -19,10 +19,10 @@ from app.core.security import (
     SecurityError,
     TarExtractor,
 )
-from app.servers.service import (
+from app.servers.adapters._legacy_helpers import ServerValidationService
+from app.servers.application.service import (
     ServerFileSystemService,
     ServerSecurityValidator,
-    ServerValidationService,
 )
 
 
@@ -802,8 +802,8 @@ class TestCommandInjectionSecurity:
         import tempfile
         from unittest.mock import Mock
 
+        from app.servers.application.service import ServerFileSystemService
         from app.servers.models import Server
-        from app.servers.service import ServerFileSystemService
 
         with tempfile.TemporaryDirectory() as temp_dir:
             server_dir = Path(temp_dir)
@@ -890,8 +890,8 @@ class TestCommandInjectionSecurity:
         import tempfile
         from unittest.mock import Mock
 
+        from app.servers.application.service import ServerFileSystemService
         from app.servers.models import Server
-        from app.servers.service import ServerFileSystemService
 
         with tempfile.TemporaryDirectory() as temp_dir:
             server_dir = Path(temp_dir)
