@@ -131,7 +131,7 @@ class TestMinecraftServerManagerSimpleCoverage:
         )
         manager.processes[1] = server_process
 
-        with patch("app.services.minecraft_server.logger") as mock_logger:
+        with patch("app.servers.application.minecraft_server.logger") as mock_logger:
             await manager._cleanup_server_process(1)
 
             # Should log warning and process may or may not be removed depending on when exception occurs

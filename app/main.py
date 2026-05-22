@@ -138,14 +138,42 @@ async def _initialize_database_integration():
     """Initialize database integration - important but not critical"""
     try:
         logger.info("Initializing database integration service...")
-        from app.services.database_integration import database_integration_service
+        from app.servers.api.dependencies import make_server_repository_from_session
+        from app.servers.application.database_integration import (
+            database_integration_instance,
+            make_database_integration_service,
+        )
+        from app.servers.application.minecraft_server import minecraft_server_manager
 
-        database_integration_service.initialize()
+        # Late-bind the server-repository factory on the manager
+        # singleton so the port-conflict check inside `start_server`
+        # can go through the Repository instead of `db_session.query`
+        # (R-17 / #228 PR 2d).
+        minecraft_server_manager.server_repository_factory = (
+            make_server_repository_from_session
+        )
+
+        # Build a fresh integration service inside the running loop so
+        # `initialize()` captures the correct loop for its sync→async
+        # bridge, then publish it on the holder so legacy importers (the
+        # ``app.services.database_integration`` shim) resolve to the
+        # lifecycle-aware singleton via the module's ``__getattr__``.
+        service = make_database_integration_service()
+        try:
+            service.initialize()
+        except Exception:
+            # Initialize failed before publishing — make sure the holder
+            # stays empty so accessors raise the explicit "not
+            # initialised" error instead of returning a half-built
+            # instance.
+            database_integration_instance.clear()
+            raise
+        database_integration_instance.set(service)
         logger.info("Database integration service initialized")
 
         # Sync server states with error handling (enhanced with process restoration)
         try:
-            await database_integration_service.sync_server_states_with_restore()
+            await service.sync_server_states_with_restore()
             logger.info("Enhanced server states synchronized successfully")
         except Exception as sync_error:
             logger.warning(
@@ -236,7 +264,7 @@ async def _cleanup_services():
     # Stop Minecraft server manager (with configurable behavior)
     try:
         logger.info("Shutting down Minecraft server manager...")
-        from app.services.minecraft_server import minecraft_server_manager
+        from app.servers.application.minecraft_server import minecraft_server_manager
 
         await minecraft_server_manager.shutdown_all()
         if settings.KEEP_SERVERS_ON_SHUTDOWN:

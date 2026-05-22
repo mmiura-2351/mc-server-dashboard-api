@@ -126,7 +126,7 @@ class TestDaemonLifecycleComprehensive:
         (server_dir / "server.jar").write_text("mock jar")
 
         with patch(
-            "app.services.minecraft_server.java_compatibility_service", mock_java_service
+            "app.servers.application.minecraft_server.java_compatibility_service", mock_java_service
         ):
             # Mock all required validation methods
             with patch.object(
@@ -194,7 +194,7 @@ class TestDaemonLifecycleComprehensive:
         (server_dir / "server.jar").write_text("mock jar")
 
         with patch(
-            "app.services.minecraft_server.java_compatibility_service", mock_java_service
+            "app.servers.application.minecraft_server.java_compatibility_service", mock_java_service
         ):
             # Mock all validations to pass, but daemon creation to fail
             with patch.object(
@@ -393,7 +393,7 @@ class TestDaemonLifecycleComprehensive:
         (server_dir / "server.jar").write_text("mock jar")
 
         with patch(
-            "app.services.minecraft_server.java_compatibility_service", mock_java_service
+            "app.servers.application.minecraft_server.java_compatibility_service", mock_java_service
         ):
             # Mock all required validation methods
             with patch.object(

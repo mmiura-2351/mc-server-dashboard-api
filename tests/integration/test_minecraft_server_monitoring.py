@@ -156,7 +156,7 @@ sys.exit(0)
         manager.set_status_update_callback(record_status_change)
         manager.processes[1] = server_process
 
-        with patch("app.services.minecraft_server.logger") as mock_logger:
+        with patch("app.servers.application.minecraft_server.logger") as mock_logger:
             # Start log reading task
             log_task = asyncio.create_task(manager._read_server_logs(server_process))
 
@@ -283,7 +283,7 @@ sys.exit(0)
             return original_open(*args, **kwargs)
 
         with patch("builtins.open", side_effect=mock_open):
-            with patch("app.services.minecraft_server.logger") as mock_logger:
+            with patch("app.servers.application.minecraft_server.logger") as mock_logger:
                 # Create and start log reading task
                 log_task = asyncio.create_task(manager._read_server_logs(server_process))
 
@@ -346,7 +346,7 @@ sys.exit(0)
         manager.set_status_update_callback(record_status_change)
 
         with patch.object(manager, "_cleanup_server_process") as mock_cleanup:
-            with patch("app.services.minecraft_server.logger") as mock_logger:
+            with patch("app.servers.application.minecraft_server.logger") as mock_logger:
                 await manager._monitor_server(server_process)
 
                 # Verify error status was set
@@ -395,7 +395,7 @@ sys.exit(0)
 
         manager.set_status_update_callback(record_status_change)
 
-        with patch("app.services.minecraft_server.logger") as mock_logger:
+        with patch("app.servers.application.minecraft_server.logger") as mock_logger:
             # Start monitoring in background
             monitor_task = asyncio.create_task(manager._monitor_server(server_process))
 
@@ -482,7 +482,7 @@ sys.exit(0)
             with patch.object(
                 manager, "_is_process_running", side_effect=mock_is_process_running
             ):
-                with patch("app.services.minecraft_server.logger") as mock_logger:
+                with patch("app.servers.application.minecraft_server.logger") as mock_logger:
                     # Start monitoring task
                     monitor_task = asyncio.create_task(
                         manager._monitor_server(server_process)
@@ -567,7 +567,7 @@ sys.exit(0)
             with patch.object(
                 manager, "_is_process_running", side_effect=mock_is_process_running
             ):
-                with patch("app.services.minecraft_server.logger") as mock_logger:
+                with patch("app.servers.application.minecraft_server.logger") as mock_logger:
                     # Start monitoring task
                     monitor_task = asyncio.create_task(
                         manager._monitor_server(server_process)
@@ -620,7 +620,7 @@ sys.exit(0)
         manager.set_status_update_callback(record_status_change)
 
         with patch.object(manager, "_cleanup_server_process") as mock_cleanup:
-            with patch("app.services.minecraft_server.logger") as mock_logger:
+            with patch("app.servers.application.minecraft_server.logger") as mock_logger:
                 await manager._monitor_server(server_process)
 
                 # Verify error status was set

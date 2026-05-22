@@ -20,7 +20,7 @@ retrieval) is preserved verbatim.
 """
 
 import asyncio
-from unittest.mock import AsyncMock, Mock, patch
+from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import pytest
 from fastapi import HTTPException, Request
@@ -512,28 +512,47 @@ class TestServerControlRouter:
 
     @pytest.mark.asyncio
     @patch("app.servers.routers.control.minecraft_server_manager")
-    @patch("app.services.database_integration.database_integration_service")
     async def test_get_server_status_success(
         self,
-        mock_db_integration,
         mock_manager,
         admin_user,
         mock_server,
         mock_db_session,
     ):
+        """Resolves the database integration service through the
+        lifespan-scoped holder (PR #279 B1) instead of patching the
+        shim attribute (now resolved lazily via ``__getattr__``).
+        """
+        from app.servers.application.database_integration import (
+            database_integration_instance,
+        )
+
         auth = _make_auth_mock(mock_server)
         mock_manager.get_server_status.return_value = ServerStatus.running
+        mock_db_integration = MagicMock()
         mock_db_integration.get_server_process_info.return_value = {
             "pid": 12345,
             "memory": "512MB",
         }
 
-        result = await get_server_status(
-            server_id=mock_server.id,
-            current_user=admin_user,
-            db=mock_db_session,
-            auth=auth,
+        previous = (
+            database_integration_instance.get()
+            if database_integration_instance.is_set()
+            else None
         )
+        database_integration_instance.set(mock_db_integration)
+        try:
+            result = await get_server_status(
+                server_id=mock_server.id,
+                current_user=admin_user,
+                db=mock_db_session,
+                auth=auth,
+            )
+        finally:
+            if previous is None:
+                database_integration_instance.clear()
+            else:
+                database_integration_instance.set(previous)
 
         assert result.server_id == mock_server.id
         assert result.status == ServerStatus.running
@@ -933,15 +952,15 @@ class TestServerControlRouter:
 
     @pytest.mark.asyncio
     @patch("app.servers.routers.control.minecraft_server_manager")
-    @patch("app.services.database_integration.database_integration_service")
     async def test_get_server_status_unexpected_error(
         self,
-        mock_db_integration,
         mock_manager,
         admin_user,
         mock_server,
         mock_db_session,
     ):
+        """The error path triggers before holder resolution, so no holder
+        injection is required."""
         auth = _make_auth_mock()
         auth.check_server_access.side_effect = Exception("Unexpected error")
 

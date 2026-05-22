@@ -385,10 +385,15 @@ async def get_server_status(
         # Check ownership/admin access
         await auth.check_server_access(server_id, current_user)
 
-        from app.services.database_integration import database_integration_service
+        # Resolve through the lifespan-scoped holder (PR #279 B1).
+        from app.servers.application.database_integration import (
+            database_integration_instance,
+        )
 
         server_status = minecraft_server_manager.get_server_status(server_id)
-        process_info = database_integration_service.get_server_process_info(server_id)
+        process_info = database_integration_instance.get().get_server_process_info(
+            server_id
+        )
 
         return ServerStatusResponse(
             server_id=server_id, status=server_status, process_info=process_info

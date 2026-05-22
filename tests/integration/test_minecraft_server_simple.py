@@ -97,7 +97,7 @@ class TestMinecraftServerManagerSimpleIntegration:
 
         # Patch at the module level where it's imported
         with patch(
-            "app.services.minecraft_server.java_compatibility_service", mock_java_service
+            "app.servers.application.minecraft_server.java_compatibility_service", mock_java_service
         ):
             compatible, message, executable = await manager._check_java_compatibility(
                 "1.20.1"
@@ -117,7 +117,7 @@ class TestMinecraftServerManagerSimpleIntegration:
         mock_java_service.compatible = False
 
         with patch(
-            "app.services.minecraft_server.java_compatibility_service", mock_java_service
+            "app.servers.application.minecraft_server.java_compatibility_service", mock_java_service
         ):
             compatible, message, executable = await manager._check_java_compatibility(
                 "1.20.1"
@@ -132,9 +132,9 @@ class TestMinecraftServerManagerSimpleIntegration:
     async def test_java_compatibility_success(self, manager, mock_java_service):
         """Test lines 130-143: Successful Java compatibility"""
         with patch(
-            "app.services.minecraft_server.java_compatibility_service", mock_java_service
+            "app.servers.application.minecraft_server.java_compatibility_service", mock_java_service
         ):
-            with patch("app.services.minecraft_server.logger") as mock_logger:
+            with patch("app.servers.application.minecraft_server.logger") as mock_logger:
                 compatible, message, executable = await manager._check_java_compatibility(
                     "1.20.1"
                 )
@@ -157,9 +157,9 @@ class TestMinecraftServerManagerSimpleIntegration:
         )
 
         with patch(
-            "app.services.minecraft_server.java_compatibility_service", mock_java_service
+            "app.servers.application.minecraft_server.java_compatibility_service", mock_java_service
         ):
-            with patch("app.services.minecraft_server.logger") as mock_logger:
+            with patch("app.servers.application.minecraft_server.logger") as mock_logger:
                 compatible, message, executable = await manager._check_java_compatibility(
                     "1.20.1"
                 )
@@ -215,7 +215,7 @@ class TestMinecraftServerManagerSimpleIntegration:
         callback = Mock(side_effect=Exception("Database connection failed"))
         manager.set_status_update_callback(callback)
 
-        with patch("app.services.minecraft_server.logger") as mock_logger:
+        with patch("app.servers.application.minecraft_server.logger") as mock_logger:
             manager._notify_status_change(1, ServerStatus.running)
 
             callback.assert_called_once_with(1, ServerStatus.running)
@@ -243,7 +243,7 @@ class TestMinecraftServerManagerSimpleIntegration:
         )
         manager.processes[1] = server_process
 
-        with patch("app.services.minecraft_server.logger") as mock_logger:
+        with patch("app.servers.application.minecraft_server.logger") as mock_logger:
             result = await manager.start_server(simple_server, mock_db_session)
 
             assert result is False
@@ -320,7 +320,7 @@ class TestMinecraftServerManagerSimpleIntegration:
         )
         manager.processes[1] = server_process
 
-        with patch("app.services.minecraft_server.logger") as mock_logger:
+        with patch("app.servers.application.minecraft_server.logger") as mock_logger:
             result = await manager.send_command(1, "test command")
 
             assert result is False
@@ -408,7 +408,7 @@ class TestMinecraftServerManagerSimpleIntegration:
 
         # Force exception by patching qsize
         with patch.object(log_queue, "qsize", side_effect=Exception("Queue error")):
-            with patch("app.services.minecraft_server.logger") as mock_logger:
+            with patch("app.servers.application.minecraft_server.logger") as mock_logger:
                 await manager._cleanup_server_process(1)
 
                 mock_logger.warning.assert_called()

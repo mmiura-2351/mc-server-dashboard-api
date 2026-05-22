@@ -90,3 +90,14 @@ def make_servers_uow_from_session_factory() -> ServersUnitOfWork:
     so each invocation opens / closes its own via `SessionLocal`.
     """
     return SqlAlchemyServersUnitOfWork.from_session_factory(SessionLocal)
+
+
+def make_server_repository_from_session(db: Session) -> ServerRepository:
+    """Build a `ServerRepository` bound to an externally-managed `Session`.
+
+    Introduced for #228 PR 2d so `MinecraftServerManager` can perform the
+    port-conflict check via `ServerRepository.list_by_port(...)` while
+    still sharing the caller's already-open session (transitional —
+    see `start_server`'s FIXME(#149/#272)).
+    """
+    return SqlAlchemyServerRepository(db)

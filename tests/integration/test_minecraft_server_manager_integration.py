@@ -109,6 +109,21 @@ class TestMinecraftServerManagerIntegration:
         session.query.return_value.filter.return_value.first.return_value = None
         return session
 
+    def _wire_empty_repo_factory(self, manager):
+        """Helper: route the manager's port-conflict check through a
+        fake `ServerRepository.list_by_port` that returns no conflicts.
+
+        Updated for #228 PR 2d: the port-conflict lookup now goes through
+        `ServerRepository.list_by_port(...)` instead of `db.query(Server)`.
+        Tests that want "no DB conflict" must wire an empty fake here.
+        """
+        from unittest.mock import AsyncMock
+
+        repo = Mock()
+        repo.list_by_port = AsyncMock(return_value=[])
+        manager.server_repository_factory = lambda _db: repo
+        return repo
+
     @pytest_asyncio.fixture
     async def mock_process_command(self, tmp_path):
         """Create a mock command that simulates a Minecraft server process"""
@@ -160,7 +175,7 @@ print("[12:35:01] [Server thread/INFO]: Server stopped")
         mock_java_service.set_java_for_minecraft(None)
 
         with patch(
-            "app.services.minecraft_server.java_compatibility_service", mock_java_service
+            "app.servers.application.minecraft_server.java_compatibility_service", mock_java_service
         ):
             compatible, message, executable = await manager._check_java_compatibility(
                 "1.20.1"
@@ -182,7 +197,7 @@ print("[12:35:01] [Server thread/INFO]: Server stopped")
         mock_java_service.set_java_for_minecraft(None)  # No compatible Java
 
         with patch(
-            "app.services.minecraft_server.java_compatibility_service", mock_java_service
+            "app.servers.application.minecraft_server.java_compatibility_service", mock_java_service
         ):
             compatible, message, executable = await manager._check_java_compatibility(
                 "1.20.1"
@@ -207,9 +222,9 @@ print("[12:35:01] [Server thread/INFO]: Server stopped")
         )
 
         with patch(
-            "app.services.minecraft_server.java_compatibility_service", mock_java_service
+            "app.servers.application.minecraft_server.java_compatibility_service", mock_java_service
         ):
-            with patch("app.services.minecraft_server.logger") as mock_logger:
+            with patch("app.servers.application.minecraft_server.logger") as mock_logger:
                 compatible, message, executable = await manager._check_java_compatibility(
                     "1.20.1"
                 )
@@ -312,6 +327,7 @@ print("[12:35:01] [Server thread/INFO]: Server stopped")
         self, manager, integration_server, mock_db_session
     ):
         """Test port validation success path with real socket operations"""
+        self._wire_empty_repo_factory(manager)
         available, message = await manager._validate_port_availability(
             integration_server, mock_db_session
         )
@@ -324,13 +340,15 @@ print("[12:35:01] [Server thread/INFO]: Server stopped")
         self, manager, integration_server, mock_db_session
     ):
         """Test port validation with database conflict"""
-        # Mock database to return a conflicting server
+        from unittest.mock import AsyncMock
+
+        # Wire a repo whose `list_by_port` returns one conflicting server.
         conflicting_server = Mock()
         conflicting_server.name = "existing-server"
         conflicting_server.status = ServerStatus.running
-        mock_db_session.query.return_value.filter.return_value.first.return_value = (
-            conflicting_server
-        )
+        repo = Mock()
+        repo.list_by_port = AsyncMock(return_value=[conflicting_server])
+        manager.server_repository_factory = lambda _db: repo
 
         available, message = await manager._validate_port_availability(
             integration_server, mock_db_session
@@ -347,6 +365,7 @@ print("[12:35:01] [Server thread/INFO]: Server stopped")
         self, manager, integration_server, mock_db_session
     ):
         """Test port validation with system-level port conflict"""
+        self._wire_empty_repo_factory(manager)
         # Create a real socket binding to cause conflict
         conflict_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         try:
@@ -373,7 +392,7 @@ print("[12:35:01] [Server thread/INFO]: Server stopped")
         callback = Mock(side_effect=Exception("Database connection failed"))
         manager.set_status_update_callback(callback)
 
-        with patch("app.services.minecraft_server.logger") as mock_logger:
+        with patch("app.servers.application.minecraft_server.logger") as mock_logger:
             # This should not raise exception even though callback fails
             manager._notify_status_change(1, ServerStatus.running)
 
@@ -403,7 +422,7 @@ print("[12:35:01] [Server thread/INFO]: Server stopped")
 
         # Force exception by patching qsize method
         with patch.object(log_queue, "qsize", side_effect=Exception("Queue error")):
-            with patch("app.services.minecraft_server.logger") as mock_logger:
+            with patch("app.servers.application.minecraft_server.logger") as mock_logger:
                 await manager._cleanup_server_process(1)
 
                 # In new implementation, cleanup errors are logged as warnings, not errors

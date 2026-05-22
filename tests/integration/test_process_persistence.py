@@ -497,14 +497,34 @@ class TestDatabaseIntegrationPersistence:
 
     @pytest.fixture
     def db_service(self, mock_manager):
-        """Database integration service with mocked manager"""
-        from app.services.database_integration import DatabaseIntegrationService
+        """Database integration service with mocked manager.
 
-        service = DatabaseIntegrationService()
+        Updated for #228 PR 2d: `DatabaseIntegrationService` now requires
+        a `uow_factory`. We pass a lambda that returns a `MagicMock`
+        UoW that supports `async with` — the tests in this class do not
+        exercise repository writes, they only check that the manager
+        callbacks are invoked.
+        """
+        from app.servers.application.database_integration import (
+            DatabaseIntegrationService,
+        )
+
+        fake_uow = MagicMock()
+        fake_uow.__aenter__ = AsyncMock(return_value=fake_uow)
+        fake_uow.__aexit__ = AsyncMock(return_value=None)
+        # ``sync_server_states_async`` now issues a single
+        # ``list_by_port(port=None, statuses=<all>)`` query (N3 of PR #279)
+        # instead of per-status iteration.
+        fake_uow.servers.list_by_port = AsyncMock(return_value=[])
+        fake_uow.servers.batch_update_statuses = AsyncMock(return_value={})
+        fake_uow.commit = AsyncMock()
+
+        service = DatabaseIntegrationService(uow_factory=lambda: fake_uow)
 
         # Mock the global manager
         with patch(
-            "app.services.database_integration.minecraft_server_manager", mock_manager
+            "app.servers.application.database_integration.minecraft_server_manager",
+            mock_manager,
         ):
             yield service
 
@@ -516,10 +536,9 @@ class TestDatabaseIntegrationPersistence:
             2: False,
             3: True,
         }
+        mock_manager.list_running_servers.return_value = []
 
-        # Mock standard sync
-        with patch.object(db_service, "sync_server_states", return_value=True):
-            result = await db_service.sync_server_states_with_restore()
+        result = await db_service.sync_server_states_with_restore()
 
         assert result is True
         mock_manager.discover_and_restore_processes.assert_called_once()

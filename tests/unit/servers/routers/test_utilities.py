@@ -3,7 +3,7 @@ Simplified test coverage for servers utilities router
 Tests core functionality with proper async mocking
 """
 
-from unittest.mock import AsyncMock, Mock, patch
+from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import pytest
 from fastapi import HTTPException
@@ -103,17 +103,36 @@ class TestUtilitiesRouterSimple:
         assert "Only admins can sync server states" in str(exc_info.value.detail)
 
     @pytest.mark.asyncio
-    @patch("app.services.database_integration.database_integration_service")
-    async def test_sync_server_states_success(self, mock_db_service, admin_user):
-        """Test successful server state synchronization"""
+    async def test_sync_server_states_success(self, admin_user):
+        """Test successful server state synchronization.
+
+        The route resolves the service through
+        ``database_integration_instance.get()`` (PR #279 B1 holder
+        pattern), so we set the holder to a mock for the test.
+        """
+        from app.servers.application.database_integration import (
+            database_integration_instance,
+        )
         from app.servers.routers.utilities import sync_server_states
 
+        mock_db_service = MagicMock()
         mock_db_service.get_all_running_servers.return_value = [
             {"id": 1, "name": "server1"},
             {"id": 2, "name": "server2"},
         ]
-
-        result = await sync_server_states(current_user=admin_user)
+        previous = (
+            database_integration_instance.get()
+            if database_integration_instance.is_set()
+            else None
+        )
+        database_integration_instance.set(mock_db_service)
+        try:
+            result = await sync_server_states(current_user=admin_user)
+        finally:
+            if previous is None:
+                database_integration_instance.clear()
+            else:
+                database_integration_instance.set(previous)
 
         assert result["message"] == "Server states synchronized"
         assert result["total_running"] == 2
@@ -343,15 +362,35 @@ class TestUtilitiesRouterSimple:
             assert exc_info.value.status_code == 400
 
     @pytest.mark.asyncio
-    @patch("app.services.database_integration.database_integration_service")
-    async def test_sync_server_states_error(self, mock_db_service, admin_user):
-        """Test server state sync with database error"""
+    async def test_sync_server_states_error(self, admin_user):
+        """Test server state sync with database error.
+
+        Resolved through the lifespan-scoped
+        ``database_integration_instance`` holder (PR #279 B1) so we
+        inject the mock via ``holder.set()`` rather than patching the
+        shim attribute (which now resolves lazily via ``__getattr__``).
+        """
+        from app.servers.application.database_integration import (
+            database_integration_instance,
+        )
         from app.servers.routers.utilities import sync_server_states
 
+        mock_db_service = MagicMock()
         mock_db_service.sync_server_states.side_effect = Exception("Database error")
-
-        with pytest.raises(HTTPException) as exc_info:
-            await sync_server_states(current_user=admin_user)
+        previous = (
+            database_integration_instance.get()
+            if database_integration_instance.is_set()
+            else None
+        )
+        database_integration_instance.set(mock_db_service)
+        try:
+            with pytest.raises(HTTPException) as exc_info:
+                await sync_server_states(current_user=admin_user)
+        finally:
+            if previous is None:
+                database_integration_instance.clear()
+            else:
+                database_integration_instance.set(previous)
 
         assert exc_info.value.status_code == 500
         assert "Failed to sync server states" in str(exc_info.value.detail)

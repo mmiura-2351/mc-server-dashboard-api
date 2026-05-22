@@ -83,8 +83,14 @@ async def sync_server_states(current_user: User = Depends(get_current_user)):
                 detail="Only admins can sync server states",
             )
 
-        from app.services.database_integration import database_integration_service
+        # Resolve through the lifespan-scoped holder (PR #279 B1) so we
+        # always see the loop-bound singleton, not the stale import-time
+        # instance the old shim used to bind.
+        from app.servers.application.database_integration import (
+            database_integration_instance,
+        )
 
+        database_integration_service = database_integration_instance.get()
         database_integration_service.sync_server_states()
 
         # Get current state summary
