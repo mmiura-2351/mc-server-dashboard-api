@@ -824,6 +824,80 @@ class TestServerControlRouter:
             )
         assert exc_info.value.status_code == 403
 
+    # ---------------- granted=False audit (regression #302) ----------------
+
+    @pytest.mark.asyncio
+    @patch("app.servers.routers.control.AuditService")
+    async def test_start_server_logs_permission_denied_on_missing_server(
+        self, mock_audit, mock_request, regular_user, mock_db_session
+    ):
+        """Regression for #302: ``start_server`` must emit the
+        ``permission_check_denied`` audit event before re-raising
+        ``ServerNotFoundError`` (which the global handler maps to 404).
+
+        PR #301 lifted FastAPI dependencies out of
+        ``AuthorizationService`` and the failure-side audit emit was
+        dropped along the way; the router is now responsible for it.
+        """
+        from app.servers.domain.exceptions import ServerNotFoundError
+
+        auth = AsyncMock(spec=AuthorizationService)
+        auth.check_server_access = AsyncMock(
+            side_effect=ServerNotFoundError("Server not found")
+        )
+
+        with pytest.raises(ServerNotFoundError):
+            await start_server(
+                server_id=999,
+                request=mock_request,
+                current_user=regular_user,
+                db=mock_db_session,
+                auth=auth,
+            )
+
+        mock_audit.log_permission_check.assert_called_once()
+        kwargs = mock_audit.log_permission_check.call_args.kwargs
+        assert kwargs["granted"] is False
+        assert kwargs["resource_type"] == "server"
+        assert kwargs["resource_id"] == 999
+        assert kwargs["permission"] == "access"
+        assert kwargs["user_id"] == regular_user.id
+        assert kwargs["details"] == {"reason": "server_not_found"}
+
+    @pytest.mark.asyncio
+    @patch("app.servers.routers.control.AuditService")
+    async def test_send_server_command_logs_permission_denied_on_missing_server(
+        self, mock_audit, mock_request, regular_user, mock_db_session
+    ):
+        """Regression for #302: ``send_server_command`` must also emit
+        the ``permission_check_denied`` audit event before re-raising."""
+        from app.servers.domain.exceptions import ServerNotFoundError
+
+        auth = AsyncMock(spec=AuthorizationService)
+        auth.check_server_access = AsyncMock(
+            side_effect=ServerNotFoundError("Server not found")
+        )
+
+        command_request = ServerCommandRequest(command="say hi")
+        with pytest.raises(ServerNotFoundError):
+            await send_server_command(
+                server_id=999,
+                command_request=command_request,
+                http_request=mock_request,
+                current_user=regular_user,
+                db=mock_db_session,
+                auth=auth,
+            )
+
+        mock_audit.log_permission_check.assert_called_once()
+        kwargs = mock_audit.log_permission_check.call_args.kwargs
+        assert kwargs["granted"] is False
+        assert kwargs["resource_type"] == "server"
+        assert kwargs["resource_id"] == 999
+        assert kwargs["permission"] == "access"
+        assert kwargs["user_id"] == regular_user.id
+        assert kwargs["details"] == {"reason": "server_not_found"}
+
     @pytest.mark.asyncio
     @patch("app.servers.routers.control.minecraft_server_manager")
     @patch("app.servers.routers.control.settings")
