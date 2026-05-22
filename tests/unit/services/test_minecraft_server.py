@@ -177,7 +177,7 @@ class TestMinecraftServerManagerSimpleCoverage:
     async def test_check_java_compatibility_exception(self, manager):
         """Test _check_java_compatibility exception handling"""
         with patch(
-            "app.services.java_compatibility.java_compatibility_service.get_java_for_minecraft",
+            "app.versions.application.java_compatibility.java_compatibility_service.get_java_for_minecraft",
             side_effect=Exception("Java error"),
         ):
             compatible, message, path = await manager._check_java_compatibility("1.20.1")
