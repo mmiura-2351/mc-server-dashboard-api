@@ -499,7 +499,7 @@ class TestServerJarServiceExtended:
             jar_service.version_manager, "is_version_supported", return_value=False
         ):
             with patch(
-                "app.servers.application.service.handle_file_error"
+                "app.servers.adapters._legacy_helpers.handle_file_error"
             ) as mock_handle_error:
                 await jar_service.get_server_jar(
                     ServerType.vanilla, "1.7.10", Path("/tmp"), db
@@ -520,7 +520,7 @@ class TestServerJarServiceExtended:
                 side_effect=Exception("Download error"),
             ):
                 with patch(
-                    "app.servers.application.service.handle_file_error"
+                    "app.servers.adapters._legacy_helpers.handle_file_error"
                 ) as mock_handle_error:
                     await jar_service.get_server_jar(
                         ServerType.vanilla, "1.20.1", Path("/tmp"), db
@@ -583,7 +583,7 @@ class TestServerDatabaseService:
         server_dir = "/tmp/test-server"
         mock_db = Mock()
 
-        with patch("app.servers.application.service.Server") as mock_server_class:
+        with patch("app.servers.adapters._legacy_helpers.Server") as mock_server_class:
             mock_server = Mock()
             mock_server_class.return_value = mock_server
 

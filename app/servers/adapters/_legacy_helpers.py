@@ -24,6 +24,7 @@ from typing import Any, Dict, Optional
 from fastapi import HTTPException
 from fastapi import status as http_status
 from sqlalchemy import and_, func
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import (
@@ -31,19 +32,30 @@ from app.core.exceptions import (
     InvalidRequestException,
     ServerNotFoundException,
     handle_database_error,
+    handle_file_error,
 )
 from app.core.security import PathValidator, SecurityError
 from app.servers.application.minecraft_server import minecraft_server_manager
 from app.servers.models import Server, ServerStatus, ServerType
-from app.servers.schemas import ServerCreateRequest, ServerResponse
+from app.servers.schemas import (
+    ServerCreateRequest,
+    ServerResponse,
+    ServerUpdateRequest,
+)
 from app.users.domain.value_objects import Role
 from app.users.models import User
+from app.versions.adapters.repository import SqlAlchemyVersionRepository
+from app.versions.application.jar_cache_manager import jar_cache_manager
+from app.versions.application.version_manager import minecraft_version_manager
 
 logger = logging.getLogger(__name__)
 
 
 __all__ = [
+    "ServerDatabaseService",
+    "ServerJarService",
     "ServerValidationService",
+    "is_version_supported_db_legacy",
     "list_servers_legacy_db",
     "list_servers_for_user_legacy",
     "validate_server_operation_legacy",
@@ -52,6 +64,49 @@ __all__ = [
     "get_server_statistics_legacy",
     "update_server_status_legacy",
 ]
+
+
+async def is_version_supported_db_legacy(
+    db: Session, server_type: ServerType, version: str
+) -> bool:
+    """Legacy version-support lookup that talks to SQLAlchemy directly.
+
+    Moved here from ``app.servers.application.service`` in #285 so the
+    application layer no longer constructs ``SqlAlchemyVersionRepository``
+    by hand (ARCHITECTURE §4.2). Behaviour matches the original
+    ``ServerService._is_version_supported_db``: DB-first lookup, fall
+    back to the external version-manager API on miss / DB failure.
+    """
+    try:
+        repo = SqlAlchemyVersionRepository(db)
+        db_version = await repo.get_version_by_type_and_version(server_type, version)
+        if db_version is not None and db_version.is_active:
+            return True
+        try:
+            return minecraft_version_manager.is_version_supported(server_type, version)
+        except Exception as api_error:
+            logger.error(
+                f"External API validation failed for {server_type.value} "
+                f"{version}: {api_error}"
+            )
+            raise InvalidRequestException(
+                f"Unable to validate version {version} for {server_type.value}. "
+                "Version not found in database and external API is unavailable."
+            )
+    except InvalidRequestException:
+        raise
+    except Exception as db_error:
+        logger.error(
+            f"Database validation failed for {server_type.value} {version}: {db_error}"
+        )
+        try:
+            return minecraft_version_manager.is_version_supported(server_type, version)
+        except Exception as api_error:
+            logger.error(f"Both database and API validation failed: {api_error}")
+            raise InvalidRequestException(
+                f"Unable to validate version {version} for {server_type.value}. "
+                "Both database and external API are unavailable."
+            )
 
 
 class ServerValidationService:
@@ -344,3 +399,154 @@ def update_server_status_legacy(
     except Exception as e:
         logger.error(f"Failed to update server {server_id} status: {e}")
         return False
+
+
+# ---------------------------------------------------------------------------
+# Session-direct helpers (moved from app.servers.application.service in #285).
+#
+# These classes call SQLAlchemy methods on a ``Session`` at runtime
+# (``db.add``, ``db.query``, ``db.commit``...), so they belong in
+# adapters/ per ARCHITECTURE §4.2/§4.3. The application service module
+# re-exports them for backward compatibility with the legacy tests that
+# import them via ``app.servers.application.service``.
+# ---------------------------------------------------------------------------
+
+
+class ServerJarService:
+    """Service for handling server JAR downloads and management with caching.
+
+    Pre-existing legacy class that consumes a ``Session`` at runtime to
+    look up versions through the version repository. Kept here in
+    adapters/ rather than application/ to preserve the §4.2 invariant.
+    """
+
+    def __init__(self) -> None:
+        self.version_manager = minecraft_version_manager
+        self.cache_manager = jar_cache_manager
+
+    async def _is_version_supported_db(
+        self, db: Session, server_type: ServerType, version: str
+    ) -> bool:
+        try:
+            repo = SqlAlchemyVersionRepository(db)
+            db_version = await repo.get_version_by_type_and_version(server_type, version)
+            if db_version is not None and db_version.is_active:
+                return True
+            return False
+        except Exception:
+            return False
+
+    async def _get_download_url_db(
+        self, db: Session, server_type: ServerType, version: str
+    ) -> Optional[str]:
+        try:
+            repo = SqlAlchemyVersionRepository(db)
+            db_version = await repo.get_version_by_type_and_version(server_type, version)
+            if db_version and db_version.is_active and db_version.download_url:
+                return db_version.download_url
+            return None
+        except Exception:
+            return None
+
+    async def get_server_jar(
+        self,
+        server_type: ServerType,
+        minecraft_version: str,
+        server_dir: Path,
+        db: Session,
+    ) -> Path:
+        try:
+            if not await self._is_version_supported_db(
+                db, server_type, minecraft_version
+            ):
+                raise InvalidRequestException(
+                    f"Version {minecraft_version} is not supported for {server_type.value} "
+                    f"(minimum supported version: 1.8)"
+                )
+
+            download_url = await self._get_download_url_db(
+                db, server_type, minecraft_version
+            )
+
+            cached_jar_path = await self.cache_manager.get_or_download_jar(
+                server_type, minecraft_version, download_url
+            )
+
+            server_jar_path = await self.cache_manager.copy_jar_to_server(
+                cached_jar_path, server_dir
+            )
+
+            logger.info(
+                f"Prepared {server_type.value} {minecraft_version} JAR for server "
+                f"at {server_jar_path}"
+            )
+            return server_jar_path
+
+        except Exception as e:
+            handle_file_error("get server jar", str(server_dir), e)
+
+
+class ServerDatabaseService:
+    """Legacy DB-direct CRUD helper.
+
+    Preserved for backward compatibility with the existing unit tests
+    that inject a ``Mock(db)`` and exercise the SQLAlchemy path. The
+    canonical ``ServerService.create_server`` path uses the
+    ``ServerRepository`` Port instead.
+    """
+
+    def create_server_record(
+        self,
+        request: ServerCreateRequest,
+        owner: User,
+        directory_path: str,
+        db: Session,
+    ) -> Server:
+        try:
+            server = Server(
+                name=request.name,
+                description=request.description,
+                server_type=request.server_type,
+                minecraft_version=request.minecraft_version,
+                port=request.port,
+                max_memory=request.max_memory,
+                max_players=request.max_players,
+                directory_path=directory_path,
+                owner_id=owner.id,
+                status=ServerStatus.stopped,
+            )
+            db.add(server)
+            db.commit()
+            db.refresh(server)
+            logger.info(f"Created server record: {server.name} (ID: {server.id})")
+            return server
+        except IntegrityError as e:
+            db.rollback()
+            handle_database_error("create", "server", e)
+        except Exception as e:
+            db.rollback()
+            handle_database_error("create", "server", e)
+
+    def update_server_record(
+        self, server: Server, request: ServerUpdateRequest, db: Session
+    ) -> Server:
+        try:
+            for field_name, value in request.model_dump(exclude_unset=True).items():
+                setattr(server, field_name, value)
+            db.commit()
+            db.refresh(server)
+            logger.info(f"Updated server record: {server.name} (ID: {server.id})")
+            return server
+        except Exception as e:
+            db.rollback()
+            handle_database_error("update", "server", e)
+
+    def soft_delete_server(self, server: Server, db: Session) -> None:
+        try:
+            server.is_deleted = True
+            server.status = ServerStatus.stopped
+            db.commit()
+            logger.info(f"Soft deleted server: {server.name} (ID: {server.id})")
+        except Exception as e:
+            db.rollback()
+            handle_database_error("delete", "server", e)
