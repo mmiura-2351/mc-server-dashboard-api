@@ -102,6 +102,7 @@ class FakeBackupRepository:
             created_at=_utcnow(),
             server_name=None,
             minecraft_version=None,
+            server_owner_id=None,
         )
         self._records[self._next_id] = entity
         self._next_id += 1
@@ -370,6 +371,7 @@ def make_backup_entity(
     created_at: Optional[datetime] = None,
     server_name: Optional[str] = None,
     minecraft_version: Optional[str] = None,
+    server_owner_id: Optional[int] = None,
 ) -> BackupEntity:
     return BackupEntity(
         id=id,
@@ -383,6 +385,7 @@ def make_backup_entity(
         created_at=created_at or _utcnow(),
         server_name=server_name,
         minecraft_version=minecraft_version,
+        server_owner_id=server_owner_id,
     )
 
 

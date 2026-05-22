@@ -29,10 +29,17 @@ from app.servers.domain.value_objects import (
 class BackupEntity:
     """A persisted backup row.
 
-    `server_name` / `minecraft_version` are denormalised onto the entity
-    because the wire response (`BackupResponse`) needs both and the
-    adapter eager-loads `Backup.server` via `joinedload` to avoid a
-    per-row N+1.
+    `server_name` / `minecraft_version` / `server_owner_id` are
+    denormalised onto the entity because the wire response
+    (`BackupResponse`) needs the first two, and the authorization
+    layer needs `server_owner_id` to decide whether the caller may
+    delete the backup. The adapter eager-loads `Backup.server` via
+    `joinedload` to populate all three without a per-row N+1.
+
+    `server_owner_id` is `Optional[int]` only to mirror the defensive
+    handling already present for `server_name` / `minecraft_version`
+    when `row.server` is absent (the FK is `nullable=False`, so the
+    None branch is unreachable in production; see #274).
     """
 
     id: int
@@ -46,6 +53,7 @@ class BackupEntity:
     created_at: datetime
     server_name: Optional[str]
     minecraft_version: Optional[str]
+    server_owner_id: Optional[int]
 
 
 @dataclass(frozen=True)

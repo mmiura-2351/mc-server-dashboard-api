@@ -37,10 +37,13 @@ Method semantics:
 - Boolean helpers (``is_admin``, ``can_*``) remain ``@staticmethod``
   because they read only fields of ``User`` and do not touch the
   database.
-- ``can_delete_backup`` accepts the parent ``ServerEntity`` (its one
-  previous caller used to pass an ORM ``Backup`` and reach through
-  ``backup.server.owner_id``; that path is no longer available off the
-  domain entity, so the caller passes the server explicitly).
+- ``can_delete_backup`` is two-argument again (``backup``, ``user``).
+  The transitional three-argument form added in #228 PR 2b
+  (``server=None``) was removed under #274 once ``BackupEntity``
+  started carrying a denormalised ``server_owner_id`` populated by
+  the repository's ``joinedload(Backup.server)``. Legacy ORM
+  ``Backup`` rows still work because the static helper falls back to
+  ``backup.server.owner_id`` when the input is not a ``BackupEntity``.
 
 The legacy module path ``app.services.authorization_service`` continues
 to re-export ``AuthorizationService`` for tests that have not yet been
@@ -198,26 +201,28 @@ class AuthorizationService:
         return user.role == Role.admin or getattr(server, "owner_id", None) == user.id
 
     @staticmethod
-    def can_delete_backup(backup, user: User, server=None) -> bool:
+    def can_delete_backup(backup, user: User) -> bool:
         """Admin or owner of the backup's parent server may delete the backup.
 
-        Accepts either a legacy ORM ``Backup`` (whose ``backup.server``
-        relationship still resolves) or a domain ``BackupEntity`` plus
-        the parent ``ServerEntity`` passed explicitly via ``server``.
-        The two-argument legacy form is preserved for tests that pre-date
-        #228.
+        Accepts either a domain ``BackupEntity`` (reads the
+        ``server_owner_id`` field denormalised by the repository under
+        #274) or a legacy ORM ``Backup`` (reaches through the
+        ``backup.server`` relationship; preserved for tests that pre-date
+        #228).
         """
         if user.role == Role.admin:
             return True
-        if server is not None:
-            return getattr(server, "owner_id", None) == user.id
+        if isinstance(backup, BackupEntity):
+            return backup.server_owner_id == user.id
         # Legacy ORM path: ``backup.server`` is a relationship.
         if isinstance(backup, Backup):
             return backup.server.owner_id == user.id
-        # Domain entity without explicit server — caller bug.
-        raise ValueError(
-            "can_delete_backup requires the parent server when called with a BackupEntity"
-        )
+        # Defensive: anything else with a usable attribute.
+        owner_id = getattr(backup, "server_owner_id", None)
+        if owner_id is None:
+            server = getattr(backup, "server", None)
+            owner_id = getattr(server, "owner_id", None) if server is not None else None
+        return owner_id == user.id
 
     @staticmethod
     def filter_servers_for_user(user: User, servers, db=None) -> list:
