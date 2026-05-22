@@ -19,7 +19,7 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.servers.domain.ports import ServerRepository
 from app.servers.models import Server, ServerStatus
-from app.services.java_compatibility import java_compatibility_service
+from app.versions.application.java_compatibility import java_compatibility_service
 
 logger = logging.getLogger(__name__)
 
@@ -1147,7 +1147,7 @@ class MinecraftServerManager:
         - This eliminates complex timestamp comparisons
         """
         try:
-            from app.services.simplified_sync import simplified_sync_service
+            from app.servers.application.simplified_sync import simplified_sync_service
 
             properties_path = server_dir / "server.properties"
 

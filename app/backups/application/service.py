@@ -7,9 +7,10 @@ import from `adapters/`, `api/`, FastAPI, or SQLAlchemy.
 """
 
 import logging
-import shutil
+import os
 import tarfile
 import tempfile
+import uuid
 from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, AsyncIterator, Optional
@@ -124,17 +125,23 @@ class BackupService:
     ) -> BackupEntity:
         """Create a backup row, write the tar.gz, finalise the row.
 
-        Legacy contract preserved: if `uow.commit()` fails after the
-        tar.gz has been written, the file is cleaned up but the
-        commit-failure window may still leave an orphan archive on
-        disk if the unlink itself fails. Tracked by #228 punch-list B
-        (orphan-file remediation).
+        Atomic-rename pattern (#228 punch-list B): the tar.gz is first
+        written to a `.pending/.pending-<uuid>.tar.gz` temp file, then
+        the UoW is committed, then the file is `os.replace()`-moved to
+        its final location. If the DB commit fails the temp file is
+        unlinked before propagating the exception, so no orphan tar
+        ever lands in `backups_directory/`.
         """
         server = await self._get_server_or_raise(server_id)
         self._log_running_server_warning(server_id)
 
+        # Reserve final filename + temp path before any IO so cleanup
+        # is well-defined on every failure branch.
+        pending_dir = self.backups_directory / ".pending"
+        pending_dir.mkdir(parents=True, exist_ok=True)
+        temp_path: Path = pending_dir / f".pending-{uuid.uuid4().hex}.tar.gz"
+        final_path: Optional[Path] = None
         backup_entity: Optional[BackupEntity] = None
-        backup_path: Optional[Path] = None
         try:
             async with self._uow as uow:
                 backup_entity = await uow.backups.add(
@@ -146,19 +153,24 @@ class BackupService:
                     )
                 )
 
-                # File write happens between flush and commit; if the
-                # process dies here the row is rolled back when the
-                # UoW exits without commit().
-                backup_filename = await self._file_service.create_backup_file(
-                    server, backup_entity.id, backup_type
+                # Write tar to temp path (caller-controlled location).
+                await self._file_service.write_backup_file_to(server, temp_path)
+                file_size = temp_path.stat().st_size
+
+                # Derive the final filename now that the backup row has
+                # an id; this stays out of `backups_directory/` until
+                # after a successful commit.
+                final_filename = (
+                    f"backup_{server_id}_{backup_entity.id}_"
+                    f"{datetime.now().strftime('%Y%m%d_%H%M%S')}.tar.gz"
                 )
-                backup_path = self.backups_directory / backup_filename
+                final_path = self.backups_directory / final_filename
 
                 final = await uow.backups.update_file_info(
                     backup_entity.id,
                     UpdateBackupFileCommand(
-                        file_path=str(backup_path),
-                        file_size=backup_path.stat().st_size,
+                        file_path=str(final_path),
+                        file_size=file_size,
                         status=BackupStatus.completed,
                     ),
                 )
@@ -166,21 +178,36 @@ class BackupService:
                 await uow.commit()
                 backup_entity = final
 
+            # Commit succeeded — atomically promote temp file to final
+            # path. On rare failure here the temp file remains in
+            # `.pending/`, never polluting the canonical directory.
+            os.replace(temp_path, final_path)
+
             logger.info(
                 f"Successfully created backup {backup_entity.id} for server {server_id}"
             )
             return backup_entity
 
         except Exception as e:
-            # Best-effort cleanup of orphan archive (legacy parity).
-            if backup_path is not None and backup_path.exists():
-                try:
-                    backup_path.unlink()
-                    logger.info(f"Cleaned up orphaned backup file: {backup_path}")
-                except Exception as cleanup_error:
-                    logger.error(
-                        f"Failed to cleanup backup file {backup_path}: {cleanup_error}"
-                    )
+            # Atomic-rename guarantee: temp file is always cleaned up
+            # on failure, so no orphan tar appears in
+            # `backups_directory/`. If the temp file is missing
+            # (e.g. `write_backup_file_to` errored before creating
+            # it), this is a no-op.
+            try:
+                temp_path.unlink(missing_ok=True)
+            except OSError as cleanup_error:
+                logger.warning(
+                    f"Failed to cleanup pending backup file {temp_path}: {cleanup_error}"
+                )
+            # Defensive: if `os.replace` raced (succeeded) before an
+            # outer exception, the final file may exist. Leave it in
+            # place because the commit succeeded — but log so we can
+            # diagnose.
+            if final_path is not None and final_path.exists():
+                logger.warning(
+                    f"Final backup file exists despite create_backup error: {final_path}"
+                )
             logger.error(f"Failed to create backup for server {server_id}: {e}")
             raise
 
@@ -382,11 +409,12 @@ class BackupService:
                     )
 
                 self.backups_directory.mkdir(exist_ok=True)
-                shutil.move(str(temp_path), str(backup_path))
-                temp_path = None
 
-                logger.info(f"Uploaded backup file: {backup_path} ({file_size} bytes)")
-
+                # Atomic-rename pattern (#228 punch-list B): commit the
+                # DB row first, then promote the validated temp file
+                # into the canonical backups directory. If commit
+                # fails, the temp file is unlinked below and no orphan
+                # tar appears under `backups_directory/`.
                 async with self._uow as uow:
                     entity = await uow.backups.add(
                         CreateBackupCommand(
@@ -401,6 +429,10 @@ class BackupService:
                     )
                     await uow.commit()
 
+                os.replace(str(temp_path), str(backup_path))
+                temp_path = None
+
+                logger.info(f"Uploaded backup file: {backup_path} ({file_size} bytes)")
                 logger.info(f"Created backup record: ID {entity.id}")
                 return entity
 

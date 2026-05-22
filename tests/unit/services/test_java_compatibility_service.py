@@ -297,7 +297,7 @@ class TestJavaCompatibilityService:
             mock_discover_openjdk.return_value = []
 
             # Mock settings
-            with patch("app.services.java_compatibility.settings") as mock_settings:
+            with patch("app.versions.application.java_compatibility.settings") as mock_settings:
                 mock_settings.get_java_path.side_effect = lambda v: {
                     8: "/path/to/java8",
                     17: "/path/to/java17",
@@ -456,7 +456,7 @@ class TestJavaCompatibilityServiceMissingCoverage:
             mock_detect.return_value = java8_at_wrong_path
             mock_discover_openjdk.return_value = []
 
-            with patch("app.services.java_compatibility.settings") as mock_settings:
+            with patch("app.versions.application.java_compatibility.settings") as mock_settings:
                 mock_settings.get_java_path.side_effect = (
                     lambda v: "/configured/java17" if v == 17 else ""
                 )
@@ -484,7 +484,7 @@ class TestJavaCompatibilityServiceMissingCoverage:
             )
             mock_discover_openjdk.return_value = [java17_openjdk]
 
-            with patch("app.services.java_compatibility.settings") as mock_settings:
+            with patch("app.versions.application.java_compatibility.settings") as mock_settings:
                 mock_settings.get_java_path.return_value = ""  # No configured paths
 
                 installations = await service.discover_java_installations()
@@ -508,7 +508,7 @@ class TestJavaCompatibilityServiceMissingCoverage:
             mock_detect.side_effect = lambda path: system_java if path == "java" else None
             mock_discover_openjdk.return_value = []
 
-            with patch("app.services.java_compatibility.settings") as mock_settings:
+            with patch("app.versions.application.java_compatibility.settings") as mock_settings:
                 mock_settings.get_java_path.return_value = ""
 
                 installations = await service.discover_java_installations()
@@ -583,7 +583,7 @@ class TestJavaCompatibilityServiceMissingCoverage:
             mock_detect.side_effect = mock_detect_side_effect
             mock_is_openjdk.return_value = True
 
-            with patch("app.services.java_compatibility.settings") as mock_settings:
+            with patch("app.versions.application.java_compatibility.settings") as mock_settings:
                 mock_settings.java_discovery_paths_list = ["/opt/java"]
 
                 installations = await service._discover_openjdk_installations()
@@ -600,7 +600,7 @@ class TestJavaCompatibilityServiceMissingCoverage:
             mock_exists.return_value = True
             mock_listdir.side_effect = PermissionError("Permission denied")
 
-            with patch("app.services.java_compatibility.settings") as mock_settings:
+            with patch("app.versions.application.java_compatibility.settings") as mock_settings:
                 mock_settings.java_discovery_paths_list = []
 
                 installations = await service._discover_openjdk_installations()
