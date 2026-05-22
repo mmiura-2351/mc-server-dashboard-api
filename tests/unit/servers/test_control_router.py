@@ -8,11 +8,13 @@ have been rewritten to:
 1. Pass an `AsyncMock(spec=AuthorizationService)` directly via the
    handler's `auth=` kwarg (replacing the legacy
    `@patch("...control.authorization_service")` shape).
-2. Mock the ORM refetch performed in `start_server` / `restart_server`
-   — those handlers now call `db.get(Server, server_id)` rather than
-   the legacy `db.query(Server).filter(...)` chain (transitional refetch
-   tracked by #149 / #272). Tests stub `db_session.get` to return the
-   `mock_server` fixture.
+2. After #272 the start/restart handlers no longer refetch an ORM
+   ``Server`` row — they hand the frozen ``ServerEntity`` returned
+   from ``auth.check_server_access`` straight to
+   ``minecraft_server_manager.start_server`` alongside a
+   ``ServerRepository`` built from the request session. The fixture
+   below also patches ``make_server_repository_from_session`` so the
+   manager mock is invoked with a no-op repo handle.
 
 All other behaviour (audit logging, Java availability checks, JAR
 existence checks, server-status validation, command execution, log
@@ -91,14 +93,36 @@ class TestServerControlRouter:
 
     @pytest.fixture
     def mock_db_session(self, mock_server):
-        """Mock DB session. `db.get(Server, sid)` returns `mock_server`.
+        """Mock DB session.
 
-        The start/restart handlers now refetch the ORM `Server` via
-        `db.get(...)` (see PR 2c — replaces legacy `db.query(...).filter()`).
+        After #272 the control router no longer performs a ``db.get``
+        refetch — ``mock_server`` reaches the manager via
+        ``auth.check_server_access``. The session is only used to build a
+        ``ServerRepository`` via ``make_server_repository_from_session``,
+        which the per-test ``patch`` of that helper replaces with a
+        ``Mock``.
         """
         db = Mock()
+        # Retained so any leftover ``db.get(Server, sid)`` callsite in a
+        # not-yet-updated test still resolves to the fixture, but the
+        # production handlers do not invoke it any more.
         db.get = Mock(return_value=mock_server)
         return db
+
+    @pytest.fixture(autouse=True)
+    def _patch_repo_factory(self):
+        """Replace the repo factory called from ``start_server``/``restart_server``.
+
+        The handler builds a ``ServerRepository`` from the request
+        session via this helper and hands it to the manager. Tests mock
+        the manager wholesale, so the factory just needs to return a
+        ``Mock`` placeholder.
+        """
+        with patch(
+            "app.servers.routers.control.make_server_repository_from_session",
+            return_value=Mock(),
+        ) as patched:
+            yield patched
 
     # ---------------- start_server ----------------
 

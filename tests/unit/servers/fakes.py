@@ -186,6 +186,16 @@ class FakeServerRepository:
             result[sid] = await self.update_status(sid, new_status)
         return result
 
+    async def update_port(
+        self, server_id: int, port: int
+    ) -> Optional[ServerEntity]:
+        existing = self._records.get(server_id)
+        if existing is None:
+            return None
+        updated = replace(existing, port=port, updated_at=utcnow())
+        self._records[server_id] = updated
+        return updated
+
     # ----- Test helpers -----
 
     def seed(self, entity: ServerEntity) -> ServerEntity:

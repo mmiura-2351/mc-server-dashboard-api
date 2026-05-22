@@ -10,7 +10,6 @@ from pathlib import Path
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
-from sqlalchemy.orm import Session
 
 from app.servers.application.minecraft_server import MinecraftServerManager, ServerProcess
 from app.servers.models import Server, ServerStatus, ServerType
@@ -83,9 +82,16 @@ class TestMinecraftServerManagerSimpleIntegration:
 
     @pytest.fixture
     def mock_db_session(self):
-        session = Mock(spec=Session)
-        session.query.return_value.filter.return_value.first.return_value = None
-        return session
+        """Fake ``ServerRepository`` returned under the legacy fixture name.
+
+        After #272 the manager accepts a repository (not a session) as
+        ``start_server`` / ``_validate_port_availability``'s second
+        argument. Keeping the fixture name to minimise churn.
+        """
+        repo = Mock()
+        repo.list_by_port = AsyncMock(return_value=[])
+        repo.update_port = AsyncMock(return_value=None)
+        return repo
 
     # ===== Test Java Compatibility Error Paths =====
 

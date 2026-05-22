@@ -146,6 +146,20 @@ class ServerRepository(Protocol):
         """Bulk status update keyed by server id. Owns its transaction."""
         ...
 
+    async def update_port(self, server_id: int, port: int) -> Optional[ServerEntity]:
+        """Set a server's port atomically (own transaction, with retry).
+
+        Introduced under #272 so the legacy
+        ``simplified_sync_service.sync_port_from_file_to_database``
+        (which previously mutated ``Server.port`` directly on a shared
+        SQLAlchemy session) can be expressed through the Port without
+        forcing a frozen ``ServerEntity`` to be mutated. Like
+        ``update_status`` this method owns its transaction via
+        ``with_transaction`` so the legacy ``db.commit()`` semantics
+        (commit + retry) are preserved verbatim.
+        """
+        ...
+
 
 class ServersUnitOfWork(Protocol):
     """Transactional boundary Port for the servers domain.

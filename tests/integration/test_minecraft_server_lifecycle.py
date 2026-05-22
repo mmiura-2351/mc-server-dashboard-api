@@ -11,7 +11,6 @@ from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 import pytest_asyncio
-from sqlalchemy.orm import Session
 
 from app.servers.application.minecraft_server import MinecraftServerManager, ServerProcess
 from app.servers.models import Server, ServerStatus, ServerType
@@ -45,22 +44,8 @@ class TestMinecraftServerLifecycleIntegration:
 
     @pytest.fixture
     def manager(self):
-        """Create manager with realistic configuration.
-
-        After #228 PR 2d, the port-conflict check inside `start_server`
-        routes through `ServerRepository.list_by_port(...)`. Wire an
-        empty fake here so a `Mock(spec=Session)` does not propagate
-        into the lazy `SqlAlchemyServerRepository` default.
-        """
-        from unittest.mock import AsyncMock
-
-        repo = Mock()
-        repo.list_by_port = AsyncMock(return_value=[])
-        mgr = MinecraftServerManager(
-            log_queue_size=100,
-            server_repository_factory=lambda _db: repo,
-        )
-        return mgr
+        """Create manager with realistic configuration."""
+        return MinecraftServerManager(log_queue_size=100)
 
     @pytest.fixture
     def mock_java_service(self):
@@ -102,11 +87,35 @@ online-mode=true
         )
 
     @pytest.fixture
-    def mock_db_session(self):
-        """Database session for port validation"""
-        session = Mock(spec=Session)
-        session.query.return_value.filter.return_value.first.return_value = None
-        return session
+    def mock_db_session(self, lifecycle_server):
+        """Fake ``ServerRepository`` for the manager's port-conflict check.
+
+        Kept under the legacy ``mock_db_session`` name to minimise churn
+        across this file: after #272 the manager's ``start_server`` and
+        ``_validate_port_availability`` take a ``ServerRepository`` as
+        their second argument (no more ``Session``), so we yield a fake
+        repo here directly.
+
+        The pre-flight sync inside ``start_server`` may call
+        ``update_port`` because the lifecycle fixture writes a fixed
+        ``server-port=25565`` into ``server.properties`` while the
+        entity carries a freshly-allocated random port. The mock
+        returns an updated copy of the input ORM-shaped row so the
+        manager keeps reading the same ``directory_path`` / ``max_memory``
+        / ``id`` attributes downstream.
+        """
+        from copy import copy
+
+        repo = Mock()
+        repo.list_by_port = AsyncMock(return_value=[])
+
+        async def _update_port(server_id, port):
+            updated = copy(lifecycle_server)
+            updated.port = port
+            return updated
+
+        repo.update_port = AsyncMock(side_effect=_update_port)
+        return repo
 
     @pytest_asyncio.fixture
     async def long_running_process_command(self, tmp_path):
@@ -296,10 +305,13 @@ sys.exit(0)
                 "app.servers.application.minecraft_server.java_compatibility_service",
                 mock_java_service,
             ):
-                # Mock the sync to return success without changing the port
-                # This ensures the test validates port conflict detection, not sync logic
+                # Mock the sync to report success and surface the original
+                # entity unchanged. After #272 the helper returns
+                # ``(ok, entity)`` rather than a bare bool.
                 with patch.object(
-                    manager, "_perform_bidirectional_sync", return_value=True
+                    manager,
+                    "_perform_bidirectional_sync",
+                    return_value=(True, lifecycle_server),
                 ):
                     with patch(
                         "app.servers.application.minecraft_server.logger"

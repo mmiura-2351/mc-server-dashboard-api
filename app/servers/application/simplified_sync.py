@@ -12,9 +12,8 @@ import logging
 from pathlib import Path
 from typing import Optional, Tuple
 
-from sqlalchemy.orm import Session
-
-from app.servers.models import Server
+from app.servers.domain.entities import ServerEntity
+from app.servers.domain.ports import ServerRepository
 
 logger = logging.getLogger(__name__)
 
@@ -65,7 +64,7 @@ class SimplifiedSyncService:
             return None
 
     def should_sync_from_file(
-        self, server: Server, properties_path: Path
+        self, server: ServerEntity, properties_path: Path
     ) -> Tuple[bool, Optional[int], str]:
         """
         Simplified sync determination logic.
@@ -99,34 +98,45 @@ class SimplifiedSyncService:
             logger.error(f"Error in should_sync_from_file for server {server.id}: {e}")
             return False, None, f"Error: {e}"
 
-    def sync_port_from_file_to_database(
-        self, server: Server, new_port: int, db: Session
-    ) -> bool:
-        """Sync port from file to database"""
+    async def sync_port_from_file_to_database(
+        self,
+        server: ServerEntity,
+        new_port: int,
+        server_repository: ServerRepository,
+    ) -> Optional[ServerEntity]:
+        """Sync port from file to database via the servers Port.
+
+        Returns the updated ``ServerEntity`` on success, or ``None`` if
+        the row could not be located. The repository owns its own
+        transaction (``update_port`` runs inside ``with_transaction``)
+        so this method no longer has to ``db.commit()`` / ``db.rollback()``
+        itself — that responsibility moved to the persistence boundary
+        with the rest of the status writes (#272).
+        """
         try:
             old_port = server.port
             logger.info(
                 f"DEBUG: Updating server {server.id} port: {old_port} -> {new_port}"
             )
 
-            server.port = new_port
-            db.commit()
-            db.refresh(server)
+            updated = await server_repository.update_port(server.id, new_port)
+            if updated is None:
+                logger.error(f"Server {server.id} disappeared during port sync; skipping")
+                return None
 
             logger.info(
                 f"Successfully synced port from file to database for server {server.id}: {old_port} -> {new_port}"
             )
-            return True
+            return updated
 
         except Exception as e:
             logger.error(
                 f"Failed to sync port from file to database for server {server.id}: {e}"
             )
-            db.rollback()
-            return False
+            return None
 
     def sync_port_from_database_to_file(
-        self, server: Server, properties_path: Path
+        self, server: ServerEntity, properties_path: Path
     ) -> bool:
         """
         Sync port from database to file.
@@ -170,9 +180,12 @@ class SimplifiedSyncService:
             )
             return False
 
-    def perform_simplified_sync(
-        self, server: Server, properties_path: Path, db: Session
-    ) -> Tuple[bool, str]:
+    async def perform_simplified_sync(
+        self,
+        server: ServerEntity,
+        properties_path: Path,
+        server_repository: ServerRepository,
+    ) -> Tuple[bool, str, Optional[ServerEntity]]:
         """
         Perform simplified sync operation.
 
@@ -186,7 +199,11 @@ class SimplifiedSyncService:
         - Therefore, any difference means manual edit occurred
 
         Returns:
-            Tuple of (success, description)
+            Tuple of ``(success, description, updated_entity)``.
+            ``updated_entity`` is the post-sync ``ServerEntity`` when a
+            file→DB sync actually ran (so the caller can keep working
+            with a frozen-but-fresh entity), and ``None`` when no sync
+            was needed.
         """
         try:
             should_sync, file_port, reason = self.should_sync_from_file(
@@ -195,21 +212,24 @@ class SimplifiedSyncService:
 
             if should_sync and file_port is not None:
                 # File differs from DB → manual edit detected → sync file to DB
-                success = self.sync_port_from_file_to_database(server, file_port, db)
-                if success:
+                updated = await self.sync_port_from_file_to_database(
+                    server, file_port, server_repository
+                )
+                if updated is not None:
                     return (
                         True,
                         f"Manual edit detected - synced file to database: {reason}",
+                        updated,
                     )
                 else:
-                    return False, f"Failed to sync file to database: {reason}"
+                    return False, f"Failed to sync file to database: {reason}", None
             else:
                 # Ports match or file has no port → no sync needed
-                return True, f"No sync needed: {reason}"
+                return True, f"No sync needed: {reason}", None
 
         except Exception as e:
             logger.error(f"Error in simplified sync for server {server.id}: {e}")
-            return False, f"Sync error: {e}"
+            return False, f"Sync error: {e}", None
 
 
 # Global simplified sync service instance
