@@ -13,7 +13,7 @@ import pytest
 
 pytestmark = pytest.mark.skip(
     reason=(
-        "Deferred to a follow-up PR: rewrite for async UoW-based VisibilityService. "
+        "Deferred to #287: rewrite for async UoW-based VisibilityService (#228 PR 2f). "
         "The sync `VisibilityService(db)` API no longer exists; the new test set "
         "lives under `tests/unit/core/visibility/`."
     )

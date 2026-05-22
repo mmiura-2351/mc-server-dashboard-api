@@ -36,15 +36,27 @@ def get_visibility_migration_service(
 
 
 def make_visibility_service(db: Session) -> VisibilityService:
-    """Build a `VisibilityService` for a request-scoped session.
+    """Build a `VisibilityService` for non-DI callers (e.g. management
+    scripts, background tasks, or future code that needs a one-shot
+    service instance outside of FastAPI's ``Depends`` graph).
 
-    Used by the legacy shim (`app.services.visibility_service`) so callers
-    that did ``VisibilityService(db)`` keep working without importing
-    adapters.
+    Note: the current shim at ``app.services.visibility_service`` re-exports
+    the :class:`VisibilityService` class directly (not through this
+    factory). This factory is reserved for future use; if no caller
+    materializes, PR #3 sweep may remove it. See #228 / #287.
     """
     return VisibilityService(uow=SqlAlchemyVisibilityUnitOfWork(db=db))
 
 
 def make_visibility_migration_service(db: Session) -> VisibilityMigrationService:
-    """Build a `VisibilityMigrationService` for a request-scoped session."""
+    """Build a `VisibilityMigrationService` for non-DI callers (e.g. a
+    startup-time invocation from ``app.main`` lifespan, or management
+    scripts) that need a one-shot service instance outside of FastAPI's
+    ``Depends`` graph.
+
+    Note: the current shim at ``app.services.visibility_migration_service``
+    re-exports the :class:`VisibilityMigrationService` class directly
+    (not through this factory). This factory is reserved for future use;
+    if no caller materializes, PR #3 sweep may remove it. See #228 / #289.
+    """
     return VisibilityMigrationService(uow=SqlAlchemyVisibilityUnitOfWork(db=db))
