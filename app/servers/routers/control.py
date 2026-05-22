@@ -54,8 +54,22 @@ async def start_server(
     in 'stopped' or 'error' state to be started.
     """
     try:
-        # Check ownership/admin access
-        server_entity = await auth.check_server_access(server_id, current_user)
+        # Check ownership/admin access. Wrap so we can re-emit the
+        # ``permission_check_denied`` audit event lost by PR #301 when
+        # the application layer stopped depending on FastAPI (#302).
+        try:
+            server_entity = await auth.check_server_access(server_id, current_user)
+        except ServerNotFoundError:
+            AuditService.log_permission_check(
+                request=request,
+                resource_type="server",
+                resource_id=server_id,
+                permission="access",
+                granted=False,
+                user_id=current_user.id,
+                details={"reason": "server_not_found"},
+            )
+            raise
 
         # Re-emit the permission-check audit event that previously lived
         # inside ``AuthorizationService.check_server_access``; the
@@ -466,8 +480,22 @@ async def send_server_command(
     Some dangerous commands are blocked for safety.
     """
     try:
-        # Check ownership/admin access
-        server = await auth.check_server_access(server_id, current_user)
+        # Check ownership/admin access. Wrap so we can re-emit the
+        # ``permission_check_denied`` audit event lost by PR #301 when
+        # the application layer stopped depending on FastAPI (#302).
+        try:
+            server = await auth.check_server_access(server_id, current_user)
+        except ServerNotFoundError:
+            AuditService.log_permission_check(
+                request=http_request,
+                resource_type="server",
+                resource_id=server_id,
+                permission="access",
+                granted=False,
+                user_id=current_user.id,
+                details={"reason": "server_not_found"},
+            )
+            raise
 
         # Re-emit the permission-check audit event that previously lived
         # inside ``AuthorizationService.check_server_access``; the
