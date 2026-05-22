@@ -38,11 +38,9 @@ def _make_entity(*, port: int = 25565, server_id: int = 1) -> ServerEntity:
 class TestPortValidation:
     """Test cases for `_validate_port_availability` after #272.
 
-    The port-conflict lookup now goes through the explicitly-injected
-    ``ServerRepository.list_by_port(...)`` — the previous
-    ``server_repository_factory`` indirection is gone for this code
-    path. Tests construct a fake repository and pass it as the second
-    argument instead.
+    The port-conflict lookup goes through the explicitly-injected
+    ``ServerRepository.list_by_port(...)``. Tests construct a fake
+    repository and pass it as the second argument.
     """
 
     @pytest.fixture

@@ -87,32 +87,36 @@ online-mode=true
         )
 
     @pytest.fixture
-    def mock_db_session(self, lifecycle_server):
+    def mock_server_repo(self, lifecycle_server):
         """Fake ``ServerRepository`` for the manager's port-conflict check.
 
-        Kept under the legacy ``mock_db_session`` name to minimise churn
-        across this file: after #272 the manager's ``start_server`` and
-        ``_validate_port_availability`` take a ``ServerRepository`` as
-        their second argument (no more ``Session``), so we yield a fake
-        repo here directly.
+        After #272 ``start_server`` / ``_validate_port_availability``
+        take a ``ServerRepository`` as their second argument.
 
         The pre-flight sync inside ``start_server`` may call
         ``update_port`` because the lifecycle fixture writes a fixed
         ``server-port=25565`` into ``server.properties`` while the
-        entity carries a freshly-allocated random port. The mock
-        returns an updated copy of the input ORM-shaped row so the
-        manager keeps reading the same ``directory_path`` / ``max_memory``
-        / ``id`` attributes downstream.
+        entity carries a freshly-allocated random port. The fake
+        returns a real ``ServerEntity`` (matching production) rebuilt
+        from the lifecycle fixture's fields so the manager keeps
+        reading the same ``directory_path`` / ``max_memory`` / ``id``
+        attributes downstream.
         """
-        from copy import copy
+        from tests.unit.servers.fakes import make_server_entity
 
         repo = Mock()
         repo.list_by_port = AsyncMock(return_value=[])
 
         async def _update_port(server_id, port):
-            updated = copy(lifecycle_server)
-            updated.port = port
-            return updated
+            return make_server_entity(
+                id=lifecycle_server.id,
+                name=lifecycle_server.name,
+                directory_path=lifecycle_server.directory_path,
+                minecraft_version=lifecycle_server.minecraft_version,
+                server_type=lifecycle_server.server_type,
+                port=port,
+                max_memory=lifecycle_server.max_memory,
+            )
 
         repo.update_port = AsyncMock(side_effect=_update_port)
         return repo
@@ -189,7 +193,7 @@ sys.exit(0)
         self,
         manager,
         lifecycle_server,
-        mock_db_session,
+        mock_server_repo,
         mock_java_service,
         long_running_process_command,
     ):
@@ -234,7 +238,7 @@ sys.exit(0)
 
                             # Execute complete startup workflow
                             result = await manager.start_server(
-                                lifecycle_server, mock_db_session
+                                lifecycle_server, mock_server_repo
                             )
 
                             # Verify successful startup
@@ -291,7 +295,7 @@ sys.exit(0)
 
     @pytest.mark.asyncio
     async def test_server_startup_port_validation_failure_workflow(
-        self, manager, lifecycle_server, mock_db_session, mock_java_service
+        self, manager, lifecycle_server, mock_server_repo, mock_java_service
     ):
         """Test server startup with port validation failure (lines 266-274)"""
 
@@ -317,7 +321,7 @@ sys.exit(0)
                         "app.servers.application.minecraft_server.logger"
                     ) as mock_logger:
                         result = await manager.start_server(
-                            lifecycle_server, mock_db_session
+                            lifecycle_server, mock_server_repo
                         )
 
                         # Verify failure
@@ -339,7 +343,7 @@ sys.exit(0)
 
     @pytest.mark.asyncio
     async def test_server_startup_java_compatibility_failure_workflow(
-        self, manager, lifecycle_server, mock_db_session
+        self, manager, lifecycle_server, mock_server_repo
     ):
         """Test server startup with Java compatibility failure (lines 277-284)"""
 
@@ -353,7 +357,7 @@ sys.exit(0)
             mock_java_service,
         ):
             with patch("app.servers.application.minecraft_server.logger") as mock_logger:
-                result = await manager.start_server(lifecycle_server, mock_db_session)
+                result = await manager.start_server(lifecycle_server, mock_server_repo)
 
                 # Verify failure
                 assert result is False
@@ -369,7 +373,7 @@ sys.exit(0)
 
     @pytest.mark.asyncio
     async def test_server_startup_file_validation_failure_workflow(
-        self, manager, lifecycle_server, mock_db_session, mock_java_service
+        self, manager, lifecycle_server, mock_server_repo, mock_java_service
     ):
         """Test server startup with file validation failure (lines 290-298)"""
 
@@ -382,7 +386,7 @@ sys.exit(0)
             mock_java_service,
         ):
             with patch("app.servers.application.minecraft_server.logger") as mock_logger:
-                result = await manager.start_server(lifecycle_server, mock_db_session)
+                result = await manager.start_server(lifecycle_server, mock_server_repo)
 
                 # Verify failure
                 assert result is False
@@ -398,7 +402,7 @@ sys.exit(0)
 
     @pytest.mark.asyncio
     async def test_server_startup_process_creation_failure(
-        self, manager, lifecycle_server, mock_db_session, mock_java_service
+        self, manager, lifecycle_server, mock_server_repo, mock_java_service
     ):
         """Test server startup with process creation failure (lines 336-343)"""
 
@@ -411,7 +415,9 @@ sys.exit(0)
                 with patch(
                     "app.servers.application.minecraft_server.logger"
                 ) as mock_logger:
-                    result = await manager.start_server(lifecycle_server, mock_db_session)
+                    result = await manager.start_server(
+                        lifecycle_server, mock_server_repo
+                    )
 
                     # Verify failure
                     assert result is False
@@ -433,7 +439,7 @@ sys.exit(0)
 
     @pytest.mark.asyncio
     async def test_server_startup_process_immediate_exit(
-        self, manager, lifecycle_server, mock_db_session, mock_java_service
+        self, manager, lifecycle_server, mock_server_repo, mock_java_service
     ):
         """Test server startup with process immediate exit (lines 351-376)"""
 
@@ -465,7 +471,7 @@ sys.exit(0)
                         "app.servers.application.minecraft_server.logger"
                     ) as mock_logger:
                         result = await manager.start_server(
-                            lifecycle_server, mock_db_session
+                            lifecycle_server, mock_server_repo
                         )
 
                         # Should initially succeed (daemon creation succeeded)

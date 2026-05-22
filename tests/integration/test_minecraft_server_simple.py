@@ -81,12 +81,11 @@ class TestMinecraftServerManagerSimpleIntegration:
         return MockJavaService()
 
     @pytest.fixture
-    def mock_db_session(self):
-        """Fake ``ServerRepository`` returned under the legacy fixture name.
+    def mock_server_repo(self):
+        """Fake ``ServerRepository`` for the manager's port-conflict check.
 
-        After #272 the manager accepts a repository (not a session) as
-        ``start_server`` / ``_validate_port_availability``'s second
-        argument. Keeping the fixture name to minimise churn.
+        After #272 ``start_server`` / ``_validate_port_availability``
+        take a ``ServerRepository`` as their second argument.
         """
         repo = Mock()
         repo.list_by_port = AsyncMock(return_value=[])
@@ -241,7 +240,7 @@ class TestMinecraftServerManagerSimpleIntegration:
 
     @pytest.mark.asyncio
     async def test_start_server_already_running(
-        self, manager, simple_server, mock_db_session
+        self, manager, simple_server, mock_server_repo
     ):
         """Test lines 253-255: Server already running"""
         # Add server to processes dict
@@ -257,7 +256,7 @@ class TestMinecraftServerManagerSimpleIntegration:
         manager.processes[1] = server_process
 
         with patch("app.servers.application.minecraft_server.logger") as mock_logger:
-            result = await manager.start_server(simple_server, mock_db_session)
+            result = await manager.start_server(simple_server, mock_server_repo)
 
             assert result is False
             mock_logger.warning.assert_called_with("Server 1 is already running")

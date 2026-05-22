@@ -82,11 +82,11 @@ class TestDaemonLifecycleComprehensive:
         return mock
 
     @pytest.fixture
-    def mock_db_session(self):
-        """Fake ``ServerRepository`` returned under the legacy fixture name.
+    def mock_server_repo(self):
+        """Fake ``ServerRepository`` for the manager's port-conflict check.
 
-        After #272 the manager accepts a repository (not a session) as
-        ``start_server``'s second argument.
+        After #272 ``start_server`` takes a ``ServerRepository`` as its
+        second argument.
         """
         repo = Mock()
         repo.list_by_port = AsyncMock(return_value=[])
@@ -119,7 +119,7 @@ class TestDaemonLifecycleComprehensive:
 
     @pytest.mark.asyncio
     async def test_daemon_creation_complete_lifecycle(
-        self, manager, daemon_test_server, mock_db_session, mock_java_service
+        self, manager, daemon_test_server, mock_server_repo, mock_java_service
     ):
         """Test complete daemon creation lifecycle from start to finish"""
 
@@ -174,7 +174,7 @@ class TestDaemonLifecycleComprehensive:
                                             side_effect=_fake_create_task,
                                         ):
                                             result = await manager.start_server(
-                                                daemon_test_server, mock_db_session
+                                                daemon_test_server, mock_server_repo
                                             )
 
                                             # Verify successful start
@@ -188,7 +188,7 @@ class TestDaemonLifecycleComprehensive:
 
     @pytest.mark.asyncio
     async def test_daemon_creation_failure_lifecycle(
-        self, manager, daemon_test_server, mock_db_session, mock_java_service
+        self, manager, daemon_test_server, mock_server_repo, mock_java_service
     ):
         """Test daemon creation failure handling"""
 
@@ -235,7 +235,7 @@ class TestDaemonLifecycleComprehensive:
                                         return_value=None,
                                     ):
                                         result = await manager.start_server(
-                                            daemon_test_server, mock_db_session
+                                            daemon_test_server, mock_server_repo
                                         )
 
                                         # Verify failure handling
@@ -389,7 +389,7 @@ class TestDaemonLifecycleComprehensive:
 
     @pytest.mark.asyncio
     async def test_daemon_full_integration_lifecycle(
-        self, manager, daemon_test_server, mock_db_session, mock_java_service
+        self, manager, daemon_test_server, mock_server_repo, mock_java_service
     ):
         """Test complete daemon lifecycle integration"""
 
@@ -441,7 +441,7 @@ class TestDaemonLifecycleComprehensive:
                                         ):
                                             # Start server
                                             result = await manager.start_server(
-                                                daemon_test_server, mock_db_session
+                                                daemon_test_server, mock_server_repo
                                             )
                                             assert result is True
 
