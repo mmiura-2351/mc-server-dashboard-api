@@ -1,10 +1,13 @@
-"""Legacy backup-service facade preserved for `tests/test_security.py`.
+"""Legacy backup-service facade preserved for historical security tests.
 
-`tests/test_security.py` instantiates `BackupService()` with no arguments
-and patches `BackupValidationService.validate_server_for_backup` to
-inject a mock server. The facade builds a one-shot
-`SqlAlchemyBackupsUnitOfWork` + `SqlAlchemyServerReadPort` per call from
-the explicit `db=` argument the legacy caller passes.
+Originally retained for `tests/test_security.py`; after the Issue #170 split
+the surviving callers live in `tests/unit/backups/test_file_service_security.py`
+and `tests/unit/backups/test_legacy_shim.py`. They instantiate
+`BackupService()` with no arguments and patch
+`BackupValidationService.validate_server_for_backup` to inject a mock
+server. The facade builds a one-shot `SqlAlchemyBackupsUnitOfWork`
++ `SqlAlchemyServerReadPort` per call from the explicit `db=` argument
+the legacy caller passes.
 
 Migrated from `app.services.backup_service` under #228 PR 3. The legacy
 shim path was removed; new code should depend on
@@ -60,9 +63,12 @@ def _build(db: Session) -> _ApplicationBackupService:
 
 
 class _LegacyBackupFacade:
-    """Narrow legacy facade for `tests/test_security.py`.
+    """Narrow legacy facade for historical security tests.
 
-    Tests instantiate `BackupService()` (zero-arg) and patch
+    After Issue #170 the surviving callers live in
+    `tests/unit/backups/test_file_service_security.py` and
+    `tests/unit/backups/test_legacy_shim.py`. Tests instantiate
+    `BackupService()` (zero-arg) and patch
     `BackupValidationService.validate_server_for_backup` to inject a
     mock server. The facade preserves that surface — it accepts the
     same kwargs the legacy class did (notably `db=Session`) so the
@@ -116,7 +122,7 @@ class _LegacyBackupFacade:
             raise ValueError("Database session is required for secure backup upload")
         svc = _build(db)
         # Honour the legacy zero-arg constructor's `backups_directory`
-        # override (test_security.py rewrites it to a tmp path).
+        # override (the file-service-security test rewrites it to a tmp path).
         svc.backups_directory = self.backups_directory
         svc._file_service = self.file_service
         return await svc.upload_backup(
@@ -128,12 +134,14 @@ class _LegacyBackupFacade:
 
 
 class BackupValidationService:
-    """Compat shim retained for `tests/test_security.py` patches.
+    """Compat shim retained for historical security-test patches.
 
     The legacy service had four static validation helpers. The new
     application layer absorbs the same checks inline (via
-    `ServerReadPort.get` + status guards), but the test at
-    `tests/test_security.py:555` patches
+    `ServerReadPort.get` + status guards), but the historical test at
+    `tests/test_security.py` (now split under Issue #170 into
+    `tests/unit/backups/test_file_service_security.py` and
+    `tests/unit/backups/test_legacy_shim.py`) patches
     `BackupValidationService.validate_server_for_backup`, so the
     surface is preserved here as a thin shim.
     """

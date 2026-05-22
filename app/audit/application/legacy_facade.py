@@ -13,7 +13,7 @@ and delegates to `writer.record(...)`.
 The pre-#223 read methods (`get_audit_logs`, `get_security_alerts`,
 `get_user_activity`) are intentionally **not** carried over: their
 only consumers were the audit router (migrated to `AuditQueryService`
-in this PR) and `tests/integration/test_audit.py` (also migrated).
+in this PR) and `tests/integration/audit/test_audit_service.py` (also migrated).
 Anyone re-introducing a read should go through `AuditQueryService`.
 """
 

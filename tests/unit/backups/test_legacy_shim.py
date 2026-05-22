@@ -2,9 +2,11 @@
 
 These shims live at `app.services.backup_service` and
 `app.services.backup_scheduler`. They preserve a minimum API surface
-for callers that have not yet migrated to DI (notably
-`tests/test_security.py`). The tests below freeze the alias names and
-shape so accidental shrinkage is caught at CI time.
+for callers that have not yet migrated to DI (notably the historical
+`tests/test_security.py`, now split into
+`tests/unit/backups/test_file_service_security.py` under Issue #170).
+The tests below freeze the alias names and shape so accidental
+shrinkage is caught at CI time.
 """
 
 import inspect
@@ -41,7 +43,7 @@ def test_backup_service_alias_is_legacy_facade():
 
 
 def test_backup_validation_service_still_exposed():
-    """`tests/test_security.py:555` patches this — keep it exported."""
+    """The historical `tests/test_security.py` patches this — keep it exported."""
     from app.backups.adapters.legacy import BackupValidationService
 
     assert hasattr(BackupValidationService, "validate_server_for_backup")
@@ -78,7 +80,7 @@ def test_scheduler_proxy_hasattr_before_init():
     """`hasattr(backup_scheduler, "start_scheduler")` must be True even
     before the lifespan callback has populated the instance holder.
 
-    Pinned by `tests/integration/test_main_comprehensive.py:628`.
+    Pinned by `tests/integration/core/test_lifespan.py`.
     """
     from app.backups import backup_scheduler_instance
     from app.backups.application.scheduler import backup_scheduler
