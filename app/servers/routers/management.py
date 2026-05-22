@@ -13,6 +13,8 @@ from sqlalchemy.orm import Session
 from app.auth.dependencies import get_current_user
 from app.core.database import get_db
 from app.core.exceptions import ConflictException
+from app.servers.api.dependencies import get_authorization_service
+from app.servers.application.authorization import AuthorizationService
 from app.servers.models import ServerStatus
 from app.servers.schemas import (
     ServerCreateRequest,
@@ -21,7 +23,6 @@ from app.servers.schemas import (
     ServerUpdateRequest,
 )
 from app.servers.service import server_service
-from app.services.authorization_service import authorization_service
 from app.services.minecraft_server import minecraft_server_manager
 from app.users.models import User
 
@@ -55,7 +56,7 @@ async def create_server(
     """
     try:
         # Phase 1: All users can create servers
-        if not authorization_service.can_create_server(current_user):
+        if not AuthorizationService.can_create_server(current_user):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Insufficient permissions to create servers",
@@ -107,6 +108,7 @@ async def get_server(
     server_id: int,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
+    auth: AuthorizationService = Depends(get_authorization_service),
 ):
     """
     Get server details by ID
@@ -116,7 +118,7 @@ async def get_server(
     """
     try:
         # Check ownership/admin access
-        authorization_service.check_server_access(server_id, current_user, db)
+        await auth.check_server_access(server_id, current_user)
 
         server = await server_service.get_server(server_id, db)
         if not server:
@@ -141,6 +143,7 @@ async def update_server(
     request: ServerUpdateRequest,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
+    auth: AuthorizationService = Depends(get_authorization_service),
 ):
     """
     Update server configuration
@@ -150,7 +153,7 @@ async def update_server(
     """
     try:
         # Check ownership/admin access
-        authorization_service.check_server_access(server_id, current_user, db)
+        await auth.check_server_access(server_id, current_user)
 
         # Check if server is running (some updates require server to be stopped)
         server_status = minecraft_server_manager.get_server_status(server_id)
@@ -183,6 +186,7 @@ async def delete_server(
     server_id: int,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
+    auth: AuthorizationService = Depends(get_authorization_service),
 ):
     """
     Delete a server
@@ -193,11 +197,11 @@ async def delete_server(
     Only admins and server owners can delete servers.
     """
     try:
-        # Check server exists and get server object
-        server = authorization_service.check_server_access(server_id, current_user, db)
+        # Check server exists and get server entity
+        server = await auth.check_server_access(server_id, current_user)
 
         # Check deletion permission (admin or server owner only)
-        if not authorization_service.can_delete_server(server, current_user):
+        if not AuthorizationService.can_delete_server(server, current_user):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Only admins and server owners can delete servers",

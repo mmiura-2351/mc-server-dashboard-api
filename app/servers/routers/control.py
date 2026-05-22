@@ -15,13 +15,14 @@ from app.audit.service import AuditService
 from app.auth.dependencies import get_current_user
 from app.core.config import settings
 from app.core.database import get_db
-from app.servers.models import ServerStatus
+from app.servers.api.dependencies import get_authorization_service
+from app.servers.application.authorization import AuthorizationService
+from app.servers.models import Server, ServerStatus
 from app.servers.schemas import (
     ServerCommandRequest,
     ServerLogsResponse,
     ServerStatusResponse,
 )
-from app.services.authorization_service import authorization_service
 from app.services.minecraft_server import minecraft_server_manager
 from app.users.models import User
 
@@ -36,6 +37,7 @@ async def start_server(
     request: Request,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
+    auth: AuthorizationService = Depends(get_authorization_service),
 ):
     """
     Start a Minecraft server
@@ -45,9 +47,21 @@ async def start_server(
     """
     try:
         # Check ownership/admin access
-        server = authorization_service.check_server_access(
-            server_id, current_user, db, request
-        )
+        await auth.check_server_access(server_id, current_user, request)
+
+        # Re-fetch the ORM `Server` row because
+        # `minecraft_server_manager.start_server` and
+        # `simplified_sync_service.perform_simplified_sync` mutate the
+        # SQLAlchemy instance directly. The domain `ServerEntity`
+        # returned by ``check_server_access`` is frozen and cannot
+        # carry those mutations through. This refetch will be removed
+        # once the downstream services accept entities (#149).
+        # FIXME(#149): drop this when minecraft_server_manager accepts ServerEntity (see #272).
+        server = db.query(Server).filter(Server.id == server_id).first()
+        if server is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Server not found"
+            )
 
         # Check current status
         current_status = minecraft_server_manager.get_server_status(server_id)
@@ -244,6 +258,7 @@ async def stop_server(
     force: bool = Query(False, description="Force stop the server"),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
+    auth: AuthorizationService = Depends(get_authorization_service),
 ):
     """
     Stop a Minecraft server
@@ -253,7 +268,7 @@ async def stop_server(
     """
     try:
         # Check ownership/admin access
-        authorization_service.check_server_access(server_id, current_user, db)
+        await auth.check_server_access(server_id, current_user)
 
         # Check current status
         current_status = minecraft_server_manager.get_server_status(server_id)
@@ -293,6 +308,7 @@ async def restart_server(
     server_id: int,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
+    auth: AuthorizationService = Depends(get_authorization_service),
 ):
     """
     Restart a Minecraft server
@@ -301,7 +317,15 @@ async def restart_server(
     """
     try:
         # Check ownership/admin access
-        server = authorization_service.check_server_access(server_id, current_user, db)
+        await auth.check_server_access(server_id, current_user)
+        # Re-fetch the ORM Server because `minecraft_server_manager.start_server`
+        # mutates it via the legacy sync service; see start_server above (#272).
+        # FIXME(#149): drop this when minecraft_server_manager accepts ServerEntity (see #272).
+        server = db.query(Server).filter(Server.id == server_id).first()
+        if server is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Server not found"
+            )
 
         current_status = minecraft_server_manager.get_server_status(server_id)
 
@@ -346,6 +370,7 @@ async def get_server_status(
     server_id: int,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
+    auth: AuthorizationService = Depends(get_authorization_service),
 ):
     """
     Get current server status and process information
@@ -354,7 +379,7 @@ async def get_server_status(
     """
     try:
         # Check ownership/admin access
-        authorization_service.check_server_access(server_id, current_user, db)
+        await auth.check_server_access(server_id, current_user)
 
         from app.services.database_integration import database_integration_service
 
@@ -381,6 +406,7 @@ async def send_server_command(
     http_request: Request,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
+    auth: AuthorizationService = Depends(get_authorization_service),
 ):
     """
     Send a command to a running server
@@ -390,9 +416,7 @@ async def send_server_command(
     """
     try:
         # Check ownership/admin access
-        server = authorization_service.check_server_access(
-            server_id, current_user, db, http_request
-        )
+        server = await auth.check_server_access(server_id, current_user, http_request)
 
         # Check if server is running
         server_status = minecraft_server_manager.get_server_status(server_id)
@@ -485,6 +509,7 @@ async def get_server_logs(
     lines: int = Query(100, ge=1, le=1000, description="Number of log lines to retrieve"),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
+    auth: AuthorizationService = Depends(get_authorization_service),
 ):
     """
     Get recent server logs
@@ -493,7 +518,7 @@ async def get_server_logs(
     """
     try:
         # Check ownership/admin access
-        authorization_service.check_server_access(server_id, current_user, db)
+        await auth.check_server_access(server_id, current_user)
 
         logs = await minecraft_server_manager.get_server_logs(server_id, lines)
 

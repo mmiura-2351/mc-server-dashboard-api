@@ -21,7 +21,11 @@ from sqlalchemy.orm import Session
 
 from app.auth.dependencies import get_current_user
 from app.core.database import get_db
-from app.servers.api.dependencies import get_server_repository
+from app.servers.api.dependencies import (
+    get_authorization_service,
+    get_server_repository,
+)
+from app.servers.application.authorization import AuthorizationService
 from app.servers.domain.ports import ServerRepository
 from app.servers.models import ServerStatus, ServerType
 from app.servers.schemas import (
@@ -30,7 +34,6 @@ from app.servers.schemas import (
     ServerResponse,
 )
 from app.servers.service import server_service
-from app.services.authorization_service import authorization_service
 from app.users.models import User
 
 logger = logging.getLogger(__name__)
@@ -43,6 +46,7 @@ async def export_server(
     server_id: int,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
+    auth: AuthorizationService = Depends(get_authorization_service),
 ):
     """
     Export a server as a ZIP file
@@ -52,7 +56,7 @@ async def export_server(
     """
     try:
         # Check ownership/admin access (includes operators)
-        server = authorization_service.check_server_access(server_id, current_user, db)
+        server = await auth.check_server_access(server_id, current_user)
 
         # Check if server exists and get server directory
         server_dir = Path(server.directory_path)
@@ -166,7 +170,7 @@ async def import_server(
     """
     try:
         # Only operators and admins can import servers
-        if not authorization_service.can_create_server(current_user):
+        if not AuthorizationService.can_create_server(current_user):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Only operators and admins can import servers",

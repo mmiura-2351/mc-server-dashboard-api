@@ -105,7 +105,8 @@ class TestBackupRouterFixed:
         db.commit()
 
         with patch(
-            "app.services.authorization_service.authorization_service.check_server_access"
+            "app.servers.application.authorization.AuthorizationService.check_server_access",
+            new_callable=AsyncMock,
         ) as mock_auth:
             mock_auth.return_value = server
             mock_backup_service.create_backup.return_value = make_entity(
@@ -178,7 +179,8 @@ class TestBackupRouterFixed:
         test_user.role = Role.operator
 
         with patch(
-            "app.services.authorization_service.authorization_service.check_server_access"
+            "app.servers.application.authorization.AuthorizationService.check_server_access",
+            new_callable=AsyncMock,
         ) as mock_auth:
             # Mock authorization to raise ServerNotFoundException
             mock_auth.side_effect = ServerNotFoundException("Server not found")
@@ -215,7 +217,8 @@ class TestBackupRouterFixed:
         db.commit()
 
         with patch(
-            "app.services.authorization_service.authorization_service.check_server_access"
+            "app.servers.application.authorization.AuthorizationService.check_server_access",
+            new_callable=AsyncMock,
         ) as mock_auth:
             mock_auth.return_value = server
             mock_backup_service.create_backup.side_effect = FileOperationException(
@@ -250,7 +253,8 @@ class TestBackupRouterFixed:
         db.commit()
 
         with patch(
-            "app.services.authorization_service.authorization_service.check_server_access"
+            "app.servers.application.authorization.AuthorizationService.check_server_access",
+            new_callable=AsyncMock,
         ) as mock_auth:
             mock_auth.return_value = server
             mock_backup_service.list_backups.return_value = BackupListPage(
@@ -309,7 +313,8 @@ class TestBackupRouterFixed:
         db.commit()
 
         with patch(
-            "app.services.authorization_service.authorization_service.check_server_access"
+            "app.servers.application.authorization.AuthorizationService.check_server_access",
+            new_callable=AsyncMock,
         ) as mock_auth:
             mock_auth.return_value = server
             mock_backup_service.list_backups.return_value = BackupListPage(
@@ -355,8 +360,9 @@ class TestBackupRouterFixed:
 
     def test_get_backup_by_id(self, client, test_user, db):
         """Test getting backup details by ID"""
-        # Create test backup
-        backup = Backup(
+        # The router now serialises via `backup_entity_to_response`,
+        # so the mock must return a domain entity (post-#228 PR 2b).
+        backup_entity = make_entity(
             id=1,
             server_id=1,
             name="Test Backup",
@@ -364,13 +370,13 @@ class TestBackupRouterFixed:
             status=BackupStatus.completed,
             file_path="/backups/test.tar.gz",
             file_size=1024,
-            created_at=datetime.now(),
         )
 
         with patch(
-            "app.services.authorization_service.authorization_service.check_backup_access"
+            "app.servers.application.authorization.AuthorizationService.check_backup_access",
+            new_callable=AsyncMock,
         ) as mock_auth:
-            mock_auth.return_value = backup
+            mock_auth.return_value = backup_entity
 
             response = client.get(
                 "/api/v1/backups/backups/1", headers=get_auth_headers(test_user.username)
@@ -386,7 +392,8 @@ class TestBackupRouterFixed:
     def test_get_backup_not_found(self, client, test_user):
         """Test getting backup that doesn't exist"""
         with patch(
-            "app.services.authorization_service.authorization_service.check_backup_access"
+            "app.servers.application.authorization.AuthorizationService.check_backup_access",
+            new_callable=AsyncMock,
         ) as mock_auth:
             mock_auth.side_effect = BackupNotFoundException("Backup not found")
 
@@ -428,10 +435,11 @@ class TestBackupRouterFixed:
 
         with (
             patch(
-                "app.services.authorization_service.authorization_service.check_backup_access"
+                "app.servers.application.authorization.AuthorizationService.check_backup_access",
+                new_callable=AsyncMock,
             ) as mock_auth,
             patch(
-                "app.services.authorization_service.authorization_service.can_delete_backup"
+                "app.servers.application.authorization.AuthorizationService.can_delete_backup"
             ) as mock_can_delete,
         ):
             mock_auth.return_value = backup
@@ -493,10 +501,11 @@ class TestBackupRouterFixed:
 
         with (
             patch(
-                "app.services.authorization_service.authorization_service.check_backup_access"
+                "app.servers.application.authorization.AuthorizationService.check_backup_access",
+                new_callable=AsyncMock,
             ) as mock_auth,
             patch(
-                "app.services.authorization_service.authorization_service.can_delete_backup"
+                "app.servers.application.authorization.AuthorizationService.can_delete_backup"
             ) as mock_can_delete,
         ):
             mock_auth.return_value = backup
@@ -529,7 +538,8 @@ class TestBackupRouterFixed:
         db.commit()
 
         with patch(
-            "app.services.authorization_service.authorization_service.check_server_access"
+            "app.servers.application.authorization.AuthorizationService.check_server_access",
+            new_callable=AsyncMock,
         ) as mock_auth:
             mock_auth.return_value = server
             mock_backup_service.get_backup_statistics.return_value = BackupStatistics(

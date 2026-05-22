@@ -12,8 +12,8 @@ risk drift.
 
 from collections import Counter
 from dataclasses import replace
-from typing import Any, Dict, List, Optional
 from types import TracebackType
+from typing import Any, Dict, List, Optional
 
 from app.core.datetime_utils import utcnow
 from app.servers.models import ServerType

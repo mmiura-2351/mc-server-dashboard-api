@@ -6,7 +6,6 @@ Tests inject a service backed by `FakeUnitOfWork` via FastAPI's
 follow-up sub-issues.
 """
 
-from datetime import datetime
 from unittest.mock import patch
 
 import pytest
@@ -16,11 +15,12 @@ from app.servers.models import ServerType
 from app.versions.api.dependencies import get_version_service
 from app.versions.application.service import (
     VersionUpdateResult as ApplicationVersionUpdateResult,
+)
+from app.versions.application.service import (
     VersionUpdateService,
 )
 from app.versions.domain.entities import CreateVersionCommand
 from tests.unit.versions.fakes import FakeUnitOfWork
-
 
 # ---------------------------------------------------------------------------
 # Test fixtures

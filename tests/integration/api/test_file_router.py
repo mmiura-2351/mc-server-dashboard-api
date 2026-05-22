@@ -1,6 +1,6 @@
 from datetime import datetime
 from io import BytesIO
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 from fastapi import HTTPException, status
 
@@ -20,7 +20,10 @@ def get_auth_headers(username: str):
 class TestFileRouter:
     """Test cases for File router endpoints"""
 
-    @patch("app.services.authorization_service.authorization_service.check_server_access")
+    @patch(
+        "app.servers.application.authorization.AuthorizationService.check_server_access",
+        new_callable=AsyncMock,
+    )
     @patch(
         "app.services.file_management_service.file_management_service.get_server_files"
     )
@@ -61,7 +64,10 @@ class TestFileRouter:
         assert data["current_path"] == ""
         assert data["total_files"] == 2
 
-    @patch("app.services.authorization_service.authorization_service.check_server_access")
+    @patch(
+        "app.servers.application.authorization.AuthorizationService.check_server_access",
+        new_callable=AsyncMock,
+    )
     @patch(
         "app.services.file_management_service.file_management_service.get_server_files"
     )
@@ -78,7 +84,10 @@ class TestFileRouter:
         assert response.status_code == status.HTTP_200_OK
         mock_get_files.assert_called_once()
 
-    @patch("app.services.authorization_service.authorization_service.check_server_access")
+    @patch(
+        "app.servers.application.authorization.AuthorizationService.check_server_access",
+        new_callable=AsyncMock,
+    )
     @patch(
         "app.services.file_management_service.file_management_service.get_server_files"
     )
@@ -97,7 +106,10 @@ class TestFileRouter:
         assert response.status_code == status.HTTP_200_OK
         mock_get_files.assert_called_once()
 
-    @patch("app.services.authorization_service.authorization_service.check_server_access")
+    @patch(
+        "app.servers.application.authorization.AuthorizationService.check_server_access",
+        new_callable=AsyncMock,
+    )
     @patch(
         "app.services.file_management_service.file_management_service.get_server_files"
     )
@@ -131,7 +143,10 @@ class TestFileRouter:
         assert data["encoding"] == "utf-8"
         assert "file_info" in data
 
-    @patch("app.services.authorization_service.authorization_service.check_server_access")
+    @patch(
+        "app.servers.application.authorization.AuthorizationService.check_server_access",
+        new_callable=AsyncMock,
+    )
     @patch(
         "app.services.file_management_service.file_management_service.get_server_files"
     )
@@ -164,7 +179,10 @@ class TestFileRouter:
         data = response.json()
         assert data["encoding"] == "latin-1"
 
-    @patch("app.services.authorization_service.authorization_service.check_server_access")
+    @patch(
+        "app.servers.application.authorization.AuthorizationService.check_server_access",
+        new_callable=AsyncMock,
+    )
     @patch(
         "app.services.file_management_service.file_management_service.get_server_files"
     )
@@ -201,8 +219,11 @@ class TestFileRouter:
         assert data["image_data"] is not None
         assert data["content"] == ""
 
-    @patch("app.services.authorization_service.authorization_service.check_server_access")
-    @patch("app.services.authorization_service.authorization_service.can_modify_files")
+    @patch(
+        "app.servers.application.authorization.AuthorizationService.check_server_access",
+        new_callable=AsyncMock,
+    )
+    @patch("app.servers.application.authorization.AuthorizationService.can_modify_files")
     @patch("app.services.file_management_service.file_management_service.write_file")
     def test_write_file_success(
         self, mock_write_file, mock_can_modify, mock_check_access, client, admin_user
@@ -241,7 +262,7 @@ class TestFileRouter:
         data = response.json()
         assert data["message"] == "File updated successfully"
 
-    @patch("app.services.authorization_service.authorization_service.can_modify_files")
+    @patch("app.servers.application.authorization.AuthorizationService.can_modify_files")
     def test_write_file_insufficient_permissions(
         self, mock_can_modify, client, test_user
     ):
@@ -257,8 +278,11 @@ class TestFileRouter:
 
         assert response.status_code == status.HTTP_403_FORBIDDEN
 
-    @patch("app.services.authorization_service.authorization_service.check_server_access")
-    @patch("app.services.authorization_service.authorization_service.can_modify_files")
+    @patch(
+        "app.servers.application.authorization.AuthorizationService.check_server_access",
+        new_callable=AsyncMock,
+    )
+    @patch("app.servers.application.authorization.AuthorizationService.can_modify_files")
     @patch("app.services.file_management_service.file_management_service.upload_file")
     def test_upload_file_success(
         self, mock_upload_file, mock_can_modify, mock_check_access, client, admin_user
@@ -295,8 +319,11 @@ class TestFileRouter:
         data = response.json()
         assert data["message"] == "File 'test.txt' uploaded successfully"
 
-    @patch("app.services.authorization_service.authorization_service.check_server_access")
-    @patch("app.services.authorization_service.authorization_service.can_modify_files")
+    @patch(
+        "app.servers.application.authorization.AuthorizationService.check_server_access",
+        new_callable=AsyncMock,
+    )
+    @patch("app.servers.application.authorization.AuthorizationService.can_modify_files")
     @patch("app.services.file_management_service.file_management_service.upload_file")
     def test_upload_file_with_extraction(
         self, mock_upload_file, mock_can_modify, mock_check_access, client, admin_user
@@ -331,7 +358,7 @@ class TestFileRouter:
 
         assert response.status_code == status.HTTP_200_OK
 
-    @patch("app.services.authorization_service.authorization_service.can_modify_files")
+    @patch("app.servers.application.authorization.AuthorizationService.can_modify_files")
     def test_upload_file_insufficient_permissions(
         self, mock_can_modify, client, test_user
     ):
@@ -350,7 +377,10 @@ class TestFileRouter:
 
         assert response.status_code == status.HTTP_403_FORBIDDEN
 
-    @patch("app.services.authorization_service.authorization_service.check_server_access")
+    @patch(
+        "app.servers.application.authorization.AuthorizationService.check_server_access",
+        new_callable=AsyncMock,
+    )
     @patch("app.services.file_management_service.file_management_service.download_file")
     def test_download_file_success(
         self, mock_download_file, mock_check_access, client, admin_user
@@ -384,8 +414,11 @@ class TestFileRouter:
             if temp_path.exists():
                 temp_path.unlink()
 
-    @patch("app.services.authorization_service.authorization_service.check_server_access")
-    @patch("app.services.authorization_service.authorization_service.can_modify_files")
+    @patch(
+        "app.servers.application.authorization.AuthorizationService.check_server_access",
+        new_callable=AsyncMock,
+    )
+    @patch("app.servers.application.authorization.AuthorizationService.can_modify_files")
     @patch(
         "app.services.file_management_service.file_management_service.create_directory"
     )
@@ -419,7 +452,7 @@ class TestFileRouter:
         data = response.json()
         assert data["message"] == "Directory created successfully"
 
-    @patch("app.services.authorization_service.authorization_service.can_modify_files")
+    @patch("app.servers.application.authorization.AuthorizationService.can_modify_files")
     def test_create_directory_insufficient_permissions(
         self, mock_can_modify, client, test_user
     ):
@@ -435,8 +468,11 @@ class TestFileRouter:
 
         assert response.status_code == status.HTTP_403_FORBIDDEN
 
-    @patch("app.services.authorization_service.authorization_service.check_server_access")
-    @patch("app.services.authorization_service.authorization_service.can_modify_files")
+    @patch(
+        "app.servers.application.authorization.AuthorizationService.check_server_access",
+        new_callable=AsyncMock,
+    )
+    @patch("app.servers.application.authorization.AuthorizationService.can_modify_files")
     @patch("app.services.file_management_service.file_management_service.delete_file")
     def test_delete_file_success(
         self, mock_delete_file, mock_can_modify, mock_check_access, client, admin_user
@@ -455,7 +491,7 @@ class TestFileRouter:
         data = response.json()
         assert "message" in data
 
-    @patch("app.services.authorization_service.authorization_service.can_modify_files")
+    @patch("app.servers.application.authorization.AuthorizationService.can_modify_files")
     def test_delete_file_insufficient_permissions(
         self, mock_can_modify, client, test_user
     ):
@@ -469,7 +505,10 @@ class TestFileRouter:
 
         assert response.status_code == status.HTTP_403_FORBIDDEN
 
-    @patch("app.services.authorization_service.authorization_service.check_server_access")
+    @patch(
+        "app.servers.application.authorization.AuthorizationService.check_server_access",
+        new_callable=AsyncMock,
+    )
     @patch("app.services.file_management_service.file_management_service.search_files")
     def test_search_files_success(
         self, mock_search, mock_check_access, client, admin_user
@@ -514,7 +553,10 @@ class TestFileRouter:
         assert data["total_results"] == 1
         assert len(data["results"]) == 1
 
-    @patch("app.services.authorization_service.authorization_service.check_server_access")
+    @patch(
+        "app.servers.application.authorization.AuthorizationService.check_server_access",
+        new_callable=AsyncMock,
+    )
     @patch("app.services.file_management_service.file_management_service.search_files")
     def test_search_files_with_content(
         self, mock_search, mock_check_access, client, admin_user
@@ -577,7 +619,10 @@ class TestFileRouter:
         response = client.post("/api/v1/files/servers/1/files/test/directories")
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
 
-    @patch("app.services.authorization_service.authorization_service.check_server_access")
+    @patch(
+        "app.servers.application.authorization.AuthorizationService.check_server_access",
+        new_callable=AsyncMock,
+    )
     def test_file_read_validation_errors(self, mock_check_access, client, admin_user):
         """Test file read validation errors"""
         mock_check_access.return_value = None  # No exception means access granted
@@ -619,7 +664,10 @@ class TestFileRouter:
         )
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
 
-    @patch("app.services.authorization_service.authorization_service.check_server_access")
+    @patch(
+        "app.servers.application.authorization.AuthorizationService.check_server_access",
+        new_callable=AsyncMock,
+    )
     @patch("app.services.file_management_service.file_management_service.read_file")
     def test_file_error_handling(
         self, mock_read_file, mock_check_access, client, admin_user
@@ -649,7 +697,7 @@ class TestFileRouter:
 class TestFileRenameRouter:
     """Test cases for File rename router endpoint"""
 
-    @patch("app.services.authorization_service.authorization_service.can_modify_files")
+    @patch("app.servers.application.authorization.AuthorizationService.can_modify_files")
     @patch("app.services.file_management_service.file_management_service.rename_file")
     def test_rename_file_success(
         self, mock_rename_file, mock_can_modify, client, admin_user
@@ -687,7 +735,7 @@ class TestFileRenameRouter:
         assert data["new_path"] == "renamed.txt"
         assert data["file"]["name"] == "renamed.txt"
 
-    @patch("app.services.authorization_service.authorization_service.can_modify_files")
+    @patch("app.servers.application.authorization.AuthorizationService.can_modify_files")
     @patch("app.services.file_management_service.file_management_service.rename_file")
     def test_rename_directory_success(
         self, mock_rename_file, mock_can_modify, client, admin_user
@@ -723,7 +771,7 @@ class TestFileRenameRouter:
         assert data["message"] == "Successfully renamed 'old_folder' to 'new_folder'"
         assert data["file"]["is_directory"] is True
 
-    @patch("app.services.authorization_service.authorization_service.can_modify_files")
+    @patch("app.servers.application.authorization.AuthorizationService.can_modify_files")
     def test_rename_file_insufficient_permissions(
         self, mock_can_modify, client, test_user
     ):
@@ -741,7 +789,7 @@ class TestFileRenameRouter:
 
         assert response.status_code == status.HTTP_403_FORBIDDEN
 
-    @patch("app.services.authorization_service.authorization_service.can_modify_files")
+    @patch("app.servers.application.authorization.AuthorizationService.can_modify_files")
     @patch("app.services.file_management_service.file_management_service.rename_file")
     def test_rename_file_invalid_filename(
         self, mock_rename_file, mock_can_modify, client, admin_user
@@ -766,7 +814,7 @@ class TestFileRenameRouter:
 
         assert response.status_code == status.HTTP_400_BAD_REQUEST
 
-    @patch("app.services.authorization_service.authorization_service.can_modify_files")
+    @patch("app.servers.application.authorization.AuthorizationService.can_modify_files")
     @patch("app.services.file_management_service.file_management_service.rename_file")
     def test_rename_file_already_exists(
         self, mock_rename_file, mock_can_modify, client, admin_user
@@ -789,7 +837,7 @@ class TestFileRenameRouter:
 
         assert response.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
 
-    @patch("app.services.authorization_service.authorization_service.can_modify_files")
+    @patch("app.servers.application.authorization.AuthorizationService.can_modify_files")
     @patch("app.services.file_management_service.file_management_service.rename_file")
     def test_rename_file_not_found(
         self, mock_rename_file, mock_can_modify, client, admin_user

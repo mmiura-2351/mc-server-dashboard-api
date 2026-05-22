@@ -18,10 +18,11 @@ from fastapi import Depends
 from sqlalchemy.orm import Session
 
 from app.backups import backup_scheduler_instance
+from app.backups.adapters.repository import SqlAlchemyBackupRepository
 from app.backups.adapters.uow import SqlAlchemyBackupsUnitOfWork
 from app.backups.application.scheduler import BackupSchedulerService
 from app.backups.application.service import BackupService
-from app.backups.domain.ports import BackupsUnitOfWork
+from app.backups.domain.ports import BackupRepository, BackupsUnitOfWork
 from app.core.database import SessionLocal, get_db
 from app.servers.adapters.read_port import SqlAlchemyServerReadPort
 from app.servers.domain.ports import ServerReadPort
@@ -30,6 +31,16 @@ from app.servers.domain.ports import ServerReadPort
 def get_backups_uow(db: Session = Depends(get_db)) -> BackupsUnitOfWork:
     """Return a `BackupsUnitOfWork` bound to the current request's session."""
     return SqlAlchemyBackupsUnitOfWork(db=db)
+
+
+def get_backup_repository(db: Session = Depends(get_db)) -> BackupRepository:
+    """Return a request-scoped `BackupRepository`.
+
+    Useful for read-only endpoints (or composite services such as the
+    authorization service introduced in #228 PR 2b) that need to
+    resolve a backup without participating in a UoW.
+    """
+    return SqlAlchemyBackupRepository(db)
 
 
 def get_server_read_port(db: Session = Depends(get_db)) -> ServerReadPort:
