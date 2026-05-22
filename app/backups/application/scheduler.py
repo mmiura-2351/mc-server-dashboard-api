@@ -13,7 +13,9 @@ SELECT.
 
 import asyncio
 import logging
+import time
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import Callable, Dict, List, Optional
 
 from app.backups.domain.entities import (
@@ -56,13 +58,40 @@ class BackupSchedulerService:
         uow_factory: Callable[[], BackupsUnitOfWork],
         server_read_factory: ServerReadPortFactory,
         clock: Callable[[], datetime] = _utcnow,
+        backups_directory: Path = Path("backups"),
+        pending_retention_hours: Optional[int] = None,
+        failed_retention_days: Optional[int] = None,
+        cleanup_interval_seconds: Optional[int] = None,
     ):
         self._uow_factory = uow_factory
         self._server_read_factory = server_read_factory
         self._clock = clock
         self._running = False
         self._task: Optional[asyncio.Task] = None
+        self._cleanup_task: Optional[asyncio.Task] = None
         self._schedule_cache: Dict[int, BackupScheduleEntity] = {}
+
+        # Sweep configuration for `.pending/` and `.failed/` (Issue #284).
+        # Defaults come from `app.core.config.settings` but each value can
+        # be overridden by the constructor for tests / wiring flexibility.
+        from app.core.config import settings as _settings
+
+        self._backups_directory: Path = Path(backups_directory)
+        self._pending_retention_hours: int = (
+            pending_retention_hours
+            if pending_retention_hours is not None
+            else _settings.BACKUPS_PENDING_RETENTION_HOURS
+        )
+        self._failed_retention_days: int = (
+            failed_retention_days
+            if failed_retention_days is not None
+            else _settings.BACKUPS_FAILED_RETENTION_DAYS
+        )
+        self._cleanup_interval_seconds: int = (
+            cleanup_interval_seconds
+            if cleanup_interval_seconds is not None
+            else _settings.BACKUPS_CLEANUP_INTERVAL_SECONDS
+        )
 
     # ===================
     # Schedule CRUD
@@ -305,18 +334,29 @@ class BackupSchedulerService:
         except Exception as e:
             logger.error(f"Failed to load schedules from database during startup: {e}")
         self._task = asyncio.create_task(self._scheduler_loop())
+        # One-shot sweep at startup picks up any artifacts left by a
+        # previous crashed process before the periodic loop's first
+        # tick (Issue #284). Failures here are non-fatal — they're
+        # logged and the periodic loop will retry.
+        try:
+            self.sweep_stale_pending_and_failed()
+        except Exception as e:
+            logger.warning(f"Startup sweep of .pending/.failed failed: {e}")
+        self._cleanup_task = asyncio.create_task(self._cleanup_loop())
 
     async def stop_scheduler(self) -> None:
         if not self._running:
             return
         self._running = False
-        if self._task:
-            self._task.cancel()
-            try:
-                await self._task
-            except asyncio.CancelledError:
-                pass
-            self._task = None
+        for task_attr in ("_task", "_cleanup_task"):
+            task: Optional[asyncio.Task] = getattr(self, task_attr)
+            if task:
+                task.cancel()
+                try:
+                    await task
+                except asyncio.CancelledError:
+                    pass
+                setattr(self, task_attr, None)
         self._schedule_cache.clear()
 
     async def _scheduler_loop(self) -> None:
@@ -335,6 +375,113 @@ class BackupSchedulerService:
             except Exception as e:
                 logger.error(f"Unexpected error in backup scheduler loop: {e}")
                 await asyncio.sleep(60)
+
+    async def _cleanup_loop(self) -> None:
+        """Periodic sweep of `.pending/` and `.failed/` artifacts (Issue #284).
+
+        Runs `sweep_stale_pending_and_failed()` every
+        `cleanup_interval_seconds` (default 1h). Each sweep is
+        idempotent (mtime-based, query-then-skip), so a missed tick
+        will catch up on the next run. Exceptions are logged and the
+        loop continues — never block the scheduler on housekeeping.
+        """
+        while self._running:
+            try:
+                await asyncio.sleep(self._cleanup_interval_seconds)
+            except asyncio.CancelledError:
+                logger.info("Backup cleanup loop cancelled")
+                break
+            if not self._running:
+                break
+            try:
+                self.sweep_stale_pending_and_failed()
+            except Exception as e:
+                logger.warning(f"Periodic sweep of .pending/.failed failed: {e}")
+
+    # ===================
+    # `.pending/` / `.failed/` housekeeping (Issue #284)
+    # ===================
+
+    def sweep_stale_pending_and_failed(self) -> Dict[str, int]:
+        """Delete stale `*.tar.gz` files from `.pending/` and `.failed/`.
+
+        Retention defaults (env-tunable via
+        `BACKUPS_PENDING_RETENTION_HOURS` /
+        `BACKUPS_FAILED_RETENTION_DAYS`):
+
+        - `.pending/*.tar.gz`: 24h (atomic-rename interrupted between
+          tar-write and `os.replace` — orphan temp file with no DB row).
+        - `.failed/*.tar.gz`: 30d (post-commit `os.replace` failure
+          recovery files; operator should review before auto-deletion,
+          but the retention window is long enough to catch human
+          attention via monitoring).
+
+        Idempotent: only files whose `mtime` is older than the
+        retention cutoff are unlinked. Per-file failures (permission
+        denied, etc.) are logged at WARNING and the sweep continues.
+        Returns `{"pending_deleted": int, "failed_deleted": int}` for
+        callers (tests / metrics).
+        """
+        result = {"pending_deleted": 0, "failed_deleted": 0}
+        result["pending_deleted"] = self._sweep_directory(
+            self._backups_directory / ".pending",
+            max_age_seconds=self._pending_retention_hours * 3600,
+            kind="pending",
+        )
+        result["failed_deleted"] = self._sweep_directory(
+            self._backups_directory / ".failed",
+            max_age_seconds=self._failed_retention_days * 86400,
+            kind="failed",
+        )
+        return result
+
+    def _sweep_directory(
+        self, directory: Path, *, max_age_seconds: int, kind: str
+    ) -> int:
+        """Unlink `*.tar.gz` files older than `max_age_seconds` in `directory`.
+
+        Returns the number of files actually deleted. Missing
+        directories are a no-op (the directory is lazily created by
+        the atomic-rename failure path, so absence simply means no
+        artifacts have accumulated yet).
+        """
+        if not directory.exists():
+            return 0
+        try:
+            entries = list(directory.glob("*.tar.gz"))
+        except OSError as e:
+            logger.warning(f"Failed to enumerate {kind} sweep directory {directory}: {e}")
+            return 0
+
+        deleted = 0
+        now = time.time()
+        cutoff = now - max_age_seconds
+        for path in entries:
+            try:
+                mtime = path.stat().st_mtime
+            except OSError as e:
+                logger.warning(f"Failed to stat {kind} artifact {path}: {e}")
+                continue
+            if mtime >= cutoff:
+                # Within retention window — skip (query-then-skip
+                # idempotency).
+                continue
+            try:
+                path.unlink()
+                deleted += 1
+                age_hours = (now - mtime) / 3600
+                logger.info(
+                    "Swept stale %s backup artifact %s (age=%.1fh)",
+                    kind,
+                    path,
+                    age_hours,
+                )
+            except OSError as e:
+                # Per-file failure (permission, ENOENT race, …): warn
+                # and continue — do not let one bad file block the
+                # rest of the sweep.
+                logger.warning(f"Failed to unlink stale {kind} artifact {path}: {e}")
+        return deleted
 
     # ===================
     # Properties
@@ -407,6 +554,11 @@ class _SchedulerProxy:
 
     def clear_cache(self) -> None:
         backup_scheduler_instance.get().clear_cache()
+
+    # ---- Housekeeping ----
+
+    def sweep_stale_pending_and_failed(self) -> Any:
+        return backup_scheduler_instance.get().sweep_stale_pending_and_failed()
 
     # ---- Properties ----
 

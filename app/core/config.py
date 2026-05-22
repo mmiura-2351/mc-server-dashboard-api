@@ -33,6 +33,14 @@ class Settings(BaseSettings):
     DATABASE_RETRY_BACKOFF: float = 0.1
     DATABASE_BATCH_SIZE: int = 100
 
+    # Backup directory housekeeping (Issue #284)
+    # Periodic sweep of `backups_directory/.pending/` and `.failed/`
+    # artifacts left behind by atomic-rename failure paths (#228 PR 2e).
+    BACKUPS_PENDING_RETENTION_HOURS: int = 24
+    BACKUPS_FAILED_RETENTION_DAYS: int = 30
+    # Interval (seconds) between sweep runs in the scheduler loop.
+    BACKUPS_CLEANUP_INTERVAL_SECONDS: int = 3600
+
     # CORS configuration
     CORS_ORIGINS: str = (
         "http://localhost:3000,http://127.0.0.1:3000,https://127.0.0.1:3000"
@@ -104,6 +112,36 @@ class Settings(BaseSettings):
         """Validate DATABASE_BATCH_SIZE is within reasonable limits"""
         if v < 10 or v > 1000:
             raise ValueError("DATABASE_BATCH_SIZE must be between 10 and 1000")
+        return v
+
+    @field_validator("BACKUPS_PENDING_RETENTION_HOURS")
+    @classmethod
+    def validate_pending_retention(cls, v: int) -> int:
+        """Validate BACKUPS_PENDING_RETENTION_HOURS is within sane bounds."""
+        if v < 1 or v > 24 * 365:
+            raise ValueError(
+                "BACKUPS_PENDING_RETENTION_HOURS must be between 1 and 8760 hours"
+            )
+        return v
+
+    @field_validator("BACKUPS_FAILED_RETENTION_DAYS")
+    @classmethod
+    def validate_failed_retention(cls, v: int) -> int:
+        """Validate BACKUPS_FAILED_RETENTION_DAYS is within sane bounds."""
+        if v < 1 or v > 3650:
+            raise ValueError(
+                "BACKUPS_FAILED_RETENTION_DAYS must be between 1 and 3650 days"
+            )
+        return v
+
+    @field_validator("BACKUPS_CLEANUP_INTERVAL_SECONDS")
+    @classmethod
+    def validate_cleanup_interval(cls, v: int) -> int:
+        """Validate BACKUPS_CLEANUP_INTERVAL_SECONDS is within sane bounds."""
+        if v < 60 or v > 86400:
+            raise ValueError(
+                "BACKUPS_CLEANUP_INTERVAL_SECONDS must be between 60 and 86400 seconds"
+            )
         return v
 
     @property
