@@ -686,10 +686,15 @@ class ServerService:
             # adapter type isn't part of the Port surface; cast via
             # attribute access — the only concrete implementation is
             # SqlAlchemyServersUnitOfWork.
-            # FIXME(#272): adapter encapsulation leak — reach into UoW's private SQLAlchemy
-            # Session because minecraft_server_manager.start_server(server, db) requires
-            # an ORM Server instance. Eliminate once minecraft_server_manager accepts
-            # ServerEntity (#149 child).
+            # NB(#272): the legacy reason for reaching into the UoW's
+            # private session (``minecraft_server_manager.start_server``
+            # used to require an ORM ``Server``) no longer applies — the
+            # manager accepts ``ServerEntity`` now. The downstream
+            # ``filesystem_service.generate_server_files`` / template
+            # / group helpers below still want an ORM row to read
+            # ``server.id`` / ``server.directory_path`` from, so the
+            # refetch stays until those helpers are migrated separately
+            # (#149).
             db = getattr(uow, "_db", None)
             if db is None:
                 raise RuntimeError(
@@ -745,8 +750,21 @@ class ServerService:
     # ===================
 
     async def start_server(self, server_id: int, db: Session) -> Dict[str, str]:
+        # Existence check (kept on the legacy validator for the
+        # not-found semantics it raises). The manager now accepts a
+        # frozen ``ServerEntity`` and a ``ServerRepository`` (#272) so
+        # we hand it the entity loaded through the Port instead of the
+        # ORM row.
         server = self.validation_service.validate_server_exists(server_id, db)
-        await minecraft_server_manager.start_server(server, db)
+        from app.servers.api.dependencies import make_server_repository_from_session
+
+        server_repository = make_server_repository_from_session(db)
+        entity = await server_repository.get(server_id, include_deleted=False)
+        if entity is None:
+            raise RuntimeError(
+                f"Server {server_id} vanished between validation and start"
+            )
+        await minecraft_server_manager.start_server(entity, server_repository)
         return {"message": f"Server '{server.name}' started successfully"}
 
     async def stop_server(self, server_id: int, db: Session) -> Dict[str, str]:
@@ -790,7 +808,13 @@ class ServerService:
             )
 
         logger.info(f"Starting server {server.id} after confirmed stop")
-        await minecraft_server_manager.start_server(server, db)
+        from app.servers.api.dependencies import make_server_repository_from_session
+
+        server_repository = make_server_repository_from_session(db)
+        entity = await server_repository.get(server.id, include_deleted=False)
+        if entity is None:
+            raise RuntimeError(f"Server {server.id} vanished between stop and restart")
+        await minecraft_server_manager.start_server(entity, server_repository)
 
         return {"message": f"Server '{server.name}' restarted successfully"}
 

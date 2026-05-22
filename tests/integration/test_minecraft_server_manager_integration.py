@@ -12,7 +12,6 @@ from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 import pytest_asyncio
-from sqlalchemy.orm import Session
 
 from app.servers.application.minecraft_server import MinecraftServerManager, ServerProcess
 from app.servers.models import Server, ServerStatus, ServerType
@@ -102,26 +101,19 @@ class TestMinecraftServerManagerIntegration:
             port=port,
         )
 
-    @pytest.fixture
-    def mock_db_session(self):
-        """Mock database session for port validation"""
-        session = Mock(spec=Session)
-        session.query.return_value.filter.return_value.first.return_value = None
-        return session
-
     def _wire_empty_repo_factory(self, manager):
-        """Helper: route the manager's port-conflict check through a
-        fake `ServerRepository.list_by_port` that returns no conflicts.
+        """Helper: build a fake ``ServerRepository`` whose
+        ``list_by_port`` returns no conflicts.
 
-        Updated for #228 PR 2d: the port-conflict lookup now goes through
-        `ServerRepository.list_by_port(...)` instead of `db.query(Server)`.
-        Tests that want "no DB conflict" must wire an empty fake here.
+        Updated for #272: ``_validate_port_availability`` now takes a
+        ``ServerRepository`` directly (the manager-level factory is no
+        longer consulted for the port-conflict check). The returned
+        repo is passed by callers as the second argument.
         """
         from unittest.mock import AsyncMock
 
         repo = Mock()
         repo.list_by_port = AsyncMock(return_value=[])
-        manager.server_repository_factory = lambda _db: repo
         return repo
 
     @pytest_asyncio.fixture
@@ -327,12 +319,12 @@ print("[12:35:01] [Server thread/INFO]: Server stopped")
 
     @pytest.mark.asyncio
     async def test_validate_port_availability_success(
-        self, manager, integration_server, mock_db_session
+        self, manager, integration_server
     ):
         """Test port validation success path with real socket operations"""
-        self._wire_empty_repo_factory(manager)
+        repo = self._wire_empty_repo_factory(manager)
         available, message = await manager._validate_port_availability(
-            integration_server, mock_db_session
+            integration_server, repo
         )
 
         assert available is True
@@ -340,21 +332,20 @@ print("[12:35:01] [Server thread/INFO]: Server stopped")
 
     @pytest.mark.asyncio
     async def test_validate_port_availability_database_conflict(
-        self, manager, integration_server, mock_db_session
+        self, manager, integration_server
     ):
         """Test port validation with database conflict"""
         from unittest.mock import AsyncMock
 
-        # Wire a repo whose `list_by_port` returns one conflicting server.
+        # Build a repo whose ``list_by_port`` returns one conflicting server.
         conflicting_server = Mock()
         conflicting_server.name = "existing-server"
         conflicting_server.status = ServerStatus.running
         repo = Mock()
         repo.list_by_port = AsyncMock(return_value=[conflicting_server])
-        manager.server_repository_factory = lambda _db: repo
 
         available, message = await manager._validate_port_availability(
-            integration_server, mock_db_session
+            integration_server, repo
         )
 
         assert available is False
@@ -365,10 +356,10 @@ print("[12:35:01] [Server thread/INFO]: Server stopped")
 
     @pytest.mark.asyncio
     async def test_validate_port_availability_system_conflict(
-        self, manager, integration_server, mock_db_session
+        self, manager, integration_server
     ):
         """Test port validation with system-level port conflict"""
-        self._wire_empty_repo_factory(manager)
+        repo = self._wire_empty_repo_factory(manager)
         # Create a real socket binding to cause conflict
         conflict_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         try:
@@ -376,7 +367,7 @@ print("[12:35:01] [Server thread/INFO]: Server stopped")
             conflict_socket.listen(1)
 
             available, message = await manager._validate_port_availability(
-                integration_server, mock_db_session
+                integration_server, repo
             )
 
             assert available is False

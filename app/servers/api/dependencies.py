@@ -97,7 +97,9 @@ def make_server_repository_from_session(db: Session) -> ServerRepository:
 
     Introduced for #228 PR 2d so `MinecraftServerManager` can perform the
     port-conflict check via `ServerRepository.list_by_port(...)` while
-    still sharing the caller's already-open session (transitional —
-    see `start_server`'s FIXME(#149/#272)).
+    still sharing the caller's already-open session. After #272 the
+    control router also uses this helper to hand the manager an explicit
+    repository at start/restart time, replacing the transitional ORM
+    refetch that used to live in those handlers.
     """
     return SqlAlchemyServerRepository(db)

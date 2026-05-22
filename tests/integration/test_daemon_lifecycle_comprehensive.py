@@ -83,12 +83,15 @@ class TestDaemonLifecycleComprehensive:
 
     @pytest.fixture
     def mock_db_session(self):
-        """Mock database session"""
-        session = Mock()
-        session.commit = Mock()
-        session.rollback = Mock()
-        session.refresh = Mock()
-        return session
+        """Fake ``ServerRepository`` returned under the legacy fixture name.
+
+        After #272 the manager accepts a repository (not a session) as
+        ``start_server``'s second argument.
+        """
+        repo = Mock()
+        repo.list_by_port = AsyncMock(return_value=[])
+        repo.update_port = AsyncMock(return_value=None)
+        return repo
 
     # ===== Helper Methods =====
 

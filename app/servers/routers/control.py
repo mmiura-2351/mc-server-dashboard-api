@@ -19,11 +19,14 @@ from app.backups.domain.exceptions import (
 )
 from app.core.config import settings
 from app.core.database import get_db
-from app.servers.api.dependencies import get_authorization_service
+from app.servers.api.dependencies import (
+    get_authorization_service,
+    make_server_repository_from_session,
+)
 from app.servers.application.authorization import AuthorizationService
 from app.servers.application.minecraft_server import minecraft_server_manager
 from app.servers.domain.exceptions import ServerAccessError, ServerNotFoundError
-from app.servers.models import Server, ServerStatus
+from app.servers.models import ServerStatus
 from app.servers.schemas import (
     ServerCommandRequest,
     ServerLogsResponse,
@@ -72,21 +75,11 @@ async def start_server(
             },
         )
 
-        # Re-fetch the ORM `Server` row because
-        # `minecraft_server_manager.start_server` and
-        # `simplified_sync_service.perform_simplified_sync` mutate the
-        # SQLAlchemy instance directly. The domain `ServerEntity`
-        # returned by ``check_server_access`` is frozen and cannot
-        # carry those mutations through. This refetch will be removed
-        # once the downstream services accept entities (#149).
-        # FIXME(#149): drop this when minecraft_server_manager accepts ServerEntity (see #272).
-        # NB: `db.get(...)` rather than the legacy `db.query(Server).filter(...)`
-        # so the file is clean of `db.query(Server)` per the #228 PR 2c gate.
-        server = db.get(Server, server_id)
-        if server is None:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, detail="Server not found"
-            )
+        # ``server_entity`` is the frozen ``ServerEntity`` returned by
+        # ``check_server_access``. ``minecraft_server_manager.start_server``
+        # now accepts that entity directly (#272) — the transitional ORM
+        # refetch that lived here is gone.
+        server = server_entity
 
         # Check current status
         current_status = minecraft_server_manager.get_server_status(server_id)
@@ -123,8 +116,12 @@ async def start_server(
                 detail=f"Server is currently {current_status.value}, cannot start",
             )
 
-        # Start the server
-        success = await minecraft_server_manager.start_server(server, db)
+        # Start the server. ``server`` is the frozen ``ServerEntity``
+        # from ``check_server_access``; the pre-flight sync inside the
+        # manager flushes manual ``server.properties`` port edits back
+        # to the DB through the injected ``ServerRepository`` (#272).
+        server_repository = make_server_repository_from_session(db)
+        success = await minecraft_server_manager.start_server(server, server_repository)
         if not success:
             # Get more detailed error information
             logger.error(f"Server {server_id} failed to start - checking system state")
@@ -351,18 +348,11 @@ async def restart_server(
     Stops the server (if running) and starts it again.
     """
     try:
-        # Check ownership/admin access
-        await auth.check_server_access(server_id, current_user)
-        # Re-fetch the ORM Server because `minecraft_server_manager.start_server`
-        # mutates it via the legacy sync service; see start_server above (#272).
-        # FIXME(#149): drop this when minecraft_server_manager accepts ServerEntity (see #272).
-        # Uses `db.get(...)` rather than `db.query(Server)` per the
-        # #228 PR 2c "no db.query in app/servers/routers" gate.
-        server = db.get(Server, server_id)
-        if server is None:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, detail="Server not found"
-            )
+        # Check ownership/admin access. Use the frozen ``ServerEntity``
+        # returned by the access check directly — the manager accepts
+        # entities now (#272), so the previous ``db.get(Server, …)``
+        # refetch is gone.
+        server = await auth.check_server_access(server_id, current_user)
 
         current_status = minecraft_server_manager.get_server_status(server_id)
 
@@ -381,8 +371,9 @@ async def restart_server(
                 ):
                     break
 
-        # Start the server
-        success = await minecraft_server_manager.start_server(server, db)
+        # Start the server through the new entity-accepting API (#272).
+        server_repository = make_server_repository_from_session(db)
+        success = await minecraft_server_manager.start_server(server, server_repository)
         if not success:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

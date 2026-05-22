@@ -25,11 +25,10 @@ Method semantics:
 - ``check_server_access`` / ``check_backup_access`` remain ``async``
   and resolve aggregates through sibling Repository Ports
   (``ServerRepository``, ``BackupRepository``). They return the domain
-  entities (``ServerEntity`` / ``BackupEntity``); routers that still
-  need the SQLAlchemy ``Server`` row (notably the start/restart paths,
-  which hand the object to ``minecraft_server_manager.start_server``
-  for mutation by ``simplified_sync_service``) refetch the ORM row
-  separately as a transitional pattern until #149 finishes.
+  entities (``ServerEntity`` / ``BackupEntity``). The transitional ORM
+  refetch the start/restart paths used to perform after this call was
+  removed under #272 — ``minecraft_server_manager.start_server`` now
+  accepts ``ServerEntity`` directly.
 - ``AuthorizationService`` is instance-based: the constructor receives
   the three sibling Repositories so callers wire it via FastAPI
   ``Depends(get_authorization_service)`` rather than calling a

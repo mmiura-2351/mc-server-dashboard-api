@@ -11,14 +11,15 @@ import threading
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any, AsyncGenerator, Callable, Dict, List, Optional
+from typing import Any, AsyncGenerator, Callable, Dict, List, Optional, Tuple
 
 import psutil
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
+from app.servers.domain.entities import ServerEntity
 from app.servers.domain.ports import ServerRepository
-from app.servers.models import Server, ServerStatus
+from app.servers.models import ServerStatus
 from app.versions.application.java_compatibility import java_compatibility_service
 
 logger = logging.getLogger(__name__)
@@ -1135,8 +1136,11 @@ class MinecraftServerManager:
         raise RuntimeError("No available RCON ports found")
 
     async def _perform_bidirectional_sync(
-        self, server: Server, server_dir: Path, db_session=None
-    ) -> bool:
+        self,
+        server: ServerEntity,
+        server_dir: Path,
+        server_repository: Optional[ServerRepository] = None,
+    ) -> Tuple[bool, ServerEntity]:
         """
         Perform simplified sync between database and server.properties.
 
@@ -1145,6 +1149,13 @@ class MinecraftServerManager:
         - Manual file edits only modify the file
         - Therefore: if DB and file differ, file was manually edited and should sync to DB
         - This eliminates complex timestamp comparisons
+
+        Returns ``(success, post_sync_entity)``. The returned entity is
+        the updated frozen ``ServerEntity`` when a file→DB sync ran, or
+        the input entity otherwise. Callers should use the returned
+        entity for all subsequent reads of ``port`` so they observe the
+        post-sync value (the input entity stays unchanged because
+        ``ServerEntity`` is frozen).
         """
         try:
             from app.servers.application.simplified_sync import simplified_sync_service
@@ -1153,7 +1164,10 @@ class MinecraftServerManager:
 
             # DEBUG: Log sync parameters
             logger.info(f"DEBUG: Starting sync for server {server.id}")
-            logger.info(f"DEBUG: db_session provided: {'YES' if db_session else 'NO'}")
+            logger.info(
+                f"DEBUG: server_repository provided: "
+                f"{'YES' if server_repository else 'NO'}"
+            )
             logger.info(f"DEBUG: Properties file exists: {properties_path.exists()}")
 
             if properties_path.exists():
@@ -1162,46 +1176,49 @@ class MinecraftServerManager:
                 )
                 logger.info(f"DEBUG: File port: {file_port}, DB port: {server.port}")
 
-            if db_session:
-                success, description = simplified_sync_service.perform_simplified_sync(
-                    server, properties_path, db_session
+            if server_repository is not None:
+                (
+                    success,
+                    description,
+                    updated,
+                ) = await simplified_sync_service.perform_simplified_sync(
+                    server, properties_path, server_repository
                 )
                 logger.info(
                     f"Simplified sync for server {server.id}: success={success}, {description}"
                 )
 
-                # DEBUG: Verify sync worked
-                if success:
-                    db_session.refresh(server)
-                    # FIXME(#149/#272): refresh-on-shared-session — needs
-                    # Session ownership re-architecture. Transitional
-                    # pattern until `minecraft_server` is split per #155
-                    # and `ServerEntity` becomes a mutable, owner-managed
-                    # aggregate. Today the caller still passes a shared
-                    # SQLAlchemy `Server` row so we have to re-read it.
+                # Surface the post-sync entity (frozen + repo-managed)
+                # to the caller so subsequent reads of ``port`` see the
+                # value just flushed to the DB. No ``db.refresh(server)``
+                # needed any more — the repository returns the canonical
+                # post-update entity directly (#272).
+                resulting_entity = updated if updated is not None else server
+
+                if success and updated is not None:
                     file_port_after = simplified_sync_service.get_properties_file_port(
                         properties_path
                     )
                     logger.info(
-                        f"DEBUG: After sync - File port: {file_port_after}, DB port: {server.port}"
+                        f"DEBUG: After sync - File port: {file_port_after}, "
+                        f"DB port: {resulting_entity.port}"
                     )
 
-                return success
+                return success, resulting_entity
             else:
-                # Fallback to database-to-file sync if no database session
+                # Fallback to database-to-file sync if no repository
                 logger.warning(
-                    f"No database session provided for server {server.id}, falling back to database-to-file sync"
+                    f"No server repository provided for server {server.id}, falling back to database-to-file sync"
                 )
-                return await self._sync_server_properties_from_database(
-                    server, server_dir
-                )
+                ok = await self._sync_server_properties_from_database(server, server_dir)
+                return ok, server
 
         except Exception as e:
             logger.error(f"Failed to perform simplified sync for server {server.id}: {e}")
-            return False
+            return False, server
 
     async def _sync_server_properties_from_database(
-        self, server: Server, server_dir: Path
+        self, server: ServerEntity, server_dir: Path
     ) -> bool:
         """Sync server.properties with database values to ensure consistency"""
         try:
@@ -1302,7 +1319,9 @@ class MinecraftServerManager:
             return False, f"File validation failed: {e}"
 
     async def _validate_port_availability(
-        self, server: Server, db_session=None
+        self,
+        server: ServerEntity,
+        server_repository: Optional[ServerRepository] = None,
     ) -> tuple[bool, str]:
         """Validate that the server's port is not already in use by another running server
 
@@ -1311,26 +1330,12 @@ class MinecraftServerManager:
         2. System-level port availability for external processes
         """
         try:
-            # First check database for servers using the same port.
-            # Route the lookup through `ServerRepository.list_by_port(...)`
-            # so the legacy `db_session.query(ServerModel)` call vanishes
-            # from `app/servers/application/` (#228 PR 2d). The repository
-            # is acquired per-call via the late-bound factory; the shared
-            # `db_session` is still threaded through (transitional — see
-            # FIXME(#149/#272) on the `db_session.refresh(server)` call
-            # below).
-            if db_session:
-                # Lazy default keeps legacy `MinecraftServerManager()`
-                # instantiation (tests, ad-hoc scripts) working when the
-                # lifespan has not late-bound a factory.
-                factory = self._server_repository_factory
-                if factory is None:
-                    from app.servers.api.dependencies import (
-                        make_server_repository_from_session,
-                    )
-
-                    factory = make_server_repository_from_session
-                server_repository = factory(db_session)
+            # First check database for servers using the same port through
+            # the injected ``ServerRepository``. The Session-scoped factory
+            # on this manager is no longer consulted here (#272): callers
+            # pass the already-built repository in alongside the entity,
+            # mirroring the rest of the application layer.
+            if server_repository is not None:
                 conflicts = await server_repository.list_by_port(
                     server.port,
                     statuses=[ServerStatus.running, ServerStatus.starting],
@@ -1366,8 +1371,22 @@ class MinecraftServerManager:
         except Exception as e:
             return False, f"Port validation failed: {e}"
 
-    async def start_server(self, server: Server, db_session=None) -> bool:
-        """Start a Minecraft server with comprehensive pre-checks"""
+    async def start_server(
+        self,
+        server: ServerEntity,
+        server_repository: Optional[ServerRepository] = None,
+    ) -> bool:
+        """Start a Minecraft server with comprehensive pre-checks.
+
+        ``server`` is the frozen ``ServerEntity`` returned by the
+        servers ``ServerRepository`` (or an authorization check, which
+        in turn calls the repository). ``server_repository`` is the
+        same Port handle — passed in so the pre-flight sync can flush a
+        manually-edited ``server.properties`` port back to the database
+        without touching SQLAlchemy directly (#272). When omitted (e.g.
+        ad-hoc test instantiation) the sync falls back to writing the
+        in-memory entity's port out to ``server.properties``.
+        """
         try:
             if server.id in self.processes:
                 logger.warning(f"Server {server.id} is already running")
@@ -1382,9 +1401,16 @@ class MinecraftServerManager:
             logger.info(f"Starting pre-flight checks for server {server.id}")
 
             # FIRST: Perform bidirectional sync between database and server.properties
-            # This must happen BEFORE port validation so manual file edits are detected
+            # This must happen BEFORE port validation so manual file edits are detected.
+            # The sync may flush a manually-edited port back to the DB and return a
+            # fresh ``ServerEntity`` carrying that new port — we rebind ``server`` to
+            # it so all downstream checks (port validation, command line construction,
+            # PID file write) observe the post-sync value.
             logger.info(f"Performing sync check for server {server.id}")
-            if not await self._perform_bidirectional_sync(server, server_dir, db_session):
+            sync_ok, server = await self._perform_bidirectional_sync(
+                server, server_dir, server_repository
+            )
+            if not sync_ok:
                 logger.error(
                     f"Failed to perform bidirectional sync for server {server.id}"
                 )
@@ -1392,7 +1418,7 @@ class MinecraftServerManager:
 
             # Check port availability (after sync, so port changes are reflected)
             port_available, port_message = await self._validate_port_availability(
-                server, db_session
+                server, server_repository
             )
             if not port_available:
                 logger.error(

@@ -264,6 +264,31 @@ class SqlAlchemyServerRepository:
 
         return with_transaction(self._db, _do)
 
+    async def update_port(self, server_id: int, port: int) -> Optional[ServerEntity]:
+        """Set a single server's port atomically (with retry).
+
+        Owns its transaction via `with_transaction`, mirroring
+        `update_status`. Introduced for #272 so the
+        `simplified_sync_service` can flush a manually-edited
+        ``server.properties`` port back to the DB through the Port
+        instead of mutating a SQLAlchemy `Server` row in place.
+        """
+
+        def _do(session: Session) -> Optional[ServerEntity]:
+            row = (
+                session.query(Server)
+                .options(joinedload(Server.owner))
+                .filter(Server.id == server_id)
+                .one_or_none()
+            )
+            if row is None:
+                return None
+            row.port = port
+            session.flush()
+            return _server_to_entity(row)
+
+        return with_transaction(self._db, _do)
+
     async def batch_update_statuses(
         self, updates: Mapping[int, ServerStatus]
     ) -> Mapping[int, Optional[ServerEntity]]:
