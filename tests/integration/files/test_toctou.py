@@ -10,6 +10,7 @@ Covers:
 """
 
 import asyncio
+import logging
 
 import pytest
 from sqlalchemy import create_engine, text
@@ -21,6 +22,7 @@ from app.files.application.service import FileHistoryService
 from app.files.models import FileEditHistory
 from app.servers.adapters.read_port import SqlAlchemyServerReadPort
 from app.servers.models import Server, ServerStatus, ServerType
+from tests.conftest import TestingSessionLocal
 
 
 @pytest.fixture
@@ -261,3 +263,113 @@ async def test_toctou_retry_fires_on_sqlite_unique_violation(
         .all()
     )
     assert [r.version_number for r in rows] == [1, 2]
+
+
+@pytest.mark.slow
+@pytest.mark.asyncio
+async def test_concurrent_create_version_backup_separate_sessions_fire_retry(
+    db, tmp_path, server, admin_user, caplog
+):
+    """True TOCTOU regression: concurrent writers, **each with its
+    own SQLAlchemy session**, must collide on the UNIQUE constraint
+    and exercise the application-layer retry path.
+
+    The sibling
+    :func:`test_concurrent_create_version_backup_no_duplicates` test
+    re-uses a single session across writers, which under SQLite's
+    synchronous session behaviour serialises writes and never actually
+    fires the UNIQUE constraint — so it can only prove "no duplicates"
+    rather than "retry path engages". Per-writer sessions break that
+    serialisation: while writer A is inside ``aiofiles.open(...)``
+    (the first real await in ``_reserve_and_persist``), writer B's
+    own session reads the same ``MAX(version_number)`` and races to
+    INSERT, so at least one writer sees an
+    :class:`sqlalchemy.exc.IntegrityError` and falls into the
+    in-service retry loop.
+
+    Assertions:
+        * No duplicate ``version_number`` rows landed (UNIQUE held).
+        * At least one writer succeeded.
+        * The retry log line (`logger.warning("TOCTOU collision ..."`)
+          fired at least once — concrete evidence the retry path was
+          taken, not just that the result happened to be unique by
+          luck of scheduling.
+
+    Marked ``slow`` because contention on a shared SQLite file (one
+    writer at a time at the dialect level) plus real ``aiofiles`` I/O
+    makes this several seconds even with a modest writer count — only
+    needed in the full-suite CI lane, not the pre-commit smoke. We
+    cap writers at 8 to keep the test under ~90 s on a developer
+    laptop while still reliably exercising the contention window;
+    raising it does not change the assertion semantics, only the
+    test wall time.
+    """
+    writer_count = 8
+    server_id = server.id
+    user_id = admin_user.id
+
+    async def writer(i: int):
+        # Each writer gets its own UoW backed by an independent
+        # session, mirroring per-request DI in production. The UoW
+        # owns the session via ``from_session_factory`` and will close
+        # it on ``__aexit__``.
+        uow = SqlAlchemyFilesUnitOfWork.from_session_factory(TestingSessionLocal)
+        # ServerReadPort only reads (no writes), so it can share the
+        # outer fixture's session safely; it is also called once per
+        # writer outside the inner write transaction.
+        server_read = SqlAlchemyServerReadPort(db=db)
+        service = FileHistoryService(
+            uow=uow,
+            server_read=server_read,
+            history_base_dir=tmp_path,
+            max_versions_per_file=1000,
+            auto_cleanup_days=999,
+        )
+        try:
+            return await service.create_version_backup(
+                server_id=server_id,
+                file_path="server.properties",
+                content=f"writer-{i}-content",
+                user_id=user_id,
+                description=f"writer-{i}",
+            )
+        except Exception as e:  # pragma: no cover - surfaced in assertions
+            return e
+
+    # Capture the retry-path log emitted by ``app.files.application.service``.
+    with caplog.at_level(logging.WARNING, logger="app.files.application.service"):
+        results = await asyncio.gather(*(writer(i) for i in range(writer_count)))
+
+    # UNIQUE constraint held: no duplicate version_numbers persisted.
+    rows = (
+        db.query(FileEditHistory)
+        .filter_by(server_id=server_id, file_path="server.properties")
+        .all()
+    )
+    version_numbers = [r.version_number for r in rows]
+    assert len(version_numbers) == len(set(version_numbers)), (
+        f"Duplicate version numbers persisted under per-writer sessions: "
+        f"{version_numbers}"
+    )
+
+    # At least one writer must have persisted a row.
+    successful = [r for r in results if not isinstance(r, Exception)]
+    assert successful, "Expected at least one writer to persist a backup"
+
+    # Retry path engaged: at least one TOCTOU collision warning must
+    # have been logged. This is the load-bearing assertion of this
+    # regression test — without it we only prove "no duplicates", not
+    # "the UNIQUE-violation retry path is wired up correctly".
+    toctou_warnings = [
+        r
+        for r in caplog.records
+        if r.name == "app.files.application.service"
+        and r.levelno == logging.WARNING
+        and "TOCTOU collision" in r.getMessage()
+    ]
+    assert toctou_warnings, (
+        f"Expected at least one TOCTOU collision warning from the retry "
+        f"loop with {writer_count} writers on independent sessions; got "
+        f"none. Either the retry path is unreachable on this dialect or "
+        f"the writers did not actually contend."
+    )
