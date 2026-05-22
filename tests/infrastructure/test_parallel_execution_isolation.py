@@ -35,23 +35,19 @@ def test_database_file_creation(db):
 
 def test_test_isolation_simple_data(db):
     """テスト間でのデータ分離を確認（シンプルテスト1）"""
-    from passlib.context import CryptContext
-
     from app.users.domain.value_objects import Role
     from app.users.models import User
-
-    pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto", bcrypt__rounds=4)
+    from tests.helpers.users import make_user
 
     # テストユーザーを作成
-    test_user = User(
+    make_user(
+        db,
         username="isolation_test_1",
         email="test1@isolation.com",
-        hashed_password=pwd_context.hash("password"),
+        password="password",
         role=Role.user,
         is_approved=True,
     )
-    db.add(test_user)
-    db.commit()
 
     # ユーザーが存在することを確認
     found_user = db.query(User).filter(User.username == "isolation_test_1").first()
@@ -61,23 +57,19 @@ def test_test_isolation_simple_data(db):
 
 def test_test_isolation_different_data(db):
     """テスト間でのデータ分離を確認（シンプルテスト2）"""
-    from passlib.context import CryptContext
-
     from app.users.domain.value_objects import Role
     from app.users.models import User
-
-    pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto", bcrypt__rounds=4)
+    from tests.helpers.users import make_user
 
     # 異なるテストユーザーを作成
-    test_user = User(
+    make_user(
+        db,
         username="isolation_test_2",
         email="test2@isolation.com",
-        hashed_password=pwd_context.hash("password"),
+        password="password",
         role=Role.admin,
         is_approved=True,
     )
-    db.add(test_user)
-    db.commit()
 
     # 前のテストのユーザーが存在しないことを確認（分離されている）
     previous_user = db.query(User).filter(User.username == "isolation_test_1").first()

@@ -8,6 +8,7 @@ from app.auth.adapters.uow import SqlAlchemyAuthUnitOfWork
 from app.auth.application.service import AuthService
 from app.users.domain.value_objects import Role
 from app.users.models import RefreshToken, User
+from tests.helpers.users import make_user
 
 
 def _make_auth_service(db: Session) -> AuthService:
@@ -15,22 +16,18 @@ def _make_auth_service(db: Session) -> AuthService:
 
 
 def _insert_inactive_user(db: Session) -> User:
-    """Create a non-active user directly via ORM (test setup only)."""
-    from passlib.context import CryptContext
-
-    pwd = CryptContext(schemes=["bcrypt"], deprecated="auto")
-    user = User(
+    """Create a non-active user directly via the shared `make_user`
+    helper (test setup only). Uses the centralized rounds=4 bcrypt
+    context — see `tests.helpers.security.pwd_context` (#168)."""
+    return make_user(
+        db,
         username="inactive_user",
         email="inactive@example.com",
-        hashed_password=pwd.hash("testpassword"),
+        password="testpassword",
         role=Role.user,
         is_active=False,
         is_approved=True,
     )
-    db.add(user)
-    db.commit()
-    db.refresh(user)
-    return user
 
 
 class TestRefreshTokenAPI:

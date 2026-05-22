@@ -23,7 +23,6 @@ from unittest.mock import Mock  # noqa: E402
 
 import pytest  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
-from passlib.context import CryptContext  # noqa: E402
 from sqlalchemy import create_engine  # noqa: E402
 from sqlalchemy.orm import sessionmaker  # noqa: E402
 
@@ -32,7 +31,13 @@ from app.main import app  # noqa: E402
 from app.users.adapters.uow import SqlAlchemyUsersUnitOfWork  # noqa: E402
 from app.users.application.service import UserService  # noqa: E402
 from app.users.domain.value_objects import Role  # noqa: E402
-from app.users.models import User  # noqa: E402
+
+# Shared helpers; safe to import here because they themselves only import
+# from `app.*` (which is now configured with the worker-local DATABASE_URL).
+from tests.helpers.auth import auth_headers_for  # noqa: E402
+from tests.helpers.security import pwd_context  # noqa: E402,F401  (re-exported)
+from tests.helpers.servers import make_server  # noqa: E402
+from tests.helpers.users import make_user  # noqa: E402
 
 SQLALCHEMY_DATABASE_URL = f"sqlite:///{test_db_path}"
 
@@ -43,9 +48,6 @@ engine = create_engine(
     echo=False,
 )
 TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-
-# テスト用の軽量なパスワードハッシュ化（高速化のため）
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto", bcrypt__rounds=4)
 
 
 def override_get_db():
@@ -131,69 +133,53 @@ def client(db):
 @pytest.fixture
 def test_user(db):
     """テスト用ユーザーを作成"""
-    hashed_password = pwd_context.hash("testpassword")
-    user = User(
+    return make_user(
+        db,
         username="testuser",
         email="test@example.com",
-        hashed_password=hashed_password,
+        password="testpassword",
         role=Role.user,
         is_approved=True,
     )
-    db.add(user)
-    db.commit()
-    db.refresh(user)
-    return user
 
 
 @pytest.fixture
 def admin_user(db):
     """テスト用管理者ユーザーを作成"""
-    hashed_password = pwd_context.hash("adminpassword")
-    user = User(
+    return make_user(
+        db,
         username="admin",
         email="admin@example.com",
-        hashed_password=hashed_password,
+        password="adminpassword",
         role=Role.admin,
         is_approved=True,
     )
-    db.add(user)
-    db.commit()
-    db.refresh(user)
-    return user
 
 
 @pytest.fixture
 def unapproved_user(db):
     """未承認のテスト用ユーザーを作成"""
-    hashed_password = pwd_context.hash("unapprovedpassword")
-    user = User(
+    return make_user(
+        db,
         username="unapproved",
         email="unapproved@example.com",
-        hashed_password=hashed_password,
+        password="unapprovedpassword",
         role=Role.user,
         is_approved=False,
     )
-    db.add(user)
-    db.commit()
-    db.refresh(user)
-    return user
 
 
 @pytest.fixture
 def operator_user(db):
     """テスト用オペレーターユーザーを作成"""
-    hashed_password = pwd_context.hash("operatorpassword")
-    user = User(
+    return make_user(
+        db,
         username="operator",
         email="operator@example.com",
-        hashed_password=hashed_password,
+        password="operatorpassword",
         role=Role.operator,
         is_approved=True,
     )
-    db.add(user)
-    db.commit()
-    db.refresh(user)
-    return user
 
 
 @pytest.fixture
@@ -203,47 +189,33 @@ def user_service(db):
 
 
 @pytest.fixture
-def admin_headers(client, admin_user):
-    """管理者用認証ヘッダーを生成"""
-    login_data = {"username": admin_user.username, "password": "adminpassword"}
-    response = client.post("/api/v1/auth/token", data=login_data)
-    if response.status_code != 200:
-        print(f"Login failed: {response.status_code} - {response.text}")
-    response_data = response.json()
-    token = response_data["access_token"]
-    return {"Authorization": f"Bearer {token}"}
+def admin_headers(admin_user):
+    """管理者用認証ヘッダーを生成 (JWT 直接生成、login 経由しない)"""
+    return auth_headers_for(admin_user.username)
 
 
 @pytest.fixture
-def user_headers(client, test_user):
-    """一般ユーザー用認証ヘッダーを生成"""
-    login_data = {"username": test_user.username, "password": "testpassword"}
-    response = client.post("/api/v1/auth/token", data=login_data)
-    token = response.json()["access_token"]
-    return {"Authorization": f"Bearer {token}"}
+def user_headers(test_user):
+    """一般ユーザー用認証ヘッダーを生成 (JWT 直接生成、login 経由しない)"""
+    return auth_headers_for(test_user.username)
+
+
+@pytest.fixture
+def operator_headers(operator_user):
+    """オペレーター用認証ヘッダーを生成 (JWT 直接生成、login 経由しない)"""
+    return auth_headers_for(operator_user.username)
+
+
+@pytest.fixture
+def unapproved_headers(unapproved_user):
+    """未承認ユーザー用認証ヘッダーを生成 (JWT 直接生成、login 経由しない)"""
+    return auth_headers_for(unapproved_user.username)
 
 
 @pytest.fixture
 def sample_server(db, admin_user):
     """テスト用サーバーを作成"""
-    from app.servers.models import Server, ServerStatus, ServerType
-
-    server = Server(
-        name="Test Server",
-        description="A test server",
-        minecraft_version="1.20.1",
-        server_type=ServerType.vanilla,
-        status=ServerStatus.stopped,
-        directory_path="./servers/1",
-        port=25565,
-        max_memory=1024,
-        max_players=20,
-        owner_id=admin_user.id,
-    )
-    db.add(server)
-    db.commit()
-    db.refresh(server)
-    return server
+    return make_server(db, admin_user)
 
 
 @pytest.fixture

@@ -5,9 +5,6 @@ Does not test actual API functionality - use integration tests for that
 """
 
 import pytest
-from fastapi.testclient import TestClient
-
-from app.main import app
 
 
 class TestTemplatesRouterConfiguration:
@@ -63,10 +60,7 @@ class TestTemplatesRouterSchemas:
 class TestTemplatesRouterAPI:
     """Basic API endpoint tests for templates router"""
 
-    @pytest.fixture
-    def client(self):
-        """Create test client"""
-        return TestClient(app)
+    # `client` fixture provided by tests/conftest.py (Issue #168).
 
     def test_templates_router_in_app(self, client):
         """Test that templates router is included in the app"""

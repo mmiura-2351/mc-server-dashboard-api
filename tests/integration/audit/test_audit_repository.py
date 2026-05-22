@@ -22,6 +22,7 @@ from app.audit.domain.entities import AuditEventCommand, LogFilters
 from app.audit.models import AuditLog
 from app.users.domain.value_objects import Role
 from app.users.models import User
+from tests.helpers.users import make_user
 
 
 @pytest.fixture
@@ -56,18 +57,12 @@ def writer(db):
 
 @pytest.fixture
 def seeded_user(db):
-    user = User(
+    return make_user(
+        db,
         username="audit-target",
         email="audit-target@example.com",
-        hashed_password="x",
         role=Role.user,
-        is_active=True,
-        is_approved=True,
     )
-    db.add(user)
-    db.commit()
-    db.refresh(user)
-    return user
 
 
 @pytest.mark.asyncio
