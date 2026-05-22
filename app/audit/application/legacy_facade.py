@@ -2,13 +2,13 @@
 
 The 30+ existing callers (in `app/auth/api/router.py`,
 `app/servers/routers/control.py`, `app/services/authorization_service.py`,
-and the audit router itself) invoke `AuditService.log_*(db=..., request=..., ...)`
+and the audit router itself) invoke `AuditService.log_*(request=..., ...)`
 synchronously. Migrating those callsites to FastAPI `Depends(AuditWriter)`
 is deferred to the per-domain refactors (#224-#228).
 
-Each `log_*` static method now builds a `SqlAlchemyAuditWriter` from
-`db` plus the request-scoped `AuditTracker` (preserves the middleware
-batch path) and delegates to `writer.record(...)`.
+Each `log_*` static method builds a `SqlAlchemyAuditWriter` from the
+request-scoped `AuditTracker` (preserves the middleware batch path)
+and delegates to `writer.record(...)`.
 
 The pre-#223 read methods (`get_audit_logs`, `get_security_alerts`,
 `get_user_activity`) are intentionally **not** carried over: their
@@ -21,7 +21,6 @@ import logging
 from typing import Any, Dict, Optional
 
 from fastapi import Request
-from sqlalchemy.orm import Session
 
 from app.audit.adapters.repository import SqlAlchemyAuditWriter
 from app.audit.domain.entities import AuditEventCommand
@@ -52,11 +51,8 @@ def _extract_ip_address(request: Request) -> Optional[str]:
 def _writer(request: Request) -> SqlAlchemyAuditWriter:
     """Build a writer for a single legacy call.
 
-    The caller's `db` is no longer threaded into the writer — see #240
+    The writer manages its own session via `session_factory` — see #240
     and `SqlAlchemyAuditWriter` for the transaction-isolation rationale.
-    The static `AuditService.log_*` signatures still accept `db` for
-    backward compatibility with 30+ existing callsites; the parameter
-    is intentionally unused.
     """
     return SqlAlchemyAuditWriter(tracker=get_audit_tracker(request))
 
@@ -66,7 +62,6 @@ class AuditService:
 
     @staticmethod
     def log_authentication_event(
-        db: Session,
         request: Request,
         action: str,
         user_id: Optional[int] = None,
@@ -90,7 +85,6 @@ class AuditService:
 
     @staticmethod
     def log_user_management_event(
-        db: Session,
         request: Request,
         action: str,
         target_user_id: int,
@@ -116,7 +110,6 @@ class AuditService:
 
     @staticmethod
     def log_server_event(
-        db: Session,
         request: Request,
         action: str,
         server_id: int,
@@ -138,7 +131,6 @@ class AuditService:
 
     @staticmethod
     def log_server_command_event(
-        db: Session,
         request: Request,
         server_id: int,
         command: str,
@@ -166,7 +158,6 @@ class AuditService:
 
     @staticmethod
     def log_backup_event(
-        db: Session,
         request: Request,
         action: str,
         server_id: Optional[int] = None,
@@ -193,7 +184,6 @@ class AuditService:
 
     @staticmethod
     def log_group_event(
-        db: Session,
         request: Request,
         action: str,
         group_id: int,
@@ -215,7 +205,6 @@ class AuditService:
 
     @staticmethod
     def log_template_event(
-        db: Session,
         request: Request,
         action: str,
         template_id: int,
@@ -237,7 +226,6 @@ class AuditService:
 
     @staticmethod
     def log_file_event(
-        db: Session,
         request: Request,
         action: str,
         server_id: int,
@@ -265,7 +253,6 @@ class AuditService:
 
     @staticmethod
     def log_permission_check(
-        db: Session,
         request: Request,
         resource_type: str,
         resource_id: Optional[int],
@@ -295,7 +282,6 @@ class AuditService:
 
     @staticmethod
     def log_admin_action(
-        db: Session,
         request: Request,
         action: str,
         target_resource_type: str,
@@ -323,7 +309,6 @@ class AuditService:
 
     @staticmethod
     def log_security_event(
-        db: Session,
         request: Request,
         event_type: str,
         severity: str,

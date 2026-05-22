@@ -149,7 +149,6 @@ class TestAuditLogging:
 
         # Test authentication event logging
         AuditService.log_authentication_event(
-            db=db,
             request=mock_request,
             action="login",
             user_id=admin_user.id,
@@ -159,7 +158,6 @@ class TestAuditLogging:
 
         # Test server event logging
         AuditService.log_server_event(
-            db=db,
             request=mock_request,
             action="start",
             server_id=1,
@@ -169,7 +167,6 @@ class TestAuditLogging:
 
         # Test security event logging
         AuditService.log_security_event(
-            db=db,
             request=mock_request,
             event_type="suspicious_activity",
             severity="high",
@@ -333,7 +330,6 @@ class TestAuditLogging:
         db.commit()
 
         AuditService.log_security_event(
-            db=db,
             request=mock_request,
             event_type="failed_authentication",
             severity="critical",
