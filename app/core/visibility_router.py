@@ -80,6 +80,84 @@ def _check_resource_ownership_or_admin(
 
 
 @router.get(
+    "/migration/status",
+    response_model=MigrationStatusResponse,
+    summary="Get Migration Status",
+    description="Get status of Phase 1 → Phase 2 visibility migration (admin only)",
+)
+async def get_migration_status(
+    current_user: User = Depends(get_current_user),
+    migration_service: VisibilityMigrationService = Depends(
+        get_visibility_migration_service
+    ),
+):
+    """Get migration status information."""
+    if current_user.role != Role.admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only admins can view migration status",
+        )
+
+    try:
+        status_info = await migration_service.get_migration_status()
+        return MigrationStatusResponse(**status_info)
+    except Exception as e:
+        logger.error(f"Error getting migration status: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to get migration status",
+        )
+
+
+@router.post(
+    "/migration/execute",
+    response_model=MigrationExecuteResponse,
+    summary="Execute Migration",
+    description="Execute Phase 1 → Phase 2 visibility migration (admin only)",
+)
+async def execute_migration(
+    current_user: User = Depends(get_current_user),
+    migration_service: VisibilityMigrationService = Depends(
+        get_visibility_migration_service
+    ),
+):
+    """Execute the visibility migration."""
+    if current_user.role != Role.admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only admins can execute migration",
+        )
+
+    try:
+        migration_counts = await migration_service.migrate_all_resources()
+
+        logger.info(
+            f"Admin {current_user.id} executed visibility migration: "
+            f"{migration_counts['total']} resources migrated"
+        )
+
+        return MigrationExecuteResponse(
+            success=True,
+            message="Migration completed successfully",
+            migration_counts=migration_counts,
+        )
+
+    except Exception as e:
+        logger.error(f"Error executing migration: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to execute migration",
+        )
+
+
+# NOTE: The `/{resource_type}/{resource_id}` routes below use a path
+# parameter validated by the `ResourceType` enum (`server` / `group`).
+# They are registered AFTER the static `/migration/...` routes so that
+# requests to `/visibility/migration/status` and
+# `/visibility/migration/execute` are matched by the static handlers
+# instead of being captured by the catch-all and rejected with a 422
+# enum validation error (see Issue #314).
+@router.get(
     "/{resource_type}/{resource_id}",
     response_model=VisibilityInfoResponse,
     summary="Get Resource Visibility",
@@ -342,77 +420,6 @@ async def revoke_user_access(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to revoke user access",
-        )
-
-
-@router.get(
-    "/migration/status",
-    response_model=MigrationStatusResponse,
-    summary="Get Migration Status",
-    description="Get status of Phase 1 → Phase 2 visibility migration (admin only)",
-)
-async def get_migration_status(
-    current_user: User = Depends(get_current_user),
-    migration_service: VisibilityMigrationService = Depends(
-        get_visibility_migration_service
-    ),
-):
-    """Get migration status information."""
-    if current_user.role != Role.admin:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only admins can view migration status",
-        )
-
-    try:
-        status_info = await migration_service.get_migration_status()
-        return MigrationStatusResponse(**status_info)
-    except Exception as e:
-        logger.error(f"Error getting migration status: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to get migration status",
-        )
-
-
-@router.post(
-    "/migration/execute",
-    response_model=MigrationExecuteResponse,
-    summary="Execute Migration",
-    description="Execute Phase 1 → Phase 2 visibility migration (admin only)",
-)
-async def execute_migration(
-    current_user: User = Depends(get_current_user),
-    migration_service: VisibilityMigrationService = Depends(
-        get_visibility_migration_service
-    ),
-):
-    """Execute the visibility migration."""
-    if current_user.role != Role.admin:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only admins can execute migration",
-        )
-
-    try:
-        migration_counts = await migration_service.migrate_all_resources()
-
-        logger.info(
-            f"Admin {current_user.id} executed visibility migration: "
-            f"{migration_counts['total']} resources migrated"
-        )
-
-        return MigrationExecuteResponse(
-            success=True,
-            message="Migration completed successfully",
-            migration_counts=migration_counts,
-        )
-
-    except Exception as e:
-        logger.error(f"Error executing migration: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to execute migration",
         )
 
 

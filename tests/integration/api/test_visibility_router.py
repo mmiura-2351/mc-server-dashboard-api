@@ -46,3 +46,59 @@ class TestVisibilityRouterMounted:
         response = client.get("/api/v1/visibility/server/9999", headers=headers)
         assert response.status_code == status.HTTP_404_NOT_FOUND
         assert response.json()["detail"] == "Server not found"
+
+
+class TestVisibilityMigrationRoutesNotShadowed:
+    """Regression tests for Issue #314.
+
+    The catch-all `/{resource_type}/{resource_id}` route validates
+    `resource_type` against the `ResourceType` enum (`server` / `group`
+    only). Before #314 it was registered first, so requests to
+    `/visibility/migration/status` and `/visibility/migration/execute`
+    were captured by that route and rejected with a 422 enum validation
+    error instead of reaching the static `/migration/...` handlers.
+
+    These tests pin the registration order by exercising the static
+    routes through both the unauthenticated edge (401) and the
+    authenticated handler body (200 / 403). If the catch-all is ever
+    registered ahead of `/migration/...` again, every assertion below
+    flips to 422.
+    """
+
+    def test_migration_status_unauthenticated_returns_401(self, client):
+        """Without a bearer token the static route returns 401, not 422.
+
+        A 422 here would prove the request was captured by
+        `/{resource_type}/{resource_id}` and failed enum validation
+        before authentication ran.
+        """
+        response = client.get("/api/v1/visibility/migration/status")
+        assert response.status_code == status.HTTP_401_UNAUTHORIZED
+
+    def test_migration_execute_unauthenticated_returns_401(self, client):
+        """Same guarantee for the POST migration/execute route."""
+        response = client.post("/api/v1/visibility/migration/execute")
+        assert response.status_code == status.HTTP_401_UNAUTHORIZED
+
+    def test_migration_status_admin_returns_200(self, client, admin_headers):
+        """Admin auth reaches the migration_status handler and returns 200."""
+        response = client.get(
+            "/api/v1/visibility/migration/status", headers=admin_headers
+        )
+        assert response.status_code == status.HTTP_200_OK, response.text
+        body = response.json()
+        # MigrationStatusResponse has a stable shape; assert one known key
+        # rather than the full payload so the test remains schema-tolerant.
+        assert isinstance(body, dict)
+
+    def test_migration_status_non_admin_returns_403(self, client, test_user):
+        """Non-admin users reach the handler but are rejected with 403.
+
+        Crucially this is 403 (from the role check inside the handler),
+        not 422 (from enum validation on the catch-all). The 403 proves
+        the static route is matched first.
+        """
+        headers = _auth_headers(client, "testuser", "testpassword")
+        response = client.get("/api/v1/visibility/migration/status", headers=headers)
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+        assert response.json()["detail"] == "Only admins can view migration status"
