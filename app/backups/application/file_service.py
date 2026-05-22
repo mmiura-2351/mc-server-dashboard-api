@@ -15,9 +15,10 @@ import tarfile
 from datetime import datetime
 from pathlib import Path
 
+from app.backups.models import Backup, BackupType
 from app.core.exceptions import FileOperationException, handle_file_error
 from app.core.security import SecurityError, TarExtractor
-from app.servers.models import Backup, BackupType, Server
+from app.servers.models import Server
 
 logger = logging.getLogger(__name__)
 

@@ -3,7 +3,7 @@ from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from app.servers.models import BackupStatus, BackupType
+from app.backups.models import BackupStatus, BackupType
 
 
 class BackupCreateRequest(BaseModel):

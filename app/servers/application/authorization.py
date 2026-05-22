@@ -54,10 +54,11 @@ from app.backups.domain.exceptions import (
     BackupParentServerMissingError,
 )
 from app.backups.domain.ports import BackupRepository
+from app.backups.models import Backup
 from app.servers.domain.entities import ServerEntity
 from app.servers.domain.exceptions import ServerNotFoundError
 from app.servers.domain.ports import ServerRepository
-from app.servers.models import Backup, Server
+from app.servers.models import Server
 from app.templates.domain.ports import TemplateRepository
 from app.users.domain.value_objects import Role
 from app.users.models import User

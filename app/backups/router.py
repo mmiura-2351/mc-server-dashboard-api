@@ -35,6 +35,7 @@ from app.backups.domain.exceptions import (
     BackupNotFoundError,
     BackupParentServerMissingError,
 )
+from app.backups.models import BackupStatus, BackupType
 from app.backups.schemas import (
     BackupCreateRequest,
     BackupListResponse,
@@ -57,7 +58,6 @@ from app.core.exceptions import (
 from app.servers.api.dependencies import get_authorization_service
 from app.servers.application.authorization import AuthorizationService
 from app.servers.domain.exceptions import ServerAccessError, ServerNotFoundError
-from app.servers.models import BackupStatus, BackupType
 from app.templates.api.dependencies import get_template_service
 from app.templates.application.service import TemplateService
 from app.users.domain.value_objects import Role

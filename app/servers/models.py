@@ -1,5 +1,4 @@
 from sqlalchemy import (
-    BigInteger,
     Boolean,
     Column,
     DateTime,
@@ -15,16 +14,11 @@ from sqlalchemy.sql import func
 
 from app.core.database import Base
 from app.servers.domain.value_objects import (
-    BackupStatus,
-    BackupType,
     ServerStatus,
     ServerType,
 )
 
 __all__ = [
-    "Backup",
-    "BackupStatus",
-    "BackupType",
     "Server",
     "ServerConfiguration",
     "ServerStatus",
@@ -78,25 +72,6 @@ class Server(Base):
     )
 
 
-class Backup(Base):
-    __tablename__ = "backups"
-
-    id = Column(Integer, primary_key=True, index=True)
-    server_id = Column(Integer, ForeignKey("servers.id"), nullable=False)
-    name = Column(String(100), nullable=False)
-    description = Column(Text)
-    file_path = Column(String(500), nullable=False)
-    file_size = Column(BigInteger, nullable=False)  # bytes
-    backup_type: Column[BackupType] = Column(Enum(BackupType), default=BackupType.manual)
-    status: Column[BackupStatus] = Column(
-        Enum(BackupStatus), default=BackupStatus.creating
-    )
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-
-    # Relationships
-    server = relationship("Server", back_populates="backups")
-
-
 class ServerConfiguration(Base):
     __tablename__ = "server_configurations"
 
@@ -115,8 +90,11 @@ class ServerConfiguration(Base):
 
 
 # NOTE: The `Template` ORM class was relocated to `app.templates.models`
-# in Issue #255. The `Server.template` relationship above uses a
-# string-based class reference, which SQLAlchemy resolves at
-# mapper-configuration time; `app/templates/__init__.py` eagerly imports
-# `app.templates.models` so the class is registered before
-# `Base.metadata.create_all()` runs.
+# in Issue #255, and the `Backup` ORM class (with `BackupType` and
+# `BackupStatus` re-exports) was relocated to `app.backups.models` in
+# Issue #263. The `Server.template` / `Server.backups` /
+# `Server.backup_schedule` relationships above use string-based class
+# references, which SQLAlchemy resolves at mapper-configuration time;
+# `app/templates/__init__.py` and `app/backups/__init__.py` eagerly
+# import their respective `models` modules so the classes are registered
+# before `Base.metadata.create_all()` runs.

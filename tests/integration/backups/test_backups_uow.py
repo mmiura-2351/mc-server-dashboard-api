@@ -15,8 +15,14 @@ from app.backups.domain.entities import (
     CreateBackupCommand,
     CreateBackupScheduleCommand,
 )
-from app.backups.models import BackupSchedule, BackupScheduleLog, ScheduleAction
-from app.servers.models import Backup, BackupType, Server, ServerType
+from app.backups.models import (
+    Backup,
+    BackupSchedule,
+    BackupScheduleLog,
+    BackupType,
+    ScheduleAction,
+)
+from app.servers.models import Server, ServerType
 
 
 def _seed_server(db, owner_id: int, *, name: str = "u", port: int = 25700) -> Server:
