@@ -21,7 +21,6 @@ from app.servers.service import (
     ServerJarService,
     ServerSecurityValidator,
     ServerService,
-    ServerTemplateService,
     ServerValidationService,
 )
 from app.users.domain.value_objects import Role
@@ -215,7 +214,7 @@ class TestServerService:
         # Mock validation to pass initial checks
         server_service.validation_service.validate_server_uniqueness = AsyncMock()
 
-        with patch("app.servers.service.ServerSecurityValidator") as mock_validator:
+        with patch("app.servers.application.service.ServerSecurityValidator") as mock_validator:
             mock_validator.validate_server_name.return_value = True
             mock_validator.validate_memory_value.return_value = True
 
@@ -235,7 +234,7 @@ class TestServerService:
             return_value=mock_server
         )
 
-        with patch("app.servers.service.ServerResponse") as mock_response:
+        with patch("app.servers.application.service.ServerResponse") as mock_response:
             mock_response.model_validate.return_value = "server_response"
 
             result = await server_service.get_server(1, mock_db)
@@ -266,11 +265,11 @@ class TestServerService:
         request.port = None  # Add port attribute
         request.server_properties = None  # Add server_properties attribute
 
-        with patch("app.servers.service.ServerSecurityValidator") as mock_validator:
+        with patch("app.servers.application.service.ServerSecurityValidator") as mock_validator:
             mock_validator.validate_server_name.return_value = True
             mock_validator.validate_memory_value.return_value = True
 
-            with patch("app.servers.service.ServerResponse") as mock_response:
+            with patch("app.servers.application.service.ServerResponse") as mock_response:
                 mock_response.model_validate.return_value = "updated_response"
 
                 result = await server_service.update_server(1, request, mock_db)
@@ -312,7 +311,7 @@ class TestServerValidationServiceExtended:
 
     def test_validate_server_directory_success(self, validation_service):
         """Test successful server directory validation (lines 157-172)"""
-        with patch("app.servers.service.PathValidator") as mock_path_validator:
+        with patch("app.servers.application._legacy_db_helpers.PathValidator") as mock_path_validator:
             mock_server_dir = Mock()
             mock_server_dir.exists.return_value = False
             mock_path_validator.create_safe_server_directory.return_value = (
@@ -326,7 +325,7 @@ class TestServerValidationServiceExtended:
 
     def test_validate_server_directory_exists(self, validation_service):
         """Test server directory already exists (lines 168-171)"""
-        with patch("app.servers.service.PathValidator") as mock_path_validator:
+        with patch("app.servers.application._legacy_db_helpers.PathValidator") as mock_path_validator:
             mock_server_dir = Mock()
             mock_server_dir.exists.return_value = True
             mock_path_validator.create_safe_server_directory.return_value = (
@@ -372,7 +371,7 @@ class TestServerJarServiceExtended:
         with patch.object(
             jar_service.version_manager, "is_version_supported", return_value=False
         ):
-            with patch("app.servers.service.handle_file_error") as mock_handle_error:
+            with patch("app.servers.application.service.handle_file_error") as mock_handle_error:
                 await jar_service.get_server_jar(
                     ServerType.vanilla, "1.7.10", Path("/tmp"), db
                 )
@@ -391,7 +390,7 @@ class TestServerJarServiceExtended:
                 "get_download_url",
                 side_effect=Exception("Download error"),
             ):
-                with patch("app.servers.service.handle_file_error") as mock_handle_error:
+                with patch("app.servers.application.service.handle_file_error") as mock_handle_error:
                     await jar_service.get_server_jar(
                         ServerType.vanilla, "1.20.1", Path("/tmp"), db
                     )
@@ -453,7 +452,7 @@ class TestServerDatabaseService:
         server_dir = "/tmp/test-server"
         mock_db = Mock()
 
-        with patch("app.servers.service.Server") as mock_server_class:
+        with patch("app.servers.application.service.Server") as mock_server_class:
             mock_server = Mock()
             mock_server_class.return_value = mock_server
 
@@ -478,36 +477,9 @@ class TestServerDatabaseService:
         mock_db.commit.assert_called_once()
 
 
-class TestServerTemplateService:
-    """Tests for ServerTemplateService methods"""
-
-    @pytest.fixture
-    def template_service(self):
-        filesystem_service = Mock()
-        return ServerTemplateService(filesystem_service)
-
-    @pytest.mark.asyncio
-    async def test_apply_template_success(self, template_service):
-        """Test template application (lines 529-557)"""
-        mock_server = Mock()
-        mock_server.id = 1
-        mock_server.directory_path = "/tmp/server"
-
-        mock_template = Mock()
-        mock_template.id = 1
-        mock_template.name = "test-template"
-        mock_template.file_path = "/tmp/template.tar.gz"
-
-        mock_db = Mock()
-        mock_db.query.return_value.filter.return_value.first.return_value = mock_template
-
-        template_service._extract_template_files = AsyncMock()
-
-        with patch("app.servers.service.Path") as mock_path:
-            mock_template_path = Mock()
-            mock_template_path.exists.return_value = True
-            mock_path.return_value = mock_template_path
-
-            await template_service.apply_template(mock_server, 1, mock_db)
-
-            template_service._extract_template_files.assert_called_once()
+# `ServerTemplateService` (and its `apply_template` method) was deleted
+# in #228 PR 2c — it dereferenced a non-existent `Template.file_path`
+# column (root cause of issue #257). The previous `TestServerTemplateService`
+# test class is intentionally absent here: production code now delegates
+# template application to `TemplateService.apply_template_to_server` via
+# DI inside `ServerService.create_server`.

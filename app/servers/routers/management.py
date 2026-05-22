@@ -13,8 +13,15 @@ from sqlalchemy.orm import Session
 from app.auth.dependencies import get_current_user
 from app.core.database import get_db
 from app.core.exceptions import ConflictException
-from app.servers.api.dependencies import get_authorization_service
+from app.servers.api.dependencies import (
+    get_authorization_service,
+    get_server_service,
+)
 from app.servers.application.authorization import AuthorizationService
+from app.servers.application.service import (
+    ServerService,
+    server_service,  # legacy module-level alias (still referenced by older unit tests)
+)
 from app.servers.models import ServerStatus
 from app.servers.schemas import (
     ServerCreateRequest,
@@ -22,9 +29,15 @@ from app.servers.schemas import (
     ServerResponse,
     ServerUpdateRequest,
 )
-from app.servers.service import server_service
 from app.services.minecraft_server import minecraft_server_manager
 from app.users.models import User
+
+# `server_service` re-exported above is the legacy module-level default
+# instance retained for unit tests that patch it via
+# `patch("app.servers.routers.management.server_service")`. Production
+# routers now receive `ServerService` through DI; the module-level alias
+# is no longer used in any endpoint body.
+__all__ = ["router", "server_service"]
 
 logger = logging.getLogger(__name__)
 
@@ -37,6 +50,7 @@ async def create_server(
     background_tasks: BackgroundTasks,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
+    server_service: ServerService = Depends(get_server_service),
 ):
     """
     Create a new Minecraft server
@@ -80,6 +94,7 @@ async def list_servers(
     size: int = Query(50, ge=1, le=100, description="Page size"),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
+    server_service: ServerService = Depends(get_server_service),
 ):
     """
     List servers with pagination
@@ -90,8 +105,8 @@ async def list_servers(
         # All users can see all servers
         owner_id = None
 
-        result = server_service.list_servers(
-            owner_id=owner_id, page=page, size=size, db=db
+        result = await server_service.list_servers_async(
+            owner_id=owner_id, page=page, size=size
         )
 
         return ServerListResponse(**result)
@@ -109,6 +124,7 @@ async def get_server(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
     auth: AuthorizationService = Depends(get_authorization_service),
+    server_service: ServerService = Depends(get_server_service),
 ):
     """
     Get server details by ID
@@ -144,6 +160,7 @@ async def update_server(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
     auth: AuthorizationService = Depends(get_authorization_service),
+    server_service: ServerService = Depends(get_server_service),
 ):
     """
     Update server configuration
@@ -187,6 +204,7 @@ async def delete_server(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
     auth: AuthorizationService = Depends(get_authorization_service),
+    server_service: ServerService = Depends(get_server_service),
 ):
     """
     Delete a server

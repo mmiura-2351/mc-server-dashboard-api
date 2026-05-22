@@ -72,6 +72,7 @@ class TestServerManagementRouter:
                 background_tasks=BackgroundTasks(),
                 current_user=admin_user,
                 db=Mock(),
+                server_service=mock_server_service,
             )
 
         assert exc_info.value.status_code == 500
@@ -84,12 +85,18 @@ class TestServerManagementRouter:
         from app.servers.routers.management import list_servers
 
         # Mock server service to raise exception
-        mock_server_service.list_servers.side_effect = Exception(
-            "Database connection failed"
+        mock_server_service.list_servers_async = AsyncMock(
+            side_effect=Exception("Database connection failed")
         )
 
         with pytest.raises(HTTPException) as exc_info:
-            await list_servers(page=1, size=10, current_user=admin_user, db=Mock())
+            await list_servers(
+                page=1,
+                size=10,
+                current_user=admin_user,
+                db=Mock(),
+                server_service=mock_server_service,
+            )
 
         assert exc_info.value.status_code == 500
         assert "Failed to list servers" in str(exc_info.value.detail)
@@ -106,7 +113,13 @@ class TestServerManagementRouter:
         mock_server_service.get_server = AsyncMock(return_value=None)
 
         with pytest.raises(HTTPException) as exc_info:
-            await get_server(server_id=999, current_user=admin_user, db=Mock(), auth=auth)
+            await get_server(
+                server_id=999,
+                current_user=admin_user,
+                db=Mock(),
+                auth=auth,
+                server_service=mock_server_service,
+            )
 
         assert exc_info.value.status_code == 404
         assert "Server not found" in str(exc_info.value.detail)
@@ -122,7 +135,13 @@ class TestServerManagementRouter:
         mock_server_service.get_server = AsyncMock(side_effect=Exception("Service error"))
 
         with pytest.raises(HTTPException) as exc_info:
-            await get_server(server_id=1, current_user=admin_user, db=Mock(), auth=auth)
+            await get_server(
+                server_id=1,
+                current_user=admin_user,
+                db=Mock(),
+                auth=auth,
+                server_service=mock_server_service,
+            )
 
         assert exc_info.value.status_code == 500
         assert "Failed to get server" in str(exc_info.value.detail)
@@ -136,29 +155,42 @@ class TestServerManagementRouter:
         from app.servers.routers.management import list_servers
 
         mock_result = {"servers": [], "total": 0, "page": 1, "size": 10}
-        mock_server_service.list_servers.return_value = mock_result
+        # `list_servers` endpoint now calls `list_servers_async` (async) via DI.
+        mock_server_service.list_servers_async = AsyncMock(return_value=mock_result)
 
         # Create consistent db mock for both calls
         db_mock = Mock()
 
         # Test admin access (should see all servers - owner_id=None)
-        await list_servers(page=1, size=10, current_user=admin_user, db=db_mock)
+        await list_servers(
+            page=1,
+            size=10,
+            current_user=admin_user,
+            db=db_mock,
+            server_service=mock_server_service,
+        )
 
         # Verify admin call had owner_id=None
-        assert mock_server_service.list_servers.call_args[1]["owner_id"] is None
-        assert mock_server_service.list_servers.call_args[1]["page"] == 1
-        assert mock_server_service.list_servers.call_args[1]["size"] == 10
+        assert mock_server_service.list_servers_async.call_args[1]["owner_id"] is None
+        assert mock_server_service.list_servers_async.call_args[1]["page"] == 1
+        assert mock_server_service.list_servers_async.call_args[1]["size"] == 10
 
         # Reset mock
-        mock_server_service.list_servers.reset_mock()
+        mock_server_service.list_servers_async.reset_mock()
 
         # Test regular user access (should also see all servers - owner_id=None)
-        await list_servers(page=1, size=10, current_user=test_user, db=db_mock)
+        await list_servers(
+            page=1,
+            size=10,
+            current_user=test_user,
+            db=db_mock,
+            server_service=mock_server_service,
+        )
 
         # Verify user call also had owner_id=None (all users see all servers)
-        assert mock_server_service.list_servers.call_args[1]["owner_id"] is None
-        assert mock_server_service.list_servers.call_args[1]["page"] == 1
-        assert mock_server_service.list_servers.call_args[1]["size"] == 10
+        assert mock_server_service.list_servers_async.call_args[1]["owner_id"] is None
+        assert mock_server_service.list_servers_async.call_args[1]["page"] == 1
+        assert mock_server_service.list_servers_async.call_args[1]["size"] == 10
 
     def test_router_configuration(self):
         """Test that router is properly configured"""
@@ -202,6 +234,7 @@ class TestServerManagementRouter:
                 background_tasks=BackgroundTasks(),
                 current_user=admin_user,
                 db=Mock(),
+                server_service=mock_server_service,
             )
 
     @pytest.mark.asyncio
@@ -219,7 +252,13 @@ class TestServerManagementRouter:
 
         # HTTPException should be re-raised as-is
         with pytest.raises(HTTPException) as exc_info:
-            await get_server(server_id=1, current_user=admin_user, db=Mock(), auth=auth)
+            await get_server(
+                server_id=1,
+                current_user=admin_user,
+                db=Mock(),
+                auth=auth,
+                server_service=mock_server_service,
+            )
 
         assert exc_info.value.status_code == 403
         assert "Access denied" in str(exc_info.value.detail)
@@ -237,7 +276,11 @@ class TestServerManagementRouter:
         mock_server_service.get_server = AsyncMock(return_value=mock_server)
 
         result = await get_server(
-            server_id=1, current_user=admin_user, db=Mock(), auth=auth
+            server_id=1,
+            current_user=admin_user,
+            db=Mock(),
+            auth=auth,
+            server_service=mock_server_service,
         )
 
         assert result == mock_server
@@ -266,6 +309,7 @@ class TestServerManagementRouter:
             current_user=admin_user,
             db=Mock(),
             auth=auth,
+            server_service=mock_server_service,
         )
 
         assert result == mock_server
@@ -294,6 +338,7 @@ class TestServerManagementRouter:
                 current_user=admin_user,
                 db=Mock(),
                 auth=auth,
+                server_service=mock_server_service,
             )
 
         assert exc_info.value.status_code == 409
@@ -326,6 +371,7 @@ class TestServerManagementRouter:
             current_user=admin_user,
             db=Mock(),
             auth=auth,
+            server_service=mock_server_service,
         )
 
         assert result == mock_server
@@ -351,6 +397,7 @@ class TestServerManagementRouter:
                 current_user=admin_user,
                 db=Mock(),
                 auth=auth,
+                server_service=mock_server_service,
             )
 
         assert exc_info.value.status_code == 404
@@ -378,6 +425,7 @@ class TestServerManagementRouter:
                 current_user=admin_user,
                 db=Mock(),
                 auth=auth,
+                server_service=mock_server_service,
             )
 
         assert exc_info.value.status_code == 500
@@ -404,7 +452,13 @@ class TestServerManagementRouter:
         mock_server_service.delete_server = AsyncMock(return_value=True)
 
         # Should not raise any exception
-        await delete_server(server_id=1, current_user=admin_user, db=Mock(), auth=auth)
+        await delete_server(
+            server_id=1,
+            current_user=admin_user,
+            db=Mock(),
+            auth=auth,
+            server_service=mock_server_service,
+        )
 
     @pytest.mark.asyncio
     @patch("app.servers.routers.management.server_service")
@@ -426,7 +480,13 @@ class TestServerManagementRouter:
         auth.check_server_access.return_value = mock_server
 
         with pytest.raises(HTTPException) as exc_info:
-            await delete_server(server_id=1, current_user=test_user, db=Mock(), auth=auth)
+            await delete_server(
+                server_id=1,
+                current_user=test_user,
+                db=Mock(),
+                auth=auth,
+                server_service=mock_server_service,
+            )
 
         assert exc_info.value.status_code == 403
         assert "Only admins and server owners can delete servers" in str(
@@ -455,7 +515,11 @@ class TestServerManagementRouter:
 
         with pytest.raises(HTTPException) as exc_info:
             await delete_server(
-                server_id=999, current_user=admin_user, db=Mock(), auth=auth
+                server_id=999,
+                current_user=admin_user,
+                db=Mock(),
+                auth=auth,
+                server_service=mock_server_service,
             )
 
         assert exc_info.value.status_code == 404
@@ -485,7 +549,11 @@ class TestServerManagementRouter:
 
         with pytest.raises(HTTPException) as exc_info:
             await delete_server(
-                server_id=1, current_user=admin_user, db=Mock(), auth=auth
+                server_id=1,
+                current_user=admin_user,
+                db=Mock(),
+                auth=auth,
+                server_service=mock_server_service,
             )
 
         assert exc_info.value.status_code == 500

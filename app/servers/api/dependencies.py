@@ -16,11 +16,18 @@ from sqlalchemy.orm import Session
 from app.backups.api.dependencies import get_backup_repository
 from app.backups.domain.ports import BackupRepository
 from app.core.database import SessionLocal, get_db
+from app.groups.api.dependencies import get_group_service
+from app.groups.application.service import GroupService
 from app.servers.adapters.repository import SqlAlchemyServerRepository
 from app.servers.adapters.uow import SqlAlchemyServersUnitOfWork
 from app.servers.application.authorization import AuthorizationService
+from app.servers.application.service import ServerService
 from app.servers.domain.ports import ServerRepository, ServersUnitOfWork
-from app.templates.api.dependencies import get_template_repository
+from app.templates.api.dependencies import (
+    get_template_repository,
+    get_template_service,
+)
+from app.templates.application.service import TemplateService
 from app.templates.domain.ports import TemplateRepository
 
 
@@ -50,6 +57,29 @@ def get_authorization_service(
     threading `db: Session` through every check).
     """
     return AuthorizationService(server_repo, backup_repo, template_repo)
+
+
+def get_server_service(
+    uow: ServersUnitOfWork = Depends(get_servers_uow),
+    server_repo: ServerRepository = Depends(get_server_repository),
+    template_service: TemplateService = Depends(get_template_service),
+    group_service: GroupService = Depends(get_group_service),
+) -> ServerService:
+    """Return a per-request `ServerService` with all sibling-domain Ports wired.
+
+    Introduced in #228 PR 2c when `app/services/server_service.py` and
+    `app/servers/service.py` were merged into
+    `app/servers/application/service.py`. The injected `TemplateService`
+    replaces the deleted `ServerTemplateService.apply_template` (#257);
+    the injected `GroupService` is consumed via the correct
+    `attach_group_to_server` call inside `create_server` (#259).
+    """
+    return ServerService(
+        uow=uow,
+        server_repo=server_repo,
+        template_service=template_service,
+        group_service=group_service,
+    )
 
 
 def make_servers_uow_from_session_factory() -> ServersUnitOfWork:

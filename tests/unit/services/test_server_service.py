@@ -130,7 +130,7 @@ class TestServerService:
         assert "Failed to list servers" in str(exc_info.value.detail)
 
     # Test validate_server_operation
-    @patch("app.services.server_service.minecraft_server_manager")
+    @patch("app.servers.application._legacy_db_helpers.minecraft_server_manager")
     def test_validate_server_operation_success(
         self, mock_manager, service, mock_db_session, mock_server
     ):
@@ -143,7 +143,7 @@ class TestServerService:
         assert result is True
         mock_manager.get_server_status.assert_called_once_with(1)
 
-    @patch("app.services.server_service.minecraft_server_manager")
+    @patch("app.servers.application._legacy_db_helpers.minecraft_server_manager")
     def test_validate_server_operation_server_not_found(
         self, mock_manager, service, mock_db_session
     ):
@@ -156,7 +156,7 @@ class TestServerService:
         assert exc_info.value.status_code == 404
         assert "Server not found" in str(exc_info.value.detail)
 
-    @patch("app.services.server_service.minecraft_server_manager")
+    @patch("app.servers.application._legacy_db_helpers.minecraft_server_manager")
     def test_validate_server_operation_invalid_status(
         self, mock_manager, service, mock_db_session, mock_server
     ):
@@ -170,7 +170,7 @@ class TestServerService:
         assert exc_info.value.status_code == 409
         assert "Cannot start server in running state" in str(exc_info.value.detail)
 
-    @patch("app.services.server_service.minecraft_server_manager")
+    @patch("app.servers.application._legacy_db_helpers.minecraft_server_manager")
     def test_validate_server_operation_status_fallback(
         self, mock_manager, service, mock_db_session, mock_server
     ):
@@ -183,7 +183,7 @@ class TestServerService:
         # Should fallback to stopped status and allow start
         assert result is True
 
-    @patch("app.services.server_service.minecraft_server_manager")
+    @patch("app.servers.application._legacy_db_helpers.minecraft_server_manager")
     def test_validate_server_operation_all_operations(
         self, mock_manager, service, mock_db_session, mock_server
     ):
@@ -205,7 +205,7 @@ class TestServerService:
             result = service.validate_server_operation(1, operation, db=mock_db_session)
             assert result is True
 
-    @patch("app.services.server_service.minecraft_server_manager")
+    @patch("app.servers.application._legacy_db_helpers.minecraft_server_manager")
     def test_validate_server_operation_database_error(
         self, mock_manager, service, mock_db_session
     ):
@@ -349,7 +349,7 @@ class TestServerService:
 
     # Test wait_for_server_status
     @pytest.mark.asyncio
-    @patch("app.services.server_service.minecraft_server_manager")
+    @patch("app.servers.application.service.minecraft_server_manager")
     async def test_wait_for_server_status_success(self, mock_manager, service):
         """Test successful wait for server status"""
         mock_manager.get_server_status.return_value = ServerStatus.running
@@ -361,7 +361,7 @@ class TestServerService:
 
     @pytest.mark.slow
     @pytest.mark.asyncio
-    @patch("app.services.server_service.minecraft_server_manager")
+    @patch("app.servers.application.service.minecraft_server_manager")
     async def test_wait_for_server_status_timeout(self, mock_manager, service):
         """Test timeout in wait for server status"""
         mock_manager.get_server_status.return_value = ServerStatus.stopped
@@ -372,7 +372,7 @@ class TestServerService:
 
     @pytest.mark.slow
     @pytest.mark.asyncio
-    @patch("app.services.server_service.minecraft_server_manager")
+    @patch("app.servers.application.service.minecraft_server_manager")
     async def test_wait_for_server_status_eventual_success(self, mock_manager, service):
         """Test eventual success in wait for server status"""
         # First call returns wrong status, second call returns correct status
@@ -387,7 +387,7 @@ class TestServerService:
         assert mock_manager.get_server_status.call_count == 2
 
     @pytest.mark.asyncio
-    @patch("app.services.server_service.minecraft_server_manager")
+    @patch("app.servers.application.service.minecraft_server_manager")
     async def test_wait_for_server_status_error(self, mock_manager, service):
         """Test error handling in wait for server status"""
         mock_manager.get_server_status.side_effect = Exception("Server manager error")

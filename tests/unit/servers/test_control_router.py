@@ -1,45 +1,33 @@
-"""Comprehensive test coverage for servers control router.
+"""Comprehensive test coverage for the servers control router.
 
-DEFERRED in #228 PR 2b: the legacy `authorization_service` module-level
-singleton was removed in favour of FastAPI DI of an
-`AuthorizationService` instance, and the start/restart paths now
-re-fetch the ORM `Server` via `db.query(...).filter(...).first()` for
-the legacy `minecraft_server_manager`. Both changes require a
-non-trivial rewrite of these direct-call unit tests:
+Originally deferred under #228 PR 2b (#270) when the legacy
+module-level `authorization_service` singleton was replaced by FastAPI
+DI of an `AuthorizationService` instance. The 33 tests in this file
+have been rewritten to:
 
-1. Each test must pass an `AsyncMock(spec=AuthorizationService)` via
-   the new `auth=` kwarg (was: `@patch("...control.authorization_service")`).
-2. The `start_server` / `restart_server` tests must additionally mock
-   `db.query(Server).filter(Server.id == X).first()` to return the
-   `mock_server` fixture, replacing the legacy implicit return from
-   `check_server_access`.
+1. Pass an `AsyncMock(spec=AuthorizationService)` directly via the
+   handler's `auth=` kwarg (replacing the legacy
+   `@patch("...control.authorization_service")` shape).
+2. Mock the ORM refetch performed in `start_server` / `restart_server`
+   — those handlers now call `db.get(Server, server_id)` rather than
+   the legacy `db.query(Server).filter(...)` chain (transitional refetch
+   tracked by #149 / #272). Tests stub `db_session.get` to return the
+   `mock_server` fixture.
 
-The same coverage is exercised through the integration test suite
-(`tests/integration/api/test_*`) which uses FastAPI's TestClient and
-therefore goes through the DI graph correctly. To keep PR 2b scoped
-to the migration itself, this file is skipped wholesale; a follow-up
-PR will port these tests to the new shape.
+All other behaviour (audit logging, Java availability checks, JAR
+existence checks, server-status validation, command execution, log
+retrieval) is preserved verbatim.
 """
 
+import asyncio
+from unittest.mock import AsyncMock, Mock, patch
+
 import pytest
+from fastapi import HTTPException, Request
 
-pytestmark = pytest.mark.skip(
-    reason=(
-        "Deferred to #270: rewrite for AuthorizationService instance DI shape. "
-        "The `authorization_service` module-level singleton was removed in #228 PR 2b "
-        "and these direct-call unit tests need to be rewritten to pass an "
-        "AsyncMock(spec=AuthorizationService) via the new auth= kwarg, plus mock "
-        "db.query for the ORM refetch in start/restart."
-    )
-)
-
-import asyncio  # noqa: E402
-from unittest.mock import AsyncMock, Mock, patch  # noqa: E402
-
-from fastapi import HTTPException, Request  # noqa: E402
-
-from app.servers.models import ServerStatus  # noqa: E402
-from app.servers.routers.control import (  # noqa: E402
+from app.servers.application.authorization import AuthorizationService
+from app.servers.models import ServerStatus
+from app.servers.routers.control import (
     get_server_logs,
     get_server_status,
     restart_server,
@@ -47,17 +35,29 @@ from app.servers.routers.control import (  # noqa: E402
     start_server,
     stop_server,
 )
-from app.servers.schemas import ServerCommandRequest  # noqa: E402
-from app.users.domain.value_objects import Role  # noqa: E402
-from app.users.models import User  # noqa: E402
+from app.servers.schemas import ServerCommandRequest
+from app.users.domain.value_objects import Role
+from app.users.models import User
+
+
+def _make_auth_mock(server_entity=None) -> AsyncMock:
+    """Build an `AsyncMock` shaped like `AuthorizationService`.
+
+    Default `check_server_access` resolves to `server_entity` (so each
+    test can inject its own mock server returned from the access
+    check). Tests that exercise the access-denied path overwrite
+    `auth.check_server_access.side_effect` directly.
+    """
+    auth = AsyncMock(spec=AuthorizationService)
+    auth.check_server_access = AsyncMock(return_value=server_entity)
+    return auth
 
 
 class TestServerControlRouter:
-    """Test class for server control router endpoints"""
+    """Test class for server control router endpoints."""
 
     @pytest.fixture
     def mock_request(self):
-        """Create mock request object"""
         request = Mock(spec=Request)
         request.client = Mock()
         request.client.host = "127.0.0.1"
@@ -66,7 +66,6 @@ class TestServerControlRouter:
 
     @pytest.fixture
     def admin_user(self):
-        """Create admin user mock"""
         user = Mock(spec=User)
         user.id = 1
         user.role = Role.admin
@@ -75,7 +74,6 @@ class TestServerControlRouter:
 
     @pytest.fixture
     def regular_user(self):
-        """Create regular user mock"""
         user = Mock(spec=User)
         user.id = 2
         user.role = Role.user
@@ -84,7 +82,6 @@ class TestServerControlRouter:
 
     @pytest.fixture
     def mock_server(self):
-        """Create mock server"""
         server = Mock()
         server.id = 1
         server.name = "test-server"
@@ -93,27 +90,32 @@ class TestServerControlRouter:
         return server
 
     @pytest.fixture
-    def mock_db_session(self):
-        """Create mock database session"""
-        return Mock()
+    def mock_db_session(self, mock_server):
+        """Mock DB session. `db.get(Server, sid)` returns `mock_server`.
 
-    # Test start_server endpoint
+        The start/restart handlers now refetch the ORM `Server` via
+        `db.get(...)` (see PR 2c — replaces legacy `db.query(...).filter()`).
+        """
+        db = Mock()
+        db.get = Mock(return_value=mock_server)
+        return db
+
+    # ---------------- start_server ----------------
+
     @pytest.mark.asyncio
-    @patch("app.servers.routers.control.authorization_service")
     @patch("app.servers.routers.control.minecraft_server_manager")
     @patch("app.servers.routers.control.AuditService")
     async def test_start_server_success(
         self,
         mock_audit,
         mock_manager,
-        mock_auth,
         mock_request,
         admin_user,
         mock_server,
         mock_db_session,
     ):
-        """Test successful server start"""
-        mock_auth.check_server_access.return_value = mock_server
+        """Successful server start."""
+        auth = _make_auth_mock(mock_server)
         mock_manager.get_server_status.return_value = ServerStatus.stopped
         mock_manager.start_server = AsyncMock(return_value=True)
         mock_manager.get_server_info.return_value = {"pid": 12345, "memory": "512MB"}
@@ -123,6 +125,7 @@ class TestServerControlRouter:
             request=mock_request,
             current_user=admin_user,
             db=mock_db_session,
+            auth=auth,
         )
 
         assert result.server_id == mock_server.id
@@ -130,21 +133,19 @@ class TestServerControlRouter:
         assert mock_audit.log_server_event.call_count >= 2
 
     @pytest.mark.asyncio
-    @patch("app.servers.routers.control.authorization_service")
     @patch("app.servers.routers.control.minecraft_server_manager")
     @patch("app.servers.routers.control.AuditService")
     async def test_start_server_invalid_status(
         self,
         mock_audit,
         mock_manager,
-        mock_auth,
         mock_request,
         admin_user,
         mock_server,
         mock_db_session,
     ):
-        """Test server start with invalid status"""
-        mock_auth.check_server_access.return_value = mock_server
+        """Server start while the server is already running → 409."""
+        auth = _make_auth_mock(mock_server)
         mock_manager.get_server_status.return_value = ServerStatus.running
 
         with pytest.raises(HTTPException) as exc_info:
@@ -153,13 +154,13 @@ class TestServerControlRouter:
                 request=mock_request,
                 current_user=admin_user,
                 db=mock_db_session,
+                auth=auth,
             )
 
         assert exc_info.value.status_code == 409
         assert "cannot start" in exc_info.value.detail.lower()
 
     @pytest.mark.asyncio
-    @patch("app.servers.routers.control.authorization_service")
     @patch("app.servers.routers.control.minecraft_server_manager")
     @patch("app.servers.routers.control.AuditService")
     @patch("app.servers.routers.control.settings")
@@ -170,14 +171,13 @@ class TestServerControlRouter:
         mock_settings,
         mock_audit,
         mock_manager,
-        mock_auth,
         mock_request,
         admin_user,
         mock_server,
         mock_db_session,
     ):
-        """Test server start when Java is not available"""
-        mock_auth.check_server_access.return_value = mock_server
+        """When Java check returns non-zero exit → 500 Java runtime not available."""
+        auth = _make_auth_mock(mock_server)
         mock_manager.get_server_status.return_value = ServerStatus.stopped
         mock_manager.start_server = AsyncMock(return_value=False)
         mock_settings.JAVA_CHECK_TIMEOUT = 5
@@ -193,13 +193,13 @@ class TestServerControlRouter:
                 request=mock_request,
                 current_user=admin_user,
                 db=mock_db_session,
+                auth=auth,
             )
 
         assert exc_info.value.status_code == 500
         assert "java runtime not available" in exc_info.value.detail.lower()
 
     @pytest.mark.asyncio
-    @patch("app.servers.routers.control.authorization_service")
     @patch("app.servers.routers.control.minecraft_server_manager")
     @patch("app.servers.routers.control.AuditService")
     @patch("app.servers.routers.control.settings")
@@ -210,14 +210,13 @@ class TestServerControlRouter:
         mock_settings,
         mock_audit,
         mock_manager,
-        mock_auth,
         mock_request,
         admin_user,
         mock_server,
         mock_db_session,
     ):
-        """Test server start when Java executable is not found"""
-        mock_auth.check_server_access.return_value = mock_server
+        """FileNotFoundError on `java` invocation → 500 Java executable not found."""
+        auth = _make_auth_mock(mock_server)
         mock_manager.get_server_status.return_value = ServerStatus.stopped
         mock_manager.start_server = AsyncMock(return_value=False)
         mock_settings.JAVA_CHECK_TIMEOUT = 5
@@ -229,13 +228,13 @@ class TestServerControlRouter:
                 request=mock_request,
                 current_user=admin_user,
                 db=mock_db_session,
+                auth=auth,
             )
 
         assert exc_info.value.status_code == 500
         assert "java executable not found" in exc_info.value.detail.lower()
 
     @pytest.mark.asyncio
-    @patch("app.servers.routers.control.authorization_service")
     @patch("app.servers.routers.control.minecraft_server_manager")
     @patch("app.servers.routers.control.AuditService")
     @patch("app.servers.routers.control.settings")
@@ -248,14 +247,13 @@ class TestServerControlRouter:
         mock_settings,
         mock_audit,
         mock_manager,
-        mock_auth,
         mock_request,
         admin_user,
         mock_server,
         mock_db_session,
     ):
-        """Test server start when server JAR is missing"""
-        mock_auth.check_server_access.return_value = mock_server
+        """Java ok, but server.jar missing → 500 server.jar not found."""
+        auth = _make_auth_mock(mock_server)
         mock_manager.get_server_status.return_value = ServerStatus.stopped
         mock_manager.start_server = AsyncMock(return_value=False)
         mock_settings.JAVA_CHECK_TIMEOUT = 5
@@ -272,48 +270,47 @@ class TestServerControlRouter:
                 request=mock_request,
                 current_user=admin_user,
                 db=mock_db_session,
+                auth=auth,
             )
 
         assert exc_info.value.status_code == 500
         assert "server.jar not found" in exc_info.value.detail.lower()
 
     @pytest.mark.asyncio
-    @patch("app.servers.routers.control.authorization_service")
     @patch("app.servers.routers.control.minecraft_server_manager")
     @patch("app.servers.routers.control.AuditService")
     async def test_start_server_unexpected_error(
         self,
         mock_audit,
         mock_manager,
-        mock_auth,
         mock_request,
         admin_user,
-        mock_server,
         mock_db_session,
     ):
-        """Test server start with unexpected error"""
-        mock_auth.check_server_access.side_effect = Exception("Unexpected error")
+        """auth.check_server_access raising Exception → 500."""
+        auth = _make_auth_mock()
+        auth.check_server_access.side_effect = Exception("Unexpected error")
 
         with pytest.raises(HTTPException) as exc_info:
             await start_server(
-                server_id=mock_server.id,
+                server_id=1,
                 request=mock_request,
                 current_user=admin_user,
                 db=mock_db_session,
+                auth=auth,
             )
 
         assert exc_info.value.status_code == 500
         assert "failed to start server" in exc_info.value.detail.lower()
 
-    # Test stop_server endpoint
+    # ---------------- stop_server ----------------
+
     @pytest.mark.asyncio
-    @patch("app.servers.routers.control.authorization_service")
     @patch("app.servers.routers.control.minecraft_server_manager")
     async def test_stop_server_success(
-        self, mock_manager, mock_auth, admin_user, mock_server, mock_db_session
+        self, mock_manager, admin_user, mock_server, mock_db_session
     ):
-        """Test successful server stop"""
-        mock_auth.check_server_access.return_value = mock_server
+        auth = _make_auth_mock(mock_server)
         mock_manager.get_server_status.return_value = ServerStatus.running
         mock_manager.stop_server = AsyncMock(return_value=True)
 
@@ -322,18 +319,17 @@ class TestServerControlRouter:
             force=False,
             current_user=admin_user,
             db=mock_db_session,
+            auth=auth,
         )
 
         assert "stop initiated" in result["message"].lower()
 
     @pytest.mark.asyncio
-    @patch("app.servers.routers.control.authorization_service")
     @patch("app.servers.routers.control.minecraft_server_manager")
     async def test_stop_server_force(
-        self, mock_manager, mock_auth, admin_user, mock_server, mock_db_session
+        self, mock_manager, admin_user, mock_server, mock_db_session
     ):
-        """Test force stop server"""
-        mock_auth.check_server_access.return_value = mock_server
+        auth = _make_auth_mock(mock_server)
         mock_manager.get_server_status.return_value = ServerStatus.running
         mock_manager.stop_server = AsyncMock(return_value=True)
 
@@ -342,19 +338,18 @@ class TestServerControlRouter:
             force=True,
             current_user=admin_user,
             db=mock_db_session,
+            auth=auth,
         )
 
         assert "stop initiated" in result["message"].lower()
         mock_manager.stop_server.assert_called_once_with(mock_server.id, force=True)
 
     @pytest.mark.asyncio
-    @patch("app.servers.routers.control.authorization_service")
     @patch("app.servers.routers.control.minecraft_server_manager")
     async def test_stop_server_already_stopped(
-        self, mock_manager, mock_auth, admin_user, mock_server, mock_db_session
+        self, mock_manager, admin_user, mock_server, mock_db_session
     ):
-        """Test stop server when already stopped"""
-        mock_auth.check_server_access.return_value = mock_server
+        auth = _make_auth_mock(mock_server)
         mock_manager.get_server_status.return_value = ServerStatus.stopped
 
         with pytest.raises(HTTPException) as exc_info:
@@ -363,19 +358,18 @@ class TestServerControlRouter:
                 force=False,
                 current_user=admin_user,
                 db=mock_db_session,
+                auth=auth,
             )
 
         assert exc_info.value.status_code == 409
         assert "already stopped" in exc_info.value.detail.lower()
 
     @pytest.mark.asyncio
-    @patch("app.servers.routers.control.authorization_service")
     @patch("app.servers.routers.control.minecraft_server_manager")
     async def test_stop_server_failed_but_actually_stopped(
-        self, mock_manager, mock_auth, admin_user, mock_server, mock_db_session
+        self, mock_manager, admin_user, mock_server, mock_db_session
     ):
-        """Test stop server when command fails but server is actually stopped"""
-        mock_auth.check_server_access.return_value = mock_server
+        auth = _make_auth_mock(mock_server)
         mock_manager.get_server_status.side_effect = [
             ServerStatus.running,
             ServerStatus.stopped,
@@ -387,18 +381,17 @@ class TestServerControlRouter:
             force=False,
             current_user=admin_user,
             db=mock_db_session,
+            auth=auth,
         )
 
         assert "stop completed" in result["message"].lower()
 
     @pytest.mark.asyncio
-    @patch("app.servers.routers.control.authorization_service")
     @patch("app.servers.routers.control.minecraft_server_manager")
     async def test_stop_server_failed(
-        self, mock_manager, mock_auth, admin_user, mock_server, mock_db_session
+        self, mock_manager, admin_user, mock_server, mock_db_session
     ):
-        """Test stop server failure"""
-        mock_auth.check_server_access.return_value = mock_server
+        auth = _make_auth_mock(mock_server)
         mock_manager.get_server_status.side_effect = [
             ServerStatus.running,
             ServerStatus.running,
@@ -411,21 +404,21 @@ class TestServerControlRouter:
                 force=False,
                 current_user=admin_user,
                 db=mock_db_session,
+                auth=auth,
             )
 
         assert exc_info.value.status_code == 500
         assert "failed to stop server" in exc_info.value.detail.lower()
 
-    # Test restart_server endpoint
+    # ---------------- restart_server ----------------
+
     @pytest.mark.slow
     @pytest.mark.asyncio
-    @patch("app.servers.routers.control.authorization_service")
     @patch("app.servers.routers.control.minecraft_server_manager")
     async def test_restart_server_success(
-        self, mock_manager, mock_auth, admin_user, mock_server, mock_db_session
+        self, mock_manager, admin_user, mock_server, mock_db_session
     ):
-        """Test successful server restart"""
-        mock_auth.check_server_access.return_value = mock_server
+        auth = _make_auth_mock(mock_server)
         mock_manager.get_server_status.side_effect = [
             ServerStatus.running,
             ServerStatus.stopped,
@@ -434,7 +427,10 @@ class TestServerControlRouter:
         mock_manager.start_server = AsyncMock(return_value=True)
 
         result = await restart_server(
-            server_id=mock_server.id, current_user=admin_user, db=mock_db_session
+            server_id=mock_server.id,
+            current_user=admin_user,
+            db=mock_db_session,
+            auth=auth,
         )
 
         assert "restart initiated" in result["message"].lower()
@@ -442,18 +438,19 @@ class TestServerControlRouter:
         mock_manager.start_server.assert_called_once()
 
     @pytest.mark.asyncio
-    @patch("app.servers.routers.control.authorization_service")
     @patch("app.servers.routers.control.minecraft_server_manager")
     async def test_restart_server_already_stopped(
-        self, mock_manager, mock_auth, admin_user, mock_server, mock_db_session
+        self, mock_manager, admin_user, mock_server, mock_db_session
     ):
-        """Test restart server when already stopped"""
-        mock_auth.check_server_access.return_value = mock_server
+        auth = _make_auth_mock(mock_server)
         mock_manager.get_server_status.return_value = ServerStatus.stopped
         mock_manager.start_server = AsyncMock(return_value=True)
 
         result = await restart_server(
-            server_id=mock_server.id, current_user=admin_user, db=mock_db_session
+            server_id=mock_server.id,
+            current_user=admin_user,
+            db=mock_db_session,
+            auth=auth,
         )
 
         assert "restart initiated" in result["message"].lower()
@@ -461,20 +458,17 @@ class TestServerControlRouter:
         mock_manager.start_server.assert_called_once()
 
     @pytest.mark.asyncio
-    @patch("app.servers.routers.control.authorization_service")
     @patch("app.servers.routers.control.minecraft_server_manager")
     @patch("asyncio.sleep")
     async def test_restart_server_wait_for_stop(
         self,
         mock_sleep,
         mock_manager,
-        mock_auth,
         admin_user,
         mock_server,
         mock_db_session,
     ):
-        """Test restart server waiting for stop to complete"""
-        mock_auth.check_server_access.return_value = mock_server
+        auth = _make_auth_mock(mock_server)
         mock_manager.get_server_status.side_effect = [
             ServerStatus.running,
             ServerStatus.stopping,
@@ -485,47 +479,49 @@ class TestServerControlRouter:
         mock_sleep.return_value = None
 
         result = await restart_server(
-            server_id=mock_server.id, current_user=admin_user, db=mock_db_session
+            server_id=mock_server.id,
+            current_user=admin_user,
+            db=mock_db_session,
+            auth=auth,
         )
 
         assert "restart initiated" in result["message"].lower()
         assert mock_sleep.call_count >= 1
 
     @pytest.mark.asyncio
-    @patch("app.servers.routers.control.authorization_service")
     @patch("app.servers.routers.control.minecraft_server_manager")
     async def test_restart_server_start_failed(
-        self, mock_manager, mock_auth, admin_user, mock_server, mock_db_session
+        self, mock_manager, admin_user, mock_server, mock_db_session
     ):
-        """Test restart server when start fails"""
-        mock_auth.check_server_access.return_value = mock_server
+        auth = _make_auth_mock(mock_server)
         mock_manager.get_server_status.return_value = ServerStatus.stopped
         mock_manager.start_server = AsyncMock(return_value=False)
 
         with pytest.raises(HTTPException) as exc_info:
             await restart_server(
-                server_id=mock_server.id, current_user=admin_user, db=mock_db_session
+                server_id=mock_server.id,
+                current_user=admin_user,
+                db=mock_db_session,
+                auth=auth,
             )
 
         assert exc_info.value.status_code == 500
         assert "failed to restart server" in exc_info.value.detail.lower()
 
-    # Test get_server_status endpoint
+    # ---------------- get_server_status ----------------
+
     @pytest.mark.asyncio
-    @patch("app.servers.routers.control.authorization_service")
     @patch("app.servers.routers.control.minecraft_server_manager")
     @patch("app.services.database_integration.database_integration_service")
     async def test_get_server_status_success(
         self,
         mock_db_integration,
         mock_manager,
-        mock_auth,
         admin_user,
         mock_server,
         mock_db_session,
     ):
-        """Test successful get server status"""
-        mock_auth.check_server_access.return_value = mock_server
+        auth = _make_auth_mock(mock_server)
         mock_manager.get_server_status.return_value = ServerStatus.running
         mock_db_integration.get_server_process_info.return_value = {
             "pid": 12345,
@@ -533,7 +529,10 @@ class TestServerControlRouter:
         }
 
         result = await get_server_status(
-            server_id=mock_server.id, current_user=admin_user, db=mock_db_session
+            server_id=mock_server.id,
+            current_user=admin_user,
+            db=mock_db_session,
+            auth=auth,
         )
 
         assert result.server_id == mock_server.id
@@ -541,39 +540,39 @@ class TestServerControlRouter:
         assert result.process_info["pid"] == 12345
 
     @pytest.mark.asyncio
-    @patch("app.servers.routers.control.authorization_service")
     async def test_get_server_status_access_denied(
-        self, mock_auth, regular_user, mock_server, mock_db_session
+        self, regular_user, mock_server, mock_db_session
     ):
-        """Test get server status with access denied"""
-        mock_auth.check_server_access.side_effect = HTTPException(
+        auth = _make_auth_mock()
+        auth.check_server_access.side_effect = HTTPException(
             status_code=403, detail="Access denied"
         )
 
         with pytest.raises(HTTPException) as exc_info:
             await get_server_status(
-                server_id=mock_server.id, current_user=regular_user, db=mock_db_session
+                server_id=mock_server.id,
+                current_user=regular_user,
+                db=mock_db_session,
+                auth=auth,
             )
 
         assert exc_info.value.status_code == 403
 
-    # Test send_server_command endpoint
+    # ---------------- send_server_command ----------------
+
     @pytest.mark.asyncio
-    @patch("app.servers.routers.control.authorization_service")
     @patch("app.servers.routers.control.minecraft_server_manager")
     @patch("app.servers.routers.control.AuditService")
     async def test_send_server_command_success(
         self,
         mock_audit,
         mock_manager,
-        mock_auth,
         mock_request,
         admin_user,
         mock_server,
         mock_db_session,
     ):
-        """Test successful command send"""
-        mock_auth.check_server_access.return_value = mock_server
+        auth = _make_auth_mock(mock_server)
         mock_manager.get_server_status.return_value = ServerStatus.running
         mock_manager.send_command = AsyncMock(return_value=True)
 
@@ -584,6 +583,7 @@ class TestServerControlRouter:
             http_request=mock_request,
             current_user=admin_user,
             db=mock_db_session,
+            auth=auth,
         )
 
         assert "command 'say hello world' sent" in result["message"].lower()
@@ -592,21 +592,18 @@ class TestServerControlRouter:
         )
 
     @pytest.mark.asyncio
-    @patch("app.servers.routers.control.authorization_service")
     @patch("app.servers.routers.control.minecraft_server_manager")
     @patch("app.servers.routers.control.AuditService")
     async def test_send_server_command_server_not_running(
         self,
         mock_audit,
         mock_manager,
-        mock_auth,
         mock_request,
         admin_user,
         mock_server,
         mock_db_session,
     ):
-        """Test command send when server not running"""
-        mock_auth.check_server_access.return_value = mock_server
+        auth = _make_auth_mock(mock_server)
         mock_manager.get_server_status.return_value = ServerStatus.stopped
         mock_audit.log_server_command_event = Mock()
         mock_audit.log_server_event = Mock()
@@ -619,6 +616,7 @@ class TestServerControlRouter:
                 http_request=mock_request,
                 current_user=admin_user,
                 db=mock_db_session,
+                auth=auth,
             )
 
         assert exc_info.value.status_code == 409
@@ -628,21 +626,18 @@ class TestServerControlRouter:
         )
 
     @pytest.mark.asyncio
-    @patch("app.servers.routers.control.authorization_service")
     @patch("app.servers.routers.control.minecraft_server_manager")
     @patch("app.servers.routers.control.AuditService")
     async def test_send_server_command_failed(
         self,
         mock_audit,
         mock_manager,
-        mock_auth,
         mock_request,
         admin_user,
         mock_server,
         mock_db_session,
     ):
-        """Test command send failure"""
-        mock_auth.check_server_access.return_value = mock_server
+        auth = _make_auth_mock(mock_server)
         mock_manager.get_server_status.return_value = ServerStatus.running
         mock_manager.send_command = AsyncMock(return_value=False)
         mock_audit.log_server_command_event = Mock()
@@ -655,20 +650,20 @@ class TestServerControlRouter:
                 http_request=mock_request,
                 current_user=admin_user,
                 db=mock_db_session,
+                auth=auth,
             )
 
         assert exc_info.value.status_code == 500
         assert "failed to send command" in exc_info.value.detail.lower()
 
-    # Test get_server_logs endpoint
+    # ---------------- get_server_logs ----------------
+
     @pytest.mark.asyncio
-    @patch("app.servers.routers.control.authorization_service")
     @patch("app.servers.routers.control.minecraft_server_manager")
     async def test_get_server_logs_success(
-        self, mock_manager, mock_auth, admin_user, mock_server, mock_db_session
+        self, mock_manager, admin_user, mock_server, mock_db_session
     ):
-        """Test successful get server logs"""
-        mock_auth.check_server_access.return_value = mock_server
+        auth = _make_auth_mock(mock_server)
         mock_logs = [
             "[INFO] Server started",
             "[INFO] Player joined",
@@ -681,6 +676,7 @@ class TestServerControlRouter:
             lines=50,
             current_user=admin_user,
             db=mock_db_session,
+            auth=auth,
         )
 
         assert result.server_id == mock_server.id
@@ -689,13 +685,11 @@ class TestServerControlRouter:
         mock_manager.get_server_logs.assert_called_once_with(mock_server.id, 50)
 
     @pytest.mark.asyncio
-    @patch("app.servers.routers.control.authorization_service")
     @patch("app.servers.routers.control.minecraft_server_manager")
     async def test_get_server_logs_default_lines(
-        self, mock_manager, mock_auth, admin_user, mock_server, mock_db_session
+        self, mock_manager, admin_user, mock_server, mock_db_session
     ):
-        """Test get server logs with default line count"""
-        mock_auth.check_server_access.return_value = mock_server
+        auth = _make_auth_mock(mock_server)
         mock_manager.get_server_logs = AsyncMock(return_value=[])
 
         result = await get_server_logs(
@@ -703,19 +697,18 @@ class TestServerControlRouter:
             lines=100,
             current_user=admin_user,
             db=mock_db_session,
+            auth=auth,
         )
 
         assert result.server_id == mock_server.id
         mock_manager.get_server_logs.assert_called_once_with(mock_server.id, 100)
 
     @pytest.mark.asyncio
-    @patch("app.servers.routers.control.authorization_service")
     @patch("app.servers.routers.control.minecraft_server_manager")
     async def test_get_server_logs_failed(
-        self, mock_manager, mock_auth, admin_user, mock_server, mock_db_session
+        self, mock_manager, admin_user, mock_server, mock_db_session
     ):
-        """Test get server logs failure"""
-        mock_auth.check_server_access.return_value = mock_server
+        auth = _make_auth_mock(mock_server)
         mock_manager.get_server_logs = AsyncMock(side_effect=Exception("Log read failed"))
 
         with pytest.raises(HTTPException) as exc_info:
@@ -724,54 +717,71 @@ class TestServerControlRouter:
                 lines=100,
                 current_user=admin_user,
                 db=mock_db_session,
+                auth=auth,
             )
 
         assert exc_info.value.status_code == 500
         assert "failed to get server logs" in exc_info.value.detail.lower()
 
-    # Test edge cases and error conditions
-    @pytest.mark.asyncio
-    @patch("app.servers.routers.control.authorization_service")
-    async def test_authorization_failure_all_endpoints(
-        self, mock_auth, mock_request, regular_user, mock_db_session
-    ):
-        """Test authorization failure for all endpoints"""
-        mock_auth.check_server_access.side_effect = HTTPException(
-            status_code=403, detail="Access denied"
-        )
+    # ---------------- Edge cases ----------------
 
+    @pytest.mark.asyncio
+    async def test_authorization_failure_all_endpoints(
+        self, mock_request, regular_user, mock_db_session
+    ):
+        """Each endpoint must surface a 403 when `auth.check_server_access` raises one."""
         server_id = 1
 
+        def _denying_auth() -> AsyncMock:
+            auth = AsyncMock(spec=AuthorizationService)
+            auth.check_server_access = AsyncMock(
+                side_effect=HTTPException(status_code=403, detail="Access denied")
+            )
+            return auth
+
         with pytest.raises(HTTPException) as exc_info:
-            await start_server(server_id, mock_request, regular_user, mock_db_session)
+            await start_server(
+                server_id, mock_request, regular_user, mock_db_session, _denying_auth()
+            )
         assert exc_info.value.status_code == 403
 
         with pytest.raises(HTTPException) as exc_info:
-            await stop_server(server_id, False, regular_user, mock_db_session)
+            await stop_server(
+                server_id, False, regular_user, mock_db_session, _denying_auth()
+            )
         assert exc_info.value.status_code == 403
 
         with pytest.raises(HTTPException) as exc_info:
-            await restart_server(server_id, regular_user, mock_db_session)
+            await restart_server(
+                server_id, regular_user, mock_db_session, _denying_auth()
+            )
         assert exc_info.value.status_code == 403
 
         with pytest.raises(HTTPException) as exc_info:
-            await get_server_status(server_id, regular_user, mock_db_session)
+            await get_server_status(
+                server_id, regular_user, mock_db_session, _denying_auth()
+            )
         assert exc_info.value.status_code == 403
 
         command_request = ServerCommandRequest(command="test")
         with pytest.raises(HTTPException) as exc_info:
             await send_server_command(
-                server_id, command_request, mock_request, regular_user, mock_db_session
+                server_id,
+                command_request,
+                mock_request,
+                regular_user,
+                mock_db_session,
+                _denying_auth(),
             )
         assert exc_info.value.status_code == 403
 
         with pytest.raises(HTTPException) as exc_info:
-            await get_server_logs(server_id, 100, regular_user, mock_db_session)
+            await get_server_logs(
+                server_id, 100, regular_user, mock_db_session, _denying_auth()
+            )
         assert exc_info.value.status_code == 403
 
-    # Test timeout and async operation edge cases
     @pytest.mark.asyncio
-    @patch("app.servers.routers.control.authorization_service")
     @patch("app.servers.routers.control.minecraft_server_manager")
     @patch("app.servers.routers.control.settings")
     @patch("asyncio.create_subprocess_exec")
@@ -780,14 +790,13 @@ class TestServerControlRouter:
         mock_subprocess,
         mock_settings,
         mock_manager,
-        mock_auth,
         mock_request,
         admin_user,
         mock_server,
         mock_db_session,
     ):
-        """Test server start with Java check timeout"""
-        mock_auth.check_server_access.return_value = mock_server
+        """Java check times out → 500 java executable not found."""
+        auth = _make_auth_mock(mock_server)
         mock_manager.get_server_status.return_value = ServerStatus.stopped
         mock_manager.start_server = AsyncMock(return_value=False)
         mock_settings.JAVA_CHECK_TIMEOUT = 1
@@ -802,26 +811,25 @@ class TestServerControlRouter:
                 request=mock_request,
                 current_user=admin_user,
                 db=mock_db_session,
+                auth=auth,
             )
 
         assert exc_info.value.status_code == 500
         assert "java executable not found" in exc_info.value.detail.lower()
 
     @pytest.mark.asyncio
-    @patch("app.servers.routers.control.authorization_service")
     @patch("app.servers.routers.control.minecraft_server_manager")
     @patch("asyncio.sleep")
     async def test_restart_server_stop_timeout(
         self,
         mock_sleep,
         mock_manager,
-        mock_auth,
         admin_user,
         mock_server,
         mock_db_session,
     ):
-        """Test restart server when stop takes too long"""
-        mock_auth.check_server_access.return_value = mock_server
+        """Stop takes longer than the inner wait loop — restart still proceeds."""
+        auth = _make_auth_mock(mock_server)
         mock_manager.get_server_status.side_effect = [ServerStatus.running] + [
             ServerStatus.stopping
         ] * 30
@@ -830,15 +838,16 @@ class TestServerControlRouter:
         mock_sleep.return_value = None
 
         result = await restart_server(
-            server_id=mock_server.id, current_user=admin_user, db=mock_db_session
+            server_id=mock_server.id,
+            current_user=admin_user,
+            db=mock_db_session,
+            auth=auth,
         )
 
         assert "restart initiated" in result["message"].lower()
         assert mock_sleep.call_count == 30
 
-    # Test configuration failures
     @pytest.mark.asyncio
-    @patch("app.servers.routers.control.authorization_service")
     @patch("app.servers.routers.control.minecraft_server_manager")
     @patch("app.servers.routers.control.AuditService")
     @patch("app.servers.routers.control.settings")
@@ -851,14 +860,13 @@ class TestServerControlRouter:
         mock_settings,
         mock_audit,
         mock_manager,
-        mock_auth,
         mock_request,
         admin_user,
         mock_server,
         mock_db_session,
     ):
-        """Test server start with generic configuration issue"""
-        mock_auth.check_server_access.return_value = mock_server
+        """Java ok, JAR ok, but server still won't start → generic config message."""
+        auth = _make_auth_mock(mock_server)
         mock_manager.get_server_status.return_value = ServerStatus.stopped
         mock_manager.start_server = AsyncMock(return_value=False)
         mock_settings.JAVA_CHECK_TIMEOUT = 5
@@ -875,6 +883,7 @@ class TestServerControlRouter:
                 request=mock_request,
                 current_user=admin_user,
                 db=mock_db_session,
+                auth=auth,
             )
 
         assert exc_info.value.status_code == 500
@@ -883,15 +892,13 @@ class TestServerControlRouter:
             in exc_info.value.detail.lower()
         )
 
-    # Test error handling in other endpoints
     @pytest.mark.asyncio
-    @patch("app.servers.routers.control.authorization_service")
     @patch("app.servers.routers.control.minecraft_server_manager")
     async def test_stop_server_unexpected_error(
-        self, mock_manager, mock_auth, admin_user, mock_server, mock_db_session
+        self, mock_manager, admin_user, mock_server, mock_db_session
     ):
-        """Test stop server with unexpected error"""
-        mock_auth.check_server_access.side_effect = Exception("Unexpected error")
+        auth = _make_auth_mock()
+        auth.check_server_access.side_effect = Exception("Unexpected error")
 
         with pytest.raises(HTTPException) as exc_info:
             await stop_server(
@@ -899,68 +906,70 @@ class TestServerControlRouter:
                 force=False,
                 current_user=admin_user,
                 db=mock_db_session,
+                auth=auth,
             )
 
         assert exc_info.value.status_code == 500
         assert "failed to stop server" in exc_info.value.detail.lower()
 
     @pytest.mark.asyncio
-    @patch("app.servers.routers.control.authorization_service")
     @patch("app.servers.routers.control.minecraft_server_manager")
     async def test_restart_server_unexpected_error(
-        self, mock_manager, mock_auth, admin_user, mock_server, mock_db_session
+        self, mock_manager, admin_user, mock_server, mock_db_session
     ):
-        """Test restart server with unexpected error"""
-        mock_auth.check_server_access.side_effect = Exception("Unexpected error")
+        auth = _make_auth_mock()
+        auth.check_server_access.side_effect = Exception("Unexpected error")
 
         with pytest.raises(HTTPException) as exc_info:
             await restart_server(
-                server_id=mock_server.id, current_user=admin_user, db=mock_db_session
+                server_id=mock_server.id,
+                current_user=admin_user,
+                db=mock_db_session,
+                auth=auth,
             )
 
         assert exc_info.value.status_code == 500
         assert "failed to restart server" in exc_info.value.detail.lower()
 
     @pytest.mark.asyncio
-    @patch("app.servers.routers.control.authorization_service")
     @patch("app.servers.routers.control.minecraft_server_manager")
     @patch("app.services.database_integration.database_integration_service")
     async def test_get_server_status_unexpected_error(
         self,
         mock_db_integration,
         mock_manager,
-        mock_auth,
         admin_user,
         mock_server,
         mock_db_session,
     ):
-        """Test get server status with unexpected error"""
-        mock_auth.check_server_access.side_effect = Exception("Unexpected error")
+        auth = _make_auth_mock()
+        auth.check_server_access.side_effect = Exception("Unexpected error")
 
         with pytest.raises(HTTPException) as exc_info:
             await get_server_status(
-                server_id=mock_server.id, current_user=admin_user, db=mock_db_session
+                server_id=mock_server.id,
+                current_user=admin_user,
+                db=mock_db_session,
+                auth=auth,
             )
 
         assert exc_info.value.status_code == 500
         assert "failed to get server status" in exc_info.value.detail.lower()
 
     @pytest.mark.asyncio
-    @patch("app.servers.routers.control.authorization_service")
     @patch("app.servers.routers.control.minecraft_server_manager")
     @patch("app.servers.routers.control.AuditService")
     async def test_send_server_command_unexpected_error(
         self,
         mock_audit,
         mock_manager,
-        mock_auth,
         mock_request,
         admin_user,
         mock_server,
         mock_db_session,
     ):
-        """Test send server command with unexpected error"""
-        mock_auth.check_server_access.side_effect = Exception("Unexpected error")
+        auth = _make_auth_mock()
+        auth.check_server_access.side_effect = Exception("Unexpected error")
         mock_audit.log_server_command_event = Mock()
 
         command_request = ServerCommandRequest(command="test")
@@ -971,14 +980,13 @@ class TestServerControlRouter:
                 http_request=mock_request,
                 current_user=admin_user,
                 db=mock_db_session,
+                auth=auth,
             )
 
         assert exc_info.value.status_code == 500
         assert "failed to send command" in exc_info.value.detail.lower()
 
-    # Test comprehensive error scenarios in start_server
     @pytest.mark.asyncio
-    @patch("app.servers.routers.control.authorization_service")
     @patch("app.servers.routers.control.minecraft_server_manager")
     @patch("app.servers.routers.control.AuditService")
     @patch("app.servers.routers.control.settings")
@@ -989,21 +997,17 @@ class TestServerControlRouter:
         mock_settings,
         mock_audit,
         mock_manager,
-        mock_auth,
         mock_request,
         admin_user,
         mock_server,
         mock_db_session,
     ):
-        """Test server start with Java timeout error"""
-        mock_auth.check_server_access.return_value = mock_server
+        """asyncio.TimeoutError on communicate() → 500 java executable not found."""
+        auth = _make_auth_mock(mock_server)
         mock_manager.get_server_status.return_value = ServerStatus.stopped
         mock_manager.start_server = AsyncMock(return_value=False)
         mock_settings.JAVA_CHECK_TIMEOUT = 1
 
-        # Raise TimeoutError from process.communicate() itself rather than
-        # patching asyncio.wait_for. Patching wait_for would short-circuit the
-        # await on communicate() and leave the inner coroutine un-awaited.
         mock_process = Mock()
         mock_process.communicate = AsyncMock(side_effect=asyncio.TimeoutError("Timeout"))
         mock_subprocess.return_value = mock_process
@@ -1014,13 +1018,13 @@ class TestServerControlRouter:
                 request=mock_request,
                 current_user=admin_user,
                 db=mock_db_session,
+                auth=auth,
             )
 
         assert exc_info.value.status_code == 500
         assert "java executable not found" in exc_info.value.detail.lower()
 
     @pytest.mark.asyncio
-    @patch("app.servers.routers.control.authorization_service")
     @patch("app.servers.routers.control.minecraft_server_manager")
     @patch("app.servers.routers.control.AuditService")
     @patch("app.servers.routers.control.settings")
@@ -1031,14 +1035,13 @@ class TestServerControlRouter:
         mock_settings,
         mock_audit,
         mock_manager,
-        mock_auth,
         mock_request,
         admin_user,
         mock_server,
         mock_db_session,
     ):
-        """Test server start with OS error"""
-        mock_auth.check_server_access.return_value = mock_server
+        """OSError on the subprocess → 500 java executable not found."""
+        auth = _make_auth_mock(mock_server)
         mock_manager.get_server_status.return_value = ServerStatus.stopped
         mock_manager.start_server = AsyncMock(return_value=False)
         mock_settings.JAVA_CHECK_TIMEOUT = 5
@@ -1050,6 +1053,7 @@ class TestServerControlRouter:
                 request=mock_request,
                 current_user=admin_user,
                 db=mock_db_session,
+                auth=auth,
             )
 
         assert exc_info.value.status_code == 500

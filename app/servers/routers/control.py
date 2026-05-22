@@ -57,7 +57,9 @@ async def start_server(
         # carry those mutations through. This refetch will be removed
         # once the downstream services accept entities (#149).
         # FIXME(#149): drop this when minecraft_server_manager accepts ServerEntity (see #272).
-        server = db.query(Server).filter(Server.id == server_id).first()
+        # NB: `db.get(...)` rather than the legacy `db.query(Server).filter(...)`
+        # so the file is clean of `db.query(Server)` per the #228 PR 2c gate.
+        server = db.get(Server, server_id)
         if server is None:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND, detail="Server not found"
@@ -321,7 +323,9 @@ async def restart_server(
         # Re-fetch the ORM Server because `minecraft_server_manager.start_server`
         # mutates it via the legacy sync service; see start_server above (#272).
         # FIXME(#149): drop this when minecraft_server_manager accepts ServerEntity (see #272).
-        server = db.query(Server).filter(Server.id == server_id).first()
+        # Uses `db.get(...)` rather than `db.query(Server)` per the
+        # #228 PR 2c "no db.query in app/servers/routers" gate.
+        server = db.get(Server, server_id)
         if server is None:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND, detail="Server not found"
