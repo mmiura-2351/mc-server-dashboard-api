@@ -1,8 +1,12 @@
-"""
-Resource Visibility Management API Router
+"""Resource Visibility Management API Router.
 
-Phase 2 API endpoints for managing resource visibility and access control.
-Provides comprehensive visibility management functionality.
+Phase 2 API endpoints for managing resource visibility and access
+control. Phase 2f (Issue #228) replaced the direct
+`VisibilityService(db)` construction with `Depends`-wired
+`VisibilityService` / `VisibilityMigrationService` instances backed by
+the new `VisibilityRepository` Port. Domain exceptions raised by the
+service are translated into the same HTTP status codes the legacy
+implementation produced, so the wire contract is unchanged.
 """
 
 import logging
@@ -13,6 +17,17 @@ from sqlalchemy.orm import Session
 from app.auth.dependencies import get_current_active_user
 from app.core.database import get_db
 from app.core.visibility import ResourceType, VisibilityType
+from app.core.visibility.api.dependencies import (
+    get_visibility_migration_service,
+    get_visibility_service,
+)
+from app.core.visibility.application.migration import VisibilityMigrationService
+from app.core.visibility.application.service import VisibilityService
+from app.core.visibility.domain.exceptions import (
+    DuplicateGrantError,
+    InvalidVisibilityTypeError,
+    VisibilityNotFoundError,
+)
 from app.core.visibility_schemas import (
     MigrationExecuteResponse,
     MigrationStatusResponse,
@@ -22,8 +37,6 @@ from app.core.visibility_schemas import (
 )
 from app.groups.models import Group
 from app.servers.models import Server
-from app.services.visibility_migration_service import VisibilityMigrationService
-from app.services.visibility_service import VisibilityService
 from app.users.domain.value_objects import Role
 from app.users.models import User
 
@@ -35,25 +48,14 @@ router = APIRouter(prefix="/visibility", tags=["visibility"])
 def _check_resource_ownership_or_admin(
     user: User, resource_type: ResourceType, resource_id: int, db: Session
 ) -> bool:
-    """
-    Check if user owns the resource or is an admin
+    """Check if user owns the resource or is an admin.
 
-    Args:
-        user: User making the request
-        resource_type: Type of resource
-        resource_id: ID of the resource
-        db: Database session
-
-    Returns:
-        bool: True if user has permission to modify visibility
-
-    Raises:
-        HTTPException: If resource not found or user lacks permission
+    Kept synchronous + DB-direct because it is a simple ownership check
+    on the legacy ORM rows; it is not part of the visibility aggregate.
     """
     if user.role == Role.admin:
         return True
 
-    # Check ownership based on resource type
     if resource_type == ResourceType.SERVER:
         server = db.query(Server).filter(Server.id == resource_id).first()
         if not server:
@@ -88,18 +90,10 @@ async def get_resource_visibility(
     resource_id: int,
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db),
+    visibility_service: VisibilityService = Depends(get_visibility_service),
 ):
-    """
-    Get visibility configuration for a resource
-
-    - **resource_type**: Type of resource (server, group)
-    - **resource_id**: ID of the resource
-
-    Returns detailed visibility information including granted users for specific_users visibility.
-    """
+    """Get visibility configuration for a resource."""
     try:
-        # Check if user has permission to view visibility settings
-        # (owners and admins can view, others get filtered results through regular access)
         can_view_settings = _check_resource_ownership_or_admin(
             current_user, resource_type, resource_id, db
         )
@@ -110,8 +104,7 @@ async def get_resource_visibility(
                 detail="Only resource owners and admins can view visibility settings",
             )
 
-        visibility_service = VisibilityService(db)
-        visibility_info = visibility_service.get_resource_visibility_info(
+        visibility_info = await visibility_service.get_resource_visibility_info(
             resource_type, resource_id
         )
 
@@ -121,7 +114,6 @@ async def get_resource_visibility(
                 detail="Visibility configuration not found",
             )
 
-        # Convert to response model
         response_data = {
             "resource_type": resource_type,
             "resource_id": resource_id,
@@ -154,19 +146,10 @@ async def update_resource_visibility(
     request: VisibilityUpdateRequest,
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db),
+    visibility_service: VisibilityService = Depends(get_visibility_service),
 ):
-    """
-    Update visibility configuration for a resource
-
-    - **resource_type**: Type of resource (server, group)
-    - **resource_id**: ID of the resource
-    - **visibility_type**: New visibility type
-    - **role_restriction**: Role restriction (required for role_based visibility)
-
-    Only resource owners and admins can modify visibility settings.
-    """
+    """Update visibility configuration for a resource."""
     try:
-        # Check ownership or admin status
         can_modify = _check_resource_ownership_or_admin(
             current_user, resource_type, resource_id, db
         )
@@ -177,7 +160,6 @@ async def update_resource_visibility(
                 detail="Only resource owners and admins can modify visibility settings",
             )
 
-        # Validate role_restriction for role_based visibility
         if (
             request.visibility_type == VisibilityType.ROLE_BASED
             and not request.role_restriction
@@ -196,9 +178,7 @@ async def update_resource_visibility(
                 detail="role_restriction should only be specified for role_based visibility",
             )
 
-        # Update visibility
-        visibility_service = VisibilityService(db)
-        visibility_service.set_resource_visibility(
+        await visibility_service.set_resource_visibility(
             resource_type=resource_type,
             resource_id=resource_id,
             visibility_type=request.visibility_type,
@@ -206,8 +186,7 @@ async def update_resource_visibility(
             requesting_user_id=current_user.id,
         )
 
-        # Get updated visibility info
-        visibility_info = visibility_service.get_resource_visibility_info(
+        visibility_info = await visibility_service.get_resource_visibility_info(
             resource_type, resource_id
         )
 
@@ -247,19 +226,10 @@ async def grant_user_access(
     request: UserAccessGrantRequest,
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db),
+    visibility_service: VisibilityService = Depends(get_visibility_service),
 ):
-    """
-    Grant specific user access to a resource
-
-    - **resource_type**: Type of resource (server, group)
-    - **resource_id**: ID of the resource
-    - **user_id**: ID of user to grant access to
-
-    Only works for resources with SPECIFIC_USERS visibility.
-    Only resource owners and admins can grant access.
-    """
+    """Grant specific user access to a resource."""
     try:
-        # Check ownership or admin status
         can_modify = _check_resource_ownership_or_admin(
             current_user, resource_type, resource_id, db
         )
@@ -270,21 +240,27 @@ async def grant_user_access(
                 detail="Only resource owners and admins can grant access",
             )
 
-        # Verify target user exists
         target_user = db.query(User).filter(User.id == request.user_id).first()
         if not target_user:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND, detail="Target user not found"
             )
 
-        # Grant access
-        visibility_service = VisibilityService(db)
-        visibility_service.grant_user_access(
-            resource_type=resource_type,
-            resource_id=resource_id,
-            user_id=request.user_id,
-            granted_by_user_id=current_user.id,
-        )
+        try:
+            await visibility_service.grant_user_access(
+                resource_type=resource_type,
+                resource_id=resource_id,
+                user_id=request.user_id,
+                granted_by_user_id=current_user.id,
+            )
+        except VisibilityNotFoundError as e:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail=str(e)
+            ) from e
+        except (InvalidVisibilityTypeError, DuplicateGrantError) as e:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)
+            ) from e
 
         logger.info(
             f"User {current_user.id} granted access to {resource_type.value} {resource_id} "
@@ -322,18 +298,10 @@ async def revoke_user_access(
     user_id: int,
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db),
+    visibility_service: VisibilityService = Depends(get_visibility_service),
 ):
-    """
-    Revoke specific user access from a resource
-
-    - **resource_type**: Type of resource (server, group)
-    - **resource_id**: ID of the resource
-    - **user_id**: ID of user to revoke access from
-
-    Only resource owners and admins can revoke access.
-    """
+    """Revoke specific user access from a resource."""
     try:
-        # Check ownership or admin status
         can_modify = _check_resource_ownership_or_admin(
             current_user, resource_type, resource_id, db
         )
@@ -344,9 +312,7 @@ async def revoke_user_access(
                 detail="Only resource owners and admins can revoke access",
             )
 
-        # Revoke access
-        visibility_service = VisibilityService(db)
-        revoked = visibility_service.revoke_user_access(
+        revoked = await visibility_service.revoke_user_access(
             resource_type=resource_type, resource_id=resource_id, user_id=user_id
         )
 
@@ -386,19 +352,12 @@ async def revoke_user_access(
     description="Get status of Phase 1 → Phase 2 visibility migration (admin only)",
 )
 async def get_migration_status(
-    current_user: User = Depends(get_current_active_user), db: Session = Depends(get_db)
+    current_user: User = Depends(get_current_active_user),
+    migration_service: VisibilityMigrationService = Depends(
+        get_visibility_migration_service
+    ),
 ):
-    """
-    Get migration status information
-
-    Shows:
-    - Whether migration is complete
-    - Resource statistics
-    - Visibility type distribution
-    - Any issues found
-
-    Admin access required.
-    """
+    """Get migration status information."""
     if current_user.role != Role.admin:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -406,11 +365,8 @@ async def get_migration_status(
         )
 
     try:
-        migration_service = VisibilityMigrationService(db)
-        status_info = migration_service.get_migration_status()
-
+        status_info = await migration_service.get_migration_status()
         return MigrationStatusResponse(**status_info)
-
     except Exception as e:
         logger.error(f"Error getting migration status: {e}")
         raise HTTPException(
@@ -426,16 +382,12 @@ async def get_migration_status(
     description="Execute Phase 1 → Phase 2 visibility migration (admin only)",
 )
 async def execute_migration(
-    current_user: User = Depends(get_current_active_user), db: Session = Depends(get_db)
+    current_user: User = Depends(get_current_active_user),
+    migration_service: VisibilityMigrationService = Depends(
+        get_visibility_migration_service
+    ),
 ):
-    """
-    Execute the visibility migration
-
-    Migrates all existing resources to use the Phase 2 visibility system.
-    Sets existing resources to PUBLIC visibility to maintain Phase 1 behavior.
-
-    Admin access required.
-    """
+    """Execute the visibility migration."""
     if current_user.role != Role.admin:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -443,8 +395,7 @@ async def execute_migration(
         )
 
     try:
-        migration_service = VisibilityMigrationService(db)
-        migration_counts = migration_service.migrate_all_resources()
+        migration_counts = await migration_service.migrate_all_resources()
 
         logger.info(
             f"Admin {current_user.id} executed visibility migration: "

@@ -50,9 +50,7 @@ async def test_re_entry_uses_same_session(db, admin_user):
 
 
 @pytest.mark.asyncio
-async def test_forgot_to_commit_warns_when_session_dirty(
-    db, admin_user, caplog
-):
+async def test_forgot_to_commit_warns_when_session_dirty(db, admin_user, caplog):
     """Pending session-level changes without a commit must emit a
     warning. Stage a Group through `db.add` (no flush) so
     `_has_pending_writes` sees it in `db.new`."""
@@ -69,9 +67,7 @@ async def test_forgot_to_commit_warns_when_session_dirty(
             )
             # Intentionally no flush, no commit
 
-    assert any(
-        "exited with pending writes" in rec.message for rec in caplog.records
-    )
+    assert any("exited with pending writes" in rec.message for rec in caplog.records)
 
 
 @pytest.mark.asyncio

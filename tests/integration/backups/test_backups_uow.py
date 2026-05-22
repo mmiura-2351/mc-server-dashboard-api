@@ -98,9 +98,7 @@ class TestUoWTransactions:
             await uow.commit()
 
         sched = (
-            db.query(BackupSchedule)
-            .filter(BackupSchedule.server_id == server.id)
-            .first()
+            db.query(BackupSchedule).filter(BackupSchedule.server_id == server.id).first()
         )
         log = (
             db.query(BackupScheduleLog)
@@ -134,9 +132,7 @@ class TestUoWTransactions:
                 )
                 # Intentionally no flush, no commit
 
-        assert any(
-            "exited with pending writes" in rec.message for rec in caplog.records
-        )
+        assert any("exited with pending writes" in rec.message for rec in caplog.records)
 
     @pytest.mark.asyncio
     async def test_exception_calls_rollback(self, db, admin_user, caplog):

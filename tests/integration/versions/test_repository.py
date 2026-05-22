@@ -218,12 +218,8 @@ class TestVersionRepository:
         count = await repository.cleanup_old_versions(days_old=30)
         db.commit()
         assert count == 1
-        assert (
-            db.query(MinecraftVersion).filter_by(version="1.20.0").first() is None
-        )
-        assert (
-            db.query(MinecraftVersion).filter_by(version="1.20.1").first() is not None
-        )
+        assert db.query(MinecraftVersion).filter_by(version="1.20.0").first() is None
+        assert db.query(MinecraftVersion).filter_by(version="1.20.1").first() is not None
 
     # ----- Stats -----
 

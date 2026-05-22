@@ -117,9 +117,7 @@ class TestSupportedVersions:
 
 class TestVersionsByServerType:
     @pytest.mark.asyncio
-    async def test_returns_only_requested_type(
-        self, client, fake_uow, override_service
-    ):
+    async def test_returns_only_requested_type(self, client, fake_uow, override_service):
         await _seed(
             fake_uow,
             CreateVersionCommand(

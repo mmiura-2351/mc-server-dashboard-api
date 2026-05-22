@@ -34,7 +34,9 @@ if TYPE_CHECKING:
     # These reveal_type-style annotations exist purely so mypy structurally
     # checks the bindings. Skipped at runtime to avoid constructing real
     # adapters with stub sessions.
-    _real_repo: VersionRepository = SqlAlchemyVersionRepository(db=MagicMock(spec=Session))
+    _real_repo: VersionRepository = SqlAlchemyVersionRepository(
+        db=MagicMock(spec=Session)
+    )
     _fake_repo: VersionRepository = FakeVersionRepository()
     _real_uow: UnitOfWork = SqlAlchemyUnitOfWork(db=MagicMock(spec=Session))
     _fake_uow: UnitOfWork = FakeUnitOfWork()

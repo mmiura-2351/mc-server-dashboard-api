@@ -7,7 +7,7 @@ from typing import Dict, Optional, Set
 from fastapi import WebSocket, WebSocketDisconnect
 from sqlalchemy.orm import Session
 
-from app.servers.models import Server
+from app.servers.adapters.read_port import SqlAlchemyServerReadPort
 from app.services.minecraft_server import minecraft_server_manager
 from app.users.models import User
 
@@ -205,8 +205,11 @@ class WebSocketService:
     async def handle_connection(
         self, websocket: WebSocket, server_id: int, user: User, db: Session
     ):
-        # Verify server exists and user has access
-        server = db.query(Server).filter(Server.id == server_id).first()
+        # Verify server exists via ServerReadPort (#228 PR 2f step 13).
+        # Full mechanical move of this file is deferred to PR #3 (sweep);
+        # here we only retire the inline ORM lookup.
+        server_read_port = SqlAlchemyServerReadPort(db)
+        server = await server_read_port.get(server_id)
         if not server:
             await websocket.close(code=1008, reason="Server not found")
             return

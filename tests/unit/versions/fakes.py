@@ -120,9 +120,7 @@ class FakeVersionRepository:
         existing = self._versions.get(version_id)
         if existing is None:
             return None
-        updated = replace(
-            existing, **command.applied_fields(), updated_at=utcnow()
-        )
+        updated = replace(existing, **command.applied_fields(), updated_at=utcnow())
         return self._put_version(updated)
 
     async def deactivate_versions(
@@ -132,9 +130,7 @@ class FakeVersionRepository:
         count = 0
         for v_id, v in list(self._versions.items()):
             if v.server_type == server_type and v.is_active and v.version not in keep:
-                self._versions[v_id] = replace(
-                    v, is_active=False, updated_at=utcnow()
-                )
+                self._versions[v_id] = replace(v, is_active=False, updated_at=utcnow())
                 count += 1
         return count
 
@@ -143,9 +139,7 @@ class FakeVersionRepository:
         to_delete = [
             v_id
             for v_id, v in self._versions.items()
-            if (not v.is_active)
-            and (v.updated_at is not None)
-            and v.updated_at < cutoff
+            if (not v.is_active) and (v.updated_at is not None) and v.updated_at < cutoff
         ]
         for v_id in to_delete:
             del self._versions[v_id]
@@ -248,11 +242,7 @@ class FakeVersionRepository:
         self, server_type: str
     ) -> List[MinecraftVersionEntity]:
         return sorted(
-            (
-                v
-                for v in self._versions.values()
-                if v.server_type.value == server_type
-            ),
+            (v for v in self._versions.values() if v.server_type.value == server_type),
             key=lambda v: v.updated_at or datetime.min,
             reverse=True,
         )
@@ -304,9 +294,7 @@ class FakeUnitOfWork:
     and/or use a hand-snapshotted state for before/after comparisons.
     """
 
-    def __init__(
-        self, versions: Optional[FakeVersionRepository] = None
-    ) -> None:
+    def __init__(self, versions: Optional[FakeVersionRepository] = None) -> None:
         self.versions: FakeVersionRepository = versions or FakeVersionRepository()
         self.committed = 0
         self.rolled_back = 0

@@ -98,9 +98,7 @@ class FakeGroupRepository:
 
     # ----- Players -----
 
-    async def add_player(
-        self, group_id: int, uuid: str, username: str
-    ) -> GroupEntity:
+    async def add_player(self, group_id: int, uuid: str, username: str) -> GroupEntity:
         existing = self._records.get(group_id)
         if existing is None:
             raise GroupNotFoundError(f"Group {group_id} not found")
@@ -182,9 +180,7 @@ class FakeServerGroupRepository:
 
     # ----- Reads -----
 
-    async def find(
-        self, server_id: int, group_id: int
-    ) -> Optional[ServerGroupEntity]:
+    async def find(self, server_id: int, group_id: int) -> Optional[ServerGroupEntity]:
         for entity in self._records.values():
             if entity.server_id == server_id and entity.group_id == group_id:
                 return entity
@@ -208,9 +204,7 @@ class FakeServerGroupRepository:
                 out.append(entity)
         return out
 
-    async def list_server_dirs_for_group(
-        self, group_id: int
-    ) -> List[Tuple[int, str]]:
+    async def list_server_dirs_for_group(self, group_id: int) -> List[Tuple[int, str]]:
         results: List[Tuple[int, str]] = []
         for e in self._records.values():
             if e.group_id != group_id:
@@ -254,9 +248,7 @@ class FakeServerGroupRepository:
             )
         return out
 
-    async def list_attachments_for_group(
-        self, group_id: int
-    ) -> List[AttachedServerView]:
+    async def list_attachments_for_group(self, group_id: int) -> List[AttachedServerView]:
         rows = [e for e in self._records.values() if e.group_id == group_id]
         out: List[AttachedServerView] = []
         for sg in rows:
@@ -278,9 +270,7 @@ class FakeServerGroupRepository:
 
     # ----- Writes -----
 
-    async def attach(
-        self, command: AttachServerGroupCommand
-    ) -> ServerGroupEntity:
+    async def attach(self, command: AttachServerGroupCommand) -> ServerGroupEntity:
         entity = ServerGroupEntity(
             id=self._next_id,
             server_id=command.server_id,
@@ -392,12 +382,8 @@ class RecordingRealTimeCommands:
             raise self.reload_whitelist_should_raise
         return True
 
-    async def sync_op_changes_if_running(
-        self, server_id: int, server_path: Any
-    ) -> bool:
-        self.calls.append(
-            ("sync_op_changes_if_running", (server_id, server_path), {})
-        )
+    async def sync_op_changes_if_running(self, server_id: int, server_path: Any) -> bool:
+        self.calls.append(("sync_op_changes_if_running", (server_id, server_path), {}))
         if self.sync_op_should_raise:
             raise self.sync_op_should_raise
         return True

@@ -26,9 +26,7 @@ from app.templates.domain.entities import (
 )
 
 
-def _visibility(
-    entity: TemplateEntity, viewer_id: int, viewer_is_admin: bool
-) -> bool:
+def _visibility(entity: TemplateEntity, viewer_id: int, viewer_is_admin: bool) -> bool:
     """Mirror the SQL-level filter applied by the SQLAlchemy adapter."""
     if viewer_is_admin:
         return True
@@ -65,7 +63,9 @@ class FakeTemplateRepository:
             if _visibility(e, spec.viewer_id, spec.viewer_is_admin)
         ]
         if spec.minecraft_version is not None:
-            visible = [e for e in visible if e.minecraft_version == spec.minecraft_version]
+            visible = [
+                e for e in visible if e.minecraft_version == spec.minecraft_version
+            ]
         if spec.server_type is not None:
             visible = [e for e in visible if e.server_type == spec.server_type]
         if spec.is_public is not None:
@@ -95,9 +95,7 @@ class FakeTemplateRepository:
             if _visibility(e, viewer_id, viewer_is_admin)
         )
 
-    async def count_visible_public(
-        self, viewer_id: int, viewer_is_admin: bool
-    ) -> int:
+    async def count_visible_public(self, viewer_id: int, viewer_is_admin: bool) -> int:
         return sum(
             1
             for e in self._records.values()
@@ -198,9 +196,7 @@ class FakeTemplatesUnitOfWork:
     hand-snapshotted state for before/after comparisons.
     """
 
-    def __init__(
-        self, templates: Optional[FakeTemplateRepository] = None
-    ) -> None:
+    def __init__(self, templates: Optional[FakeTemplateRepository] = None) -> None:
         self.templates: FakeTemplateRepository = templates or FakeTemplateRepository()
         self.committed = 0
         self.rolled_back = 0

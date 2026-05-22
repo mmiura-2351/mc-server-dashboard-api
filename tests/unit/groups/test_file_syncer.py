@@ -50,9 +50,7 @@ def test_build_ops_and_whitelist_op_group_only():
         players=[{"uuid": "u1", "username": "n1"}],
     )
     ops, whitelist = _build_ops_and_whitelist([op_group])
-    assert ops == [
-        {"uuid": "u1", "name": "n1", "level": 4, "bypassesPlayerLimit": True}
-    ]
+    assert ops == [{"uuid": "u1", "name": "n1", "level": 4, "bypassesPlayerLimit": True}]
     assert whitelist == []
 
 
@@ -72,11 +70,15 @@ def test_build_ops_and_whitelist_dedup_on_uuid():
     """Two groups containing the same player UUID should only emit
     one entry in each output list."""
     g1 = make_group_entity(
-        id=1, owner_id=1, type=GroupType.op,
+        id=1,
+        owner_id=1,
+        type=GroupType.op,
         players=[{"uuid": "u1", "username": "n1"}],
     )
     g2 = make_group_entity(
-        id=2, owner_id=1, type=GroupType.op,
+        id=2,
+        owner_id=1,
+        type=GroupType.op,
         players=[{"uuid": "u1", "username": "n1-different"}],
     )
     ops, _ = _build_ops_and_whitelist([g1, g2])
@@ -172,13 +174,17 @@ async def test_update_server_files_writes_ops_and_whitelist(
     server_dir = _register_server(server_read, server_group_repo, tmp_path)
     op_group = group_repo.seed(
         make_group_entity(
-            id=1, owner_id=1, type=GroupType.op,
+            id=1,
+            owner_id=1,
+            type=GroupType.op,
             players=[{"uuid": "u1", "username": "n1"}],
         )
     )
     wl_group = group_repo.seed(
         make_group_entity(
-            id=2, owner_id=1, type=GroupType.whitelist,
+            id=2,
+            owner_id=1,
+            type=GroupType.whitelist,
             players=[{"uuid": "u2", "username": "n2"}],
         )
     )
@@ -252,7 +258,9 @@ async def test_update_server_files_realtime_failure_swallowed(
     _register_server(server_read, server_group_repo, tmp_path)
     op_group = group_repo.seed(
         make_group_entity(
-            id=1, owner_id=1, type=GroupType.op,
+            id=1,
+            owner_id=1,
+            type=GroupType.op,
             players=[{"uuid": "u1", "username": "n1"}],
         )
     )

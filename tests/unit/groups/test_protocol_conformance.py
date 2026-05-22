@@ -35,17 +35,13 @@ from tests.unit.groups.fakes import (
 )
 
 if TYPE_CHECKING:
-    _real_repo: GroupRepository = SqlAlchemyGroupRepository(
-        db=MagicMock(spec=Session)
-    )
+    _real_repo: GroupRepository = SqlAlchemyGroupRepository(db=MagicMock(spec=Session))
     _fake_repo: GroupRepository = FakeGroupRepository()
     _real_sg_repo: ServerGroupRepository = SqlAlchemyServerGroupRepository(
         db=MagicMock(spec=Session)
     )
     _fake_sg_repo: ServerGroupRepository = FakeServerGroupRepository()
-    _real_uow: GroupsUnitOfWork = SqlAlchemyGroupsUnitOfWork(
-        db=MagicMock(spec=Session)
-    )
+    _real_uow: GroupsUnitOfWork = SqlAlchemyGroupsUnitOfWork(db=MagicMock(spec=Session))
     _fake_uow: GroupsUnitOfWork = FakeGroupsUnitOfWork()
 
 

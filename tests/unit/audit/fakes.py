@@ -67,15 +67,9 @@ class FakeAuditRepository:
                 continue
             if filters.action and filters.action.lower() not in row.action.lower():
                 continue
-            if (
-                filters.resource_type
-                and row.resource_type != filters.resource_type
-            ):
+            if filters.resource_type and row.resource_type != filters.resource_type:
                 continue
-            if (
-                filters.resource_id is not None
-                and row.resource_id != filters.resource_id
-            ):
+            if filters.resource_id is not None and row.resource_id != filters.resource_id:
                 continue
             out.append(row)
         return out
@@ -105,8 +99,7 @@ class FakeAuditRepository:
             rows = [
                 r
                 for r in rows
-                if isinstance(r.details, dict)
-                and r.details.get("severity") == severity
+                if isinstance(r.details, dict) and r.details.get("severity") == severity
             ]
         rows.sort(
             key=lambda r: r.created_at or datetime.min.replace(tzinfo=timezone.utc),
@@ -114,9 +107,7 @@ class FakeAuditRepository:
         )
         return rows[:limit]
 
-    async def list_user_activity(
-        self, user_id: int, limit: int
-    ) -> List[AuditLogEntity]:
+    async def list_user_activity(self, user_id: int, limit: int) -> List[AuditLogEntity]:
         rows = [r for r in self._rows.values() if r.user_id == user_id]
         rows.sort(
             key=lambda r: r.created_at or datetime.min.replace(tzinfo=timezone.utc),
@@ -132,16 +123,12 @@ class FakeAuditRepository:
 
         total = len(self._rows)
         recent = sum(
-            1
-            for r in self._rows.values()
-            if r.created_at and r.created_at >= yesterday
+            1 for r in self._rows.values() if r.created_at and r.created_at >= yesterday
         )
         security = sum(
             1
             for r in self._rows.values()
-            if r.resource_type == "security"
-            and r.created_at
-            and r.created_at >= week_ago
+            if r.resource_type == "security" and r.created_at and r.created_at >= week_ago
         )
 
         recent_rows = [

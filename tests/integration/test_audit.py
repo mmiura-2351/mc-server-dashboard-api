@@ -354,9 +354,7 @@ class TestAuditLogging:
         from app.audit.application.query_service import AuditQueryService
 
         service = AuditQueryService(SqlAlchemyAuditRepository(db))
-        all_security_alerts = await service.list_security_alerts(
-            severity=None, limit=10
-        )
+        all_security_alerts = await service.list_security_alerts(severity=None, limit=10)
 
         # In test environments, DB behavior may be different
         if all_security_alerts:

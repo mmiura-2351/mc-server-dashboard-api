@@ -174,9 +174,7 @@ async def test_create_group_duplicate_name_raises(
 ):
     group_repo.seed(make_group_entity(id=1, owner_id=1, name="dup"))
     with pytest.raises(GroupAlreadyExistsError):
-        await service.create_group(
-            actor_id=1, name="dup", group_type=GroupType.op
-        )
+        await service.create_group(actor_id=1, name="dup", group_type=GroupType.op)
 
 
 @pytest.mark.asyncio
@@ -371,9 +369,7 @@ async def test_add_player_offline_uuid_fallback_from_username(
         _fake_get_uuid_from_username,
     )
 
-    entity = await service.add_player(
-        actor_id=1, group_id=1, username="alice"
-    )
+    entity = await service.add_player(actor_id=1, group_id=1, username="alice")
     # Got SOMETHING as a uuid (offline-generated)
     assert entity.players[0]["uuid"]
     assert entity.players[0]["username"] == "alice"
@@ -413,9 +409,7 @@ async def test_remove_player_unknown_uuid_raises(
     service: GroupService, group_repo: FakeGroupRepository
 ):
     group_repo.seed(
-        make_group_entity(
-            id=1, owner_id=1, players=[{"uuid": "u1", "username": "n1"}]
-        )
+        make_group_entity(id=1, owner_id=1, players=[{"uuid": "u1", "username": "n1"}])
     )
     with pytest.raises(PlayerNotFoundInGroup):
         await service.remove_player(actor_id=1, group_id=1, uuid="ghost")
@@ -442,9 +436,7 @@ async def test_add_player_sync_failure_does_not_rollback(
     async def _explode(*a: Any, **k: Any) -> None:
         raise RuntimeError("sync exploded")
 
-    monkeypatch.setattr(
-        file_syncer, "update_all_affected_servers_with_retry", _explode
-    )
+    monkeypatch.setattr(file_syncer, "update_all_affected_servers_with_retry", _explode)
 
     entity = await service.add_player(
         actor_id=1,
@@ -502,9 +494,7 @@ async def test_attach_allows_server_owner(
     audit: FakeAuditWriter,
 ):
     group_repo.seed(make_group_entity(id=1, owner_id=42, type=GroupType.op))
-    _register_server(
-        server_read, server_group_repo, tmp_path, server_id=1, owner_id=42
-    )
+    _register_server(server_read, server_group_repo, tmp_path, server_id=1, owner_id=42)
     await service.attach_group_to_server(
         actor_id=42, actor_is_admin=False, server_id=1, group_id=1, priority=5
     )
@@ -523,9 +513,7 @@ async def test_attach_admin_allowed_regardless_of_owner(
     tmp_path: Path,
 ):
     group_repo.seed(make_group_entity(id=1, owner_id=99))
-    _register_server(
-        server_read, server_group_repo, tmp_path, server_id=1, owner_id=42
-    )
+    _register_server(server_read, server_group_repo, tmp_path, server_id=1, owner_id=42)
     # admin viewer who does not own anything
     await service.attach_group_to_server(
         actor_id=99, actor_is_admin=True, server_id=1, group_id=1
@@ -552,9 +540,7 @@ async def test_attach_group_not_found(
     server_group_repo: FakeServerGroupRepository,
     tmp_path: Path,
 ):
-    _register_server(
-        server_read, server_group_repo, tmp_path, server_id=1, owner_id=42
-    )
+    _register_server(server_read, server_group_repo, tmp_path, server_id=1, owner_id=42)
     with pytest.raises(GroupNotFoundError):
         await service.attach_group_to_server(
             actor_id=42, actor_is_admin=True, server_id=1, group_id=999
@@ -570,9 +556,7 @@ async def test_attach_duplicate_raises(
     tmp_path: Path,
 ):
     group_repo.seed(make_group_entity(id=1, owner_id=42))
-    _register_server(
-        server_read, server_group_repo, tmp_path, server_id=1, owner_id=42
-    )
+    _register_server(server_read, server_group_repo, tmp_path, server_id=1, owner_id=42)
     await service.attach_group_to_server(
         actor_id=42, actor_is_admin=True, server_id=1, group_id=1
     )
@@ -597,16 +581,12 @@ async def test_attach_file_sync_failure_does_not_rollback(
     audit still fires. Mirrors `add_player` behaviour and the legacy
     contract."""
     group_repo.seed(make_group_entity(id=1, owner_id=42, type=GroupType.op))
-    _register_server(
-        server_read, server_group_repo, tmp_path, server_id=1, owner_id=42
-    )
+    _register_server(server_read, server_group_repo, tmp_path, server_id=1, owner_id=42)
 
     async def _explode(*a: Any, **k: Any) -> None:
         raise RuntimeError("sync exploded")
 
-    monkeypatch.setattr(
-        file_syncer, "update_single_server_with_retry", _explode
-    )
+    monkeypatch.setattr(file_syncer, "update_single_server_with_retry", _explode)
 
     await service.attach_group_to_server(
         actor_id=42, actor_is_admin=False, server_id=1, group_id=1
@@ -625,9 +605,7 @@ async def test_detach_unknown_attachment_raises(
     tmp_path: Path,
 ):
     group_repo.seed(make_group_entity(id=1, owner_id=42))
-    _register_server(
-        server_read, server_group_repo, tmp_path, server_id=1, owner_id=42
-    )
+    _register_server(server_read, server_group_repo, tmp_path, server_id=1, owner_id=42)
     with pytest.raises(ServerGroupAttachmentNotFoundError):
         await service.detach_group_from_server(
             actor_id=42, actor_is_admin=False, server_id=1, group_id=1
@@ -654,9 +632,7 @@ async def test_detach_op_group_carries_removed_players(
             players=[{"uuid": "u1", "username": "n1"}],
         )
     )
-    _register_server(
-        server_read, server_group_repo, tmp_path, server_id=1, owner_id=42
-    )
+    _register_server(server_read, server_group_repo, tmp_path, server_id=1, owner_id=42)
     await service.attach_group_to_server(
         actor_id=42, actor_is_admin=False, server_id=1, group_id=1
     )
@@ -664,7 +640,9 @@ async def test_detach_op_group_carries_removed_players(
     await service.detach_group_from_server(
         actor_id=42, actor_is_admin=False, server_id=1, group_id=1
     )
-    handle_calls = [c for c in rt_commands.calls if c[0] == "handle_group_change_commands"]
+    handle_calls = [
+        c for c in rt_commands.calls if c[0] == "handle_group_change_commands"
+    ]
     assert handle_calls, "real-time detach broadcast was not invoked"
     last = handle_calls[-1]
     assert last[2]["removed_players"] == [{"uuid": "u1", "username": "n1"}]
@@ -686,9 +664,7 @@ async def test_get_server_groups_returns_attached_views(
             players=[{"uuid": "u1", "username": "n1"}],
         )
     )
-    _register_server(
-        server_read, server_group_repo, tmp_path, server_id=1, owner_id=42
-    )
+    _register_server(server_read, server_group_repo, tmp_path, server_id=1, owner_id=42)
     await service.attach_group_to_server(
         actor_id=42, actor_is_admin=False, server_id=1, group_id=1, priority=7
     )
