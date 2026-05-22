@@ -6,36 +6,43 @@ from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app import __version__
-from app.audit.router import router as audit_router
-from app.auth.api.router import router as auth_router
+from app.core.config import settings
+from app.core.logging import configure_logging
+
+# Configure structured logging as early as possible so any module-level
+# logger created during the imports below picks up the right handlers /
+# formatters (issue #24).
+configure_logging(settings)
+
+from app.audit.router import router as audit_router  # noqa: E402
+from app.auth.api.router import router as auth_router  # noqa: E402
 
 # Import models to ensure they are registered with SQLAlchemy
-from app.backups.router import router as backups_router
-from app.backups.scheduler_router import router as scheduler_router
-from app.core.config import settings
-from app.core.database import Base, engine
-from app.core.error_handlers import register_exception_handlers
+from app.backups.router import router as backups_router  # noqa: E402
+from app.backups.scheduler_router import router as scheduler_router  # noqa: E402
+from app.core.database import Base, engine  # noqa: E402
+from app.core.error_handlers import register_exception_handlers  # noqa: E402
 
 # Import visibility models for Phase 2 resource access control
-from app.core.visibility_router import router as visibility_router
-from app.files.router import router as files_router
-from app.groups.router import router as groups_router
-from app.health.api.dependencies import get_health_check_service
-from app.health.api.router import build_legacy_payload
-from app.health.api.router import router as health_router
-from app.health.application.service import HealthCheckService
-from app.middleware.audit_middleware import AuditMiddleware
-from app.middleware.performance_monitoring import (
+from app.core.visibility_router import router as visibility_router  # noqa: E402
+from app.files.router import router as files_router  # noqa: E402
+from app.groups.router import router as groups_router  # noqa: E402
+from app.health.api.dependencies import get_health_check_service  # noqa: E402
+from app.health.api.router import build_legacy_payload  # noqa: E402
+from app.health.api.router import router as health_router  # noqa: E402
+from app.health.application.service import HealthCheckService  # noqa: E402
+from app.middleware.audit_middleware import AuditMiddleware  # noqa: E402
+from app.middleware.performance_monitoring import (  # noqa: E402
     PerformanceMonitoringMiddleware,
     get_performance_metrics,
 )
-from app.servers.routers import router as servers_router
-from app.templates.router import router as templates_router
+from app.servers.routers import router as servers_router  # noqa: E402
+from app.templates.router import router as templates_router  # noqa: E402
 
 # Import all models to ensure they are registered with SQLAlchemy
-from app.users.api.router import router as users_router
-from app.versions.api.router import router as versions_router
-from app.websockets.router import router as websockets_router
+from app.users.api.router import router as users_router  # noqa: E402
+from app.versions.api.router import router as versions_router  # noqa: E402
+from app.websockets.router import router as websockets_router  # noqa: E402
 
 logger = logging.getLogger(__name__)
 

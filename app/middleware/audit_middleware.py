@@ -10,6 +10,11 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from app.audit.models import AuditLog
 from app.core.database import SessionLocal
 
+# Re-import SENSITIVE_FIELDS from the structured-logging module so there is a
+# single source of truth (see issue #24). Local alias preserved for backward
+# compatibility with any callers that imported it from this module.
+from app.core.logging import SENSITIVE_FIELDS  # noqa: F401
+
 logger = logging.getLogger(__name__)
 
 # Context variables for audit tracking per request
@@ -123,20 +128,8 @@ class AuditTracker:
             db.close()
 
 
-# Configuration for audit behavior
-SENSITIVE_FIELDS = [
-    "password",
-    "token",
-    "secret",
-    "key",
-    "auth",
-    "credential",
-    "private",
-    "sensitive",
-    "confidential",
-    "jwt",
-    "refresh",
-]
+# SENSITIVE_FIELDS now lives in ``app.core.logging`` (re-imported at module
+# top). Keeping audit-specific config below.
 
 CRITICAL_ACTIONS = [
     "user_delete",
@@ -290,11 +283,19 @@ class AuditMiddleware(BaseHTTPMiddleware):
         # Add correlation ID to response headers
         response.headers["X-Request-ID"] = correlation_id
 
-        # Log request summary
+        # Log request summary using structured ``extra=`` fields so JSON
+        # consumers can index on them. The human-readable message is kept
+        # short; rich detail moves into ``extra``.
         duration = time.time() - start_time
         logger.info(
-            f"REQUEST {correlation_id} - {request.method} {request.url.path} "
-            f"- {response.status_code} - {duration * 1000:.2f}ms - User: {user_id} - IP: {ip_address}"
+            "request_completed",
+            extra={
+                "event": "request_completed",
+                "method": request.method,
+                "path": request.url.path,
+                "status_code": response.status_code,
+                "duration_ms": round(duration * 1000, 2),
+            },
         )
 
         return response

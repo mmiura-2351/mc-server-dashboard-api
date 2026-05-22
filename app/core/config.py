@@ -1,4 +1,4 @@
-from typing import List, Optional
+from typing import List, Literal, Optional
 
 from pydantic import ConfigDict, field_validator, model_validator
 from pydantic_settings import BaseSettings
@@ -64,6 +64,13 @@ class Settings(BaseSettings):
     )
     ENVIRONMENT: str = "development"  # development, production, testing
 
+    # Structured logging (issue #24, Phase 1)
+    LOG_LEVEL: str = "INFO"
+    LOG_FORMAT: Literal["json", "text"] = "text"
+    LOG_FILE: Optional[str] = None
+    LOG_FILE_MAX_BYTES: int = 10 * 1024 * 1024  # 10 MiB
+    LOG_FILE_BACKUP_COUNT: int = 5
+
     @field_validator("SECRET_KEY")
     @classmethod
     def validate_secret_key(cls, v: str) -> str:
@@ -87,6 +94,46 @@ class Settings(BaseSettings):
                 raise ValueError(
                     "CORS_ORIGINS should not include localhost in production"
                 )
+        return self
+
+    @field_validator("LOG_LEVEL")
+    @classmethod
+    def validate_log_level(cls, v: str) -> str:
+        """Validate LOG_LEVEL is one of the standard logging levels."""
+        allowed = {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}
+        upper = v.upper()
+        if upper not in allowed:
+            raise ValueError(f"LOG_LEVEL must be one of {sorted(allowed)}, got: {v!r}")
+        return upper
+
+    @field_validator("LOG_FILE_MAX_BYTES")
+    @classmethod
+    def validate_log_file_max_bytes(cls, v: int) -> int:
+        """Validate LOG_FILE_MAX_BYTES is within reasonable bounds."""
+        if v < 1024 or v > 1024 * 1024 * 1024:
+            raise ValueError("LOG_FILE_MAX_BYTES must be between 1KiB and 1GiB")
+        return v
+
+    @field_validator("LOG_FILE_BACKUP_COUNT")
+    @classmethod
+    def validate_log_file_backup_count(cls, v: int) -> int:
+        """Validate LOG_FILE_BACKUP_COUNT is within reasonable bounds."""
+        if v < 0 or v > 100:
+            raise ValueError("LOG_FILE_BACKUP_COUNT must be between 0 and 100")
+        return v
+
+    @model_validator(mode="after")
+    def validate_log_level_for_production(self):
+        """Reject DEBUG-level logging in production environments.
+
+        Verbose request/response logging at DEBUG level can leak sensitive
+        data in production, so this combination is explicitly disallowed.
+        """
+        if self.ENVIRONMENT.lower() == "production" and self.LOG_LEVEL == "DEBUG":
+            raise ValueError(
+                "LOG_LEVEL=DEBUG is not allowed in production "
+                "(set ENVIRONMENT=development or raise the level)"
+            )
         return self
 
     @field_validator("SERVER_LOG_QUEUE_SIZE")
