@@ -5,14 +5,26 @@ rewritten on top of `ServersUnitOfWork` / `ServerRepository` (R-15).
 
 The legacy implementation talked to SQLAlchemy directly via
 `SessionLocal()` + `session.query(Server)` and registered a *sync*
-callback with `MinecraftServerManager`. That contract still holds
-on the daemon side — subprocess SIGCHLD reapers and threadpool callbacks
-cannot `await` — so this module owns the sync→async bridge:
+callback with `MinecraftServerManager`. After Issue #280 the
+`MinecraftServerManager._notify_status_change` callsites are all
+async-aware and await the registered callback directly, so the
+canonical contract is now async:
 
-* `update_server_status_sync(server_id, status)` is the public
-  cross-thread entry point. It captures the running event loop in
-  `initialize()` and dispatches each call via
-  `asyncio.run_coroutine_threadsafe` to that loop.
+* `_update_server_status_async(server_id, status)` is the async impl
+  registered with the manager via `set_status_update_callback`. The
+  manager `await`s it from each of its ``async def`` callsites,
+  restoring the bool result that the PR #279 fire-and-forget bridge
+  dropped and preserving ordering of consecutive status changes
+  within each task.
+* `update_server_status_sync(server_id, status)` is preserved as a
+  cross-thread façade: it captures the running event loop in
+  `initialize()` and dispatches via `asyncio.run_coroutine_threadsafe`
+  for daemon callers that still cannot `await` (subprocess SIGCHLD
+  reapers, threadpool callbacks). The same-loop branch keeps its
+  fire-and-forget semantics for the same reason — calling
+  `future.result()` on the loop you're already running on would
+  deadlock — but the manager no longer takes that branch since it now
+  awaits the async method directly.
 * The async impl runs under `ServersUnitOfWork`. Repository
   `update_status` owns its own transaction (see D-5 in the #228 plan)
   so `commit()` is a no-op for that path — the UoW context is still
@@ -42,8 +54,11 @@ from app.servers.models import ServerStatus
 logger = logging.getLogger(__name__)
 
 
-# A sync `(server_id, status) -> bool` callback contract is what
-# `MinecraftServerManager.set_status_update_callback` accepts.
+# `MinecraftServerManager.set_status_update_callback` accepts either a
+# sync `(server_id, status) -> bool` or an async
+# `(server_id, status) -> Awaitable[bool]` callable. Since #280 we
+# register the async impl so each manager callsite awaits a real
+# bool result.
 StatusUpdateCallback = Callable[[int, ServerStatus], bool]
 UowFactory = Callable[[], ServersUnitOfWork]
 
@@ -67,10 +82,17 @@ class DatabaseIntegrationService:
         """Capture the running event loop and register the status callback.
 
         Must be called from inside the loop that will own the bridge.
+
+        Since #280 the registered callback is the *async* impl: each
+        `MinecraftServerManager._notify_status_change` callsite awaits
+        it directly, so the bool result (and ordering of consecutive
+        status changes within a task) propagate back to the manager.
+        Cross-thread callers can still use `update_server_status_sync`
+        explicitly when they need the bridge.
         """
         self._loop = asyncio.get_running_loop()
         minecraft_server_manager.set_status_update_callback(
-            self.update_server_status_sync
+            self._update_server_status_async
         )
         logger.info("Database integration initialized")
 

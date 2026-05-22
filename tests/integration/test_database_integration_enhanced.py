@@ -6,9 +6,12 @@ in-memory `FakeServersUnitOfWork` rather than mocking SQLAlchemy
 internals (`SessionLocal`, `with_transaction`, query chains) — the
 legacy assertion style is no longer applicable.
 
-The async path is the canonical one. `update_server_status_sync` and
-`sync_server_states` are sync façades that bridge through the loop the
-service captured in `initialize()`.
+The async path is the canonical one and — since Issue #280 — it is
+registered as the manager callback directly so every callsite awaits a
+real bool result. `update_server_status_sync` and `sync_server_states`
+remain available as sync façades for cross-thread callers that still
+cannot `await`; they bridge through the loop the service captured in
+`initialize()`.
 """
 
 import asyncio
@@ -49,8 +52,12 @@ class TestLifecycle:
             "app.servers.application.database_integration.minecraft_server_manager"
         ) as mock_mgr:
             service.initialize()
+            # Since #280 the manager awaits the async impl directly so we
+            # register `_update_server_status_async` rather than the sync
+            # façade — the bool result and ordering of consecutive status
+            # changes now propagate back to the manager callsite.
             mock_mgr.set_status_update_callback.assert_called_once_with(
-                service.update_server_status_sync
+                service._update_server_status_async
             )
         assert service._loop is not None  # captured running loop
 

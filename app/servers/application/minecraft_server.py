@@ -1,4 +1,5 @@
 import asyncio
+import inspect
 import json
 import logging
 import os
@@ -11,7 +12,17 @@ import threading
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any, AsyncGenerator, Callable, Dict, List, Optional, Tuple
+from typing import (
+    Any,
+    AsyncGenerator,
+    Awaitable,
+    Callable,
+    Dict,
+    List,
+    Optional,
+    Tuple,
+    Union,
+)
 
 import psutil
 
@@ -54,8 +65,17 @@ class MinecraftServerManager:
         self.processes: Dict[int, ServerProcess] = {}
         self.base_directory = Path("servers")
         self.base_directory.mkdir(exist_ok=True)
-        # Callback for database status updates
-        self._status_update_callback: Optional[Callable[[int, ServerStatus], None]] = None
+        # Callback for database status updates. The callback may be either a
+        # plain sync function (legacy / test fixtures) or an async function
+        # returning ``bool``; `_notify_status_change` awaits the awaitable
+        # form so callers see the bool result and ordering is preserved
+        # across consecutive status changes (Issue #280).
+        self._status_update_callback: Optional[
+            Callable[
+                [int, ServerStatus],
+                Union[Awaitable[Optional[bool]], Optional[bool]],
+            ]
+        ] = None
         # Configurable log queue size to prevent memory leaks
         self.log_queue_size = log_queue_size or settings.SERVER_LOG_QUEUE_SIZE
         self.java_check_timeout = settings.JAVA_CHECK_TIMEOUT
@@ -66,8 +86,20 @@ class MinecraftServerManager:
         # ``ServerRepository`` passed explicitly by the caller — no
         # framework-typed factories remain on this class.
 
-    def set_status_update_callback(self, callback: Callable[[int, ServerStatus], None]):
-        """Set callback function to update database when server status changes"""
+    def set_status_update_callback(
+        self,
+        callback: Callable[
+            [int, ServerStatus],
+            Union[Awaitable[Optional[bool]], Optional[bool]],
+        ],
+    ) -> None:
+        """Set callback function to update database when server status changes.
+
+        The callback may be sync or async. Sync callbacks are invoked
+        directly; async (coroutine) callbacks are awaited inside
+        `_notify_status_change`, so consecutive status changes from the same
+        async caller are ordered (Issue #280).
+        """
         self._status_update_callback = callback
 
     def _get_pid_file_path(self, server_id: int, server_dir: Path) -> Path:
@@ -346,7 +378,7 @@ class MinecraftServerManager:
                     f"Daemon server {server_id} (PID: {server_process.pid}) is already stopped"
                 )
                 await self._cleanup_server_process(server_id)
-                self._notify_status_change(server_id, ServerStatus.stopped)
+                await self._notify_status_change(server_id, ServerStatus.stopped)
                 return True
 
             # Start with graceful SIGTERM (even for non-force stops)
@@ -365,7 +397,7 @@ class MinecraftServerManager:
                     if not await self._is_process_running(server_process.pid):
                         logger.info(f"Daemon server {server_id} stopped with SIGTERM")
                         await self._cleanup_server_process(server_id)
-                        self._notify_status_change(server_id, ServerStatus.stopped)
+                        await self._notify_status_change(server_id, ServerStatus.stopped)
                         return True
 
                 # If SIGTERM doesn't work, use SIGKILL
@@ -380,7 +412,7 @@ class MinecraftServerManager:
                     if not await self._is_process_running(server_process.pid):
                         logger.info(f"Daemon server {server_id} stopped with SIGKILL")
                         await self._cleanup_server_process(server_id)
-                        self._notify_status_change(server_id, ServerStatus.stopped)
+                        await self._notify_status_change(server_id, ServerStatus.stopped)
                         return True
 
                 logger.error(
@@ -392,7 +424,7 @@ class MinecraftServerManager:
                 # Process already dead
                 logger.info(f"Daemon server {server_id} process already terminated")
                 await self._cleanup_server_process(server_id)
-                self._notify_status_change(server_id, ServerStatus.stopped)
+                await self._notify_status_change(server_id, ServerStatus.stopped)
                 return True
             except PermissionError:
                 logger.error(
@@ -583,7 +615,7 @@ class MinecraftServerManager:
                 if not await self._is_process_running(pid):
                     logger.info(f"Restored server {server_id} process {pid} has stopped")
                     server_process.status = ServerStatus.stopped
-                    self._notify_status_change(server_id, ServerStatus.stopped)
+                    await self._notify_status_change(server_id, ServerStatus.stopped)
 
                     # Clean up
                     await self._cleanup_server_process(server_id)
@@ -598,7 +630,7 @@ class MinecraftServerManager:
         except Exception as e:
             logger.error(f"Error monitoring restored server {server_id}: {e}")
             server_process.status = ServerStatus.error
-            self._notify_status_change(server_id, ServerStatus.error)
+            await self._notify_status_change(server_id, ServerStatus.error)
             await self._cleanup_server_process(server_id)
 
     async def discover_and_restore_processes(self) -> Dict[int, bool]:
@@ -648,7 +680,7 @@ class MinecraftServerManager:
                     if success:
                         logger.info(f"Successfully restored server {server_id}")
                         # Notify database of running status
-                        self._notify_status_change(server_id, ServerStatus.running)
+                        await self._notify_status_change(server_id, ServerStatus.running)
                     else:
                         logger.info(f"Failed to restore server {server_id}")
 
@@ -663,15 +695,38 @@ class MinecraftServerManager:
             logger.error(f"Error during process discovery: {e}")
             return restoration_results
 
-    def _notify_status_change(self, server_id: int, status: ServerStatus):
-        """Notify about status changes to update database"""
-        if self._status_update_callback:
-            try:
-                self._status_update_callback(server_id, status)
-            except Exception as e:
-                logger.error(
-                    f"Failed to update database status for server {server_id}: {e}"
-                )
+    async def _notify_status_change(self, server_id: int, status: ServerStatus) -> bool:
+        """Notify about status changes to update the database.
+
+        Returns ``True`` if the registered callback reported success (or
+        returned ``None``/no value, treated as success for backward
+        compatibility with sync recorders that don't return anything).
+        Returns ``False`` if no callback is registered, the callback raised
+        an exception, or the callback explicitly returned ``False``.
+
+        Issue #280: this used to be a sync method that swallowed the bool
+        result, leaving daemons unable to react to DB update failures and
+        racing consecutive status changes. It is now awaited at every
+        callsite (each of which already runs inside an ``async def``), so
+        the bool propagates to callers and ordering is preserved within
+        each task.
+        """
+        callback = self._status_update_callback
+        if callback is None:
+            return False
+        try:
+            result = callback(server_id, status)
+            if inspect.isawaitable(result):
+                result = await result
+        except Exception as e:
+            logger.error(f"Failed to update database status for server {server_id}: {e}")
+            return False
+        # Sync recorders / test fixtures often return ``None``; treat that
+        # as success so we don't regress legacy test expectations. Only an
+        # explicit ``False`` is treated as failure.
+        if result is None:
+            return True
+        return bool(result)
 
     async def _diagnose_log_issues(self, server_id: int, server_dir: Path) -> str:
         """Diagnose potential log file issues for debugging"""
@@ -747,7 +802,7 @@ class MinecraftServerManager:
                         f"Daemon server {server_id} process {pid} died during startup"
                     )
                     server_process.status = ServerStatus.error
-                    self._notify_status_change(server_id, ServerStatus.error)
+                    await self._notify_status_change(server_id, ServerStatus.error)
                     # Schedule cleanup without awaiting to avoid self-await issue
                     asyncio.create_task(self._cleanup_server_process(server_id))
                     return
@@ -834,7 +889,7 @@ class MinecraftServerManager:
                                     f"Daemon server {server_id} startup completed (detected pattern '{detected_pattern}' after {elapsed_seconds:.1f}s)"
                                 )
                                 server_process.status = ServerStatus.running
-                                self._notify_status_change(
+                                await self._notify_status_change(
                                     server_id, ServerStatus.running
                                 )
                                 startup_detected = True
@@ -903,13 +958,13 @@ class MinecraftServerManager:
                         f"but process is running - assuming started. Diagnostics: {diagnostic_info}"
                     )
                     server_process.status = ServerStatus.running
-                    self._notify_status_change(server_id, ServerStatus.running)
+                    await self._notify_status_change(server_id, ServerStatus.running)
                 else:
                     logger.error(
                         f"Daemon server {server_id} process {pid} died during startup (timeout)"
                     )
                     server_process.status = ServerStatus.error
-                    self._notify_status_change(server_id, ServerStatus.error)
+                    await self._notify_status_change(server_id, ServerStatus.error)
                     # Schedule cleanup without awaiting to avoid self-await issue
                     asyncio.create_task(self._cleanup_server_process(server_id))
                     return
@@ -919,7 +974,7 @@ class MinecraftServerManager:
                 if not await self._is_process_running(pid):
                     logger.info(f"Daemon server {server_id} process {pid} has stopped")
                     server_process.status = ServerStatus.stopped
-                    self._notify_status_change(server_id, ServerStatus.stopped)
+                    await self._notify_status_change(server_id, ServerStatus.stopped)
                     # Schedule cleanup without awaiting to avoid self-await issue
                     asyncio.create_task(self._cleanup_server_process(server_id))
                     break
@@ -935,7 +990,7 @@ class MinecraftServerManager:
                 f"Error monitoring daemon server {server_id}: {e}", exc_info=True
             )
             server_process.status = ServerStatus.error
-            self._notify_status_change(server_id, ServerStatus.error)
+            await self._notify_status_change(server_id, ServerStatus.error)
             # Schedule cleanup without awaiting to avoid self-await issue
             asyncio.create_task(self._cleanup_server_process(server_id))
 
@@ -1617,7 +1672,7 @@ class MinecraftServerManager:
                 )
 
             # Notify database of status change
-            self._notify_status_change(server.id, ServerStatus.starting)
+            await self._notify_status_change(server.id, ServerStatus.starting)
 
             logger.info(
                 f"Successfully started daemon server {server.id} with PID {daemon_pid}"
@@ -1644,7 +1699,7 @@ class MinecraftServerManager:
             server_process.status = ServerStatus.stopping
 
             # Notify database of status change
-            self._notify_status_change(server_id, ServerStatus.stopping)
+            await self._notify_status_change(server_id, ServerStatus.stopping)
 
             # Handle daemon processes (no process object)
             if server_process.process is None:
@@ -1656,7 +1711,7 @@ class MinecraftServerManager:
                 logger.info(f"Server {server_id} process already terminated")
                 # Clean up immediately if process is already dead
                 await self._cleanup_server_process(server_id)
-                self._notify_status_change(server_id, ServerStatus.stopped)
+                await self._notify_status_change(server_id, ServerStatus.stopped)
                 return True
 
             if not force:
@@ -1709,7 +1764,7 @@ class MinecraftServerManager:
             await self._cleanup_server_process(server_id)
 
             # Notify database of final stopped status
-            self._notify_status_change(server_id, ServerStatus.stopped)
+            await self._notify_status_change(server_id, ServerStatus.stopped)
 
             logger.info(f"Successfully stopped server {server_id}")
             return True
@@ -1719,7 +1774,7 @@ class MinecraftServerManager:
             # Ensure cleanup even if there was an error
             try:
                 await self._cleanup_server_process(server_id)
-                self._notify_status_change(server_id, ServerStatus.stopped)
+                await self._notify_status_change(server_id, ServerStatus.stopped)
             except Exception as cleanup_error:
                 logger.error(f"Failed to cleanup server {server_id}: {cleanup_error}")
             return False
@@ -1951,7 +2006,9 @@ class MinecraftServerManager:
                 )
 
                 server_process.status = ServerStatus.error
-                self._notify_status_change(server_process.server_id, ServerStatus.error)
+                await self._notify_status_change(
+                    server_process.server_id, ServerStatus.error
+                )
 
                 # Clean up
                 await self._cleanup_server_process(server_process.server_id)
@@ -1963,7 +2020,9 @@ class MinecraftServerManager:
                     f"Server {server_process.server_id} process is stable after 5 seconds - marking as running"
                 )
                 server_process.status = ServerStatus.running
-                self._notify_status_change(server_process.server_id, ServerStatus.running)
+                await self._notify_status_change(
+                    server_process.server_id, ServerStatus.running
+                )
 
             # For detached processes, we can't reliably wait() so we check periodically
             while server_process.server_id in self.processes:
@@ -1979,7 +2038,7 @@ class MinecraftServerManager:
                         logger.info(
                             f"Server {server_process.server_id} process has ended"
                         )
-                        self._notify_status_change(
+                        await self._notify_status_change(
                             server_process.server_id, ServerStatus.stopped
                         )
                         break
@@ -1999,7 +2058,7 @@ class MinecraftServerManager:
             logger.error(f"Error monitoring server {server_process.server_id}: {e}")
             server_process.status = ServerStatus.error
             # Notify database of error status
-            self._notify_status_change(server_process.server_id, ServerStatus.error)
+            await self._notify_status_change(server_process.server_id, ServerStatus.error)
 
             # Clean up
             await self._cleanup_server_process(server_process.server_id)

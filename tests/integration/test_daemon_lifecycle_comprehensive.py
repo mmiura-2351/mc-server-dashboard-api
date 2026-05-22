@@ -374,7 +374,8 @@ class TestDaemonLifecycleComprehensive:
         manager.set_status_update_callback(record_status)
 
         # Notify status change before cleanup
-        manager._notify_status_change(1, ServerStatus.stopped)
+        # Issue #280: `_notify_status_change` is now async.
+        await manager._notify_status_change(1, ServerStatus.stopped)
 
         # Execute cleanup
         await manager._cleanup_server_process(1)

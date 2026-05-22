@@ -226,8 +226,11 @@ class TestMinecraftServerManagerSimpleIntegration:
         manager.set_status_update_callback(callback)
 
         with patch("app.servers.application.minecraft_server.logger") as mock_logger:
-            manager._notify_status_change(1, ServerStatus.running)
+            # Issue #280: `_notify_status_change` is now async and returns
+            # ``False`` when the callback raises.
+            result = await manager._notify_status_change(1, ServerStatus.running)
 
+            assert result is False
             callback.assert_called_once_with(1, ServerStatus.running)
             mock_logger.error.assert_called_once()
             assert "Failed to update database status for server 1" in str(

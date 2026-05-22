@@ -318,9 +318,7 @@ print("[12:35:01] [Server thread/INFO]: Server stopped")
     # ===== Port Validation Integration Tests =====
 
     @pytest.mark.asyncio
-    async def test_validate_port_availability_success(
-        self, manager, integration_server
-    ):
+    async def test_validate_port_availability_success(self, manager, integration_server):
         """Test port validation success path with real socket operations"""
         repo = self._wire_empty_repo_factory(manager)
         available, message = await manager._validate_port_availability(
@@ -387,9 +385,12 @@ print("[12:35:01] [Server thread/INFO]: Server stopped")
         manager.set_status_update_callback(callback)
 
         with patch("app.servers.application.minecraft_server.logger") as mock_logger:
-            # This should not raise exception even though callback fails
-            manager._notify_status_change(1, ServerStatus.running)
+            # This should not raise exception even though callback fails.
+            # Issue #280: `_notify_status_change` is now async and returns
+            # ``False`` when the callback raises.
+            result = await manager._notify_status_change(1, ServerStatus.running)
 
+            assert result is False
             callback.assert_called_once_with(1, ServerStatus.running)
             mock_logger.error.assert_called_once()
             assert "Failed to update database status for server 1" in str(
