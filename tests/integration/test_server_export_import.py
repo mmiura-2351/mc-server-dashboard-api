@@ -127,10 +127,10 @@ class TestServerExportImport:
         # Mock JAR download and caching to avoid actual network calls
         with (
             patch(
-                "app.services.jar_cache_manager.jar_cache_manager.get_or_download_jar"
+                "app.versions.application.jar_cache_manager.jar_cache_manager.get_or_download_jar"
             ) as mock_cache,
             patch(
-                "app.services.jar_cache_manager.jar_cache_manager.copy_jar_to_server"
+                "app.versions.application.jar_cache_manager.jar_cache_manager.copy_jar_to_server"
             ) as mock_copy,
         ):
             mock_cache.return_value = "/cache/test-vanilla-1.21.6.jar"
@@ -403,10 +403,10 @@ class TestServerExportImport:
         # Mock JAR download and caching to avoid actual network calls
         with (
             patch(
-                "app.services.jar_cache_manager.jar_cache_manager.get_or_download_jar"
+                "app.versions.application.jar_cache_manager.jar_cache_manager.get_or_download_jar"
             ) as mock_cache,
             patch(
-                "app.services.jar_cache_manager.jar_cache_manager.copy_jar_to_server"
+                "app.versions.application.jar_cache_manager.jar_cache_manager.copy_jar_to_server"
             ) as mock_copy,
         ):
             mock_cache.return_value = "/cache/test-vanilla-1.21.6.jar"
