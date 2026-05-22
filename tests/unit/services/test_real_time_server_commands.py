@@ -42,7 +42,7 @@ class TestRealTimeServerCommandService:
         assert isinstance(real_time_server_commands, RealTimeServerCommandService)
 
     # Test _validate_server_path
-    @patch("app.services.real_time_server_commands.FileOperationValidator")
+    @patch("app.servers.application.real_time_server_commands.FileOperationValidator")
     def test_validate_server_path_success(self, mock_validator, service):
         """Test successful server path validation"""
         mock_path = Mock()
@@ -56,7 +56,7 @@ class TestRealTimeServerCommandService:
             "test_server", ".", service.base_directory
         )
 
-    @patch("app.services.real_time_server_commands.FileOperationValidator")
+    @patch("app.servers.application.real_time_server_commands.FileOperationValidator")
     def test_validate_server_path_security_error(self, mock_validator, service):
         """Test server path validation with security error"""
         mock_validator.validate_server_file_path.side_effect = SecurityError(
@@ -68,7 +68,7 @@ class TestRealTimeServerCommandService:
 
     # Test reload_whitelist_if_running
     @pytest.mark.asyncio
-    @patch("app.services.real_time_server_commands.minecraft_server_manager")
+    @patch("app.servers.application.real_time_server_commands.minecraft_server_manager")
     async def test_reload_whitelist_if_running_success(self, mock_manager, service):
         """Test successful whitelist reload for running server"""
         mock_manager.get_server_status.return_value = ServerStatus.running
@@ -81,7 +81,7 @@ class TestRealTimeServerCommandService:
         mock_manager.send_command.assert_called_once_with(1, "whitelist reload")
 
     @pytest.mark.asyncio
-    @patch("app.services.real_time_server_commands.minecraft_server_manager")
+    @patch("app.servers.application.real_time_server_commands.minecraft_server_manager")
     async def test_reload_whitelist_if_running_server_not_running(
         self, mock_manager, service
     ):
@@ -99,7 +99,7 @@ class TestRealTimeServerCommandService:
         mock_manager.send_command.assert_not_called()
 
     @pytest.mark.asyncio
-    @patch("app.services.real_time_server_commands.minecraft_server_manager")
+    @patch("app.servers.application.real_time_server_commands.minecraft_server_manager")
     async def test_reload_whitelist_if_running_command_failed(
         self, mock_manager, service
     ):
@@ -113,7 +113,7 @@ class TestRealTimeServerCommandService:
         mock_manager.send_command.assert_called_once_with(1, "whitelist reload")
 
     @pytest.mark.asyncio
-    @patch("app.services.real_time_server_commands.minecraft_server_manager")
+    @patch("app.servers.application.real_time_server_commands.minecraft_server_manager")
     async def test_reload_whitelist_if_running_exception(self, mock_manager, service):
         """Test whitelist reload with exception"""
         mock_manager.get_server_status.side_effect = Exception("Server manager error")
@@ -124,7 +124,7 @@ class TestRealTimeServerCommandService:
 
     # Test sync_op_changes_if_running
     @pytest.mark.asyncio
-    @patch("app.services.real_time_server_commands.minecraft_server_manager")
+    @patch("app.servers.application.real_time_server_commands.minecraft_server_manager")
     async def test_sync_op_changes_if_running_success(
         self, mock_manager, service, mock_server_path, mock_ops_data
     ):
@@ -146,7 +146,7 @@ class TestRealTimeServerCommandService:
         assert mock_manager.send_command.call_count == 2
 
     @pytest.mark.asyncio
-    @patch("app.services.real_time_server_commands.minecraft_server_manager")
+    @patch("app.servers.application.real_time_server_commands.minecraft_server_manager")
     async def test_sync_op_changes_if_running_server_not_running(
         self, mock_manager, service, mock_server_path
     ):
@@ -164,7 +164,7 @@ class TestRealTimeServerCommandService:
         mock_manager.send_command.assert_not_called()
 
     @pytest.mark.asyncio
-    @patch("app.services.real_time_server_commands.minecraft_server_manager")
+    @patch("app.servers.application.real_time_server_commands.minecraft_server_manager")
     async def test_sync_op_changes_if_running_no_ops_file(
         self, mock_manager, service, mock_server_path
     ):
@@ -181,7 +181,7 @@ class TestRealTimeServerCommandService:
         mock_manager.send_command.assert_not_called()
 
     @pytest.mark.asyncio
-    @patch("app.services.real_time_server_commands.minecraft_server_manager")
+    @patch("app.servers.application.real_time_server_commands.minecraft_server_manager")
     async def test_sync_op_changes_if_running_invalid_json(
         self, mock_manager, service, mock_server_path
     ):
@@ -198,7 +198,7 @@ class TestRealTimeServerCommandService:
         assert result is False
 
     @pytest.mark.asyncio
-    @patch("app.services.real_time_server_commands.minecraft_server_manager")
+    @patch("app.servers.application.real_time_server_commands.minecraft_server_manager")
     async def test_sync_op_changes_if_running_path_traversal(
         self, mock_manager, service, mock_server_path
     ):
@@ -215,7 +215,7 @@ class TestRealTimeServerCommandService:
         assert result is False
 
     @pytest.mark.asyncio
-    @patch("app.services.real_time_server_commands.minecraft_server_manager")
+    @patch("app.servers.application.real_time_server_commands.minecraft_server_manager")
     async def test_sync_op_changes_if_running_partial_success(
         self, mock_manager, service, mock_server_path, mock_ops_data
     ):
@@ -235,7 +235,7 @@ class TestRealTimeServerCommandService:
 
     # Test apply_op_diff_if_running
     @pytest.mark.asyncio
-    @patch("app.services.real_time_server_commands.minecraft_server_manager")
+    @patch("app.servers.application.real_time_server_commands.minecraft_server_manager")
     async def test_apply_op_diff_if_running_success(self, mock_manager, service):
         """Test successful OP diff application"""
         mock_manager.get_server_status.return_value = ServerStatus.running
@@ -250,7 +250,7 @@ class TestRealTimeServerCommandService:
         assert mock_manager.send_command.call_count == 3  # 2 op + 1 deop commands
 
     @pytest.mark.asyncio
-    @patch("app.services.real_time_server_commands.minecraft_server_manager")
+    @patch("app.servers.application.real_time_server_commands.minecraft_server_manager")
     async def test_apply_op_diff_if_running_server_not_running(
         self, mock_manager, service
     ):
@@ -268,7 +268,7 @@ class TestRealTimeServerCommandService:
         mock_manager.send_command.assert_not_called()
 
     @pytest.mark.asyncio
-    @patch("app.services.real_time_server_commands.minecraft_server_manager")
+    @patch("app.servers.application.real_time_server_commands.minecraft_server_manager")
     async def test_apply_op_diff_if_running_empty_sets(self, mock_manager, service):
         """Test OP diff with empty player sets"""
         mock_manager.get_server_status.return_value = ServerStatus.running
@@ -279,7 +279,7 @@ class TestRealTimeServerCommandService:
         mock_manager.send_command.assert_not_called()
 
     @pytest.mark.asyncio
-    @patch("app.services.real_time_server_commands.minecraft_server_manager")
+    @patch("app.servers.application.real_time_server_commands.minecraft_server_manager")
     async def test_apply_op_diff_if_running_command_exception(
         self, mock_manager, service
     ):
@@ -293,7 +293,7 @@ class TestRealTimeServerCommandService:
 
     # Test handle_group_change_commands
     @pytest.mark.asyncio
-    @patch("app.services.real_time_server_commands.minecraft_server_manager")
+    @patch("app.servers.application.real_time_server_commands.minecraft_server_manager")
     async def test_handle_group_change_commands_whitelist_update(
         self, mock_manager, service, mock_server_path
     ):
@@ -311,7 +311,7 @@ class TestRealTimeServerCommandService:
         mock_reload.assert_called_once_with(1)
 
     @pytest.mark.asyncio
-    @patch("app.services.real_time_server_commands.minecraft_server_manager")
+    @patch("app.servers.application.real_time_server_commands.minecraft_server_manager")
     async def test_handle_group_change_commands_op_update(
         self, mock_manager, service, mock_server_path
     ):
@@ -329,7 +329,7 @@ class TestRealTimeServerCommandService:
         mock_sync.assert_called_once_with(1, mock_server_path)
 
     @pytest.mark.asyncio
-    @patch("app.services.real_time_server_commands.minecraft_server_manager")
+    @patch("app.servers.application.real_time_server_commands.minecraft_server_manager")
     async def test_handle_group_change_commands_op_player_remove(
         self, mock_manager, service, mock_server_path
     ):
@@ -348,7 +348,7 @@ class TestRealTimeServerCommandService:
         mock_diff.assert_called_once_with(1, set(), {"player1"})
 
     @pytest.mark.asyncio
-    @patch("app.services.real_time_server_commands.minecraft_server_manager")
+    @patch("app.servers.application.real_time_server_commands.minecraft_server_manager")
     async def test_handle_group_change_commands_server_not_running(
         self, mock_manager, service, mock_server_path
     ):
@@ -367,7 +367,7 @@ class TestRealTimeServerCommandService:
         assert result is True  # Should return True since file update already happened
 
     @pytest.mark.asyncio
-    @patch("app.services.real_time_server_commands.minecraft_server_manager")
+    @patch("app.servers.application.real_time_server_commands.minecraft_server_manager")
     async def test_handle_group_change_commands_whitelist_failed(
         self, mock_manager, service, mock_server_path
     ):
@@ -382,7 +382,7 @@ class TestRealTimeServerCommandService:
         assert result is False
 
     @pytest.mark.asyncio
-    @patch("app.services.real_time_server_commands.minecraft_server_manager")
+    @patch("app.servers.application.real_time_server_commands.minecraft_server_manager")
     async def test_handle_group_change_commands_op_player_remove_no_username(
         self, mock_manager, service, mock_server_path
     ):
@@ -397,7 +397,7 @@ class TestRealTimeServerCommandService:
         assert result is False
 
     @pytest.mark.asyncio
-    @patch("app.services.real_time_server_commands.minecraft_server_manager")
+    @patch("app.servers.application.real_time_server_commands.minecraft_server_manager")
     async def test_handle_group_change_commands_op_detach(
         self, mock_manager, service, mock_server_path
     ):
@@ -419,7 +419,7 @@ class TestRealTimeServerCommandService:
         mock_diff.assert_called_once_with(1, set(), {"player1", "player2"})
 
     @pytest.mark.asyncio
-    @patch("app.services.real_time_server_commands.minecraft_server_manager")
+    @patch("app.servers.application.real_time_server_commands.minecraft_server_manager")
     async def test_handle_group_change_commands_op_sync_failed(
         self, mock_manager, service, mock_server_path
     ):
@@ -434,7 +434,7 @@ class TestRealTimeServerCommandService:
         assert result is False
 
     @pytest.mark.asyncio
-    @patch("app.services.real_time_server_commands.minecraft_server_manager")
+    @patch("app.servers.application.real_time_server_commands.minecraft_server_manager")
     async def test_handle_group_change_commands_exception(
         self, mock_manager, service, mock_server_path
     ):
@@ -449,7 +449,7 @@ class TestRealTimeServerCommandService:
 
     # Test edge cases and error handling
     @pytest.mark.asyncio
-    @patch("app.services.real_time_server_commands.minecraft_server_manager")
+    @patch("app.servers.application.real_time_server_commands.minecraft_server_manager")
     async def test_sync_op_changes_ops_file_permission_error(
         self, mock_manager, service, mock_server_path
     ):
@@ -466,7 +466,7 @@ class TestRealTimeServerCommandService:
         assert result is False
 
     @pytest.mark.asyncio
-    @patch("app.services.real_time_server_commands.minecraft_server_manager")
+    @patch("app.servers.application.real_time_server_commands.minecraft_server_manager")
     async def test_sync_op_changes_malformed_ops_data(
         self, mock_manager, service, mock_server_path
     ):
@@ -497,7 +497,7 @@ class TestRealTimeServerCommandService:
         ]
 
         with patch(
-            "app.services.real_time_server_commands.minecraft_server_manager"
+            "app.servers.application.real_time_server_commands.minecraft_server_manager"
         ) as mock_manager:
             for status in test_statuses:
                 mock_manager.get_server_status.return_value = status

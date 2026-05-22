@@ -38,7 +38,12 @@ class BackupFileService:
         backup_type: BackupType,
         progress_callback=None,
     ) -> str:
-        """Create the actual backup file (tar.gz)."""
+        """Create the actual backup file (tar.gz).
+
+        Writes directly to the final path. Prefer
+        :meth:`write_backup_file_to` (atomic-rename caller pattern) for
+        new callers that must avoid orphan files on DB-commit failure.
+        """
         try:
             server_dir = Path(server.directory_path)
             if not server_dir.exists():
@@ -56,6 +61,34 @@ class BackupFileService:
             logger.info(f"Created backup file: {backup_filename}")
             return backup_filename
 
+        except Exception as e:
+            handle_file_error("create backup", str(server_dir), e)
+
+    async def write_backup_file_to(
+        self,
+        server: Server,
+        target_path: Path,
+        progress_callback=None,
+    ) -> None:
+        """Write a backup tar.gz to an explicit target path.
+
+        Caller-controlled destination (typically a `.pending-*.tar.gz`
+        temp file). Use this with `os.replace()` to implement the
+        atomic-rename pattern: write to temp → DB commit → rename
+        final. On DB-commit failure the caller deletes the temp file,
+        guaranteeing no orphan archive ends up in the canonical
+        backups directory.
+        """
+        server_dir = Path(server.directory_path)
+        if not server_dir.exists():
+            raise FileOperationException(
+                "backup", str(server_dir), "Server directory not found"
+            )
+
+        try:
+            await self._create_tar_backup_async(
+                server_dir, target_path, progress_callback
+            )
         except Exception as e:
             handle_file_error("create backup", str(server_dir), e)
 

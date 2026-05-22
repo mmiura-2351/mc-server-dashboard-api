@@ -178,15 +178,13 @@ class TestCreateBackup:
         server_read.seed(id=1, directory_path=str(tmp_backup_dir / "src"))
         svc = _make_service(uow, server_read, tmp_backup_dir)
 
-        # Stub the tar.gz creation; emit a file we can stat.
-        archive_name = "backup_1_1_test.tar.gz"
-        archive_path = tmp_backup_dir / archive_name
+        # Stub the tar.gz write to emit a file at the *caller-supplied*
+        # temp path (atomic-rename pattern: write_backup_file_to takes
+        # the target path as a parameter).
+        async def fake_write(server, target_path, progress_callback=None):
+            target_path.write_bytes(b"fake-data")
 
-        async def fake_create(server, backup_id, backup_type, progress_callback=None):
-            archive_path.write_bytes(b"fake-data")
-            return archive_name
-
-        svc._file_service.create_backup_file = fake_create
+        svc._file_service.write_backup_file_to = fake_write
         # Disable running-server warning (no manager call needed)
         monkeypatch.setattr(svc, "_log_running_server_warning", lambda sid: None)
 
@@ -197,27 +195,35 @@ class TestCreateBackup:
         assert entity.status == BackupStatus.completed
         assert entity.file_size > 0
         assert uow.committed == 1
+        # Atomic-rename promoted the temp file into the canonical
+        # backups directory.
+        from pathlib import Path
+
+        assert Path(entity.file_path).exists()
+        assert Path(entity.file_path).parent == tmp_backup_dir
+        # `.pending/` is swept clean on success.
+        pending_dir = tmp_backup_dir / ".pending"
+        if pending_dir.exists():
+            assert list(pending_dir.iterdir()) == []
 
     @pytest.mark.asyncio
     async def test_post_file_failure_cleans_up_archive(
         self, uow, server_read, tmp_backup_dir, monkeypatch
     ):
-        """If update_file_info / commit fails after the tar.gz exists,
-        orphan archive is cleaned up (legacy parity)."""
+        """If commit() fails after the tar.gz exists in `.pending/`,
+        the temp file is cleaned up and NO orphan ends up in
+        `backups_directory` (atomic-rename guarantee, #228 punch-list B).
+        """
         server_read.seed(id=1, directory_path=str(tmp_backup_dir / "src"))
         svc = _make_service(uow, server_read, tmp_backup_dir)
 
-        archive_name = "orphan.tar.gz"
-        archive_path = tmp_backup_dir / archive_name
+        async def fake_write(server, target_path, progress_callback=None):
+            target_path.write_bytes(b"x")
 
-        async def fake_create(server, backup_id, backup_type, progress_callback=None):
-            archive_path.write_bytes(b"x")
-            return archive_name
-
-        svc._file_service.create_backup_file = fake_create
+        svc._file_service.write_backup_file_to = fake_write
         monkeypatch.setattr(svc, "_log_running_server_warning", lambda sid: None)
 
-        # Force commit() to raise — runs AFTER backup_path is set
+        # Force commit() to raise — runs AFTER the temp file is written
         async def fail_commit():
             raise RuntimeError("commit-failed")
 
@@ -225,4 +231,10 @@ class TestCreateBackup:
 
         with pytest.raises(RuntimeError, match="commit-failed"):
             await svc.create_backup(server_id=1, name="b")
-        assert archive_path.exists() is False
+
+        # Canonical directory has no tar.gz.
+        assert list(tmp_backup_dir.glob("*.tar.gz")) == []
+        # And `.pending/` is also cleaned up.
+        pending_dir = tmp_backup_dir / ".pending"
+        if pending_dir.exists():
+            assert list(pending_dir.iterdir()) == []
