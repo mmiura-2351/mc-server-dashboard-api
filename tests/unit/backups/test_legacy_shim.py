@@ -17,7 +17,7 @@ import pytest
 
 
 def test_backup_service_module_all_complete():
-    import app.backups.application.legacy as mod
+    import app.backups.adapters.legacy as mod
 
     expected = {
         "BackupService",
@@ -34,7 +34,7 @@ def test_backup_service_module_all_complete():
 
 
 def test_backup_service_alias_is_legacy_facade():
-    from app.backups.application.legacy import BackupService, backup_service
+    from app.backups.adapters.legacy import BackupService, backup_service
 
     # The class alias is the facade; the singleton is an instance of it
     assert isinstance(backup_service, BackupService)
@@ -42,14 +42,14 @@ def test_backup_service_alias_is_legacy_facade():
 
 def test_backup_validation_service_still_exposed():
     """`tests/test_security.py:555` patches this — keep it exported."""
-    from app.backups.application.legacy import BackupValidationService
+    from app.backups.adapters.legacy import BackupValidationService
 
     assert hasattr(BackupValidationService, "validate_server_for_backup")
 
 
 def test_facade_methods_are_async():
     """All public facade methods must be `async def` so awaiters keep working."""
-    from app.backups.application.legacy import _LegacyBackupFacade
+    from app.backups.adapters.legacy import _LegacyBackupFacade
 
     for name in [
         "create_backup",

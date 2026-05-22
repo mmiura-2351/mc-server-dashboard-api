@@ -13,8 +13,8 @@ import inspect
 
 import pytest
 
-from app.templates.application import legacy as shim_module
-from app.templates.application.legacy import _LegacyTemplateFacade
+from app.templates.adapters import legacy as shim_module
+from app.templates.adapters.legacy import _LegacyTemplateFacade
 from app.templates.domain.exceptions import (
     TemplateAccessError,
     TemplateCreationError,
