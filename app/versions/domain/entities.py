@@ -15,7 +15,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Optional
 
-from app.servers.models import ServerType
+from app.servers.domain.value_objects import ServerType
 
 
 @dataclass(frozen=True)

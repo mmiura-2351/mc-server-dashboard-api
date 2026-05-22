@@ -25,7 +25,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
-from app.servers.models import ServerStatus, ServerType  # known deviation, #235/#228
+from app.servers.domain.value_objects import ServerStatus, ServerType
 
 
 def _epoch_utc() -> datetime:

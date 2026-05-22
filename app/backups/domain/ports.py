@@ -33,7 +33,7 @@ from app.backups.domain.entities import (
     UpdateBackupFileCommand,
     UpdateBackupScheduleCommand,
 )
-from app.servers.models import BackupStatus  # known deviation, see __init__.py
+from app.servers.domain.value_objects import BackupStatus
 
 
 class BackupRepository(Protocol):
