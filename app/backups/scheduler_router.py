@@ -20,6 +20,8 @@ from app.backups.api._mappers import (
 from app.backups.api.dependencies import get_backup_scheduler_service
 from app.backups.application.scheduler import BackupSchedulerService
 from app.backups.domain.exceptions import (
+    BackupNotFoundError,
+    BackupParentServerMissingError,
     BackupScheduleAlreadyExistsError,
     BackupScheduleNotFoundError,
 )
@@ -33,6 +35,7 @@ from app.backups.schemas import (
 from app.core.database import get_db
 from app.servers.api.dependencies import get_authorization_service
 from app.servers.application.authorization import AuthorizationService
+from app.servers.domain.exceptions import ServerAccessError, ServerNotFoundError
 from app.users.domain.value_objects import Role
 from app.users.models import User
 
@@ -71,7 +74,16 @@ async def create_backup_schedule(
     except BackupScheduleNotFoundError as e:
         # server-not-found case (raised from the create path)
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
-    except HTTPException:
+    except (
+        HTTPException,
+        ServerNotFoundError,
+        ServerAccessError,
+        BackupNotFoundError,
+        BackupParentServerMissingError,
+    ):
+        # Re-raise domain exceptions so the global handlers in
+        # ``app.core.error_handlers`` can map them to HTTP responses
+        # without being swallowed by the catch-all below (#273).
         raise
     except Exception as e:
         raise HTTPException(
@@ -103,7 +115,16 @@ async def get_backup_schedule(
             )
         return backup_schedule_entity_to_response(entity)
 
-    except HTTPException:
+    except (
+        HTTPException,
+        ServerNotFoundError,
+        ServerAccessError,
+        BackupNotFoundError,
+        BackupParentServerMissingError,
+    ):
+        # Re-raise domain exceptions so the global handlers in
+        # ``app.core.error_handlers`` can map them to HTTP responses
+        # without being swallowed by the catch-all below (#273).
         raise
     except Exception as e:
         raise HTTPException(
@@ -140,7 +161,16 @@ async def update_backup_schedule(
 
     except BackupScheduleNotFoundError as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
-    except HTTPException:
+    except (
+        HTTPException,
+        ServerNotFoundError,
+        ServerAccessError,
+        BackupNotFoundError,
+        BackupParentServerMissingError,
+    ):
+        # Re-raise domain exceptions so the global handlers in
+        # ``app.core.error_handlers`` can map them to HTTP responses
+        # without being swallowed by the catch-all below (#273).
         raise
     except Exception as e:
         raise HTTPException(
@@ -173,7 +203,16 @@ async def delete_backup_schedule(
                 detail=f"No backup schedule found for server {server_id}",
             )
 
-    except HTTPException:
+    except (
+        HTTPException,
+        ServerNotFoundError,
+        ServerAccessError,
+        BackupNotFoundError,
+        BackupParentServerMissingError,
+    ):
+        # Re-raise domain exceptions so the global handlers in
+        # ``app.core.error_handlers`` can map them to HTTP responses
+        # without being swallowed by the catch-all below (#273).
         raise
     except Exception as e:
         raise HTTPException(
@@ -202,7 +241,16 @@ async def get_backup_schedule_logs(
         logs = await scheduler.list_logs_for_server(server_id, page=page, size=size)
         return [backup_schedule_log_entity_to_response(log) for log in logs]
 
-    except HTTPException:
+    except (
+        HTTPException,
+        ServerNotFoundError,
+        ServerAccessError,
+        BackupNotFoundError,
+        BackupParentServerMissingError,
+    ):
+        # Re-raise domain exceptions so the global handlers in
+        # ``app.core.error_handlers`` can map them to HTTP responses
+        # without being swallowed by the catch-all below (#273).
         raise
     except Exception as e:
         raise HTTPException(
@@ -232,7 +280,16 @@ async def get_scheduler_status(
 
         return scheduler_status_to_response(scheduler, all_schedules, enabled_schedules)
 
-    except HTTPException:
+    except (
+        HTTPException,
+        ServerNotFoundError,
+        ServerAccessError,
+        BackupNotFoundError,
+        BackupParentServerMissingError,
+    ):
+        # Re-raise domain exceptions so the global handlers in
+        # ``app.core.error_handlers`` can map them to HTTP responses
+        # without being swallowed by the catch-all below (#273).
         raise
     except Exception as e:
         raise HTTPException(
@@ -261,7 +318,16 @@ async def list_all_backup_schedules(
         schedules = await scheduler.list_schedules(enabled_only=enabled_only)
         return [backup_schedule_entity_to_response(s) for s in schedules]
 
-    except HTTPException:
+    except (
+        HTTPException,
+        ServerNotFoundError,
+        ServerAccessError,
+        BackupNotFoundError,
+        BackupParentServerMissingError,
+    ):
+        # Re-raise domain exceptions so the global handlers in
+        # ``app.core.error_handlers`` can map them to HTTP responses
+        # without being swallowed by the catch-all below (#273).
         raise
     except Exception as e:
         raise HTTPException(

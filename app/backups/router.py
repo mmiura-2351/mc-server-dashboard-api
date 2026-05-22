@@ -31,6 +31,10 @@ from app.backups.api._mappers import (
 )
 from app.backups.api.dependencies import get_backup_service
 from app.backups.application.service import BackupService
+from app.backups.domain.exceptions import (
+    BackupNotFoundError,
+    BackupParentServerMissingError,
+)
 from app.backups.schemas import (
     BackupCreateRequest,
     BackupListResponse,
@@ -52,6 +56,7 @@ from app.core.exceptions import (
 )
 from app.servers.api.dependencies import get_authorization_service
 from app.servers.application.authorization import AuthorizationService
+from app.servers.domain.exceptions import ServerAccessError, ServerNotFoundError
 from app.servers.models import BackupStatus, BackupType
 from app.templates.api.dependencies import get_template_service
 from app.templates.application.service import TemplateService
@@ -125,7 +130,16 @@ async def create_backup(
 
         return backup_entity_to_response(entity)
 
-    except HTTPException:
+    except (
+        HTTPException,
+        ServerNotFoundError,
+        ServerAccessError,
+        BackupNotFoundError,
+        BackupParentServerMissingError,
+    ):
+        # Re-raise domain exceptions so the global handlers in
+        # ``app.core.error_handlers`` can map them to HTTP responses
+        # without being swallowed by the catch-all below (#273).
         raise
     except (ServerNotFoundException, BackupNotFoundException):
         raise
@@ -181,7 +195,16 @@ async def upload_backup(
             original_filename=file.filename,
         )
 
-    except HTTPException:
+    except (
+        HTTPException,
+        ServerNotFoundError,
+        ServerAccessError,
+        BackupNotFoundError,
+        BackupParentServerMissingError,
+    ):
+        # Re-raise domain exceptions so the global handlers in
+        # ``app.core.error_handlers`` can map them to HTTP responses
+        # without being swallowed by the catch-all below (#273).
         raise
     except (ServerNotFoundException, BackupNotFoundException):
         raise
@@ -223,7 +246,16 @@ async def list_server_backups(
             size=page_result.size,
         )
 
-    except HTTPException:
+    except (
+        HTTPException,
+        ServerNotFoundError,
+        ServerAccessError,
+        BackupNotFoundError,
+        BackupParentServerMissingError,
+    ):
+        # Re-raise domain exceptions so the global handlers in
+        # ``app.core.error_handlers`` can map them to HTTP responses
+        # without being swallowed by the catch-all below (#273).
         raise
     except Exception as e:
         raise HTTPException(
@@ -261,7 +293,16 @@ async def list_all_backups(
             size=page_result.size,
         )
 
-    except HTTPException:
+    except (
+        HTTPException,
+        ServerNotFoundError,
+        ServerAccessError,
+        BackupNotFoundError,
+        BackupParentServerMissingError,
+    ):
+        # Re-raise domain exceptions so the global handlers in
+        # ``app.core.error_handlers`` can map them to HTTP responses
+        # without being swallowed by the catch-all below (#273).
         raise
     except Exception as e:
         raise HTTPException(
@@ -286,7 +327,16 @@ async def get_global_backup_statistics(
         stats = await backup_service.get_backup_statistics()
         return backup_statistics_to_response(stats)
 
-    except HTTPException:
+    except (
+        HTTPException,
+        ServerNotFoundError,
+        ServerAccessError,
+        BackupNotFoundError,
+        BackupParentServerMissingError,
+    ):
+        # Re-raise domain exceptions so the global handlers in
+        # ``app.core.error_handlers`` can map them to HTTP responses
+        # without being swallowed by the catch-all below (#273).
         raise
     except Exception as e:
         raise HTTPException(
@@ -307,7 +357,16 @@ async def get_backup(
         backup = await auth.check_backup_access(backup_id, current_user)
         return backup_entity_to_response(backup)
 
-    except HTTPException:
+    except (
+        HTTPException,
+        ServerNotFoundError,
+        ServerAccessError,
+        BackupNotFoundError,
+        BackupParentServerMissingError,
+    ):
+        # Re-raise domain exceptions so the global handlers in
+        # ``app.core.error_handlers`` can map them to HTTP responses
+        # without being swallowed by the catch-all below (#273).
         raise
     except Exception as e:
         raise HTTPException(
@@ -344,7 +403,16 @@ async def restore_backup(
             details={"target_server_id": target_server_id},
         )
 
-    except HTTPException:
+    except (
+        HTTPException,
+        ServerNotFoundError,
+        ServerAccessError,
+        BackupNotFoundError,
+        BackupParentServerMissingError,
+    ):
+        # Re-raise domain exceptions so the global handlers in
+        # ``app.core.error_handlers`` can map them to HTTP responses
+        # without being swallowed by the catch-all below (#273).
         raise
     except (BackupNotFoundException, ServerNotFoundException):
         raise
@@ -427,7 +495,16 @@ async def restore_backup_and_create_template(
             },
         )
 
-    except HTTPException:
+    except (
+        HTTPException,
+        ServerNotFoundError,
+        ServerAccessError,
+        BackupNotFoundError,
+        BackupParentServerMissingError,
+    ):
+        # Re-raise domain exceptions so the global handlers in
+        # ``app.core.error_handlers`` can map them to HTTP responses
+        # without being swallowed by the catch-all below (#273).
         raise
     except (BackupNotFoundException, ServerNotFoundException):
         raise
@@ -475,7 +552,16 @@ async def download_backup(
             headers={"Content-Disposition": f'attachment; filename="{backup_filename}"'},
         )
 
-    except HTTPException:
+    except (
+        HTTPException,
+        ServerNotFoundError,
+        ServerAccessError,
+        BackupNotFoundError,
+        BackupParentServerMissingError,
+    ):
+        # Re-raise domain exceptions so the global handlers in
+        # ``app.core.error_handlers`` can map them to HTTP responses
+        # without being swallowed by the catch-all below (#273).
         raise
     except Exception as e:
         raise HTTPException(
@@ -500,9 +586,9 @@ async def delete_backup(
         # `backup.server.owner_id` (ORM relationship). With the domain
         # entity that relationship is denormalised away, so we fetch
         # the parent server explicitly and pass it as the third arg.
-        parent = await auth.check_server_access(
-            backup.server_id, current_user, log_access=False
-        )
+        # ``check_server_access`` no longer emits an audit log on its
+        # own (#273), so no ``log_access`` opt-out is required.
+        parent = await auth.check_server_access(backup.server_id, current_user)
         if not AuthorizationService.can_delete_backup(backup, current_user, parent):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
@@ -515,7 +601,16 @@ async def delete_backup(
                 status_code=status.HTTP_404_NOT_FOUND, detail="Backup not found"
             )
 
-    except HTTPException:
+    except (
+        HTTPException,
+        ServerNotFoundError,
+        ServerAccessError,
+        BackupNotFoundError,
+        BackupParentServerMissingError,
+    ):
+        # Re-raise domain exceptions so the global handlers in
+        # ``app.core.error_handlers`` can map them to HTTP responses
+        # without being swallowed by the catch-all below (#273).
         raise
     except Exception as e:
         raise HTTPException(
@@ -540,7 +635,16 @@ async def get_server_backup_statistics(
         stats = await backup_service.get_backup_statistics(server_id=server_id)
         return backup_statistics_to_response(stats)
 
-    except HTTPException:
+    except (
+        HTTPException,
+        ServerNotFoundError,
+        ServerAccessError,
+        BackupNotFoundError,
+        BackupParentServerMissingError,
+    ):
+        # Re-raise domain exceptions so the global handlers in
+        # ``app.core.error_handlers`` can map them to HTTP responses
+        # without being swallowed by the catch-all below (#273).
         raise
     except Exception as e:
         raise HTTPException(
@@ -592,7 +696,16 @@ async def create_scheduled_backups(
             },
         )
 
-    except HTTPException:
+    except (
+        HTTPException,
+        ServerNotFoundError,
+        ServerAccessError,
+        BackupNotFoundError,
+        BackupParentServerMissingError,
+    ):
+        # Re-raise domain exceptions so the global handlers in
+        # ``app.core.error_handlers`` can map them to HTTP responses
+        # without being swallowed by the catch-all below (#273).
         raise
     except Exception as e:
         raise HTTPException(

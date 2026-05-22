@@ -14,6 +14,7 @@ from app.backups.router import router as backups_router
 from app.backups.scheduler_router import router as scheduler_router
 from app.core.config import settings
 from app.core.database import Base, engine
+from app.core.error_handlers import register_exception_handlers
 
 # Import visibility models for Phase 2 resource access control
 from app.files.router import router as files_router
@@ -328,6 +329,10 @@ app = FastAPI(
     version=__version__,
     lifespan=lifespan,
 )
+
+# Map framework-agnostic domain exceptions (raised by application-layer
+# services such as ``AuthorizationService``) to HTTP responses.
+register_exception_handlers(app)
 
 
 @app.get("/health", tags=["health"])

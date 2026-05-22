@@ -13,11 +13,16 @@ from sqlalchemy.orm import Session
 
 from app.audit.service import AuditService
 from app.auth.dependencies import get_current_user
+from app.backups.domain.exceptions import (
+    BackupNotFoundError,
+    BackupParentServerMissingError,
+)
 from app.core.config import settings
 from app.core.database import get_db
 from app.servers.api.dependencies import get_authorization_service
 from app.servers.application.authorization import AuthorizationService
 from app.servers.application.minecraft_server import minecraft_server_manager
+from app.servers.domain.exceptions import ServerAccessError, ServerNotFoundError
 from app.servers.models import Server, ServerStatus
 from app.servers.schemas import (
     ServerCommandRequest,
@@ -47,7 +52,25 @@ async def start_server(
     """
     try:
         # Check ownership/admin access
-        await auth.check_server_access(server_id, current_user, request)
+        server_entity = await auth.check_server_access(server_id, current_user)
+
+        # Re-emit the permission-check audit event that previously lived
+        # inside ``AuthorizationService.check_server_access``; the
+        # application-layer service is now framework-agnostic (#273) and
+        # cannot reach the FastAPI ``Request``.
+        AuditService.log_permission_check(
+            request=request,
+            resource_type="server",
+            resource_id=server_id,
+            permission="access",
+            granted=True,
+            user_id=current_user.id,
+            details={
+                "server_name": server_entity.name,
+                "owner_id": server_entity.owner_id,
+                "user_role": current_user.role.value,
+            },
+        )
 
         # Re-fetch the ORM `Server` row because
         # `minecraft_server_manager.start_server` and
@@ -225,7 +248,16 @@ async def start_server(
             process_info=minecraft_server_manager.get_server_info(server_id),
         )
 
-    except HTTPException:
+    except (
+        HTTPException,
+        ServerNotFoundError,
+        ServerAccessError,
+        BackupNotFoundError,
+        BackupParentServerMissingError,
+    ):
+        # Re-raise domain exceptions so the global handlers in
+        # ``app.core.error_handlers`` can map them to HTTP responses
+        # without being swallowed by the catch-all below (#273).
         raise
     except Exception as e:
         # Log unexpected error
@@ -287,7 +319,16 @@ async def stop_server(
                     detail="Failed to stop server",
                 )
 
-    except HTTPException:
+    except (
+        HTTPException,
+        ServerNotFoundError,
+        ServerAccessError,
+        BackupNotFoundError,
+        BackupParentServerMissingError,
+    ):
+        # Re-raise domain exceptions so the global handlers in
+        # ``app.core.error_handlers`` can map them to HTTP responses
+        # without being swallowed by the catch-all below (#273).
         raise
     except Exception as e:
         logger.error(f"Unexpected error stopping server {server_id}: {e}")
@@ -352,7 +393,16 @@ async def restart_server(
 
         return {"message": "Server restart initiated"}
 
-    except HTTPException:
+    except (
+        HTTPException,
+        ServerNotFoundError,
+        ServerAccessError,
+        BackupNotFoundError,
+        BackupParentServerMissingError,
+    ):
+        # Re-raise domain exceptions so the global handlers in
+        # ``app.core.error_handlers`` can map them to HTTP responses
+        # without being swallowed by the catch-all below (#273).
         raise
     except Exception as e:
         raise HTTPException(
@@ -391,7 +441,16 @@ async def get_server_status(
             server_id=server_id, status=server_status, process_info=process_info
         )
 
-    except HTTPException:
+    except (
+        HTTPException,
+        ServerNotFoundError,
+        ServerAccessError,
+        BackupNotFoundError,
+        BackupParentServerMissingError,
+    ):
+        # Re-raise domain exceptions so the global handlers in
+        # ``app.core.error_handlers`` can map them to HTTP responses
+        # without being swallowed by the catch-all below (#273).
         raise
     except Exception as e:
         raise HTTPException(
@@ -417,7 +476,24 @@ async def send_server_command(
     """
     try:
         # Check ownership/admin access
-        server = await auth.check_server_access(server_id, current_user, http_request)
+        server = await auth.check_server_access(server_id, current_user)
+
+        # Re-emit the permission-check audit event that previously lived
+        # inside ``AuthorizationService.check_server_access``; the
+        # application-layer service is now framework-agnostic (#273).
+        AuditService.log_permission_check(
+            request=http_request,
+            resource_type="server",
+            resource_id=server_id,
+            permission="access",
+            granted=True,
+            user_id=current_user.id,
+            details={
+                "server_name": server.name,
+                "owner_id": server.owner_id,
+                "user_role": current_user.role.value,
+            },
+        )
 
         # Check if server is running
         server_status = minecraft_server_manager.get_server_status(server_id)
@@ -481,7 +557,16 @@ async def send_server_command(
 
         return {"message": f"Command '{command_request.command}' sent to server"}
 
-    except HTTPException:
+    except (
+        HTTPException,
+        ServerNotFoundError,
+        ServerAccessError,
+        BackupNotFoundError,
+        BackupParentServerMissingError,
+    ):
+        # Re-raise domain exceptions so the global handlers in
+        # ``app.core.error_handlers`` can map them to HTTP responses
+        # without being swallowed by the catch-all below (#273).
         raise
     except Exception as e:
         # Log unexpected error during command execution
@@ -520,7 +605,16 @@ async def get_server_logs(
 
         return ServerLogsResponse(server_id=server_id, logs=logs, total_lines=len(logs))
 
-    except HTTPException:
+    except (
+        HTTPException,
+        ServerNotFoundError,
+        ServerAccessError,
+        BackupNotFoundError,
+        BackupParentServerMissingError,
+    ):
+        # Re-raise domain exceptions so the global handlers in
+        # ``app.core.error_handlers`` can map them to HTTP responses
+        # without being swallowed by the catch-all below (#273).
         raise
     except Exception as e:
         raise HTTPException(

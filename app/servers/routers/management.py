@@ -11,6 +11,10 @@ from fastapi import (
 from sqlalchemy.orm import Session
 
 from app.auth.dependencies import get_current_user
+from app.backups.domain.exceptions import (
+    BackupNotFoundError,
+    BackupParentServerMissingError,
+)
 from app.core.database import get_db
 from app.core.exceptions import ConflictException
 from app.servers.api.dependencies import (
@@ -25,6 +29,7 @@ from app.servers.application.service import (
 from app.servers.application.service import (
     _server_service_legacy as server_service,  # legacy module-level alias (still referenced by older unit tests)
 )
+from app.servers.domain.exceptions import ServerAccessError, ServerNotFoundError
 from app.servers.models import ServerStatus
 from app.servers.schemas import (
     ServerCreateRequest,
@@ -146,7 +151,16 @@ async def get_server(
 
         return server
 
-    except HTTPException:
+    except (
+        HTTPException,
+        ServerNotFoundError,
+        ServerAccessError,
+        BackupNotFoundError,
+        BackupParentServerMissingError,
+    ):
+        # Re-raise domain exceptions so the global handlers in
+        # ``app.core.error_handlers`` can map them to HTTP responses
+        # without being swallowed by the catch-all below (#273).
         raise
     except Exception as e:
         raise HTTPException(
@@ -191,7 +205,16 @@ async def update_server(
 
         return server
 
-    except HTTPException:
+    except (
+        HTTPException,
+        ServerNotFoundError,
+        ServerAccessError,
+        BackupNotFoundError,
+        BackupParentServerMissingError,
+    ):
+        # Re-raise domain exceptions so the global handlers in
+        # ``app.core.error_handlers`` can map them to HTTP responses
+        # without being swallowed by the catch-all below (#273).
         raise
     except Exception as e:
         raise HTTPException(
@@ -233,7 +256,16 @@ async def delete_server(
                 status_code=status.HTTP_404_NOT_FOUND, detail="Server not found"
             )
 
-    except HTTPException:
+    except (
+        HTTPException,
+        ServerNotFoundError,
+        ServerAccessError,
+        BackupNotFoundError,
+        BackupParentServerMissingError,
+    ):
+        # Re-raise domain exceptions so the global handlers in
+        # ``app.core.error_handlers`` can map them to HTTP responses
+        # without being swallowed by the catch-all below (#273).
         raise
     except Exception as e:
         raise HTTPException(
