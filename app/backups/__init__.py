@@ -1,5 +1,12 @@
 """Backups domain package.
 
+Eagerly imports `app.backups.models` so the `Backup`, `BackupSchedule`,
+and `BackupScheduleLog` SQLAlchemy classes are registered with
+`Base.metadata` before `Base.metadata.create_all()` runs in `app.main`
+startup. This also ensures `Server.backups` / `Server.backup_schedule`
+relationships in `app.servers.models` resolve at mapper-configuration
+time.
+
 Re-exports the lifespan-scoped `backup_scheduler_instance` holder so
 that the FastAPI app startup (`app.main._initialize_backup_scheduler`)
 and the module-level `_SchedulerProxy` (in
@@ -17,6 +24,10 @@ test double; production calls `make_backup_scheduler()` in
 """
 
 from typing import TYPE_CHECKING, Optional
+
+from . import (
+    models,  # noqa: F401  # eager import so ORM classes register before create_all
+)
 
 if TYPE_CHECKING:
     from app.backups.application.scheduler import BackupSchedulerService

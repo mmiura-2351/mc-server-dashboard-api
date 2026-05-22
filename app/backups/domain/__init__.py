@@ -5,10 +5,11 @@ Contains pure domain entities (`entities.py`), Port (Protocol) definitions
 framework, database driver, or HTTP client.
 
 `BackupType` / `BackupStatus` value objects live at
-`app.servers.domain.value_objects` (re-exported from `app.servers.models`
-for the SQLAlchemy column declaration). The `Backup` ORM class itself
-still lives at `app.servers.models.Backup`; adapters import it from
-that module.
+`app.servers.domain.value_objects` so that adjacent domain modules can
+reference them without transitively loading SQLAlchemy. The `Backup`
+ORM class lives at `app.backups.models.Backup` (relocated from
+`app.servers.models` in Issue #263); adapters import it from that
+module.
 
 See `docs/ARCHITECTURE.md` §4.1.
 """

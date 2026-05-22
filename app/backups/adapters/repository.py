@@ -37,9 +37,8 @@ from app.backups.domain.entities import (
     UpdateBackupFileCommand,
     UpdateBackupScheduleCommand,
 )
-from app.backups.models import BackupSchedule, BackupScheduleLog
+from app.backups.models import Backup, BackupSchedule, BackupScheduleLog, BackupStatus
 from app.core.datetime_utils import utcnow
-from app.servers.models import Backup, BackupStatus
 
 
 def _backup_to_entity(row: Backup) -> BackupEntity:

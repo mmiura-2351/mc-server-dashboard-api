@@ -10,12 +10,12 @@ from pathlib import Path
 import pytest
 
 from app.backups.application.service import BackupService
+from app.backups.models import BackupStatus, BackupType
 from app.core.exceptions import (
     BackupNotFoundException,
     ServerNotFoundException,
     ServerStateException,
 )
-from app.servers.models import BackupStatus, BackupType
 from tests.unit.backups.fakes import (
     FakeBackupsUnitOfWork,
     FakeServerReadPort,

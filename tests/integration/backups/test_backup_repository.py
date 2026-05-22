@@ -15,7 +15,8 @@ from app.backups.domain.entities import (
     CreateBackupCommand,
     UpdateBackupFileCommand,
 )
-from app.servers.models import Backup, BackupStatus, BackupType, Server, ServerType
+from app.backups.models import Backup, BackupStatus, BackupType
+from app.servers.models import Server, ServerType
 
 
 @pytest.fixture

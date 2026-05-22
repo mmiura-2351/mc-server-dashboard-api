@@ -29,9 +29,9 @@ from app.backups.domain.entities import (
     UpdateBackupFileCommand,
     UpdateBackupScheduleCommand,
 )
-from app.backups.models import ScheduleAction
+from app.backups.models import BackupStatus, BackupType, ScheduleAction
 from app.servers.domain.entities import ServerEntity
-from app.servers.models import BackupStatus, BackupType, ServerType
+from app.servers.models import ServerType
 
 
 def _utcnow() -> datetime:

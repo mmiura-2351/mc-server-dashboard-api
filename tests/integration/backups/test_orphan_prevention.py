@@ -28,8 +28,9 @@ from fastapi import UploadFile
 from app.backups.adapters.uow import SqlAlchemyBackupsUnitOfWork
 from app.backups.application import service as backup_service_module
 from app.backups.application.service import BackupService
+from app.backups.models import Backup
 from app.servers.adapters.read_port import SqlAlchemyServerReadPort
-from app.servers.models import Backup, Server, ServerType
+from app.servers.models import Server, ServerType
 
 
 @pytest.fixture

@@ -20,13 +20,14 @@ from app.backups.domain.entities import (
     BackupListPage,
     BackupStatistics,
 )
+from app.backups.models import Backup, BackupStatus, BackupType
 from app.core.exceptions import (
     BackupNotFoundException,
     FileOperationException,
     ServerNotFoundException,
 )
 from app.main import app
-from app.servers.models import Backup, BackupStatus, BackupType, Server, ServerType
+from app.servers.models import Server, ServerType
 from app.users.domain.value_objects import Role
 from app.users.models import User
 

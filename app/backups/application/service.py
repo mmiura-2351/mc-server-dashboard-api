@@ -26,6 +26,12 @@ from app.backups.domain.entities import (
     UpdateBackupFileCommand,
 )
 from app.backups.domain.ports import BackupsUnitOfWork
+
+# `BackupStatus` / `BackupType` are runtime-required (used as values, not
+# just type annotations). The `Server` ORM class is only referenced from
+# type annotations, so it stays under TYPE_CHECKING to keep the
+# application layer free of cross-domain ORM imports at runtime.
+from app.backups.models import BackupStatus, BackupType
 from app.core.exceptions import (
     BackupNotFoundException,
     DatabaseOperationException,
@@ -41,14 +47,6 @@ from app.core.security import SecurityError, TarExtractor
 # Port in a follow-up (#154-9).
 from app.servers.application.minecraft_server import minecraft_server_manager
 from app.servers.domain.ports import ServerReadPort
-
-# `BackupStatus` / `BackupType` are runtime-required (used as values, not
-# just type annotations) — we accept the cross-domain enum import as a
-# documented deviation (see `docs/ARCHITECTURE.md` adoption notes). The
-# `Server` ORM class is only referenced from type annotations, so it
-# stays under TYPE_CHECKING to keep the application layer free of ORM
-# imports at runtime.
-from app.servers.models import BackupStatus, BackupType
 
 if TYPE_CHECKING:
     from fastapi import UploadFile
