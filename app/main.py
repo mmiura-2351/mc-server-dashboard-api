@@ -139,20 +139,16 @@ async def _initialize_database_integration():
     """Initialize database integration - important but not critical"""
     try:
         logger.info("Initializing database integration service...")
-        from app.servers.api.dependencies import make_server_repository_from_session
         from app.servers.application.database_integration import (
             database_integration_instance,
             make_database_integration_service,
         )
-        from app.servers.application.minecraft_server import minecraft_server_manager
 
-        # Late-bind the server-repository factory on the manager
-        # singleton so the port-conflict check inside `start_server`
-        # can go through the Repository instead of `db_session.query`
-        # (R-17 / #228 PR 2d).
-        minecraft_server_manager.server_repository_factory = (
-            make_server_repository_from_session
-        )
+        # NB(#285): the late-bound ``server_repository_factory`` on
+        # ``minecraft_server_manager`` was removed once the
+        # ``_validate_port_availability`` path started consuming an
+        # explicit ``ServerRepository`` argument (#272). No factory
+        # wiring is required here anymore.
 
         # Build a fresh integration service inside the running loop so
         # `initialize()` captures the correct loop for its sync→async

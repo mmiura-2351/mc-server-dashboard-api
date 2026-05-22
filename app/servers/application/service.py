@@ -43,23 +43,30 @@ import re
 import shlex
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, Optional
-
-from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session
+from typing import TYPE_CHECKING, Any, Dict, Optional
 
 from app.core.exceptions import (
     ConflictException,
     InvalidRequestException,
-    handle_database_error,
     handle_file_error,
 )
 from app.core.security import PathValidator, SecurityError
 from app.groups.application.service import GroupService
+
+# `ServerJarService` / `ServerDatabaseService` originally lived in this
+# module but consume a `Session` at runtime, so they were moved to the
+# adapter layer in #285 (ARCHITECTURE §4.2 — application/ must not
+# depend on a framework). They are re-imported here purely so the
+# pre-existing public API
+# (`from app.servers.application.service import ServerJarService`)
+# keeps resolving for legacy callers and unit tests.
 from app.servers.adapters._legacy_helpers import (
+    ServerDatabaseService,
+    ServerJarService,
     ServerValidationService,
     get_server_statistics_legacy,
     get_server_with_access_check_legacy,
+    is_version_supported_db_legacy,
     list_servers_for_user_legacy,
     server_exists_legacy,
     update_server_status_legacy,
@@ -84,10 +91,16 @@ from app.servers.schemas import ServerCreateRequest, ServerResponse, ServerUpdat
 from app.templates.application.service import TemplateService
 from app.users.domain.value_objects import Role
 from app.users.models import User
-from app.versions.adapters.repository import SqlAlchemyVersionRepository
-from app.versions.application.jar_cache_manager import jar_cache_manager
 from app.versions.application.java_compatibility import java_compatibility_service
-from app.versions.application.version_manager import minecraft_version_manager
+
+# `Session` is used only as a type annotation on legacy passthrough
+# methods that forward the value to ``_legacy_helpers`` (which lives in
+# adapters/). With ``from __future__ import annotations`` enabled the
+# names are strings at runtime, so we keep the import under
+# ``TYPE_CHECKING`` to keep the application module framework-free at
+# runtime (ARCHITECTURE §4.2, #285).
+if TYPE_CHECKING:
+    from sqlalchemy.orm import Session
 
 logger = logging.getLogger(__name__)
 
@@ -171,75 +184,6 @@ class ServerSecurityValidator:
 # ---------------------------------------------------------------------------
 # JAR + filesystem helpers
 # ---------------------------------------------------------------------------
-
-
-class ServerJarService:
-    """Service for handling server JAR downloads and management with caching."""
-
-    def __init__(self) -> None:
-        self.version_manager = minecraft_version_manager
-        self.cache_manager = jar_cache_manager
-
-    async def _is_version_supported_db(
-        self, db: Session, server_type: ServerType, version: str
-    ) -> bool:
-        try:
-            repo = SqlAlchemyVersionRepository(db)
-            db_version = await repo.get_version_by_type_and_version(server_type, version)
-            if db_version is not None and db_version.is_active:
-                return True
-            return False
-        except Exception:
-            return False
-
-    async def _get_download_url_db(
-        self, db: Session, server_type: ServerType, version: str
-    ) -> Optional[str]:
-        try:
-            repo = SqlAlchemyVersionRepository(db)
-            db_version = await repo.get_version_by_type_and_version(server_type, version)
-            if db_version and db_version.is_active and db_version.download_url:
-                return db_version.download_url
-            return None
-        except Exception:
-            return None
-
-    async def get_server_jar(
-        self,
-        server_type: ServerType,
-        minecraft_version: str,
-        server_dir: Path,
-        db: Session,
-    ) -> Path:
-        try:
-            if not await self._is_version_supported_db(
-                db, server_type, minecraft_version
-            ):
-                raise InvalidRequestException(
-                    f"Version {minecraft_version} is not supported for {server_type.value} "
-                    f"(minimum supported version: 1.8)"
-                )
-
-            download_url = await self._get_download_url_db(
-                db, server_type, minecraft_version
-            )
-
-            cached_jar_path = await self.cache_manager.get_or_download_jar(
-                server_type, minecraft_version, download_url
-            )
-
-            server_jar_path = await self.cache_manager.copy_jar_to_server(
-                cached_jar_path, server_dir
-            )
-
-            logger.info(
-                f"Prepared {server_type.value} {minecraft_version} JAR for server "
-                f"at {server_jar_path}"
-            )
-            return server_jar_path
-
-        except Exception as e:
-            handle_file_error("get server jar", str(server_dir), e)
 
 
 class ServerFileSystemService:
@@ -408,70 +352,10 @@ exec java -Xmx"${{MAX_MEMORY}}"M -Xms"${{MIN_MEMORY}}"M -jar "$JAR_FILE" nogui
             logger.warning(f"Failed to cleanup server directory {server_dir}: {e}")
 
 
-class ServerDatabaseService:
-    """Legacy DB-direct CRUD helper.
-
-    Preserved for backward compatibility with the existing unit tests
-    that inject a `Mock(db)` and exercise the SQLAlchemy path. The new
-    `ServerService.create_server` path uses the `ServerRepository`
-    instead.
-    """
-
-    def create_server_record(
-        self,
-        request: ServerCreateRequest,
-        owner: User,
-        directory_path: str,
-        db: Session,
-    ) -> Server:
-        try:
-            server = Server(
-                name=request.name,
-                description=request.description,
-                server_type=request.server_type,
-                minecraft_version=request.minecraft_version,
-                port=request.port,
-                max_memory=request.max_memory,
-                max_players=request.max_players,
-                directory_path=directory_path,
-                owner_id=owner.id,
-                status=ServerStatus.stopped,
-            )
-            db.add(server)
-            db.commit()
-            db.refresh(server)
-            logger.info(f"Created server record: {server.name} (ID: {server.id})")
-            return server
-        except IntegrityError as e:
-            db.rollback()
-            handle_database_error("create", "server", e)
-        except Exception as e:
-            db.rollback()
-            handle_database_error("create", "server", e)
-
-    def update_server_record(
-        self, server: Server, request: ServerUpdateRequest, db: Session
-    ) -> Server:
-        try:
-            for field_name, value in request.model_dump(exclude_unset=True).items():
-                setattr(server, field_name, value)
-            db.commit()
-            db.refresh(server)
-            logger.info(f"Updated server record: {server.name} (ID: {server.id})")
-            return server
-        except Exception as e:
-            db.rollback()
-            handle_database_error("update", "server", e)
-
-    def soft_delete_server(self, server: Server, db: Session) -> None:
-        try:
-            server.is_deleted = True
-            server.status = ServerStatus.stopped
-            db.commit()
-            logger.info(f"Soft deleted server: {server.name} (ID: {server.id})")
-        except Exception as e:
-            db.rollback()
-            handle_database_error("delete", "server", e)
+# `ServerJarService` and `ServerDatabaseService` (the SQLAlchemy-direct
+# legacy CRUD helpers) live in ``app.servers.adapters._legacy_helpers``
+# after #285. They are re-imported at the top of this module for
+# back-compat so legacy imports / unit tests continue to work.
 
 
 # ---------------------------------------------------------------------------
@@ -521,41 +405,14 @@ class ServerService:
     async def _is_version_supported_db(
         self, db: Session, server_type: ServerType, version: str
     ) -> bool:
-        try:
-            repo = SqlAlchemyVersionRepository(db)
-            db_version = await repo.get_version_by_type_and_version(server_type, version)
-            if db_version is not None and db_version.is_active:
-                return True
-            try:
-                return minecraft_version_manager.is_version_supported(
-                    server_type, version
-                )
-            except Exception as api_error:
-                logger.error(
-                    f"External API validation failed for {server_type.value} "
-                    f"{version}: {api_error}"
-                )
-                raise InvalidRequestException(
-                    f"Unable to validate version {version} for {server_type.value}. "
-                    "Version not found in database and external API is unavailable."
-                )
-        except InvalidRequestException:
-            raise
-        except Exception as db_error:
-            logger.error(
-                f"Database validation failed for {server_type.value} "
-                f"{version}: {db_error}"
-            )
-            try:
-                return minecraft_version_manager.is_version_supported(
-                    server_type, version
-                )
-            except Exception as api_error:
-                logger.error(f"Both database and API validation failed: {api_error}")
-                raise InvalidRequestException(
-                    f"Unable to validate version {version} for {server_type.value}. "
-                    "Both database and external API are unavailable."
-                )
+        """Thin passthrough to the SQLAlchemy-direct legacy helper.
+
+        The implementation was moved to
+        ``app.servers.adapters._legacy_helpers.is_version_supported_db_legacy``
+        in #285 so this module no longer constructs adapter classes
+        directly (ARCHITECTURE §4.2).
+        """
+        return await is_version_supported_db_legacy(db, server_type, version)
 
     # ===================
     # Server CRUD
@@ -816,6 +673,29 @@ class ServerService:
     # Server control
     # ===================
 
+    def _require_server_repo(self, db: Session) -> ServerRepository:
+        """Return the injected ``ServerRepository`` for control flows.
+
+        The canonical production path constructs ``ServerService``
+        through ``get_server_service`` (which wires
+        ``self._server_repo``). The legacy ``ServerService()`` shape
+        (no DI) does not exercise ``start_server`` / ``stop_server`` /
+        ``restart_server`` so we raise when the Port is not wired
+        rather than reach into ``adapters/`` from the application
+        layer (ARCHITECTURE §4.2). The ``db`` argument is accepted
+        purely so the calling methods can still expose a
+        ``db: Session`` annotation under TYPE_CHECKING for legacy
+        signature parity.
+        """
+        if self._server_repo is None:
+            raise RuntimeError(
+                "ServerService.start_server / restart_server require a "
+                "ServerRepository Port; construct the service via the "
+                "DI factory `get_server_service` instead of bare "
+                "`ServerService()`."
+            )
+        return self._server_repo
+
     async def start_server(self, server_id: int, db: Session) -> Dict[str, str]:
         # Existence check (kept on the legacy validator for the
         # not-found semantics it raises). The manager now accepts a
@@ -823,9 +703,7 @@ class ServerService:
         # we hand it the entity loaded through the Port instead of the
         # ORM row.
         server = self.validation_service.validate_server_exists(server_id, db)
-        from app.servers.api.dependencies import make_server_repository_from_session
-
-        server_repository = make_server_repository_from_session(db)
+        server_repository = self._require_server_repo(db)
         entity = await server_repository.get(server_id, include_deleted=False)
         if entity is None:
             raise RuntimeError(
@@ -875,9 +753,7 @@ class ServerService:
             )
 
         logger.info(f"Starting server {server.id} after confirmed stop")
-        from app.servers.api.dependencies import make_server_repository_from_session
-
-        server_repository = make_server_repository_from_session(db)
+        server_repository = self._require_server_repo(db)
         entity = await server_repository.get(server.id, include_deleted=False)
         if entity is None:
             raise RuntimeError(f"Server {server.id} vanished between stop and restart")

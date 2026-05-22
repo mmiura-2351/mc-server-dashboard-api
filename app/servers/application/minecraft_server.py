@@ -14,7 +14,6 @@ from pathlib import Path
 from typing import Any, AsyncGenerator, Callable, Dict, List, Optional, Tuple
 
 import psutil
-from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.servers.domain.entities import ServerEntity
@@ -51,7 +50,6 @@ class MinecraftServerManager:
     def __init__(
         self,
         log_queue_size: Optional[int] = None,
-        server_repository_factory: Optional[Callable[[Session], ServerRepository]] = None,
     ):
         self.processes: Dict[int, ServerProcess] = {}
         self.base_directory = Path("servers")
@@ -61,31 +59,16 @@ class MinecraftServerManager:
         # Configurable log queue size to prevent memory leaks
         self.log_queue_size = log_queue_size or settings.SERVER_LOG_QUEUE_SIZE
         self.java_check_timeout = settings.JAVA_CHECK_TIMEOUT
-        # Late-bound `ServerRepository` factory (#228 PR 2d). Wired in
-        # `app/main.py` lifespan after the singleton is constructed so
-        # constructor compatibility is preserved for legacy callers /
-        # tests that still instantiate `MinecraftServerManager()` with
-        # no arguments.
-        self._server_repository_factory: Optional[
-            Callable[[Session], ServerRepository]
-        ] = server_repository_factory
+        # NB(#285): the pre-#272 ``server_repository_factory`` indirection
+        # (``Callable[[Session], ServerRepository]``) was deleted as part
+        # of completing the ARCHITECTURE §4.2 cleanup. The port-conflict
+        # check inside ``_validate_port_availability`` now consumes a
+        # ``ServerRepository`` passed explicitly by the caller — no
+        # framework-typed factories remain on this class.
 
     def set_status_update_callback(self, callback: Callable[[int, ServerStatus], None]):
         """Set callback function to update database when server status changes"""
         self._status_update_callback = callback
-
-    @property
-    def server_repository_factory(
-        self,
-    ) -> Optional[Callable[[Session], ServerRepository]]:
-        """Late-bound `ServerRepository` factory (see `__init__`)."""
-        return self._server_repository_factory
-
-    @server_repository_factory.setter
-    def server_repository_factory(
-        self, factory: Optional[Callable[[Session], ServerRepository]]
-    ) -> None:
-        self._server_repository_factory = factory
 
     def _get_pid_file_path(self, server_id: int, server_dir: Path) -> Path:
         """Get path to PID file for server"""
@@ -1331,9 +1314,10 @@ class MinecraftServerManager:
         """
         try:
             # First check database for servers using the same port through
-            # the injected ``ServerRepository``. The Session-scoped factory
-            # on this manager is no longer consulted here (#272): callers
-            # pass the already-built repository in alongside the entity,
+            # the injected ``ServerRepository``. The legacy
+            # ``server_repository_factory`` indirection (which used to
+            # take a ``Session``) was removed in #285; callers now pass
+            # the already-built repository in alongside the entity,
             # mirroring the rest of the application layer.
             if server_repository is not None:
                 conflicts = await server_repository.list_by_port(
