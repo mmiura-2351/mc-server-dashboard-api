@@ -7,9 +7,19 @@ The pre-#228 contract that the facade's `attach_server_to_group`
 attribute raise `NotImplementedError` has been removed because the
 latent bug it guarded was fixed in #228 PR 2c — the create-server
 flow now uses the correct `attach_group_to_server` call via DI.
+
+Note on the `_LegacyGroupFacade` import below: the underscore prefix is
+intentional. These tests verify the shim's *internal* contract — that
+`GroupService` is an alias to the facade class object itself, not merely
+a callable with matching behavior — so we must reach past the public
+`GroupService` alias to the underlying class. The symbol is listed in
+`legacy.__all__` precisely so this cross-boundary test import remains
+valid; do not "fix" it to the public alias.
 """
 
 from app.groups.application import legacy as shim_module
+
+# Intentional private import: shim contract verification (see module docstring).
 from app.groups.application.legacy import _LegacyGroupFacade
 from app.groups.domain.exceptions import (
     GroupAccessError,
