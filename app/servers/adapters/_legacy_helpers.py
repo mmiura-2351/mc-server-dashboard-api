@@ -1,15 +1,17 @@
-"""Legacy direct-ORM helpers retained for backward compatibility.
+"""Legacy ORM-direct helpers for ServerService, retained for migration parity.
 
-These helpers carry the historic `db.query(Server)` callsites that
-existed in the pre-#228 `app.servers.service` and
-`app.services.server_service` modules. They are quarantined into this
-private module so the canonical `app.servers.application.service`
-module is free of `db.query(...)` per the #228 PR 2c gate.
+These helpers contain direct `db.query(Server)` access — they live here in
+adapters/ (per ARCHITECTURE §4.3, adapter layer may use SQLAlchemy) rather
+than in application/ to preserve the layering invariant established in #225-#228.
 
-Existing unit tests inject a `Mock(db)` directly into the methods on
-this module — that contract is preserved verbatim. New code SHOULD NOT
-import from here; instead, use the `ServerRepository` Port and the
-`ServerService` constructor DI in `app.servers.application.service`.
+The legacy entry points (`ServerValidationService`, `ServerDatabaseService`, etc.)
+are exercised only by `tests/unit/services/test_server_service.py` and
+`tests/unit/servers/test_service.py` legacy test fixtures. Production routers
+use the canonical `ServerService` in `app/servers/application/service.py`,
+which goes through `ServerRepository` exclusively.
+
+TODO(#149): once those legacy tests are rewritten to repository-fake fixtures,
+this entire module can be deleted.
 """
 
 from __future__ import annotations

@@ -29,7 +29,9 @@ from app.servers.api.dependencies import (
 from app.servers.application.authorization import AuthorizationService
 from app.servers.application.service import (
     ServerService,
-    server_service,  # legacy module-level alias for old unit tests
+)
+from app.servers.application.service import (
+    _server_service_legacy as server_service,  # legacy module-level alias for old unit tests
 )
 from app.servers.domain.ports import ServerRepository
 from app.servers.models import ServerStatus, ServerType

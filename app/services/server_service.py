@@ -7,7 +7,12 @@ Import from `app.servers.application.service` directly in new code.
 patch it via `patch("app.services.server_service.minecraft_server_manager")`.
 """
 
-from app.servers.application.service import ServerService, server_service
+from app.servers.application.service import (
+    ServerService,
+)
+from app.servers.application.service import (
+    _server_service_legacy as server_service,
+)
 from app.services.minecraft_server import minecraft_server_manager
 
 __all__ = ["ServerService", "server_service", "minecraft_server_manager"]

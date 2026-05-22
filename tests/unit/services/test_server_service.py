@@ -130,7 +130,7 @@ class TestServerService:
         assert "Failed to list servers" in str(exc_info.value.detail)
 
     # Test validate_server_operation
-    @patch("app.servers.application._legacy_db_helpers.minecraft_server_manager")
+    @patch("app.servers.adapters._legacy_helpers.minecraft_server_manager")
     def test_validate_server_operation_success(
         self, mock_manager, service, mock_db_session, mock_server
     ):
@@ -143,7 +143,7 @@ class TestServerService:
         assert result is True
         mock_manager.get_server_status.assert_called_once_with(1)
 
-    @patch("app.servers.application._legacy_db_helpers.minecraft_server_manager")
+    @patch("app.servers.adapters._legacy_helpers.minecraft_server_manager")
     def test_validate_server_operation_server_not_found(
         self, mock_manager, service, mock_db_session
     ):
@@ -156,7 +156,7 @@ class TestServerService:
         assert exc_info.value.status_code == 404
         assert "Server not found" in str(exc_info.value.detail)
 
-    @patch("app.servers.application._legacy_db_helpers.minecraft_server_manager")
+    @patch("app.servers.adapters._legacy_helpers.minecraft_server_manager")
     def test_validate_server_operation_invalid_status(
         self, mock_manager, service, mock_db_session, mock_server
     ):
@@ -170,7 +170,7 @@ class TestServerService:
         assert exc_info.value.status_code == 409
         assert "Cannot start server in running state" in str(exc_info.value.detail)
 
-    @patch("app.servers.application._legacy_db_helpers.minecraft_server_manager")
+    @patch("app.servers.adapters._legacy_helpers.minecraft_server_manager")
     def test_validate_server_operation_status_fallback(
         self, mock_manager, service, mock_db_session, mock_server
     ):
@@ -183,7 +183,7 @@ class TestServerService:
         # Should fallback to stopped status and allow start
         assert result is True
 
-    @patch("app.servers.application._legacy_db_helpers.minecraft_server_manager")
+    @patch("app.servers.adapters._legacy_helpers.minecraft_server_manager")
     def test_validate_server_operation_all_operations(
         self, mock_manager, service, mock_db_session, mock_server
     ):
@@ -205,7 +205,7 @@ class TestServerService:
             result = service.validate_server_operation(1, operation, db=mock_db_session)
             assert result is True
 
-    @patch("app.servers.application._legacy_db_helpers.minecraft_server_manager")
+    @patch("app.servers.adapters._legacy_helpers.minecraft_server_manager")
     def test_validate_server_operation_database_error(
         self, mock_manager, service, mock_db_session
     ):

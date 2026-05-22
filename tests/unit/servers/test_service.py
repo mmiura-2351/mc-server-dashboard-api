@@ -311,7 +311,7 @@ class TestServerValidationServiceExtended:
 
     def test_validate_server_directory_success(self, validation_service):
         """Test successful server directory validation (lines 157-172)"""
-        with patch("app.servers.application._legacy_db_helpers.PathValidator") as mock_path_validator:
+        with patch("app.servers.adapters._legacy_helpers.PathValidator") as mock_path_validator:
             mock_server_dir = Mock()
             mock_server_dir.exists.return_value = False
             mock_path_validator.create_safe_server_directory.return_value = (
@@ -325,7 +325,7 @@ class TestServerValidationServiceExtended:
 
     def test_validate_server_directory_exists(self, validation_service):
         """Test server directory already exists (lines 168-171)"""
-        with patch("app.servers.application._legacy_db_helpers.PathValidator") as mock_path_validator:
+        with patch("app.servers.adapters._legacy_helpers.PathValidator") as mock_path_validator:
             mock_server_dir = Mock()
             mock_server_dir.exists.return_value = True
             mock_path_validator.create_safe_server_directory.return_value = (

@@ -51,7 +51,8 @@ class _LegacyGroupFacade:
     """
 
     def __init__(self, db: Any = None) -> None:
-        self._db = db
+        # db kwarg retained for legacy signature parity; unused since #228 PR 2b.
+        pass
 
 
 # Public alias: legacy callers that still construct `GroupService(db)`

@@ -56,12 +56,11 @@ from app.core.exceptions import (
 )
 from app.core.security import PathValidator, SecurityError
 from app.groups.application.service import GroupService
-from app.servers.application._legacy_db_helpers import (
+from app.servers.adapters._legacy_helpers import (
     ServerValidationService,
     get_server_statistics_legacy,
     get_server_with_access_check_legacy,
     list_servers_for_user_legacy,
-    list_servers_legacy_db,
     server_exists_legacy,
     update_server_status_legacy,
     validate_server_operation_legacy,
@@ -161,7 +160,7 @@ class ServerSecurityValidator:
         return shlex.quote(str(value))
 
 
-# `ServerValidationService` is re-exported from `_legacy_db_helpers`
+# `ServerValidationService` is re-exported from `_legacy_helpers`
 # (see module imports above) to keep `service.py` free of `db.query(...)`
 # while preserving the legacy class signature for existing tests.
 
@@ -685,6 +684,10 @@ class ServerService:
             # adapter type isn't part of the Port surface; cast via
             # attribute access — the only concrete implementation is
             # SqlAlchemyServersUnitOfWork.
+            # FIXME(#272): adapter encapsulation leak — reach into UoW's private SQLAlchemy
+            # Session because minecraft_server_manager.start_server(server, db) requires
+            # an ORM Server instance. Eliminate once minecraft_server_manager accepts
+            # ServerEntity (#149 child).
             db = getattr(uow, "_db", None)
             if db is None:
                 raise RuntimeError(
@@ -804,62 +807,6 @@ class ServerService:
     # ===================
     # Listing
     # ===================
-
-    def list_servers(
-        self,
-        owner_id: Optional[int] = None,
-        status: Optional[ServerStatus] = None,
-        server_type: Optional[ServerType] = None,
-        page: int = 1,
-        size: int = 50,
-        db: Optional[Session] = None,
-    ) -> Dict[str, Any]:
-        """List servers with filtering and pagination.
-
-        Sync wrapper that runs the repository's async `list_paged` if a
-        repository is wired; otherwise falls back to a direct ORM query
-        on `db` to keep legacy callers (and the pre-existing test
-        fixtures that inject a `Mock(db)`) working.
-        """
-        try:
-            if self._server_repo is not None:
-                spec = ServerListSpec(
-                    owner_id=owner_id,
-                    status=status,
-                    server_type=server_type,
-                    page=page,
-                    size=size,
-                )
-                # Run async repo method to completion. The legacy router
-                # signature is synchronous; tests await separately via
-                # other entrypoints.
-                page_result = asyncio.get_event_loop().run_until_complete(
-                    self._server_repo.list_paged(spec)
-                )
-                return {
-                    "servers": [
-                        ServerResponse.model_validate(self._entity_to_response_dict(e))
-                        for e in page_result.entities
-                    ],
-                    "total": page_result.total,
-                    "page": page_result.page,
-                    "size": page_result.size,
-                }
-
-            # Repository not wired — delegate to the legacy direct-ORM
-            # helper in `_legacy_db_helpers` to keep `service.py` clean
-            # of `db.query(Server)` for the #228 PR 2c gate.
-            assert db is not None, "db is required when repository is not wired"
-            return list_servers_legacy_db(
-                db=db,
-                owner_id=owner_id,
-                status=status,
-                server_type=server_type,
-                page=page,
-                size=size,
-            )
-        except Exception as e:
-            handle_database_error("list", "servers", e)
 
     async def list_servers_async(
         self,
@@ -1073,5 +1020,7 @@ class ServerService:
 
 # Global default instance for legacy import paths. Constructed without
 # DI; production routers now use the DI factory `get_server_service`
-# from `app.servers.api.dependencies`.
-server_service = ServerService()
+# from `app.servers.api.dependencies`. Underscore-prefixed to make it
+# clear this is for legacy tests only — new code MUST go through the
+# DI factory.
+_server_service_legacy = ServerService()

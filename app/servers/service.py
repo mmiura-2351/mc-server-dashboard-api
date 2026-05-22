@@ -22,7 +22,9 @@ from app.servers.application.service import (
     ServerSecurityValidator,
     ServerService,
     ServerValidationService,
-    server_service,
+)
+from app.servers.application.service import (
+    _server_service_legacy as server_service,
 )
 from app.servers.schemas import ServerResponse
 
