@@ -88,17 +88,9 @@ class AuthorizationService:
         server = await self._server_repo.get(server_id, include_deleted=True)
         if server is None:
             if log_access and request:
-                # The current ``AuditService.log_permission_check``
-                # signature still takes ``db`` for symmetry with its
-                # sibling methods, but the implementation does not
-                # touch the session (it dispatches via ``_writer(request)``
-                # — see ``app.audit.application.legacy_facade``). Passing
-                # ``None`` keeps the call working without dragging a
-                # ``Session`` dependency into this service.
                 from app.audit.service import AuditService
 
                 AuditService.log_permission_check(
-                    db=None,
                     request=request,
                     resource_type="server",
                     resource_id=server_id,
@@ -116,7 +108,6 @@ class AuthorizationService:
             from app.audit.service import AuditService
 
             AuditService.log_permission_check(
-                db=None,
                 request=request,
                 resource_type="server",
                 resource_id=server_id,

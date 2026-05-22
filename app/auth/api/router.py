@@ -46,7 +46,6 @@ async def login(
         )
         if user_entity is None:
             AuditService.log_authentication_event(
-                db=db,
                 request=request,
                 action="login",
                 details={
@@ -64,7 +63,6 @@ async def login(
         refresh_token = await auth_service.create_refresh_token(user_entity.id)
 
         AuditService.log_authentication_event(
-            db=db,
             request=request,
             action="login",
             user_id=user_entity.id,
@@ -79,7 +77,6 @@ async def login(
     except HTTPException as e:
         if user_entity is None:
             AuditService.log_authentication_event(
-                db=db,
                 request=request,
                 action="login",
                 details={
@@ -103,7 +100,6 @@ async def refresh_access_token(
     user_id = await auth_service.verify_refresh_token(token_request.refresh_token)
     if not user_id:
         AuditService.log_authentication_event(
-            db=db,
             request=request,
             action="token_refresh",
             details={"reason": "invalid_refresh_token"},
@@ -117,7 +113,6 @@ async def refresh_access_token(
     user = await user_service.get_user_by_id(user_id)
     if user is None or not user.is_active:
         AuditService.log_authentication_event(
-            db=db,
             request=request,
             action="token_refresh",
             user_id=user_id,
@@ -133,7 +128,6 @@ async def refresh_access_token(
     new_refresh_token = await auth_service.create_refresh_token(user.id)
 
     AuditService.log_authentication_event(
-        db=db,
         request=request,
         action="token_refresh",
         user_id=user.id,
@@ -155,7 +149,6 @@ async def logout(
     success = await auth_service.revoke_refresh_token(token_request.refresh_token)
     if not success:
         AuditService.log_authentication_event(
-            db=db,
             request=request,
             action="logout",
             user_id=user_id,
@@ -167,7 +160,6 @@ async def logout(
         )
 
     AuditService.log_authentication_event(
-        db=db,
         request=request,
         action="logout",
         user_id=user_id,

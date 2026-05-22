@@ -98,7 +98,6 @@ async def get_audit_logs(
         user_id = current_user.id
 
     AuditService.log_admin_action(
-        db=db,
         request=request,
         action="view_audit_logs",
         target_resource_type="audit_log",
@@ -148,7 +147,6 @@ async def get_security_alerts(
         )
 
     AuditService.log_admin_action(
-        db=db,
         request=request,
         action="view_security_alerts",
         target_resource_type="security_alert",
@@ -184,7 +182,6 @@ async def get_user_activity(
         raise HTTPException(status_code=404, detail="User not found")
 
     AuditService.log_admin_action(
-        db=db,
         request=request,
         action="view_user_activity",
         target_resource_type="user",
@@ -211,7 +208,6 @@ async def get_audit_statistics(
         )
 
     AuditService.log_admin_action(
-        db=db,
         request=request,
         action="view_audit_statistics",
         target_resource_type="audit_statistics",

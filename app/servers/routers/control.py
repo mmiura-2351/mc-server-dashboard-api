@@ -70,7 +70,6 @@ async def start_server(
 
         # Log server start attempt
         AuditService.log_server_event(
-            db=db,
             request=request,
             action="start_attempt",
             server_id=server_id,
@@ -85,7 +84,6 @@ async def start_server(
         if current_status not in [ServerStatus.stopped, ServerStatus.error]:
             # Log failed start due to status
             AuditService.log_server_event(
-                db=db,
                 request=request,
                 action="start_failed",
                 server_id=server_id,
@@ -128,7 +126,6 @@ async def start_server(
                     )
                     # Log Java availability issue
                     AuditService.log_server_event(
-                        db=db,
                         request=request,
                         action="start_failed",
                         server_id=server_id,
@@ -152,7 +149,6 @@ async def start_server(
                 )
                 # Log Java executable issue
                 AuditService.log_server_event(
-                    db=db,
                     request=request,
                     action="start_failed",
                     server_id=server_id,
@@ -176,7 +172,6 @@ async def start_server(
                 logger.error(f"Server JAR missing: {jar_path}")
                 # Log missing JAR file
                 AuditService.log_server_event(
-                    db=db,
                     request=request,
                     action="start_failed",
                     server_id=server_id,
@@ -194,7 +189,6 @@ async def start_server(
 
             # Generic failure if we can't determine specific cause
             AuditService.log_server_event(
-                db=db,
                 request=request,
                 action="start_failed",
                 server_id=server_id,
@@ -211,7 +205,6 @@ async def start_server(
 
         # Log successful start
         AuditService.log_server_event(
-            db=db,
             request=request,
             action="start_success",
             server_id=server_id,
@@ -237,7 +230,6 @@ async def start_server(
     except Exception as e:
         # Log unexpected error
         AuditService.log_server_event(
-            db=db,
             request=request,
             action="start_failed",
             server_id=server_id,
@@ -432,7 +424,6 @@ async def send_server_command(
 
         # Log command attempt (CRITICAL SECURITY EVENT)
         AuditService.log_server_command_event(
-            db=db,
             request=http_request,
             server_id=server_id,
             command=command_request.command,
@@ -443,7 +434,6 @@ async def send_server_command(
         if server_status != ServerStatus.running:
             # Log failed command due to status
             AuditService.log_server_event(
-                db=db,
                 request=http_request,
                 action="command_failed",
                 server_id=server_id,
@@ -467,7 +457,6 @@ async def send_server_command(
         if not success:
             # Log failed command execution
             AuditService.log_server_command_event(
-                db=db,
                 request=http_request,
                 server_id=server_id,
                 command=command_request.command,
@@ -482,7 +471,6 @@ async def send_server_command(
 
         # Log successful command execution
         AuditService.log_server_command_event(
-            db=db,
             request=http_request,
             server_id=server_id,
             command=command_request.command,
@@ -498,7 +486,6 @@ async def send_server_command(
     except Exception as e:
         # Log unexpected error during command execution
         AuditService.log_server_command_event(
-            db=db,
             request=http_request,
             server_id=server_id,
             command=command_request.command,
