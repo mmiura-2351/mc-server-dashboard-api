@@ -239,6 +239,16 @@ class WebSocketService:
             except asyncio.CancelledError:
                 pass
 
+    def is_monitoring(self) -> bool:
+        """Whether the background status monitor task is currently alive.
+
+        Public accessor introduced for the health-check adapter
+        (Issue #21) so consumers do not have to touch the private
+        ``_status_monitor_task`` attribute.
+        """
+        task = self._status_monitor_task
+        return task is not None and not task.done()
+
     async def handle_connection(
         self, websocket: WebSocket, server_id: int, user: User, db: Session
     ):

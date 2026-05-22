@@ -41,6 +41,23 @@ class Settings(BaseSettings):
     # Interval (seconds) between sweep runs in the scheduler loop.
     BACKUPS_CLEANUP_INTERVAL_SECONDS: int = 3600
 
+    # Health check configuration (Issue #21)
+    # Per-component timeout: individual ``HealthCheckPort.check()``
+    # invocations are bounded so one slow adapter cannot block the
+    # whole probe.
+    HEALTH_CHECK_PER_COMPONENT_TIMEOUT_SECONDS: float = 2.0
+    # Filesystem probe budget (used by the FilesystemHealthCheck when
+    # ``probe_writability=True``; the default os.access() path is
+    # already nearly free).
+    HEALTH_CHECK_FS_TIMEOUT_SECONDS: float = 1.0
+    # Global guardrail: aggregates of the per-component runs are
+    # bounded by this — defends against pathological misconfigurations
+    # where every probe sits at the per-component timeout.
+    HEALTH_CHECK_GLOBAL_TIMEOUT_SECONDS: float = 5.0
+    # Short cache so k8s probing at ~1 Hz does not amplify into a
+    # flood of database connections.
+    HEALTH_CHECK_CACHE_TTL_SECONDS: float = 2.0
+
     # CORS configuration
     CORS_ORIGINS: str = (
         "http://localhost:3000,http://127.0.0.1:3000,https://127.0.0.1:3000"
@@ -142,6 +159,21 @@ class Settings(BaseSettings):
             raise ValueError(
                 "BACKUPS_CLEANUP_INTERVAL_SECONDS must be between 60 and 86400 seconds"
             )
+        return v
+
+    @field_validator(
+        "HEALTH_CHECK_PER_COMPONENT_TIMEOUT_SECONDS",
+        "HEALTH_CHECK_FS_TIMEOUT_SECONDS",
+        "HEALTH_CHECK_GLOBAL_TIMEOUT_SECONDS",
+        "HEALTH_CHECK_CACHE_TTL_SECONDS",
+    )
+    @classmethod
+    def validate_health_check_timings(cls, v: float) -> float:
+        """All health-check timing knobs must be strictly positive and
+        below a 60s ceiling (anything larger would defeat the point of
+        a sub-second probe interval)."""
+        if v <= 0 or v > 60:
+            raise ValueError("health check timing settings must be in (0, 60] seconds")
         return v
 
     @property

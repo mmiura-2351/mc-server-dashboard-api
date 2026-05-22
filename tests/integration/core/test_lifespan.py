@@ -140,48 +140,42 @@ class TestHealthEndpointComprehensive:
             assert data["failed_services"] == []
 
     def test_health_endpoint_unhealthy_database(self, client):
-        """Test health endpoint when database is unhealthy"""
-        with patch("app.main.service_status") as mock_status:
-            mock_status.is_healthy.return_value = False
-            mock_status.get_status.return_value = {
-                "database": False,
-                "database_integration": True,
-                "backup_scheduler": True,
-                "websocket_service": True,
-                "version_update_scheduler": True,
-                "failed_services": ["database"],
-                "healthy": False,
-            }
+        """Test health endpoint when database is unhealthy.
 
+        Post-#21: the legacy wire format is preserved, but the
+        underlying evaluation goes through ``HealthCheckService``. We
+        therefore override the service rather than poking
+        ``service_status``.
+        """
+        from tests.integration.core._health_helpers import (
+            override_health_service,
+            unhealthy_database_components,
+        )
+
+        with override_health_service(unhealthy_database_components()):
             response = client.get("/api/v1/health")
 
-            assert response.status_code == 503
-            data = response.json()
-            assert data["status"] == "degraded"
-            assert data["services"]["database"] == "failed"
-            assert "database" in data["failed_services"]
+        assert response.status_code == 503
+        data = response.json()
+        assert data["status"] == "degraded"
+        assert data["services"]["database"] == "failed"
+        assert "database" in data["failed_services"]
 
     def test_health_endpoint_partial_failures(self, client):
-        """Test health endpoint with some failed services"""
-        with patch("app.main.service_status") as mock_status:
-            mock_status.is_healthy.return_value = True  # Database is healthy
-            mock_status.get_status.return_value = {
-                "database": True,
-                "database_integration": False,
-                "backup_scheduler": False,
-                "websocket_service": True,
-                "version_update_scheduler": True,
-                "failed_services": ["database_integration", "backup_scheduler"],
-                "healthy": True,
-            }
+        """Test health endpoint with some failed services (#21 wire compat)."""
+        from tests.integration.core._health_helpers import (
+            override_health_service,
+            partial_failure_components,
+        )
 
+        with override_health_service(partial_failure_components()):
             response = client.get("/api/v1/health")
 
-            assert response.status_code == 200  # Still healthy due to database
-            data = response.json()
-            assert data["status"] == "healthy"
-            assert data["services"]["database"] == "operational"
-            assert len(data["failed_services"]) == 2
+        assert response.status_code == 200  # Still healthy due to database
+        data = response.json()
+        assert data["status"] == "healthy"
+        assert data["services"]["database"] == "operational"
+        assert len(data["failed_services"]) == 2
 
     def test_metrics_endpoint_basic_functionality(self, client):
         """Test metrics endpoint returns expected structure"""
@@ -655,26 +649,20 @@ class TestApiV1EndpointsNew:
             assert data["failed_services"] == []
 
     def test_api_v1_health_endpoint_unhealthy_database(self, client):
-        """Test /api/v1/health endpoint when database is unhealthy"""
-        with patch("app.main.service_status") as mock_status:
-            mock_status.is_healthy.return_value = False
-            mock_status.get_status.return_value = {
-                "database": False,
-                "database_integration": True,
-                "backup_scheduler": True,
-                "websocket_service": True,
-                "version_update_scheduler": True,
-                "failed_services": ["database"],
-                "healthy": False,
-            }
+        """Test /api/v1/health endpoint when database is unhealthy (#21 wire compat)."""
+        from tests.integration.core._health_helpers import (
+            override_health_service,
+            unhealthy_database_components,
+        )
 
+        with override_health_service(unhealthy_database_components()):
             response = client.get("/api/v1/health")
 
-            assert response.status_code == 503
-            data = response.json()
-            assert data["status"] == "degraded"
-            assert data["services"]["database"] == "failed"
-            assert "database" in data["failed_services"]
+        assert response.status_code == 503
+        data = response.json()
+        assert data["status"] == "degraded"
+        assert data["services"]["database"] == "failed"
+        assert "database" in data["failed_services"]
 
     def test_api_v1_metrics_endpoint_basic_functionality(self, client):
         """Test /api/v1/metrics endpoint returns expected structure"""

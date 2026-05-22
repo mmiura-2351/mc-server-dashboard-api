@@ -2,7 +2,7 @@ import logging
 from contextlib import asynccontextmanager
 from typing import Any, Dict
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app import __version__
@@ -20,6 +20,10 @@ from app.core.error_handlers import register_exception_handlers
 from app.core.visibility_router import router as visibility_router
 from app.files.router import router as files_router
 from app.groups.router import router as groups_router
+from app.health.api.dependencies import get_health_check_service
+from app.health.api.router import build_legacy_payload
+from app.health.api.router import router as health_router
+from app.health.application.service import HealthCheckService
 from app.middleware.audit_middleware import AuditMiddleware
 from app.middleware.performance_monitoring import (
     PerformanceMonitoringMiddleware,
@@ -400,93 +404,43 @@ register_exception_handlers(app)
 
 
 @app.get("/health", tags=["health"])
-async def health_check():
-    """Health check endpoint with service status information"""
+async def health_check(
+    service: HealthCheckService = Depends(get_health_check_service),
+):
+    """Legacy health check endpoint.
+
+    Wire format is preserved for backward compatibility; the actual
+    component evaluation is delegated to ``HealthCheckService`` (Issue
+    #21). New consumers should prefer ``/healthz``, ``/readyz``, or
+    ``/api/v1/health/detail``.
+    """
     import json
-    from datetime import datetime
 
     from fastapi import Response
 
-    status = service_status.get_status()
-
-    response_data = {
-        "status": "healthy" if status["healthy"] else "degraded",
-        "timestamp": datetime.now().isoformat(),
-        "services": {
-            "database": "operational" if status["database"] else "failed",
-            "database_integration": (
-                "operational" if status["database_integration"] else "failed"
-            ),
-            "backup_scheduler": "operational" if status["backup_scheduler"] else "failed",
-            "websocket_service": (
-                "operational" if status["websocket_service"] else "failed"
-            ),
-            "version_update_scheduler": (
-                "operational" if status["version_update_scheduler"] else "failed"
-            ),
-        },
-        "failed_services": status["failed_services"],
-        "message": (
-            "All services operational"
-            if status["healthy"]
-            else f"Running with degraded functionality: {', '.join(status['failed_services'])}"
-        ),
-    }
-
-    # Return appropriate HTTP status based on service health
-    if not status["healthy"]:
-        return Response(
-            content=json.dumps(response_data),
-            status_code=503,
-            media_type="application/json",
-        )
-
-    return response_data
+    payload, status_code = await build_legacy_payload(service)
+    return Response(
+        content=json.dumps(payload),
+        status_code=status_code,
+        media_type="application/json",
+    )
 
 
 @app.get("/api/v1/health", tags=["health"])
-async def health_check_v1():
-    """Health check endpoint with service status information"""
+async def health_check_v1(
+    service: HealthCheckService = Depends(get_health_check_service),
+):
+    """Legacy ``/api/v1/health`` alias — see :func:`health_check`."""
     import json
-    from datetime import datetime
 
     from fastapi import Response
 
-    status = service_status.get_status()
-
-    response_data = {
-        "status": "healthy" if status["healthy"] else "degraded",
-        "timestamp": datetime.now().isoformat(),
-        "services": {
-            "database": "operational" if status["database"] else "failed",
-            "database_integration": (
-                "operational" if status["database_integration"] else "failed"
-            ),
-            "backup_scheduler": "operational" if status["backup_scheduler"] else "failed",
-            "websocket_service": (
-                "operational" if status["websocket_service"] else "failed"
-            ),
-            "version_update_scheduler": (
-                "operational" if status["version_update_scheduler"] else "failed"
-            ),
-        },
-        "failed_services": status["failed_services"],
-        "message": (
-            "All services operational"
-            if status["healthy"]
-            else f"Running with degraded functionality: {', '.join(status['failed_services'])}"
-        ),
-    }
-
-    # Return appropriate HTTP status based on service health
-    if not status["healthy"]:
-        return Response(
-            content=json.dumps(response_data),
-            status_code=503,
-            media_type="application/json",
-        )
-
-    return response_data
+    payload, status_code = await build_legacy_payload(service)
+    return Response(
+        content=json.dumps(payload),
+        status_code=status_code,
+        media_type="application/json",
+    )
 
 
 @app.get("/metrics", tags=["monitoring"])
@@ -557,3 +511,9 @@ app.include_router(versions_router, prefix="/api/v1/versions", tags=["versions"]
 app.include_router(websockets_router, prefix="/api/v1/ws", tags=["websockets"])
 app.include_router(visibility_router, prefix="/api/v1", tags=["visibility"])
 app.include_router(audit_router, tags=["audit"])
+
+# Health / readiness endpoints (Issue #21). Mounted without a prefix
+# so ``/healthz``, ``/readyz`` and ``/ready`` keep their canonical
+# k8s paths; the admin detail endpoint declares its own
+# ``/api/v1/health/detail`` path on the route.
+app.include_router(health_router)
