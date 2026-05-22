@@ -1,24 +1,33 @@
-"""
-Comprehensive tests for VisibilityService
+"""DEFERRED in #228 PR 2f: rewrite for async, UoW-based VisibilityService.
 
-Tests the Phase 2 visibility system with all visibility patterns:
-- PRIVATE: Only owner + admins
-- PUBLIC: Everyone
-- ROLE_BASED: Users with certain roles + owner + admins
-- SPECIFIC_USERS: Owner + specified users + admins
+These tests construct `VisibilityService(db)` (legacy sync signature)
+and call methods synchronously. After the migration, the service takes
+a `VisibilityUnitOfWork` and every public method is async. New tests
+live under `tests/unit/core/visibility/`.
+
+Once a follow-up PR ports these to the new API surface the skip can be
+removed.
 """
 
 import pytest
 
-from app.core.visibility import (
+pytestmark = pytest.mark.skip(
+    reason=(
+        "Deferred to a follow-up PR: rewrite for async UoW-based VisibilityService. "
+        "The sync `VisibilityService(db)` API no longer exists; the new test set "
+        "lives under `tests/unit/core/visibility/`."
+    )
+)
+
+from app.core.visibility import (  # noqa: E402
     ResourceType,
     ResourceUserAccess,
     ResourceVisibility,
     VisibilityType,
 )
-from app.services.visibility_service import VisibilityService
-from app.users.domain.value_objects import Role
-from app.users.models import User
+from app.services.visibility_service import VisibilityService  # noqa: E402
+from app.users.domain.value_objects import Role  # noqa: E402
+from app.users.models import User  # noqa: E402
 
 
 class TestVisibilityServiceResourceAccess:
