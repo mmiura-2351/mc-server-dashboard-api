@@ -415,7 +415,8 @@ def __getattr__(name: str) -> Any:
     """Lazy resolver for the legacy ``database_integration_service`` name.
 
     Returning the holder's current instance on attribute access lets test
-    code that still imports the symbol (e.g. ``test_database_integration_enhanced``)
+    code that still imports the symbol (e.g.
+    ``tests/integration/servers/test_database_integration_service.py``)
     keep working, while ensuring access happens *after* the lifespan has
     initialised the singleton. Raises ``RuntimeError`` (via the holder)
     if accessed pre-init — a clear error rather than the silent

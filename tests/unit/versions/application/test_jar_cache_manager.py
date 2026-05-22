@@ -8,7 +8,7 @@ import pytest
 
 from app.servers.models import ServerType
 from app.versions.application.jar_cache_manager import JarCacheManager
-from tests.infrastructure.test_aiohttp_mocks import (
+from tests.infrastructure.versions.test_aiohttp_mocks import (
     MockAiohttpResponse,
     MockAiohttpSession,
 )
