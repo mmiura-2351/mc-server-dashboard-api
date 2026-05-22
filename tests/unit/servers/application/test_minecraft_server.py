@@ -145,7 +145,9 @@ class TestMinecraftServerManagerSimpleCoverage:
             mock_socket_class.return_value = mock_socket
             mock_socket.connect_ex.return_value = 1  # Port not in use
 
-            available, message = await manager._validate_port_availability(mock_server)
+            available, message = await manager._validate_port_availability(
+                mock_server, _for_test_default=True
+            )
 
             assert available is True
             assert "Port 25565 is available" in message
@@ -158,7 +160,9 @@ class TestMinecraftServerManagerSimpleCoverage:
             mock_socket_class.return_value = mock_socket
             mock_socket.connect_ex.return_value = 0  # Port in use
 
-            available, message = await manager._validate_port_availability(mock_server)
+            available, message = await manager._validate_port_availability(
+                mock_server, _for_test_default=True
+            )
 
             assert available is False
             assert "Port 25565 is already in use" in message
@@ -238,7 +242,9 @@ class TestMinecraftServerManagerSimpleCoverage:
     async def test_validate_port_availability_exception(self, manager, mock_server):
         """Test _validate_port_availability exception handling"""
         with patch("socket.socket", side_effect=Exception("Socket error")):
-            available, message = await manager._validate_port_availability(mock_server)
+            available, message = await manager._validate_port_availability(
+                mock_server, _for_test_default=True
+            )
 
             assert available is False
             assert "Port validation failed" in message
