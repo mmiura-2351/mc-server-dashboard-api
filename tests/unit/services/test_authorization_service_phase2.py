@@ -11,8 +11,9 @@ import pytest
 
 pytestmark = pytest.mark.skip(
     reason=(
-        "Deferred to PR 2c follow-up — see module docstring. The static-method "
-        "`AuthorizationService.check_*_access` signature was removed in PR 2b."
+        "Deferred to #271: rewrite for instance-based AuthorizationService. "
+        "The static-method `AuthorizationService.check_*_access` signature was "
+        "removed in PR 2b."
     )
 )
 

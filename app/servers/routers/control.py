@@ -56,6 +56,7 @@ async def start_server(
         # returned by ``check_server_access`` is frozen and cannot
         # carry those mutations through. This refetch will be removed
         # once the downstream services accept entities (#149).
+        # FIXME(#149): drop this when minecraft_server_manager accepts ServerEntity (see #272).
         server = db.query(Server).filter(Server.id == server_id).first()
         if server is None:
             raise HTTPException(
@@ -318,7 +319,8 @@ async def restart_server(
         # Check ownership/admin access
         await auth.check_server_access(server_id, current_user)
         # Re-fetch the ORM Server because `minecraft_server_manager.start_server`
-        # mutates it via the legacy sync service; see start_server above.
+        # mutates it via the legacy sync service; see start_server above (#272).
+        # FIXME(#149): drop this when minecraft_server_manager accepts ServerEntity (see #272).
         server = db.query(Server).filter(Server.id == server_id).first()
         if server is None:
             raise HTTPException(

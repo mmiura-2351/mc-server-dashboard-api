@@ -17,9 +17,10 @@ import pytest
 
 pytestmark = pytest.mark.skip(
     reason=(
-        "Deferred to PR 2c follow-up — see module docstring. The static-method "
-        "`AuthorizationService.check_*_access(server_id, user, db)` call shape no "
-        "longer exists; the new instance-based async API requires a fresh test file."
+        "Deferred to #271: rewrite for instance-based AuthorizationService. "
+        "The static-method `AuthorizationService.check_*_access(server_id, user, db)` "
+        "call shape no longer exists; the new instance-based async API requires a "
+        "fresh test file."
     )
 )
 

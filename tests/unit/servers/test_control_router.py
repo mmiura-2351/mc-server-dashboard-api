@@ -25,10 +25,11 @@ import pytest
 
 pytestmark = pytest.mark.skip(
     reason=(
-        "Deferred to PR 2c follow-up — see module docstring. The `authorization_service` "
-        "module-level singleton was removed in #228 PR 2b and these direct-call unit "
-        "tests need to be rewritten to pass an AsyncMock(spec=AuthorizationService) via "
-        "the new auth= kwarg, plus mock db.query for the ORM refetch in start/restart."
+        "Deferred to #270: rewrite for AuthorizationService instance DI shape. "
+        "The `authorization_service` module-level singleton was removed in #228 PR 2b "
+        "and these direct-call unit tests need to be rewritten to pass an "
+        "AsyncMock(spec=AuthorizationService) via the new auth= kwarg, plus mock "
+        "db.query for the ORM refetch in start/restart."
     )
 )
 
