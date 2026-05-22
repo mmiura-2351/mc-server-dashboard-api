@@ -227,7 +227,7 @@ async def _initialize_websocket_service():
     """Initialize WebSocket service - optional service"""
     try:
         logger.info("Starting WebSocket monitoring service...")
-        from app.services.websocket_service import websocket_service
+        from app.websockets.application.service import websocket_service
 
         await websocket_service.start_monitoring()
         service_status.websocket_service_ready = True
@@ -297,7 +297,7 @@ async def _cleanup_services():
     if service_status.websocket_service_ready:
         try:
             logger.info("Stopping WebSocket monitoring service...")
-            from app.services.websocket_service import websocket_service
+            from app.websockets.application.service import websocket_service
 
             await websocket_service.stop_monitoring()
             logger.info("WebSocket monitoring service stopped successfully")

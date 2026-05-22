@@ -10,7 +10,7 @@ from fastapi import WebSocket, WebSocketDisconnect
 from sqlalchemy.orm import Session
 
 from app.servers.models import Server
-from app.services.websocket_service import (
+from app.websockets.application.service import (
     ConnectionManager,
     WebSocketService,
     websocket_service,
@@ -63,7 +63,7 @@ class TestConnectionManagerFixed:
         with (
             patch.object(connection_manager, "_stream_server_logs", new=Mock()),
             patch(
-                "app.services.websocket_service.asyncio.create_task"
+                "app.websockets.application.service.asyncio.create_task"
             ) as mock_create_task,
         ):
             mock_task = Mock()
@@ -106,7 +106,7 @@ class TestConnectionManagerFixed:
 
         with (
             patch.object(connection_manager, "_stream_server_logs", new=Mock()),
-            patch("app.services.websocket_service.asyncio.create_task"),
+            patch("app.websockets.application.service.asyncio.create_task"),
         ):
             await connection_manager.connect(ws1, server_id, user1)
             await connection_manager.connect(ws2, server_id, user2)
@@ -318,7 +318,7 @@ class TestConnectionManagerFixed:
         connection_manager.active_connections[server_id] = {Mock()}
 
         with (
-            patch("app.services.websocket_service.minecraft_server_manager") as mock_mgr,
+            patch("app.websockets.application.service.minecraft_server_manager") as mock_mgr,
             patch("builtins.open", mock_open(read_data=log_content)) as mock_file,
             patch.object(connection_manager, "send_to_server_connections") as mock_send,
             patch("pathlib.Path.exists", return_value=True),
@@ -432,7 +432,7 @@ class TestWebSocketServiceFixed:
 
         with (
             patch(
-                "app.services.websocket_service.SqlAlchemyServerReadPort"
+                "app.websockets.application.service.SqlAlchemyServerReadPort"
             ) as mock_port_cls,
             patch.object(ws_service.connection_manager, "connect") as mock_connect,
             patch.object(ws_service.connection_manager, "disconnect") as mock_disconnect,
@@ -459,7 +459,7 @@ class TestWebSocketServiceFixed:
         db = Mock(spec=Session)
 
         with patch(
-            "app.services.websocket_service.SqlAlchemyServerReadPort"
+            "app.websockets.application.service.SqlAlchemyServerReadPort"
         ) as mock_port_cls:
             mock_port = mock_port_cls.return_value
             mock_port.get = AsyncMock(return_value=None)
@@ -480,7 +480,7 @@ class TestWebSocketServiceFixed:
         mock_server_manager.get_status = AsyncMock(return_value=mock_status)
 
         with (
-            patch("app.services.websocket_service.minecraft_server_manager") as mock_mgr,
+            patch("app.websockets.application.service.minecraft_server_manager") as mock_mgr,
             patch.object(
                 ws_service.connection_manager, "send_personal_message"
             ) as mock_send,

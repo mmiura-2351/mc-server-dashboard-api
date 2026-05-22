@@ -422,7 +422,7 @@ class TestApplicationStartupShutdown:
                 "app.servers.application.minecraft_server.minecraft_server_manager"
             ) as mock_mc_manager,
             patch("app.backups.backup_scheduler_instance") as mock_holder,
-            patch("app.services.websocket_service.websocket_service") as mock_ws_service,
+            patch("app.websockets.application.service.websocket_service") as mock_ws_service,
             patch("app.main.service_status") as mock_status,
             patch("app.main.logger") as mock_logger,
         ):
@@ -654,7 +654,7 @@ class TestServiceIntegrationBasic:
         assert make_database_integration_service is not None
 
         # Test websocket service import
-        from app.services.websocket_service import websocket_service
+        from app.websockets.application.service import websocket_service
 
         assert websocket_service is not None
 
@@ -679,7 +679,7 @@ class TestServiceIntegrationBasic:
             DatabaseIntegrationService,
         )
         from app.backups.application.scheduler import backup_scheduler
-        from app.services.websocket_service import websocket_service
+        from app.websockets.application.service import websocket_service
 
         # Database integration service methods
         assert hasattr(DatabaseIntegrationService, "initialize")

@@ -18,7 +18,7 @@ from app.core.exceptions import (
 )
 from app.files.application.encoding_handler import EncodingHandler
 from app.files.application.legacy import file_history_service
-from app.servers.models import Server
+from app.servers.adapters.read_port import SqlAlchemyServerReadPort
 from app.types import FileType
 from app.users.domain.value_objects import Role
 from app.users.models import User
@@ -81,25 +81,23 @@ class FileValidationService:
             "waterfall.yml",
         ]
 
-    def validate_server_exists(
+    async def validate_server_exists(
         self,
         server_id: Annotated[int, "ID of the server to validate"],
         db: Annotated[Session, "Database session for queries"],
-    ) -> Annotated[Server, "Validated server instance"]:
+    ) -> Annotated[Any, "Validated server view with `directory_path`"]:
         """Validate that a server exists in the database.
 
-        Args:
-            server_id: The ID of the server to validate
-            db: Database session for querying
-
-        Returns:
-            Server instance if validation passes
+        Returns a view exposing `directory_path` so callers that need only
+        the on-disk path continue to work unchanged. Resolution goes
+        through `SqlAlchemyServerReadPort.get`, which returns a
+        domain-pure `ServerEntity` (soft-deleted rows are excluded).
 
         Raises:
-            ServerNotFoundException: If server doesn't exist
+            ServerNotFoundException: If server doesn't exist.
         """
-        server = db.query(Server).filter(Server.id == server_id).first()
-        if not server:
+        server = await SqlAlchemyServerReadPort(db).get(server_id)
+        if server is None:
             raise ServerNotFoundException(str(server_id))
         return server
 
@@ -427,7 +425,9 @@ class FileOperationService:
                         current_content = await f.read()
 
                     # Extract relative file path from server directory
-                    relative_path = self._extract_relative_path(file_path, server_id, db)
+                    relative_path = await self._extract_relative_path(
+                        file_path, server_id, db
+                    )
 
                     # Create history backup using new service
                     backup_record = await file_history_service.create_version_backup(
@@ -450,13 +450,15 @@ class FileOperationService:
         except Exception as e:
             handle_file_error("write", str(file_path), e)
 
-    def _extract_relative_path(self, file_path: Path, server_id: int, db: Session) -> str:
+    async def _extract_relative_path(
+        self, file_path: Path, server_id: int, db: Session
+    ) -> str:
         """Extract relative path from server directory"""
-        server = db.query(Server).filter(Server.id == server_id).first()
-        if not server:
+        directory_path = await SqlAlchemyServerReadPort(db).get_directory_path(server_id)
+        if directory_path is None:
             raise ServerNotFoundException(f"Server {server_id} not found")
 
-        server_path = Path(server.directory_path)
+        server_path = Path(directory_path)
         try:
             relative_path = file_path.relative_to(server_path)
             return str(relative_path)
@@ -566,7 +568,7 @@ class FileSearchService:
             )
 
         # Validate server
-        server = self.validation_service.validate_server_exists(server_id, db)
+        server = await self.validation_service.validate_server_exists(server_id, db)
         server_path = Path(server.directory_path)
         self.validation_service.validate_server_directory(server_path)
 
@@ -699,7 +701,7 @@ class FileManagementService:
             )
 
         # Validate server and paths
-        server = self.validation_service.validate_server_exists(server_id, db)
+        server = await self.validation_service.validate_server_exists(server_id, db)
         server_path = Path(server.directory_path)
         self.validation_service.validate_server_directory(server_path)
 
@@ -754,7 +756,7 @@ class FileManagementService:
             )
 
         # Validate server and file
-        server = self.validation_service.validate_server_exists(server_id, db)
+        server = await self.validation_service.validate_server_exists(server_id, db)
         server_path = Path(server.directory_path)
         target_file = server_path / file_path
 
@@ -788,7 +790,7 @@ class FileManagementService:
             )
 
         # Validate server and file
-        server = self.validation_service.validate_server_exists(server_id, db)
+        server = await self.validation_service.validate_server_exists(server_id, db)
         server_path = Path(server.directory_path)
         target_file = server_path / file_path
 
@@ -847,7 +849,7 @@ class FileManagementService:
             )
 
         # Validate server and file
-        server = self.validation_service.validate_server_exists(server_id, db)
+        server = await self.validation_service.validate_server_exists(server_id, db)
         server_path = Path(server.directory_path)
         target_file = server_path / file_path
 
@@ -901,7 +903,7 @@ class FileManagementService:
             )
 
         # Validate server and file
-        server = self.validation_service.validate_server_exists(server_id, db)
+        server = await self.validation_service.validate_server_exists(server_id, db)
         server_path = Path(server.directory_path)
         target_path = server_path / file_path
 
@@ -943,7 +945,7 @@ class FileManagementService:
             )
 
         # Validate server
-        server = self.validation_service.validate_server_exists(server_id, db)
+        server = await self.validation_service.validate_server_exists(server_id, db)
         server_path = Path(server.directory_path)
         target_dir = server_path / destination_path
 
@@ -1028,7 +1030,7 @@ class FileManagementService:
             )
 
         # Validate server
-        server = self.validation_service.validate_server_exists(server_id, db)
+        server = await self.validation_service.validate_server_exists(server_id, db)
         server_path = Path(server.directory_path)
         target_dir = server_path / directory_path
 
@@ -1072,7 +1074,7 @@ class FileManagementService:
             )
 
         # Validate server
-        server = self.validation_service.validate_server_exists(server_id, db)
+        server = await self.validation_service.validate_server_exists(server_id, db)
         server_path = Path(server.directory_path)
         source = server_path / source_path
         destination = server_path / destination_path
@@ -1114,7 +1116,7 @@ class FileManagementService:
             )
 
         # Validate server
-        server = self.validation_service.validate_server_exists(server_id, db)
+        server = await self.validation_service.validate_server_exists(server_id, db)
         server_path = Path(server.directory_path)
         source_path = server_path / file_path
 
@@ -1228,7 +1230,7 @@ class FileManagementService:
             )
 
         # Validate server and file
-        server = self.validation_service.validate_server_exists(server_id, db)
+        server = await self.validation_service.validate_server_exists(server_id, db)
         server_path = Path(server.directory_path)
         target_file = server_path / file_path
 

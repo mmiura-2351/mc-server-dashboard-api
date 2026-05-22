@@ -1,7 +1,7 @@
 """Backward-compatibility tests for `app.services.file_history_service`.
 
 This shim exists for callers (currently
-`app.services.file_management_service`) that still pass an explicit DB
+`app.files.application.management`) that still pass an explicit DB
 session and expect a module-level `file_history_service` singleton.
 Pin both the import path and the call shape so a future cleanup
 cannot silently break the only remaining legacy consumer.

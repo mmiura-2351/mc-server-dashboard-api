@@ -10,7 +10,7 @@ from app.core.exceptions import (
     ServerNotFoundException,
 )
 from app.servers.models import Server
-from app.services.file_management_service import file_management_service
+from app.files.application.management import file_management_service
 from app.users.domain.value_objects import Role
 from app.users.models import User
 
@@ -47,7 +47,7 @@ class TestFileManagementService:
     @pytest.mark.asyncio
     async def test_get_server_files_server_not_found(self, mock_db):
         """Test get_server_files when server doesn't exist"""
-        mock_db.query.return_value.filter.return_value.first.return_value = None
+        mock_db.query.return_value.filter.return_value.one_or_none.return_value = None
 
         with pytest.raises(ServerNotFoundException):
             await file_management_service.get_server_files(server_id=999, db=mock_db)
@@ -58,7 +58,7 @@ class TestFileManagementService:
         self, mock_exists, mock_server, mock_db
     ):
         """Test get_server_files when server directory doesn't exist"""
-        mock_db.query.return_value.filter.return_value.first.return_value = mock_server
+        mock_db.query.return_value.filter.return_value.one_or_none.return_value = mock_server
         mock_exists.return_value = False
 
         with pytest.raises(FileOperationException):
@@ -70,7 +70,7 @@ class TestFileManagementService:
         self, mock_exists, mock_server, mock_db
     ):
         """Test get_server_files with path traversal attempt"""
-        mock_db.query.return_value.filter.return_value.first.return_value = mock_server
+        mock_db.query.return_value.filter.return_value.one_or_none.return_value = mock_server
         mock_exists.side_effect = [True, True]  # server_path and target_path exist
 
         with patch("pathlib.Path.resolve") as mock_resolve:
@@ -92,7 +92,7 @@ class TestFileManagementService:
         self, mock_iterdir, mock_is_dir, mock_exists, mock_server, mock_db
     ):
         """Test successful directory listing"""
-        mock_db.query.return_value.filter.return_value.first.return_value = mock_server
+        mock_db.query.return_value.filter.return_value.one_or_none.return_value = mock_server
         mock_exists.return_value = True
         mock_is_dir.return_value = True
 
@@ -123,7 +123,7 @@ class TestFileManagementService:
     @pytest.mark.asyncio
     async def test_read_file_server_not_found(self, mock_db):
         """Test read_file when server doesn't exist"""
-        mock_db.query.return_value.filter.return_value.first.return_value = None
+        mock_db.query.return_value.filter.return_value.one_or_none.return_value = None
 
         with pytest.raises(ServerNotFoundException):
             await file_management_service.read_file(
@@ -133,7 +133,7 @@ class TestFileManagementService:
     @pytest.mark.asyncio
     async def test_read_file_path_traversal(self, mock_server, mock_db):
         """Test read_file with path traversal attempt"""
-        mock_db.query.return_value.filter.return_value.first.return_value = mock_server
+        mock_db.query.return_value.filter.return_value.one_or_none.return_value = mock_server
 
         with patch("pathlib.Path.resolve") as mock_resolve:
             mock_resolve.side_effect = [
@@ -150,7 +150,7 @@ class TestFileManagementService:
     @patch("pathlib.Path.exists")
     async def test_read_file_not_found(self, mock_exists, mock_server, mock_db):
         """Test read_file when file doesn't exist"""
-        mock_db.query.return_value.filter.return_value.first.return_value = mock_server
+        mock_db.query.return_value.filter.return_value.one_or_none.return_value = mock_server
         mock_exists.return_value = False
 
         with pytest.raises(FileOperationException):
@@ -165,7 +165,7 @@ class TestFileManagementService:
         self, mock_is_dir, mock_exists, mock_server, mock_db
     ):
         """Test read_file when target is a directory"""
-        mock_db.query.return_value.filter.return_value.first.return_value = mock_server
+        mock_db.query.return_value.filter.return_value.one_or_none.return_value = mock_server
         mock_exists.return_value = True
         mock_is_dir.return_value = True
 
@@ -183,12 +183,12 @@ class TestFileManagementService:
     @pytest.mark.asyncio
     @patch("pathlib.Path.exists")
     @patch("pathlib.Path.is_dir")
-    @patch("app.services.file_management_service.EncodingHandler.safe_read_text_file")
+    @patch("app.files.application.management.EncodingHandler.safe_read_text_file")
     async def test_read_file_success(
         self, mock_safe_read, mock_is_dir, mock_exists, mock_server, mock_db
     ):
         """Test successful file read"""
-        mock_db.query.return_value.filter.return_value.first.return_value = mock_server
+        mock_db.query.return_value.filter.return_value.one_or_none.return_value = mock_server
         mock_exists.return_value = True
         mock_is_dir.return_value = False
 
@@ -217,12 +217,12 @@ class TestFileManagementService:
     @pytest.mark.asyncio
     @patch("pathlib.Path.exists")
     @patch("pathlib.Path.is_dir")
-    @patch("app.services.file_management_service.EncodingHandler.safe_read_text_file")
+    @patch("app.files.application.management.EncodingHandler.safe_read_text_file")
     async def test_read_file_unicode_error(
         self, mock_safe_read, mock_is_dir, mock_exists, mock_server, mock_db
     ):
         """Test read_file with unicode decode error"""
-        mock_db.query.return_value.filter.return_value.first.return_value = mock_server
+        mock_db.query.return_value.filter.return_value.one_or_none.return_value = mock_server
         mock_exists.return_value = True
         mock_is_dir.return_value = False
 
@@ -248,7 +248,7 @@ class TestFileManagementService:
     @pytest.mark.asyncio
     async def test_write_file_server_not_found(self, mock_db):
         """Test write_file when server doesn't exist"""
-        mock_db.query.return_value.filter.return_value.first.return_value = None
+        mock_db.query.return_value.filter.return_value.one_or_none.return_value = None
 
         with pytest.raises(ServerNotFoundException):
             await file_management_service.write_file(
@@ -261,7 +261,7 @@ class TestFileManagementService:
         self, mock_resolve, mock_server, mock_user, mock_db
     ):
         """Test write_file with path traversal attempt"""
-        mock_db.query.return_value.filter.return_value.first.return_value = mock_server
+        mock_db.query.return_value.filter.return_value.one_or_none.return_value = mock_server
         mock_resolve.side_effect = [
             Path("/etc/passwd"),  # target_path.resolve()
             Path("/servers/test_server"),  # server_path.resolve()
@@ -279,7 +279,7 @@ class TestFileManagementService:
     @pytest.mark.asyncio
     async def test_write_file_restricted_non_admin(self, mock_server, mock_user, mock_db):
         """Test write_file restricted file by non-admin user"""
-        mock_db.query.return_value.filter.return_value.first.return_value = mock_server
+        mock_db.query.return_value.filter.return_value.one_or_none.return_value = mock_server
 
         with patch("pathlib.Path.resolve") as mock_resolve:
             mock_resolve.side_effect = [
@@ -303,7 +303,7 @@ class TestFileManagementService:
         self, mock_aiofiles_open, mock_exists, mock_server, mock_user, mock_db
     ):
         """Test successful file write"""
-        mock_db.query.return_value.filter.return_value.first.return_value = mock_server
+        mock_db.query.return_value.filter.return_value.one_or_none.return_value = mock_server
         mock_exists.return_value = False
 
         mock_file = AsyncMock()
@@ -341,7 +341,7 @@ class TestFileManagementService:
     @pytest.mark.asyncio
     async def test_delete_file_server_not_found(self, mock_db):
         """Test delete_file when server doesn't exist"""
-        mock_db.query.return_value.filter.return_value.first.return_value = None
+        mock_db.query.return_value.filter.return_value.one_or_none.return_value = None
 
         with pytest.raises(ServerNotFoundException):
             await file_management_service.delete_file(
@@ -354,7 +354,7 @@ class TestFileManagementService:
         self, mock_exists, mock_server, mock_user, mock_db
     ):
         """Test delete_file when file doesn't exist"""
-        mock_db.query.return_value.filter.return_value.first.return_value = mock_server
+        mock_db.query.return_value.filter.return_value.one_or_none.return_value = mock_server
         mock_exists.return_value = False
 
         with pytest.raises(FileOperationException):
@@ -376,7 +376,7 @@ class TestFileManagementService:
         mock_db,
     ):
         """Test successful file deletion"""
-        mock_db.query.return_value.filter.return_value.first.return_value = mock_server
+        mock_db.query.return_value.filter.return_value.one_or_none.return_value = mock_server
         mock_exists.return_value = True
         mock_is_file.return_value = True
 
@@ -406,7 +406,7 @@ class TestFileManagementService:
         self, mock_rmtree, mock_is_dir, mock_exists, mock_server, mock_admin_user, mock_db
     ):
         """Test successful directory deletion"""
-        mock_db.query.return_value.filter.return_value.first.return_value = mock_server
+        mock_db.query.return_value.filter.return_value.one_or_none.return_value = mock_server
         mock_exists.return_value = True
         mock_is_dir.return_value = True
 
@@ -431,7 +431,7 @@ class TestFileManagementService:
     @pytest.mark.asyncio
     async def test_upload_file_server_not_found(self, mock_db):
         """Test upload_file when server doesn't exist"""
-        mock_db.query.return_value.filter.return_value.first.return_value = None
+        mock_db.query.return_value.filter.return_value.one_or_none.return_value = None
 
         mock_file = Mock(spec=UploadFile)
         mock_file.filename = "test.txt"
@@ -447,7 +447,7 @@ class TestFileManagementService:
         self, mock_aiofiles_open, mock_server, mock_user, mock_db
     ):
         """Test successful file upload"""
-        mock_db.query.return_value.filter.return_value.first.return_value = mock_server
+        mock_db.query.return_value.filter.return_value.one_or_none.return_value = mock_server
 
         mock_file = Mock(spec=UploadFile)
         mock_file.filename = "test.txt"
@@ -489,7 +489,7 @@ class TestFileManagementService:
     @pytest.mark.asyncio
     async def test_download_file_server_not_found(self, mock_db):
         """Test download_file when server doesn't exist"""
-        mock_db.query.return_value.filter.return_value.first.return_value = None
+        mock_db.query.return_value.filter.return_value.one_or_none.return_value = None
 
         with pytest.raises(ServerNotFoundException):
             await file_management_service.download_file(
@@ -503,7 +503,7 @@ class TestFileManagementService:
         self, mock_is_dir, mock_exists, mock_server, mock_db
     ):
         """Test successful file download"""
-        mock_db.query.return_value.filter.return_value.first.return_value = mock_server
+        mock_db.query.return_value.filter.return_value.one_or_none.return_value = mock_server
         mock_exists.return_value = True
         mock_is_dir.return_value = False
 
@@ -524,7 +524,7 @@ class TestFileManagementService:
     @pytest.mark.asyncio
     async def test_create_directory_server_not_found(self, mock_db):
         """Test create_directory when server doesn't exist"""
-        mock_db.query.return_value.filter.return_value.first.return_value = None
+        mock_db.query.return_value.filter.return_value.one_or_none.return_value = None
 
         with pytest.raises(ServerNotFoundException):
             await file_management_service.create_directory(
@@ -534,7 +534,7 @@ class TestFileManagementService:
     @pytest.mark.asyncio
     async def test_create_directory_success(self, mock_server, mock_db):
         """Test successful directory creation"""
-        mock_db.query.return_value.filter.return_value.first.return_value = mock_server
+        mock_db.query.return_value.filter.return_value.one_or_none.return_value = mock_server
 
         with patch("pathlib.Path.resolve") as mock_resolve:
             mock_resolve.side_effect = [
@@ -557,7 +557,7 @@ class TestFileManagementService:
     @pytest.mark.asyncio
     async def test_search_files_server_not_found(self, mock_db):
         """Test search_files when server doesn't exist"""
-        mock_db.query.return_value.filter.return_value.first.return_value = None
+        mock_db.query.return_value.filter.return_value.one_or_none.return_value = None
 
         with pytest.raises(ServerNotFoundException):
             await file_management_service.search_files(
@@ -571,7 +571,7 @@ class TestFileManagementService:
         self, mock_rglob, mock_exists, mock_server, mock_db
     ):
         """Test successful file search"""
-        mock_db.query.return_value.filter.return_value.first.return_value = mock_server
+        mock_db.query.return_value.filter.return_value.one_or_none.return_value = mock_server
         mock_exists.return_value = True
 
         mock_file = Mock()
