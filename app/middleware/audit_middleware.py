@@ -217,6 +217,10 @@ class AuditMiddleware(BaseHTTPMiddleware):
         if self.exclude_health_checks and request.url.path in [
             "/health",
             "/api/v1/health",
+            "/healthz",
+            "/readyz",
+            "/ready",
+            "/api/v1/health/detail",
             "/metrics",
             "/api/v1/metrics",
             "/monitoring",
