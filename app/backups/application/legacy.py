@@ -1,16 +1,15 @@
-"""Backward-compatibility shim for the migrated backup service.
+"""Legacy backup-service facade preserved for `tests/test_security.py`.
 
-The real implementation lives at `app.backups.application.service` and
-is wired in production via `app.backups.api.dependencies.get_backup_service`.
+`tests/test_security.py` instantiates `BackupService()` with no arguments
+and patches `BackupValidationService.validate_server_for_backup` to
+inject a mock server. The facade builds a one-shot
+`SqlAlchemyBackupsUnitOfWork` + `SqlAlchemyServerReadPort` per call from
+the explicit `db=` argument the legacy caller passes.
 
-The legacy `backup_service` singleton at this module path is preserved
-for callers that still construct it manually (`tests/test_security.py`
-instantiates `BackupService()` with no arguments). The facade builds a
-one-shot `SqlAlchemyBackupsUnitOfWork` + `SqlAlchemyServerReadPort`
-per call from the explicit `db=` argument legacy callers pass.
-
-TODO(#228): once `test_security.py` and any other manual-construction
-callsites migrate to DI, delete this file.
+Migrated from `app.services.backup_service` under #228 PR 3. The legacy
+shim path was removed; new code should depend on
+`Depends(get_backup_service)` to receive a per-request
+`app.backups.application.service.BackupService`.
 """
 
 from pathlib import Path
@@ -19,22 +18,22 @@ from typing import TYPE_CHECKING, Any, Optional
 from sqlalchemy.orm import Session
 
 from app.backups.application.file_service import BackupFileService
-from app.backups.application.resource_monitor import ResourceMonitor
+from app.backups.application.resource_monitor import ResourceMonitor  # noqa: F401
 from app.backups.application.service import (
     BackupService as _ApplicationBackupService,
 )
 from app.core.exceptions import (
-    BackupNotFoundException,
-    DatabaseOperationException,
-    FileOperationException,
-    ServerNotFoundException,
+    BackupNotFoundException,  # noqa: F401
+    DatabaseOperationException,  # noqa: F401
+    FileOperationException,  # noqa: F401
+    ServerNotFoundException,  # noqa: F401
 )
 from app.servers.adapters.read_port import SqlAlchemyServerReadPort
 
 if TYPE_CHECKING:
     from fastapi import UploadFile
 
-    from app.servers.models import BackupType
+    from app.servers.domain.value_objects import BackupType
 
 __all__ = [
     "BackupService",
@@ -46,6 +45,7 @@ __all__ = [
     "FileOperationException",
     "DatabaseOperationException",
     "ServerNotFoundException",
+    "_LegacyBackupFacade",
 ]
 
 
@@ -81,11 +81,11 @@ class _LegacyBackupFacade:
         name: str,
         db: Session,
         description: Optional[str] = None,
-        backup_type: "BackupType" = None,
+        backup_type: "BackupType | None" = None,
     ) -> Any:
         if db is None:
             raise ValueError("Database session is required for secure backup operations")
-        from app.servers.models import BackupType as _BackupType
+        from app.servers.domain.value_objects import BackupType as _BackupType
 
         return await _build(db).create_backup(
             server_id=server_id,

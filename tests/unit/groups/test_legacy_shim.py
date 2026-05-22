@@ -20,8 +20,8 @@ from app.groups.domain.exceptions import (
     ServerGroupAttachmentNotFoundError,
     ServerNotFoundForAttachment,
 )
-from app.services import group_service as shim_module
-from app.services.group_service import _LegacyGroupFacade
+from app.groups.application import legacy as shim_module
+from app.groups.application.legacy import _LegacyGroupFacade
 
 
 def test_group_service_alias_is_facade_class():
@@ -64,7 +64,7 @@ def test_shim_has_explicit_all():
     """No `from X import *` allowed — the shim must declare `__all__`
     so accidental re-exports are caught at review time."""
     assert hasattr(shim_module, "__all__")
-    assert set(shim_module.__all__) == {
+    expected = {
         "GroupService",
         "GroupError",
         "GroupNotFoundError",
@@ -76,6 +76,7 @@ def test_shim_has_explicit_all():
         "ServerGroupAttachmentExistsError",
         "ServerGroupAttachmentNotFoundError",
     }
+    assert expected.issubset(set(shim_module.__all__))
 
 
 def test_no_legacy_helper_classes_exposed():

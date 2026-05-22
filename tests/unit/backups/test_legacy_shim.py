@@ -17,7 +17,7 @@ import pytest
 
 
 def test_backup_service_module_all_complete():
-    import app.services.backup_service as mod
+    import app.backups.application.legacy as mod
 
     expected = {
         "BackupService",
@@ -34,7 +34,7 @@ def test_backup_service_module_all_complete():
 
 
 def test_backup_service_alias_is_legacy_facade():
-    from app.services.backup_service import BackupService, backup_service
+    from app.backups.application.legacy import BackupService, backup_service
 
     # The class alias is the facade; the singleton is an instance of it
     assert isinstance(backup_service, BackupService)
@@ -42,14 +42,14 @@ def test_backup_service_alias_is_legacy_facade():
 
 def test_backup_validation_service_still_exposed():
     """`tests/test_security.py:555` patches this — keep it exported."""
-    from app.services.backup_service import BackupValidationService
+    from app.backups.application.legacy import BackupValidationService
 
     assert hasattr(BackupValidationService, "validate_server_for_backup")
 
 
 def test_facade_methods_are_async():
     """All public facade methods must be `async def` so awaiters keep working."""
-    from app.services.backup_service import _LegacyBackupFacade
+    from app.backups.application.legacy import _LegacyBackupFacade
 
     for name in [
         "create_backup",
@@ -68,7 +68,7 @@ def test_facade_methods_are_async():
 
 
 def test_backup_scheduler_module_all():
-    import app.services.backup_scheduler as mod
+    import app.backups.application.scheduler as mod
 
     assert "BackupSchedulerService" in mod.__all__
     assert "backup_scheduler" in mod.__all__
@@ -81,7 +81,7 @@ def test_scheduler_proxy_hasattr_before_init():
     Pinned by `tests/integration/test_main_comprehensive.py:628`.
     """
     from app.backups import backup_scheduler_instance
-    from app.services.backup_scheduler import backup_scheduler
+    from app.backups.application.scheduler import backup_scheduler
 
     backup_scheduler_instance.clear()
     try:
@@ -97,7 +97,7 @@ def test_scheduler_proxy_hasattr_before_init():
 def test_scheduler_proxy_raises_before_init():
     """Method invocation before init must give a clear RuntimeError."""
     from app.backups import backup_scheduler_instance
-    from app.services.backup_scheduler import backup_scheduler
+    from app.backups.application.scheduler import backup_scheduler
 
     backup_scheduler_instance.clear()
     with pytest.raises(RuntimeError, match="not initialised"):
@@ -106,7 +106,7 @@ def test_scheduler_proxy_raises_before_init():
 
 def test_scheduler_proxy_methods_are_async():
     """Every forwarded method must be `async def`."""
-    from app.services.backup_scheduler import _SchedulerProxy
+    from app.backups.application.scheduler import _SchedulerProxy
 
     for name in [
         "create_schedule",

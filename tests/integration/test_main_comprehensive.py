@@ -645,7 +645,7 @@ class TestServiceIntegrationBasic:
         factory + holder rather than the (lifespan-only) singleton.
         """
         # Test database integration service factory + holder import
-        from app.services.database_integration import (
+        from app.servers.application.database_integration import (
             database_integration_instance,
             make_database_integration_service,
         )
@@ -659,7 +659,7 @@ class TestServiceIntegrationBasic:
         assert websocket_service is not None
 
         # Test backup scheduler import
-        from app.services.backup_scheduler import backup_scheduler
+        from app.backups.application.scheduler import backup_scheduler
 
         assert backup_scheduler is not None
 
@@ -678,7 +678,7 @@ class TestServiceIntegrationBasic:
         from app.servers.application.database_integration import (
             DatabaseIntegrationService,
         )
-        from app.services.backup_scheduler import backup_scheduler
+        from app.backups.application.scheduler import backup_scheduler
         from app.services.websocket_service import websocket_service
 
         # Database integration service methods

@@ -14,7 +14,7 @@ import inspect
 import pytest
 
 from app.files.application.service import FileHistoryService as ApplicationService
-from app.services import file_history_service as shim_module
+from app.files.application import legacy as shim_module
 
 
 def test_shim_exposes_singleton():

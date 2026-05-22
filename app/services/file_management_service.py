@@ -17,8 +17,8 @@ from app.core.exceptions import (
     handle_file_error,
 )
 from app.files.application.encoding_handler import EncodingHandler
+from app.files.application.legacy import file_history_service
 from app.servers.models import Server
-from app.services.file_history_service import file_history_service
 from app.types import FileType
 from app.users.domain.value_objects import Role
 from app.users.models import User

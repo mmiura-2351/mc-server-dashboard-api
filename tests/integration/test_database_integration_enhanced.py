@@ -260,7 +260,7 @@ class TestModuleSingleton:
             assert database_integration_instance.get() is sentinel
             # Shim resolves lazily through ``__getattr__`` to the same
             # instance (regression pin for PR #279 B1).
-            from app.services import database_integration as shim
+            from app.servers.application import database_integration as shim
 
             assert shim.database_integration_service is sentinel
         finally:
@@ -281,7 +281,7 @@ class TestModuleSingleton:
             with pytest.raises(RuntimeError, match="not initialised"):
                 database_integration_instance.get()
             # Same error surfaces through the shim's ``__getattr__``.
-            from app.services import database_integration as shim
+            from app.servers.application import database_integration as shim
 
             with pytest.raises(RuntimeError, match="not initialised"):
                 _ = shim.database_integration_service

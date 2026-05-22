@@ -1,19 +1,10 @@
-"""Backward-compatibility shim for the migrated file-history service.
+"""Legacy file-history-service facade.
 
-The real implementation lives at
-`app.files.application.service.FileHistoryService` and is wired in
-production via `app.files.api.dependencies.get_file_history_service`.
-
-This module exists so callers that still rely on the legacy module path
-keep working. The only remaining production consumer is
-`app.services.file_management_service`, which passes its own DB session
-positionally (`file_history_service.create_version_backup(..., db=session)`).
-The facade below builds a one-shot UnitOfWork + ServerReadPort from that
-session per call.
-
-TODO(#228): once `file_management_service` is migrated to DI-injected
-access, delete this file and remove the legacy `db=` parameter from
-`FileHistoryService.create_version_backup`.
+Migrated from `app.services.file_history_service` under #228 PR 3. The
+only remaining production consumer is the legacy
+`file_management_service`, which passes its own DB session positionally.
+The facade builds a one-shot `SqlAlchemyFilesUnitOfWork` +
+`SqlAlchemyServerReadPort` per call.
 """
 
 from pathlib import Path
@@ -25,7 +16,7 @@ from app.files.adapters.uow import SqlAlchemyFilesUnitOfWork
 from app.files.application.service import FileHistoryService
 from app.servers.adapters.read_port import SqlAlchemyServerReadPort
 
-__all__ = ["FileHistoryService", "file_history_service"]
+__all__ = ["FileHistoryService", "file_history_service", "_LegacyFileHistoryFacade"]
 
 
 class _LegacyFileHistoryFacade:

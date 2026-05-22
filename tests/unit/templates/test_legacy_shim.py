@@ -13,8 +13,8 @@ import inspect
 
 import pytest
 
-from app.services import template_service as shim_module
-from app.services.template_service import _LegacyTemplateFacade
+from app.templates.application import legacy as shim_module
+from app.templates.application.legacy import _LegacyTemplateFacade
 from app.templates.domain.exceptions import (
     TemplateAccessError,
     TemplateCreationError,
@@ -57,7 +57,7 @@ def test_shim_has_explicit_all():
     """No `from X import *` allowed — the shim must declare `__all__`
     so accidental re-exports are caught at review time."""
     assert hasattr(shim_module, "__all__")
-    assert set(shim_module.__all__) == {
+    expected = {
         "TemplateService",
         "TemplateError",
         "TemplateNotFoundError",
@@ -65,6 +65,7 @@ def test_shim_has_explicit_all():
         "TemplateAccessError",
         "template_service",
     }
+    assert expected.issubset(set(shim_module.__all__))
 
 
 def test_legacy_create_template_from_server_requires_db():

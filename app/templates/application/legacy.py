@@ -1,18 +1,10 @@
-"""Backward-compatibility shim for the migrated template service.
+"""Legacy template-service facade.
 
-The real implementation lives at
-`app.templates.application.service.TemplateService` and is wired in
-production via `app.templates.api.dependencies.get_template_service`.
-
-The legacy `template_service` singleton at this module path is
-preserved for callers that still construct it manually
-(`app.services.backup_service` instantiates `TemplateService()`
-directly inside `restore_backup_with_template`). The facade builds a
-one-shot `SqlAlchemyTemplatesUnitOfWork` + `SqlAlchemyServerReadPort`
-per call from the explicit `db=` argument legacy callers pass.
-
-TODO(#228): once `backup_service` migrates to DI, delete this file and
-remove the legacy `db=` parameter.
+Migrated from `app.services.template_service` under #228 PR 3. New code
+should depend on `Depends(get_template_service)` (see
+`app.templates.api.dependencies`) to receive a per-request
+`app.templates.application.service.TemplateService` bound to the
+current `Session`.
 """
 
 from pathlib import Path
@@ -21,17 +13,17 @@ from typing import Any, Dict, List, Optional
 from sqlalchemy.orm import Session
 
 from app.servers.adapters.read_port import SqlAlchemyServerReadPort
-from app.servers.models import ServerType
+from app.servers.domain.value_objects import ServerType
 from app.templates.adapters.uow import SqlAlchemyTemplatesUnitOfWork
 from app.templates.application.service import (
     TemplateService as _ApplicationTemplateService,
 )
 from app.templates.domain.entities import TemplateEntity
 from app.templates.domain.exceptions import (
-    TemplateAccessError,
-    TemplateCreationError,
+    TemplateAccessError,  # noqa: F401
+    TemplateCreationError,  # noqa: F401
     TemplateError,
-    TemplateNotFoundError,
+    TemplateNotFoundError,  # noqa: F401
 )
 from app.users.models import User
 
@@ -42,6 +34,7 @@ __all__ = [
     "TemplateCreationError",
     "TemplateAccessError",
     "template_service",
+    "_LegacyTemplateFacade",
 ]
 
 
@@ -119,8 +112,7 @@ class _LegacyTemplateFacade:
         )
 
 
-# Public alias: legacy callers that instantiate `TemplateService()` (e.g.
-# `app.services.backup_service.restore_backup_and_create_template`) get
+# Public alias: legacy callers that instantiate `TemplateService()` get
 # the facade class so the zero-arg constructor keeps working. The new
 # DI-shaped application service is available as
 # `app.templates.application.service.TemplateService` for code that has

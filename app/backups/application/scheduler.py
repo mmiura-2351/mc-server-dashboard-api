@@ -350,3 +350,76 @@ class BackupSchedulerService:
 
     def clear_cache(self) -> None:
         self._schedule_cache.clear()
+
+
+# ---------------------------------------------------------------------------
+# Legacy module-level proxy
+# ---------------------------------------------------------------------------
+
+from typing import Any  # noqa: E402
+
+from app.backups import backup_scheduler_instance  # noqa: E402
+
+
+class _SchedulerProxy:
+    """Attribute-bearing proxy forwarding to the lifespan-scoped scheduler.
+
+    Each method delegates to `backup_scheduler_instance.get()` at call
+    time, raising `RuntimeError` if the instance has not yet been set
+    (i.e. the lifespan callback has not run). The explicit method
+    declarations (not `__getattr__`) keep `hasattr(...)` truthful for
+    every public method on `BackupSchedulerService`.
+    """
+
+    # ---- Schedule CRUD ----
+
+    async def create_schedule(self, *args: Any, **kwargs: Any) -> Any:
+        return await backup_scheduler_instance.get().create_schedule(*args, **kwargs)
+
+    async def update_schedule(self, *args: Any, **kwargs: Any) -> Any:
+        return await backup_scheduler_instance.get().update_schedule(*args, **kwargs)
+
+    async def delete_schedule(self, *args: Any, **kwargs: Any) -> Any:
+        return await backup_scheduler_instance.get().delete_schedule(*args, **kwargs)
+
+    async def get_schedule(self, *args: Any, **kwargs: Any) -> Any:
+        return await backup_scheduler_instance.get().get_schedule(*args, **kwargs)
+
+    async def list_schedules(self, *args: Any, **kwargs: Any) -> Any:
+        return await backup_scheduler_instance.get().list_schedules(*args, **kwargs)
+
+    async def get_due_schedules(self, *args: Any, **kwargs: Any) -> Any:
+        return await backup_scheduler_instance.get().get_due_schedules(*args, **kwargs)
+
+    async def list_logs_for_server(self, *args: Any, **kwargs: Any) -> Any:
+        return await backup_scheduler_instance.get().list_logs_for_server(*args, **kwargs)
+
+    # ---- Scheduler control ----
+
+    async def start_scheduler(self) -> Any:
+        return await backup_scheduler_instance.get().start_scheduler()
+
+    async def stop_scheduler(self) -> Any:
+        return await backup_scheduler_instance.get().stop_scheduler()
+
+    async def load_schedules_from_db(self) -> Any:
+        return await backup_scheduler_instance.get().load_schedules_from_db()
+
+    def clear_cache(self) -> None:
+        backup_scheduler_instance.get().clear_cache()
+
+    # ---- Properties ----
+
+    @property
+    def is_running(self) -> bool:
+        return backup_scheduler_instance.get().is_running
+
+    @property
+    def cache_size(self) -> int:
+        return backup_scheduler_instance.get().cache_size
+
+
+backup_scheduler = _SchedulerProxy()
+
+
+__all__ = ["BackupSchedulerService", "_SchedulerProxy", "backup_scheduler"]
