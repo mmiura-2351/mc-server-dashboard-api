@@ -25,7 +25,7 @@ class TestFileRouter:
         new_callable=AsyncMock,
     )
     @patch(
-        "app.services.file_management_service.file_management_service.get_server_files"
+        "app.files.application.management.file_management_service.get_server_files"
     )
     def test_get_server_files_success(
         self, mock_get_files, mock_check_access, client, admin_user
@@ -69,7 +69,7 @@ class TestFileRouter:
         new_callable=AsyncMock,
     )
     @patch(
-        "app.services.file_management_service.file_management_service.get_server_files"
+        "app.files.application.management.file_management_service.get_server_files"
     )
     def test_get_server_files_with_path_filter(
         self, mock_get_files, mock_check_access, client, admin_user
@@ -89,7 +89,7 @@ class TestFileRouter:
         new_callable=AsyncMock,
     )
     @patch(
-        "app.services.file_management_service.file_management_service.get_server_files"
+        "app.files.application.management.file_management_service.get_server_files"
     )
     def test_get_server_files_with_type_filter(
         self, mock_get_files, mock_check_access, client, admin_user
@@ -111,9 +111,9 @@ class TestFileRouter:
         new_callable=AsyncMock,
     )
     @patch(
-        "app.services.file_management_service.file_management_service.get_server_files"
+        "app.files.application.management.file_management_service.get_server_files"
     )
-    @patch("app.services.file_management_service.file_management_service.read_file")
+    @patch("app.files.application.management.file_management_service.read_file")
     def test_read_file_success(
         self, mock_read_file, mock_get_files, mock_check_access, client, admin_user
     ):
@@ -148,9 +148,9 @@ class TestFileRouter:
         new_callable=AsyncMock,
     )
     @patch(
-        "app.services.file_management_service.file_management_service.get_server_files"
+        "app.files.application.management.file_management_service.get_server_files"
     )
-    @patch("app.services.file_management_service.file_management_service.read_file")
+    @patch("app.files.application.management.file_management_service.read_file")
     def test_read_file_with_encoding(
         self, mock_read_file, mock_get_files, mock_check_access, client, admin_user
     ):
@@ -184,10 +184,10 @@ class TestFileRouter:
         new_callable=AsyncMock,
     )
     @patch(
-        "app.services.file_management_service.file_management_service.get_server_files"
+        "app.files.application.management.file_management_service.get_server_files"
     )
     @patch(
-        "app.services.file_management_service.file_management_service.read_image_as_base64"
+        "app.files.application.management.file_management_service.read_image_as_base64"
     )
     def test_read_image_success(
         self, mock_read_image, mock_get_files, mock_check_access, client, admin_user
@@ -224,7 +224,7 @@ class TestFileRouter:
         new_callable=AsyncMock,
     )
     @patch("app.servers.application.authorization.AuthorizationService.can_modify_files")
-    @patch("app.services.file_management_service.file_management_service.write_file")
+    @patch("app.files.application.management.file_management_service.write_file")
     def test_write_file_success(
         self, mock_write_file, mock_can_modify, mock_check_access, client, admin_user
     ):
@@ -283,7 +283,7 @@ class TestFileRouter:
         new_callable=AsyncMock,
     )
     @patch("app.servers.application.authorization.AuthorizationService.can_modify_files")
-    @patch("app.services.file_management_service.file_management_service.upload_file")
+    @patch("app.files.application.management.file_management_service.upload_file")
     def test_upload_file_success(
         self, mock_upload_file, mock_can_modify, mock_check_access, client, admin_user
     ):
@@ -324,7 +324,7 @@ class TestFileRouter:
         new_callable=AsyncMock,
     )
     @patch("app.servers.application.authorization.AuthorizationService.can_modify_files")
-    @patch("app.services.file_management_service.file_management_service.upload_file")
+    @patch("app.files.application.management.file_management_service.upload_file")
     def test_upload_file_with_extraction(
         self, mock_upload_file, mock_can_modify, mock_check_access, client, admin_user
     ):
@@ -381,7 +381,7 @@ class TestFileRouter:
         "app.servers.application.authorization.AuthorizationService.check_server_access",
         new_callable=AsyncMock,
     )
-    @patch("app.services.file_management_service.file_management_service.download_file")
+    @patch("app.files.application.management.file_management_service.download_file")
     def test_download_file_success(
         self, mock_download_file, mock_check_access, client, admin_user
     ):
@@ -420,7 +420,7 @@ class TestFileRouter:
     )
     @patch("app.servers.application.authorization.AuthorizationService.can_modify_files")
     @patch(
-        "app.services.file_management_service.file_management_service.create_directory"
+        "app.files.application.management.file_management_service.create_directory"
     )
     def test_create_directory_success(
         self, mock_create_dir, mock_can_modify, mock_check_access, client, admin_user
@@ -473,7 +473,7 @@ class TestFileRouter:
         new_callable=AsyncMock,
     )
     @patch("app.servers.application.authorization.AuthorizationService.can_modify_files")
-    @patch("app.services.file_management_service.file_management_service.delete_file")
+    @patch("app.files.application.management.file_management_service.delete_file")
     def test_delete_file_success(
         self, mock_delete_file, mock_can_modify, mock_check_access, client, admin_user
     ):
@@ -509,7 +509,7 @@ class TestFileRouter:
         "app.servers.application.authorization.AuthorizationService.check_server_access",
         new_callable=AsyncMock,
     )
-    @patch("app.services.file_management_service.file_management_service.search_files")
+    @patch("app.files.application.management.file_management_service.search_files")
     def test_search_files_success(
         self, mock_search, mock_check_access, client, admin_user
     ):
@@ -557,7 +557,7 @@ class TestFileRouter:
         "app.servers.application.authorization.AuthorizationService.check_server_access",
         new_callable=AsyncMock,
     )
-    @patch("app.services.file_management_service.file_management_service.search_files")
+    @patch("app.files.application.management.file_management_service.search_files")
     def test_search_files_with_content(
         self, mock_search, mock_check_access, client, admin_user
     ):
@@ -668,7 +668,7 @@ class TestFileRouter:
         "app.servers.application.authorization.AuthorizationService.check_server_access",
         new_callable=AsyncMock,
     )
-    @patch("app.services.file_management_service.file_management_service.read_file")
+    @patch("app.files.application.management.file_management_service.read_file")
     def test_file_error_handling(
         self, mock_read_file, mock_check_access, client, admin_user
     ):
@@ -698,7 +698,7 @@ class TestFileRenameRouter:
     """Test cases for File rename router endpoint"""
 
     @patch("app.servers.application.authorization.AuthorizationService.can_modify_files")
-    @patch("app.services.file_management_service.file_management_service.rename_file")
+    @patch("app.files.application.management.file_management_service.rename_file")
     def test_rename_file_success(
         self, mock_rename_file, mock_can_modify, client, admin_user
     ):
@@ -736,7 +736,7 @@ class TestFileRenameRouter:
         assert data["file"]["name"] == "renamed.txt"
 
     @patch("app.servers.application.authorization.AuthorizationService.can_modify_files")
-    @patch("app.services.file_management_service.file_management_service.rename_file")
+    @patch("app.files.application.management.file_management_service.rename_file")
     def test_rename_directory_success(
         self, mock_rename_file, mock_can_modify, client, admin_user
     ):
@@ -790,7 +790,7 @@ class TestFileRenameRouter:
         assert response.status_code == status.HTTP_403_FORBIDDEN
 
     @patch("app.servers.application.authorization.AuthorizationService.can_modify_files")
-    @patch("app.services.file_management_service.file_management_service.rename_file")
+    @patch("app.files.application.management.file_management_service.rename_file")
     def test_rename_file_invalid_filename(
         self, mock_rename_file, mock_can_modify, client, admin_user
     ):
@@ -815,7 +815,7 @@ class TestFileRenameRouter:
         assert response.status_code == status.HTTP_400_BAD_REQUEST
 
     @patch("app.servers.application.authorization.AuthorizationService.can_modify_files")
-    @patch("app.services.file_management_service.file_management_service.rename_file")
+    @patch("app.files.application.management.file_management_service.rename_file")
     def test_rename_file_already_exists(
         self, mock_rename_file, mock_can_modify, client, admin_user
     ):
@@ -838,7 +838,7 @@ class TestFileRenameRouter:
         assert response.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
 
     @patch("app.servers.application.authorization.AuthorizationService.can_modify_files")
-    @patch("app.services.file_management_service.file_management_service.rename_file")
+    @patch("app.files.application.management.file_management_service.rename_file")
     def test_rename_file_not_found(
         self, mock_rename_file, mock_can_modify, client, admin_user
     ):

@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-from app.servers.models import ServerType  # known deviation: see __init__.py
+from app.servers.domain.value_objects import ServerType
 
 
 @dataclass(frozen=True)

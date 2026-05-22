@@ -2,8 +2,9 @@
 
 Re-exports the lifespan-scoped `backup_scheduler_instance` holder so
 that the FastAPI app startup (`app.main._initialize_backup_scheduler`)
-and the legacy shim (`app.services.backup_scheduler._SchedulerProxy`)
-can share the same singleton without crossing layers.
+and the module-level `_SchedulerProxy` (in
+`app.backups.application.scheduler`) can share the same singleton
+without crossing layers.
 
 The holder pattern (not a module-global instance) is necessary because
 the scheduler is wired during FastAPI's `lifespan` callback, *after*

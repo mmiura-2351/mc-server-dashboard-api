@@ -15,7 +15,7 @@ Two Ports are defined:
 from types import TracebackType
 from typing import Dict, Optional, Protocol
 
-from app.servers.models import ServerType  # known deviation: see __init__.py
+from app.servers.domain.value_objects import ServerType
 from app.templates.domain.entities import (
     CreateTemplateCommand,
     TemplateEntity,

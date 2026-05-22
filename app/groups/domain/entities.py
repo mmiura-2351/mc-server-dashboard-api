@@ -13,8 +13,8 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-from app.groups.models import GroupType  # known deviation: see __init__.py
-from app.servers.models import ServerStatus  # known deviation: see __init__.py
+from app.groups.domain.value_objects import GroupType
+from app.servers.domain.value_objects import ServerStatus
 
 
 @dataclass(frozen=True)

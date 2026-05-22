@@ -23,7 +23,7 @@ from app.audit.domain.entities import AuditLogEntity, LogFilters
 from app.audit.service import AuditService
 from app.auth.dependencies import get_current_user
 from app.core.database import get_db
-from app.services.authorization_service import AuthorizationService
+from app.servers.application.authorization import AuthorizationService
 from app.users.domain.ports import UserReadPort
 from app.users.models import User
 

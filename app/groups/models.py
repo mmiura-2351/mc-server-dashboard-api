@@ -1,4 +1,3 @@
-import enum
 import json
 from typing import Any, Dict, List
 
@@ -18,11 +17,9 @@ from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 
 from app.core.database import Base
+from app.groups.domain.value_objects import GroupType
 
-
-class GroupType(enum.Enum):
-    op = "op"
-    whitelist = "whitelist"
+__all__ = ["Group", "GroupType", "ServerGroup"]
 
 
 class Group(Base):

@@ -15,7 +15,7 @@ from datetime import datetime
 from types import TracebackType
 from typing import List, Optional, Protocol
 
-from app.servers.models import ServerType
+from app.servers.domain.value_objects import ServerType
 from app.versions.domain.entities import (
     CreateUpdateLogCommand,
     CreateVersionCommand,

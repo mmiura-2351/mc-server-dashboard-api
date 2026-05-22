@@ -11,8 +11,8 @@ from unittest.mock import AsyncMock, Mock, patch
 import pytest
 import pytest_asyncio
 
+from app.servers.application.minecraft_server import MinecraftServerManager, ServerProcess
 from app.servers.models import ServerStatus
-from app.services.minecraft_server import MinecraftServerManager, ServerProcess
 
 pytestmark = pytest.mark.slow
 

@@ -9,7 +9,7 @@ import pytest
 
 from app.core.datetime_utils import utcnow
 from app.servers.models import ServerType
-from app.services.version_manager import VersionInfo
+from app.versions.application.version_manager import VersionInfo
 from app.versions.models import MinecraftVersion, VersionUpdateLog
 from app.versions.service import VersionUpdateService
 

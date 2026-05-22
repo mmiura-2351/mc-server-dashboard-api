@@ -78,14 +78,14 @@ class TestSyncRouteHolderResolution:
     def test_shim_attribute_resolves_to_holder_instance(
         self, client, stub_database_integration_service
     ):
-        """The legacy ``from app.services.database_integration import
+        """The legacy ``from app.servers.application.database_integration import
         database_integration_service`` access path must lazily resolve
         to the holder's current instance (the lifespan-published
         singleton in production, our stub here)."""
         # ``client`` fixture forces lifespan run + holder publication
         # before our stub replacement. Import the shim and confirm
         # ``__getattr__`` returns the stub.
-        from app.services import database_integration as shim
+        from app.servers.application import database_integration as shim
 
         assert shim.database_integration_service is stub_database_integration_service
 
@@ -95,10 +95,10 @@ class TestHolderRaisesWhenUninitialised:
         """Pre-lifespan / cleared holder → clear RuntimeError instead of
         the silent ``asyncio.run() from a running event loop`` failure
         the old shim produced."""
+        from app.servers.application import database_integration as shim
         from app.servers.application.database_integration import (
             database_integration_instance,
         )
-        from app.services import database_integration as shim
 
         previous = (
             database_integration_instance.get()

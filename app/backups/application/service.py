@@ -34,6 +34,12 @@ from app.core.exceptions import (
     ServerStateException,
 )
 from app.core.security import SecurityError, TarExtractor
+
+# `minecraft_server_manager` is the legacy module-level singleton; it is
+# *called* at runtime (`get_server_status`) so it cannot move under
+# TYPE_CHECKING. Cross-domain process-state lookup will move behind a
+# Port in a follow-up (#154-9).
+from app.servers.application.minecraft_server import minecraft_server_manager
 from app.servers.domain.ports import ServerReadPort
 
 # `BackupStatus` / `BackupType` are runtime-required (used as values, not
@@ -43,12 +49,6 @@ from app.servers.domain.ports import ServerReadPort
 # stays under TYPE_CHECKING to keep the application layer free of ORM
 # imports at runtime.
 from app.servers.models import BackupStatus, BackupType
-
-# `minecraft_server_manager` is the legacy module-level singleton; it is
-# *called* at runtime (`get_server_status`) so it cannot move under
-# TYPE_CHECKING. Cross-domain process-state lookup will move behind a
-# Port in a follow-up (#154-9).
-from app.services.minecraft_server import minecraft_server_manager
 
 if TYPE_CHECKING:
     from fastapi import UploadFile

@@ -12,6 +12,7 @@ from unittest.mock import Mock, patch
 
 import pytest
 
+from app.backups.application.legacy import BackupFileService
 from app.core.security import (
     FileOperationValidator,
     PathValidator,
@@ -23,7 +24,6 @@ from app.servers.service import (
     ServerSecurityValidator,
     ServerValidationService,
 )
-from app.services.backup_service import BackupFileService
 
 
 class TestPathValidator:
@@ -512,8 +512,8 @@ class TestBackupServiceSecurity:
         """Test that backup upload validates security correctly."""
         from unittest.mock import AsyncMock, Mock
 
+        from app.backups.application.legacy import BackupService
         from app.core.exceptions import FileOperationException
-        from app.services.backup_service import BackupService
 
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_path = Path(temp_dir)
@@ -557,7 +557,7 @@ class TestBackupServiceSecurity:
             # interceptor — this test still verifies tar-safety via
             # TarExtractor.validate_archive_safety, not the patched validator.
             with patch(
-                "app.services.backup_service.BackupValidationService.validate_server_for_backup"
+                "app.backups.application.legacy.BackupValidationService.validate_server_for_backup"
             ) as mock_validate:
                 mock_server = Mock()
                 mock_server.id = 1

@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.auth.dependencies import get_current_user_ws
 from app.core.database import get_db
-from app.services.websocket_service import websocket_service
+from app.websockets.application.service import websocket_service
 
 router = APIRouter()
 

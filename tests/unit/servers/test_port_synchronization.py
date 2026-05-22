@@ -9,10 +9,10 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from app.core.database import Base
+from app.servers.application.minecraft_server import minecraft_server_manager
 from app.servers.models import Server, ServerStatus, ServerType
 from app.servers.schemas import ServerUpdateRequest
 from app.servers.service import server_service
-from app.services.minecraft_server import minecraft_server_manager
 from app.users.domain.value_objects import Role
 from app.users.models import User
 

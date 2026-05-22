@@ -17,13 +17,13 @@ from app.core.config import settings
 from app.core.database import get_db
 from app.servers.api.dependencies import get_authorization_service
 from app.servers.application.authorization import AuthorizationService
+from app.servers.application.minecraft_server import minecraft_server_manager
 from app.servers.models import Server, ServerStatus
 from app.servers.schemas import (
     ServerCommandRequest,
     ServerLogsResponse,
     ServerStatusResponse,
 )
-from app.services.minecraft_server import minecraft_server_manager
 from app.users.models import User
 
 logger = logging.getLogger(__name__)

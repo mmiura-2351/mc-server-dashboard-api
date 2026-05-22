@@ -350,7 +350,7 @@ class TestApplicationStartupShutdown:
                 mock_service.sync_server_states_with_restore.assert_awaited_once()
                 assert mock_status.database_integration_ready is True
                 # Holder must hold the freshly built mock — this is what
-                # ``app.services.database_integration`` resolves through.
+                # ``app.servers.application.database_integration`` resolves through.
                 assert database_integration_instance.get() is mock_service
         finally:
             if previous is None:
@@ -422,7 +422,7 @@ class TestApplicationStartupShutdown:
                 "app.servers.application.minecraft_server.minecraft_server_manager"
             ) as mock_mc_manager,
             patch("app.backups.backup_scheduler_instance") as mock_holder,
-            patch("app.services.websocket_service.websocket_service") as mock_ws_service,
+            patch("app.websockets.application.service.websocket_service") as mock_ws_service,
             patch("app.main.service_status") as mock_status,
             patch("app.main.logger") as mock_logger,
         ):
@@ -645,7 +645,7 @@ class TestServiceIntegrationBasic:
         factory + holder rather than the (lifespan-only) singleton.
         """
         # Test database integration service factory + holder import
-        from app.services.database_integration import (
+        from app.servers.application.database_integration import (
             database_integration_instance,
             make_database_integration_service,
         )
@@ -654,17 +654,17 @@ class TestServiceIntegrationBasic:
         assert make_database_integration_service is not None
 
         # Test websocket service import
-        from app.services.websocket_service import websocket_service
+        from app.websockets.application.service import websocket_service
 
         assert websocket_service is not None
 
         # Test backup scheduler import
-        from app.services.backup_scheduler import backup_scheduler
+        from app.backups.application.scheduler import backup_scheduler
 
         assert backup_scheduler is not None
 
         # Test minecraft server manager import
-        from app.services.minecraft_server import minecraft_server_manager
+        from app.servers.application.minecraft_server import minecraft_server_manager
 
         assert minecraft_server_manager is not None
 
@@ -675,11 +675,11 @@ class TestServiceIntegrationBasic:
         directly because the module-level name is now resolved through
         the holder (PR #279 B1) and only exists after lifespan startup.
         """
+        from app.backups.application.scheduler import backup_scheduler
         from app.servers.application.database_integration import (
             DatabaseIntegrationService,
         )
-        from app.services.backup_scheduler import backup_scheduler
-        from app.services.websocket_service import websocket_service
+        from app.websockets.application.service import websocket_service
 
         # Database integration service methods
         assert hasattr(DatabaseIntegrationService, "initialize")

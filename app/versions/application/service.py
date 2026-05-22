@@ -13,8 +13,8 @@ from typing import Dict, List, Optional
 
 from app.core.datetime_utils import utcnow
 from app.servers.models import ServerType
-from app.services.version_manager import minecraft_version_manager
 from app.versions.application.results import UpdateStatus, VersionUpdateResult
+from app.versions.application.version_manager import minecraft_version_manager
 from app.versions.domain.entities import (
     CreateUpdateLogCommand,
     CreateVersionCommand,

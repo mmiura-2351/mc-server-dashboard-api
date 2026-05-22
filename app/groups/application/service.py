@@ -264,13 +264,13 @@ class GroupService:
         # import: keeps the module load graph small and matches the
         # legacy code shape.
         if uuid and not username:
-            from app.services.minecraft_api_service import MinecraftAPIService
+            from app.versions.application.minecraft_api_service import MinecraftAPIService
 
             username = await MinecraftAPIService.get_username_from_uuid(uuid)
             if not username:
                 username = uuid[:8]
         elif username and not uuid:
-            from app.services.minecraft_api_service import MinecraftAPIService
+            from app.versions.application.minecraft_api_service import MinecraftAPIService
 
             uuid = await MinecraftAPIService.get_uuid_from_username(username)
             if not uuid:

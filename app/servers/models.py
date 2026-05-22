@@ -1,4 +1,3 @@
-import enum
 import json
 from typing import Any, Dict, List
 
@@ -19,20 +18,23 @@ from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 
 from app.core.database import Base
+from app.servers.domain.value_objects import (
+    BackupStatus,
+    BackupType,
+    ServerStatus,
+    ServerType,
+)
 
-
-class ServerStatus(enum.Enum):
-    stopped = "stopped"
-    starting = "starting"
-    running = "running"
-    stopping = "stopping"
-    error = "error"
-
-
-class ServerType(enum.Enum):
-    vanilla = "vanilla"
-    forge = "forge"
-    paper = "paper"
+__all__ = [
+    "Backup",
+    "BackupStatus",
+    "BackupType",
+    "Server",
+    "ServerConfiguration",
+    "ServerStatus",
+    "ServerType",
+    "Template",
+]
 
 
 class Server(Base):
@@ -79,18 +81,6 @@ class Server(Base):
         uselist=False,
         cascade="all, delete-orphan",
     )
-
-
-class BackupType(enum.Enum):
-    manual = "manual"
-    scheduled = "scheduled"
-    pre_update = "pre_update"
-
-
-class BackupStatus(enum.Enum):
-    creating = "creating"
-    completed = "completed"
-    failed = "failed"
 
 
 class Backup(Base):

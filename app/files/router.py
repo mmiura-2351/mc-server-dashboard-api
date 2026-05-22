@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from app.auth.dependencies import get_current_user
 from app.core.database import get_db
 from app.files.api.dependencies import get_file_history_service
+from app.files.application.management import file_management_service
 from app.files.application.service import FileHistoryService
 from app.files.schemas import (
     DeleteVersionResponse,
@@ -32,7 +33,6 @@ from app.files.schemas import (
 )
 from app.servers.api.dependencies import get_authorization_service
 from app.servers.application.authorization import AuthorizationService
-from app.services.file_management_service import file_management_service
 from app.types import FileType
 from app.users.domain.value_objects import Role
 from app.users.models import User

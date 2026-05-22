@@ -38,7 +38,7 @@ from app.servers.domain.entities import (
     ServerListSpec,
     UpdateServerCommand,
 )
-from app.servers.models import ServerStatus  # known deviation, see #235 / #228
+from app.servers.domain.value_objects import ServerStatus
 
 
 class ServerReadPort(Protocol):
