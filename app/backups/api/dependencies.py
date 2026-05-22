@@ -91,7 +91,9 @@ def make_backup_service(
     )
 
 
-def make_backup_scheduler() -> BackupSchedulerService:
+def make_backup_scheduler(
+    backups_directory: Path = Path("backups"),
+) -> BackupSchedulerService:
     """Build the lifespan-scoped `BackupSchedulerService`.
 
     Both `uow_factory` and `server_read_factory` open per-call sessions
@@ -99,10 +101,15 @@ def make_backup_scheduler() -> BackupSchedulerService:
     The server-read factory is intentionally a callable rather than a
     pre-bound instance to avoid leaking a long-lived session into a
     background worker.
+
+    `backups_directory` is forwarded to the periodic `.pending/` /
+    `.failed/` housekeeping sweep (Issue #284). Retention windows and
+    sweep cadence are read from `app.core.config.settings`.
     """
     return BackupSchedulerService(
         uow_factory=lambda: SqlAlchemyBackupsUnitOfWork.from_session_factory(
             SessionLocal
         ),
         server_read_factory=lambda: SqlAlchemyServerReadPort(SessionLocal()),
+        backups_directory=backups_directory,
     )
