@@ -1,9 +1,9 @@
 """Servers domain application service.
 
 Merged target for the legacy `app.servers.service` and the legacy
-`app.services.server_service` modules (#228 PR 2c). Both legacy modules
-are retained as narrow re-export shims so cross-module imports continue
-to resolve while callers migrate.
+`app.services.server_service` modules (#228 PR 2c). Both legacy shims
+have been removed (#276 / #290) — all callers import from this module
+directly.
 
 Three substantive concerns are addressed here over the legacy code:
 
