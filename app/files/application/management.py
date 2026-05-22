@@ -16,8 +16,8 @@ from app.core.exceptions import (
     ServerNotFoundException,
     handle_file_error,
 )
+from app.files.adapters.legacy import file_history_service
 from app.files.application.encoding_handler import EncodingHandler
-from app.files.application.legacy import file_history_service
 from app.servers.adapters.read_port import SqlAlchemyServerReadPort
 from app.types import FileType
 from app.users.domain.value_objects import Role

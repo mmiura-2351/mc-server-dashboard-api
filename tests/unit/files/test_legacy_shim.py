@@ -13,7 +13,7 @@ import inspect
 
 import pytest
 
-from app.files.application import legacy as shim_module
+from app.files.adapters import legacy as shim_module
 from app.files.application.service import FileHistoryService as ApplicationService
 
 
