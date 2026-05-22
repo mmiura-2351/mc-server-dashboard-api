@@ -1,15 +1,13 @@
 """Backward-compatibility tests for `app.services.group_service`.
 
-The shim is intentionally narrow: the only in-tree consumer is
-`app/servers/service.py:699`, which (latent bug, see PR description)
-invokes a non-existent `attach_server_to_group` method. The shim
-surfaces that as `NotImplementedError` so the bug fails loudly.
-
 Pin the import path, the explicit `__all__`, and the exception
 re-exports so a future cleanup cannot silently break the contract.
-"""
 
-import pytest
+The pre-#228 contract that the facade's `attach_server_to_group`
+attribute raise `NotImplementedError` has been removed because the
+latent bug it guarded was fixed in #228 PR 2c — the create-server
+flow now uses the correct `attach_group_to_server` call via DI.
+"""
 
 from app.groups.domain.exceptions import (
     GroupAccessError,
@@ -28,21 +26,17 @@ from app.services.group_service import _LegacyGroupFacade
 
 def test_group_service_alias_is_facade_class():
     """`GroupService` exported from the shim is an alias to
-    `_LegacyGroupFacade` so the legacy `GroupService(db)` construction
-    in `app/servers/service.py:696` keeps working."""
+    `_LegacyGroupFacade`."""
     assert shim_module.GroupService is _LegacyGroupFacade
     instance = shim_module.GroupService(db=object())
     assert isinstance(instance, _LegacyGroupFacade)
 
 
-@pytest.mark.asyncio
-async def test_attach_server_to_group_raises_not_implemented():
-    """Pin the latent-bug visibility contract: the legacy call shape
-    used by `app/servers/service.py:699` must raise — silently
-    swallowing the bug would be worse than reporting it."""
+def test_facade_no_longer_exposes_attach_server_to_group():
+    """The latent-bug guard `attach_server_to_group` was removed in
+    #228 PR 2c once the create-server flow stopped invoking it."""
     instance = shim_module.GroupService(db=object())
-    with pytest.raises(NotImplementedError, match="attach_server_to_group"):
-        await instance.attach_server_to_group(group_id=1, server_id=1, db=object())
+    assert not hasattr(instance, "attach_server_to_group")
 
 
 def test_shim_reexports_exception_classes():

@@ -24,8 +24,15 @@ from app.core.database import get_db
 from app.servers.api.dependencies import (
     get_authorization_service,
     get_server_repository,
+    get_server_service,
 )
 from app.servers.application.authorization import AuthorizationService
+from app.servers.application.service import (
+    ServerService,
+)
+from app.servers.application.service import (
+    _server_service_legacy as server_service,  # legacy module-level alias for old unit tests
+)
 from app.servers.domain.ports import ServerRepository
 from app.servers.models import ServerStatus, ServerType
 from app.servers.schemas import (
@@ -33,8 +40,9 @@ from app.servers.schemas import (
     ServerImportRequest,
     ServerResponse,
 )
-from app.servers.service import server_service
 from app.users.models import User
+
+__all__ = ["router", "server_service"]
 
 logger = logging.getLogger(__name__)
 
@@ -161,6 +169,7 @@ async def import_server(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
     server_repo: ServerRepository = Depends(get_server_repository),
+    server_service: ServerService = Depends(get_server_service),
 ):
     """
     Import a server from an exported ZIP file
