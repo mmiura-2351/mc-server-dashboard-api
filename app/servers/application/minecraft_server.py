@@ -79,12 +79,9 @@ class MinecraftServerManager:
         # Configurable log queue size to prevent memory leaks
         self.log_queue_size = log_queue_size or settings.SERVER_LOG_QUEUE_SIZE
         self.java_check_timeout = settings.JAVA_CHECK_TIMEOUT
-        # NB(#285): the pre-#272 ``server_repository_factory`` indirection
-        # (``Callable[[Session], ServerRepository]``) was deleted as part
-        # of completing the ARCHITECTURE §4.2 cleanup. The port-conflict
-        # check inside ``_validate_port_availability`` now consumes a
-        # ``ServerRepository`` passed explicitly by the caller — no
-        # framework-typed factories remain on this class.
+        # The port-conflict check inside ``_validate_port_availability``
+        # consumes a ``ServerRepository`` passed explicitly by the caller
+        # (#272, #285) — no framework-typed factories remain on this class.
 
     def set_status_update_callback(
         self,
@@ -1390,11 +1387,9 @@ class MinecraftServerManager:
             )
         try:
             # First check database for servers using the same port through
-            # the injected ``ServerRepository``. The legacy
-            # ``server_repository_factory`` indirection (which used to
-            # take a ``Session``) was removed in #285; callers now pass
-            # the already-built repository in alongside the entity,
-            # mirroring the rest of the application layer.
+            # the injected ``ServerRepository``. Callers pass the
+            # already-built repository in alongside the entity (#272,
+            # #285), mirroring the rest of the application layer.
             if server_repository is not None:
                 conflicts = await server_repository.list_by_port(
                     server.port,

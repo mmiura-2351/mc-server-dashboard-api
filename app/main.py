@@ -218,12 +218,6 @@ async def _initialize_database_integration():
             make_database_integration_service,
         )
 
-        # NB(#285): the late-bound ``server_repository_factory`` on
-        # ``minecraft_server_manager`` was removed once the
-        # ``_validate_port_availability`` path started consuming an
-        # explicit ``ServerRepository`` argument (#272). No factory
-        # wiring is required here anymore.
-
         # Build a fresh integration service inside the running loop so
         # `initialize()` captures the correct loop for its sync→async
         # bridge, then publish it on the holder so legacy importers (the
