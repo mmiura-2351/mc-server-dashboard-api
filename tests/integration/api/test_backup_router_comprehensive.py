@@ -51,6 +51,7 @@ def make_entity(
     server_name=None,
     minecraft_version=None,
     created_at=None,
+    server_owner_id=None,
 ) -> BackupEntity:
     """Helper to build a domain entity for AsyncMock return values."""
     return BackupEntity(
@@ -65,6 +66,7 @@ def make_entity(
         created_at=created_at or datetime.now(),
         server_name=server_name,
         minecraft_version=minecraft_version,
+        server_owner_id=server_owner_id,
     )
 
 

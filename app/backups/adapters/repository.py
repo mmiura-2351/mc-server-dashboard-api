@@ -44,10 +44,15 @@ from app.core.datetime_utils import utcnow
 def _backup_to_entity(row: Backup) -> BackupEntity:
     """Convert an ORM row to a `BackupEntity`.
 
-    Reads `row.server.name` / `row.server.minecraft_version` eagerly:
-    callers that need these fields must load the row with
-    `joinedload(Backup.server)` so the access does not trigger a
-    separate SELECT.
+    Reads `row.server.name` / `row.server.minecraft_version` /
+    `row.server.owner_id` eagerly: callers that need these fields must
+    load the row with `joinedload(Backup.server)` so the access does
+    not trigger a separate SELECT.
+
+    `server_owner_id` is denormalised under #274 so that
+    ``AuthorizationService.can_delete_backup`` can keep a two-argument
+    signature and the delete-backup router no longer needs a second
+    round-trip to fetch the parent server purely for its owner.
     """
     return BackupEntity(
         id=row.id,
@@ -63,6 +68,7 @@ def _backup_to_entity(row: Backup) -> BackupEntity:
         minecraft_version=row.server.minecraft_version
         if row.server is not None
         else None,
+        server_owner_id=row.server.owner_id if row.server is not None else None,
     )
 
 

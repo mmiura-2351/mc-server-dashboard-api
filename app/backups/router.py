@@ -582,14 +582,10 @@ async def delete_backup(
     try:
         backup = await auth.check_backup_access(backup_id, current_user)
 
-        # The legacy `can_delete_backup(backup, user)` reached through
-        # `backup.server.owner_id` (ORM relationship). With the domain
-        # entity that relationship is denormalised away, so we fetch
-        # the parent server explicitly and pass it as the third arg.
-        # ``check_server_access`` no longer emits an audit log on its
-        # own (#273), so no ``log_access`` opt-out is required.
-        parent = await auth.check_server_access(backup.server_id, current_user)
-        if not AuthorizationService.can_delete_backup(backup, current_user, parent):
+        # `BackupEntity` carries `server_owner_id` denormalised by the
+        # repository (#274), so the ownership check no longer needs a
+        # second round-trip to fetch the parent server.
+        if not AuthorizationService.can_delete_backup(backup, current_user):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Only admins and server owners can delete backups",
