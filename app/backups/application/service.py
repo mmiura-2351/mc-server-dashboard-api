@@ -126,11 +126,20 @@ class BackupService:
         """Create a backup row, write the tar.gz, finalise the row.
 
         Atomic-rename pattern (#228 punch-list B): the tar.gz is first
-        written to a `.pending/.pending-<uuid>.tar.gz` temp file, then
-        the UoW is committed, then the file is `os.replace()`-moved to
-        its final location. If the DB commit fails the temp file is
-        unlinked before propagating the exception, so no orphan tar
-        ever lands in `backups_directory/`.
+        written to a `.pending/.pending-<uuid>.tar.gz` temp file (on
+        the same filesystem as `backups_directory` to guarantee that
+        `os.replace()` is a same-FS atomic rename), then the UoW is
+        committed, then the file is `os.replace()`-moved to its final
+        location.
+
+        Data-loss protection (review feedback B-2): the `committed`
+        flag bifurcates the failure handler. **Pre-commit** failures
+        unlink the temp file (safe: no DB row references it).
+        **Post-commit** failures preserve the temp file by moving it
+        to `backups_directory/.failed/` for manual recovery — never
+        delete it, because the committed DB row points at
+        `final_path` and unlinking the temp would silently lose the
+        only on-disk copy of the user's data.
         """
         server = await self._get_server_or_raise(server_id)
         self._log_running_server_warning(server_id)
@@ -139,9 +148,11 @@ class BackupService:
         # is well-defined on every failure branch.
         pending_dir = self.backups_directory / ".pending"
         pending_dir.mkdir(parents=True, exist_ok=True)
-        temp_path: Path = pending_dir / f".pending-{uuid.uuid4().hex}.tar.gz"
+        temp_filename = f".pending-{uuid.uuid4().hex}.tar.gz"
+        temp_path: Path = pending_dir / temp_filename
         final_path: Optional[Path] = None
         backup_entity: Optional[BackupEntity] = None
+        committed = False
         try:
             async with self._uow as uow:
                 backup_entity = await uow.backups.add(
@@ -176,12 +187,14 @@ class BackupService:
                 )
                 assert final is not None
                 await uow.commit()
+                committed = True
                 backup_entity = final
 
             # Commit succeeded — atomically promote temp file to final
-            # path. On rare failure here the temp file remains in
-            # `.pending/`, never polluting the canonical directory.
-            os.replace(temp_path, final_path)
+            # path. On failure here the DB already references
+            # `final_path`, so the temp file MUST be preserved (see
+            # post-commit branch below).
+            os.replace(str(temp_path), str(final_path))
 
             logger.info(
                 f"Successfully created backup {backup_entity.id} for server {server_id}"
@@ -189,27 +202,88 @@ class BackupService:
             return backup_entity
 
         except Exception as e:
-            # Atomic-rename guarantee: temp file is always cleaned up
-            # on failure, so no orphan tar appears in
-            # `backups_directory/`. If the temp file is missing
-            # (e.g. `write_backup_file_to` errored before creating
-            # it), this is a no-op.
-            try:
-                temp_path.unlink(missing_ok=True)
-            except OSError as cleanup_error:
-                logger.warning(
-                    f"Failed to cleanup pending backup file {temp_path}: {cleanup_error}"
+            if committed:
+                # Post-commit failure (e.g. `os.replace` raised
+                # EXDEV / ENOSPC / EACCES / EROFS). The DB row points
+                # at `final_path` which does not yet exist; the temp
+                # file holds the only copy of the user's data. DO NOT
+                # unlink it — move it to `.failed/` so an operator
+                # can recover (e.g. `mv .failed/X final_path`) and
+                # log CRITICAL so monitoring fires.
+                self._preserve_post_commit_temp(
+                    temp_path=temp_path,
+                    temp_filename=temp_filename,
+                    final_path=final_path,
+                    entity_id=backup_entity.id if backup_entity is not None else None,
+                    error=e,
                 )
-            # Defensive: if `os.replace` raced (succeeded) before an
-            # outer exception, the final file may exist. Leave it in
-            # place because the commit succeeded — but log so we can
-            # diagnose.
-            if final_path is not None and final_path.exists():
-                logger.warning(
-                    f"Final backup file exists despite create_backup error: {final_path}"
-                )
+            else:
+                # Pre-commit failure — safe to unlink the temp file
+                # because no DB row references it.
+                try:
+                    temp_path.unlink(missing_ok=True)
+                except OSError as cleanup_error:
+                    logger.warning(
+                        f"Failed to cleanup pending backup file {temp_path}: "
+                        f"{cleanup_error}"
+                    )
             logger.error(f"Failed to create backup for server {server_id}: {e}")
             raise
+
+    def _preserve_post_commit_temp(
+        self,
+        *,
+        temp_path: Path,
+        temp_filename: str,
+        final_path: Optional[Path],
+        entity_id: Optional[int],
+        error: BaseException,
+    ) -> None:
+        """Move a post-commit temp file into `.failed/` for recovery.
+
+        Called from `create_backup` / `upload_backup` when the DB
+        commit succeeded but the subsequent `os.replace()` raised. The
+        temp file holds the only on-disk copy of the user's data —
+        deleting it would cause silent data loss against a committed
+        DB row.
+        """
+        if not temp_path.exists():
+            logger.critical(
+                "PUNCH-LIST B FAILURE: backup committed to DB (entity_id=%s) but "
+                "post-commit promotion failed AND temp file %s is missing — "
+                "data may be lost. DB row points at %s. Error: %s",
+                entity_id,
+                temp_path,
+                final_path,
+                error,
+            )
+            return
+
+        failed_dir = self.backups_directory / ".failed"
+        try:
+            failed_dir.mkdir(parents=True, exist_ok=True)
+            recovery_path = failed_dir / temp_filename
+            os.replace(str(temp_path), str(recovery_path))
+            logger.critical(
+                "PUNCH-LIST B FAILURE: backup committed to DB (entity_id=%s) but "
+                "post-commit os.replace failed. Backup data preserved at %s. "
+                "DB row points at non-existent %s. Manual recovery required. "
+                "Error: %s",
+                entity_id,
+                recovery_path,
+                final_path,
+                error,
+            )
+        except OSError as move_err:
+            logger.critical(
+                "PUNCH-LIST B FAILURE: backup committed to DB (entity_id=%s) but "
+                "post-commit os.replace failed, AND moving temp file to .failed/ "
+                "also failed. Data may remain at %s or be lost. Errors: %s | %s",
+                entity_id,
+                temp_path,
+                error,
+                move_err,
+            )
 
     async def restore_backup(
         self,
@@ -326,13 +400,34 @@ class BackupService:
 
         Implements the streaming pattern from the legacy code: writes
         to a temp file with chunk-by-chunk size + memory monitoring,
-        validates safety, moves into place, then inserts the
-        completed-status row in a single UoW commit.
+        validates safety, commits the DB row, then atomically
+        promotes the temp file into the canonical backups directory.
+
+        Data-loss protection (review feedback B-1, B-2):
+
+        - **B-1**: the temp file is created under
+          `backups_directory/.pending/`, not `$TMPDIR`. This
+          guarantees `os.replace()` is a same-filesystem rename and
+          cannot fail with `EXDEV` when `/tmp` and `backups/` live on
+          different mount points (separate `/var`, NFS, tmpfs, …).
+        - **B-2**: a `committed` flag bifurcates the failure handler;
+          post-commit failures preserve the temp file in `.failed/`
+          for manual recovery instead of unlinking it.
         """
         await self._get_server_or_raise(server_id)
 
+        # Ensure `.pending/` exists on the same filesystem as the
+        # canonical backups directory before we create the temp file
+        # there (B-1 fix).
+        self.backups_directory.mkdir(parents=True, exist_ok=True)
+        pending_dir = self.backups_directory / ".pending"
+        pending_dir.mkdir(parents=True, exist_ok=True)
+
         temp_path: Optional[Path] = None
+        temp_filename: Optional[str] = None
         backup_path: Optional[Path] = None
+        entity: Optional[BackupEntity] = None
+        committed = False
 
         async with ResourceMonitor(max_memory_mb=256) as monitor:
             try:
@@ -361,10 +456,18 @@ class BackupService:
                 backup_filename = f"server_{server_id}_{timestamp}.tar.gz"
                 backup_path = self.backups_directory / backup_filename
 
+                # B-1 fix: create the temp file under
+                # `backups_directory/.pending/` so it is guaranteed
+                # to share a filesystem with `backup_path`. The
+                # explicit `dir=` arg overrides `$TMPDIR`.
                 with tempfile.NamedTemporaryFile(
-                    suffix=".tar.gz", delete=False
+                    dir=str(pending_dir),
+                    prefix=".pending-upload-",
+                    suffix=".tar.gz",
+                    delete=False,
                 ) as temp_file:
                     temp_path = Path(temp_file.name)
+                    temp_filename = temp_path.name
                     total_size = 0
                     chunk_count = 0
                     async for chunk in self._read_file_chunks(file):
@@ -408,13 +511,9 @@ class BackupService:
                         f"Invalid tar.gz file: {str(e)}",
                     )
 
-                self.backups_directory.mkdir(exist_ok=True)
-
                 # Atomic-rename pattern (#228 punch-list B): commit the
                 # DB row first, then promote the validated temp file
-                # into the canonical backups directory. If commit
-                # fails, the temp file is unlinked below and no orphan
-                # tar appears under `backups_directory/`.
+                # into the canonical backups directory.
                 async with self._uow as uow:
                     entity = await uow.backups.add(
                         CreateBackupCommand(
@@ -428,9 +527,15 @@ class BackupService:
                         )
                     )
                     await uow.commit()
+                    committed = True
 
+                # B-2 fix: post-commit failure here MUST preserve the
+                # temp file (see exception branch). With B-1's
+                # same-FS temp dir, this rename should be a cheap
+                # atomic op; the recovery path exists for ENOSPC /
+                # EACCES / EROFS edge cases.
                 os.replace(str(temp_path), str(backup_path))
-                temp_path = None
+                temp_path = None  # ownership transferred; suppress cleanup
 
                 logger.info(f"Uploaded backup file: {backup_path} ({file_size} bytes)")
                 logger.info(f"Created backup record: ID {entity.id}")
@@ -438,10 +543,38 @@ class BackupService:
 
             except Exception as e:
                 logger.error(f"Failed to upload backup for server {server_id}: {e}")
-                if temp_path and temp_path.exists():
-                    temp_path.unlink(missing_ok=True)
-                if backup_path and backup_path.exists():
-                    backup_path.unlink(missing_ok=True)
+                if committed:
+                    # Post-commit failure — DB row references
+                    # `backup_path`; the temp file is the only copy
+                    # of the user-supplied data. Preserve it to
+                    # `.failed/` for manual recovery instead of
+                    # unlinking (B-2 fix).
+                    if temp_path is not None and temp_filename is not None:
+                        self._preserve_post_commit_temp(
+                            temp_path=temp_path,
+                            temp_filename=temp_filename,
+                            final_path=backup_path,
+                            entity_id=entity.id if entity is not None else None,
+                            error=e,
+                        )
+                else:
+                    # Pre-commit failure — safe to unlink the temp
+                    # file because no DB row references it.
+                    if temp_path is not None and temp_path.exists():
+                        try:
+                            temp_path.unlink(missing_ok=True)
+                        except OSError as cleanup_err:
+                            logger.warning(
+                                f"Failed to cleanup pending upload temp file "
+                                f"{temp_path}: {cleanup_err}"
+                            )
+                    # And clean any partial canonical file (extremely
+                    # unlikely pre-commit, but defensive).
+                    if backup_path is not None and backup_path.exists():
+                        try:
+                            backup_path.unlink(missing_ok=True)
+                        except OSError:
+                            pass
                 if isinstance(
                     e,
                     (FileOperationException, DatabaseOperationException, MemoryError),
