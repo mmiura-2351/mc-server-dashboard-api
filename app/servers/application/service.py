@@ -72,6 +72,7 @@ from app.servers.application.server_properties_generator import (
 from app.servers.domain.entities import (
     CreateServerCommand,
     ServerListSpec,
+    UpdateServerCommand,
 )
 from app.servers.domain.ports import ServerRepository, ServersUnitOfWork
 from app.servers.models import (
@@ -732,7 +733,16 @@ class ServerService:
                     f"{request.server_properties['server-port']}"
                 )
 
-        updated_server = self.database_service.update_server_record(server, request, db)
+        # Persist via UoW + repo when DI wired; legacy path otherwise
+        # (parity with `create_server`). The legacy fallback preserves
+        # the existing unit-test contract that constructs `ServerService()`
+        # without DI and mocks `database_service.update_server_record`.
+        if self._uow is not None:
+            updated_server = await self._update_via_uow(server_id, request)
+        else:
+            updated_server = self.database_service.update_server_record(
+                server, request, db
+            )
 
         await self._sync_server_properties_after_update(
             updated_server, request.server_properties
@@ -740,9 +750,66 @@ class ServerService:
 
         return ServerResponse.model_validate(updated_server)
 
+    async def _update_via_uow(
+        self, server_id: int, request: ServerUpdateRequest
+    ) -> Server:
+        """Persist a server update through the injected UoW.
+
+        Mirrors `_create_via_uow`: stages the write through the
+        repository, commits, and then refetches the ORM row from the
+        UoW's session so the downstream
+        `_sync_server_properties_after_update` helper (which reads
+        `server.directory_path`, `server.id`, `server.port`,
+        `server.max_players` from an ORM row) continues to work without
+        change.
+        """
+        assert self._uow is not None
+        command = UpdateServerCommand(
+            name=request.name,
+            description=request.description,
+            port=request.port,
+            max_memory=request.max_memory,
+            max_players=request.max_players,
+        )
+        async with self._uow as uow:
+            entity = await uow.servers.update(server_id, command)
+            if entity is None:
+                # validate_server_exists() already guarded above; if the
+                # row vanished between validation and update, surface a
+                # clear error rather than letting None propagate.
+                raise RuntimeError(
+                    f"Server {server_id} vanished between validation and update"
+                )
+            await uow.commit()
+            # See `_create_via_uow` for the rationale on refetching the
+            # ORM row from the UoW's session — the downstream
+            # `_sync_server_properties_after_update` helper still wants
+            # an ORM-row shaped object and will be migrated separately
+            # under #149.
+            db = getattr(uow, "_db", None)
+            if db is None:
+                raise RuntimeError(
+                    "ServersUnitOfWork did not expose a session for ORM refetch"
+                )
+            row = db.get(Server, server_id)
+            if row is None:
+                raise RuntimeError(f"Updated server {server_id} could not be re-read")
+            return row
+
     async def delete_server(self, server_id: int, db: Session) -> bool:
         server = self.validation_service.validate_server_exists(server_id, db)
-        self.database_service.soft_delete_server(server, db)
+        # Persist via UoW + repo when DI wired; legacy path otherwise
+        # (parity with `create_server` / `update_server`).
+        if self._uow is not None:
+            async with self._uow as uow:
+                deleted = await uow.servers.soft_delete(server_id)
+                if not deleted:
+                    raise RuntimeError(
+                        f"Server {server_id} vanished between validation and delete"
+                    )
+                await uow.commit()
+        else:
+            self.database_service.soft_delete_server(server, db)
         return True
 
     # ===================

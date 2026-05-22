@@ -305,6 +305,125 @@ class TestServerService:
             mock_server, mock_db
         )
 
+    @pytest.mark.asyncio
+    async def test_update_server_uses_uow_when_wired(self, mock_db):
+        """`update_server` routes through the UoW when DI is wired (#278)."""
+        # Build a ServerService with an injected UoW; the legacy
+        # database_service.update_server_record path must NOT be reached.
+        fake_uow = Mock()
+        service = ServerService(uow=fake_uow)
+        mock_existing = Mock()
+        mock_existing.port = 25565
+        service.validation_service.validate_server_exists = Mock(
+            return_value=mock_existing
+        )
+        # Stub _update_via_uow so we don't need a full SqlAlchemy UoW.
+        mock_updated = Mock()
+        mock_updated.directory_path = "/tmp/server"
+        mock_updated.id = 1
+        mock_updated.port = 25565
+        mock_updated.max_players = 20
+        service._update_via_uow = AsyncMock(return_value=mock_updated)
+        # And stub the property-sync helper so we don't touch the FS.
+        service._sync_server_properties_after_update = AsyncMock()
+        # Make sure the legacy DB path is NOT called.
+        service.database_service.update_server_record = Mock(
+            side_effect=AssertionError("legacy path must not be used with UoW")
+        )
+
+        request = Mock(spec=ServerUpdateRequest)
+        request.name = "renamed"
+        request.max_memory = None
+        request.max_players = None
+        request.port = None
+        request.server_properties = None
+        request.description = None
+
+        with patch("app.servers.application.service.ServerSecurityValidator"):
+            with patch("app.servers.application.service.ServerResponse") as mock_resp:
+                mock_resp.model_validate.return_value = "uow_response"
+                await service.update_server(1, request, mock_db)
+
+        service._update_via_uow.assert_awaited_once_with(1, request)
+        service._sync_server_properties_after_update.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_delete_server_uses_uow_when_wired(self, mock_db):
+        """`delete_server` routes through the UoW when DI is wired (#278)."""
+
+        class _FakeServersRepo:
+            def __init__(self) -> None:
+                self.soft_delete_called_with: list[int] = []
+
+            async def soft_delete(self, server_id: int) -> bool:
+                self.soft_delete_called_with.append(server_id)
+                return True
+
+        class _FakeUoW:
+            def __init__(self) -> None:
+                self.servers = _FakeServersRepo()
+                self.commits = 0
+                self.entered = 0
+
+            async def __aenter__(self):
+                self.entered += 1
+                return self
+
+            async def __aexit__(self, exc_type, exc, tb):
+                return None
+
+            async def commit(self):
+                self.commits += 1
+
+            async def rollback(self):
+                pass
+
+        uow = _FakeUoW()
+        service = ServerService(uow=uow)
+        mock_server = Mock()
+        service.validation_service.validate_server_exists = Mock(return_value=mock_server)
+        # Legacy path must NOT be used.
+        service.database_service.soft_delete_server = Mock(
+            side_effect=AssertionError("legacy path must not be used with UoW")
+        )
+
+        result = await service.delete_server(42, mock_db)
+
+        assert result is True
+        assert uow.servers.soft_delete_called_with == [42]
+        assert uow.commits == 1
+        assert uow.entered == 1
+
+    @pytest.mark.asyncio
+    async def test_delete_server_uow_missing_row_raises(self, mock_db):
+        """If the row vanishes between validation and UoW delete, raise."""
+
+        class _FakeServersRepo:
+            async def soft_delete(self, server_id: int) -> bool:
+                return False
+
+        class _FakeUoW:
+            def __init__(self) -> None:
+                self.servers = _FakeServersRepo()
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, exc_type, exc, tb):
+                return None
+
+            async def commit(self):
+                pass
+
+            async def rollback(self):
+                pass
+
+        service = ServerService(uow=_FakeUoW())
+        service.validation_service.validate_server_exists = Mock(return_value=Mock())
+
+        with pytest.raises(RuntimeError, match="vanished between validation and delete"):
+            await service.delete_server(99, mock_db)
+
 
 class TestServerValidationServiceExtended:
     """Additional tests for ServerValidationService methods"""
