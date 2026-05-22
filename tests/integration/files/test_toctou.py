@@ -15,7 +15,7 @@ import pytest
 from sqlalchemy import create_engine, text
 
 from app.core.database import Base
-from app.core.database_utils import migrate_file_history_unique_index
+from app.files.adapters.migrations import migrate_file_history_unique_index
 from app.files.adapters.uow import SqlAlchemyFilesUnitOfWork
 from app.files.application.service import FileHistoryService
 from app.files.models import FileEditHistory
