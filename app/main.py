@@ -121,7 +121,7 @@ async def _initialize_database():
         # file_edit_history.version_number against TOCTOU races.
         # Aborts startup if pre-existing duplicates are detected so
         # operators can deduplicate before retrying.
-        from app.core.database_utils import migrate_file_history_unique_index
+        from app.files.adapters.migrations import migrate_file_history_unique_index
 
         migrate_file_history_unique_index(engine)
 
