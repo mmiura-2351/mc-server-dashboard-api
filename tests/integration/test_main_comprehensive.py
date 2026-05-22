@@ -311,6 +311,107 @@ class TestApplicationStartupShutdown:
             mock_logger.critical.assert_called()
 
     @pytest.mark.asyncio
+    async def test_initialize_visibility_migration_success(self):
+        """Backfill invokes the migration service and logs the result.
+
+        Verifies the lifespan hook constructs the service through the
+        documented factory, calls `migrate_all_resources`, and closes
+        the session it opened. Idempotency itself is exercised by the
+        domain-level tests in
+        ``tests/unit/core/visibility/test_service_with_fake.py``.
+        """
+        mock_service = AsyncMock()
+        mock_service.migrate_all_resources = AsyncMock(
+            return_value={"servers": 2, "groups": 1, "total": 3}
+        )
+        mock_db = MagicMock()
+
+        with (
+            patch("app.core.database.SessionLocal", return_value=mock_db),
+            patch(
+                "app.core.visibility.api.dependencies.make_visibility_migration_service",
+                return_value=mock_service,
+            ) as mock_factory,
+            patch("app.main.logger") as mock_logger,
+        ):
+            from app.main import _initialize_visibility_migration
+
+            await _initialize_visibility_migration()
+
+            mock_factory.assert_called_once_with(mock_db)
+            mock_service.migrate_all_resources.assert_awaited_once()
+            mock_db.close.assert_called_once()
+            mock_logger.info.assert_called()
+            # Best-effort hook must not signal failure
+            mock_logger.warning.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_initialize_visibility_migration_failure_swallowed(self):
+        """Migration failure logs a warning and lets startup continue.
+
+        Best-effort backfill: the lifespan must never abort because of a
+        migration error; operators re-trigger via the admin endpoint.
+        """
+        mock_service = AsyncMock()
+        mock_service.migrate_all_resources = AsyncMock(side_effect=RuntimeError("boom"))
+        mock_db = MagicMock()
+
+        with (
+            patch("app.core.database.SessionLocal", return_value=mock_db),
+            patch(
+                "app.core.visibility.api.dependencies.make_visibility_migration_service",
+                return_value=mock_service,
+            ),
+            patch("app.main.service_status") as mock_status,
+            patch("app.main.logger") as mock_logger,
+        ):
+            mock_status.failed_services = []
+            from app.main import _initialize_visibility_migration
+
+            # Must not raise
+            await _initialize_visibility_migration()
+
+            mock_logger.warning.assert_called()
+            # Session must still be closed even when migration raises
+            mock_db.close.assert_called_once()
+            # Best-effort hook does not flag the system as degraded
+            assert "visibility_migration" not in mock_status.failed_services
+
+    @pytest.mark.asyncio
+    async def test_initialize_visibility_migration_slow_warning(self):
+        """Slow backfill (>=1s) emits a warning breadcrumb for operators."""
+        import asyncio
+
+        mock_db = MagicMock()
+
+        async def slow_migrate():
+            # Yield control so the wall-clock can advance under the
+            # patched ``time.monotonic`` below.
+            await asyncio.sleep(0)
+            return {"servers": 0, "groups": 0, "total": 0}
+
+        mock_service = AsyncMock()
+        mock_service.migrate_all_resources = AsyncMock(side_effect=slow_migrate)
+
+        # Fake a >=1s elapsed window via deterministic monotonic clock
+        clock = iter([0.0, 1.5])
+        with (
+            patch("app.core.database.SessionLocal", return_value=mock_db),
+            patch(
+                "app.core.visibility.api.dependencies.make_visibility_migration_service",
+                return_value=mock_service,
+            ),
+            patch("time.monotonic", side_effect=lambda: next(clock)),
+            patch("app.main.logger") as mock_logger,
+        ):
+            from app.main import _initialize_visibility_migration
+
+            await _initialize_visibility_migration()
+
+            mock_logger.warning.assert_called()
+            mock_db.close.assert_called_once()
+
+    @pytest.mark.asyncio
     async def test_initialize_database_integration_success(self):
         """Test successful database integration initialization.
 
@@ -422,7 +523,9 @@ class TestApplicationStartupShutdown:
                 "app.servers.application.minecraft_server.minecraft_server_manager"
             ) as mock_mc_manager,
             patch("app.backups.backup_scheduler_instance") as mock_holder,
-            patch("app.websockets.application.service.websocket_service") as mock_ws_service,
+            patch(
+                "app.websockets.application.service.websocket_service"
+            ) as mock_ws_service,
             patch("app.main.service_status") as mock_status,
             patch("app.main.logger") as mock_logger,
         ):
