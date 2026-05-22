@@ -350,7 +350,7 @@ class TestApplicationStartupShutdown:
                 mock_service.sync_server_states_with_restore.assert_awaited_once()
                 assert mock_status.database_integration_ready is True
                 # Holder must hold the freshly built mock — this is what
-                # ``app.services.database_integration`` resolves through.
+                # ``app.servers.application.database_integration`` resolves through.
                 assert database_integration_instance.get() is mock_service
         finally:
             if previous is None:
@@ -675,10 +675,10 @@ class TestServiceIntegrationBasic:
         directly because the module-level name is now resolved through
         the holder (PR #279 B1) and only exists after lifespan startup.
         """
+        from app.backups.application.scheduler import backup_scheduler
         from app.servers.application.database_integration import (
             DatabaseIntegrationService,
         )
-        from app.backups.application.scheduler import backup_scheduler
         from app.websockets.application.service import websocket_service
 
         # Database integration service methods

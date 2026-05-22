@@ -12,6 +12,7 @@ from unittest.mock import Mock, patch
 
 import pytest
 
+from app.backups.application.legacy import BackupFileService
 from app.core.security import (
     FileOperationValidator,
     PathValidator,
@@ -23,7 +24,6 @@ from app.servers.service import (
     ServerSecurityValidator,
     ServerValidationService,
 )
-from app.backups.application.legacy import BackupFileService
 
 
 class TestPathValidator:
@@ -512,8 +512,8 @@ class TestBackupServiceSecurity:
         """Test that backup upload validates security correctly."""
         from unittest.mock import AsyncMock, Mock
 
-        from app.core.exceptions import FileOperationException
         from app.backups.application.legacy import BackupService
+        from app.core.exceptions import FileOperationException
 
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_path = Path(temp_dir)

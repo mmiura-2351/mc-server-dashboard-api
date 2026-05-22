@@ -95,10 +95,10 @@ class TestHolderRaisesWhenUninitialised:
         """Pre-lifespan / cleared holder → clear RuntimeError instead of
         the silent ``asyncio.run() from a running event loop`` failure
         the old shim produced."""
+        from app.servers.application import database_integration as shim
         from app.servers.application.database_integration import (
             database_integration_instance,
         )
-        from app.servers.application import database_integration as shim
 
         previous = (
             database_integration_instance.get()

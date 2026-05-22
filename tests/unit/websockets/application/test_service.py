@@ -10,13 +10,13 @@ from fastapi import WebSocket, WebSocketDisconnect
 from sqlalchemy.orm import Session
 
 from app.servers.models import Server
+from app.users.domain.value_objects import Role
+from app.users.models import User
 from app.websockets.application.service import (
     ConnectionManager,
     WebSocketService,
     websocket_service,
 )
-from app.users.domain.value_objects import Role
-from app.users.models import User
 
 
 class TestConnectionManagerFixed:

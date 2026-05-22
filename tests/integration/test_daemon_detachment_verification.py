@@ -13,8 +13,8 @@ from unittest.mock import AsyncMock, MagicMock, Mock, patch
 import psutil
 import pytest
 
-from app.servers.models import Server, ServerStatus, ServerType
 from app.servers.application.minecraft_server import MinecraftServerManager, ServerProcess
+from app.servers.models import Server, ServerStatus, ServerType
 
 pytestmark = pytest.mark.slow
 

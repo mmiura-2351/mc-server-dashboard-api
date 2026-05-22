@@ -6,11 +6,11 @@ import pytest
 
 from app.core.security import SecurityError
 from app.groups.models import GroupType
-from app.servers.models import ServerStatus
 from app.servers.application.real_time_server_commands import (
     RealTimeServerCommandService,
     real_time_server_commands,
 )
+from app.servers.models import ServerStatus
 
 
 class TestRealTimeServerCommandService:

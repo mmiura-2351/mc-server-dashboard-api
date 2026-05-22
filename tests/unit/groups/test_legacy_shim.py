@@ -9,6 +9,8 @@ latent bug it guarded was fixed in #228 PR 2c — the create-server
 flow now uses the correct `attach_group_to_server` call via DI.
 """
 
+from app.groups.application import legacy as shim_module
+from app.groups.application.legacy import _LegacyGroupFacade
 from app.groups.domain.exceptions import (
     GroupAccessError,
     GroupAlreadyExistsError,
@@ -20,8 +22,6 @@ from app.groups.domain.exceptions import (
     ServerGroupAttachmentNotFoundError,
     ServerNotFoundForAttachment,
 )
-from app.groups.application import legacy as shim_module
-from app.groups.application.legacy import _LegacyGroupFacade
 
 
 def test_group_service_alias_is_facade_class():

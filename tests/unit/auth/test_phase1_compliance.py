@@ -15,8 +15,8 @@ import pytest
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
-from app.servers.models import Server, ServerStatus, ServerType
 from app.servers.application.authorization import AuthorizationService
+from app.servers.models import Server, ServerStatus, ServerType
 from app.users.domain.value_objects import Role
 from app.users.models import User
 
