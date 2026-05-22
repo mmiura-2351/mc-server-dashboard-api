@@ -8,7 +8,8 @@ from datetime import datetime
 
 import pytest
 
-from app.servers.models import ServerStatus, ServerType, Template
+from app.servers.models import ServerStatus, ServerType
+from app.templates.models import Template
 
 
 class TestTemplate:
