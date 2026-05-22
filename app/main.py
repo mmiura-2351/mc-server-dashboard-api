@@ -17,6 +17,7 @@ from app.core.database import Base, engine
 from app.core.error_handlers import register_exception_handlers
 
 # Import visibility models for Phase 2 resource access control
+from app.core.visibility_router import router as visibility_router
 from app.files.router import router as files_router
 from app.groups.router import router as groups_router
 from app.middleware.audit_middleware import AuditMiddleware
@@ -487,4 +488,5 @@ app.include_router(templates_router, prefix="/api/v1/templates", tags=["template
 app.include_router(files_router, prefix="/api/v1/files", tags=["files"])
 app.include_router(versions_router, prefix="/api/v1/versions", tags=["versions"])
 app.include_router(websockets_router, prefix="/api/v1/ws", tags=["websockets"])
+app.include_router(visibility_router, prefix="/api/v1", tags=["visibility"])
 app.include_router(audit_router, tags=["audit"])

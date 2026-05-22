@@ -14,7 +14,7 @@ import logging
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
-from app.auth.dependencies import get_current_active_user
+from app.auth.dependencies import get_current_user
 from app.core.database import get_db
 from app.core.visibility import ResourceType, VisibilityType
 from app.core.visibility.api.dependencies import (
@@ -88,7 +88,7 @@ def _check_resource_ownership_or_admin(
 async def get_resource_visibility(
     resource_type: ResourceType,
     resource_id: int,
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
     visibility_service: VisibilityService = Depends(get_visibility_service),
 ):
@@ -144,7 +144,7 @@ async def update_resource_visibility(
     resource_type: ResourceType,
     resource_id: int,
     request: VisibilityUpdateRequest,
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
     visibility_service: VisibilityService = Depends(get_visibility_service),
 ):
@@ -224,7 +224,7 @@ async def grant_user_access(
     resource_type: ResourceType,
     resource_id: int,
     request: UserAccessGrantRequest,
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
     visibility_service: VisibilityService = Depends(get_visibility_service),
 ):
@@ -296,7 +296,7 @@ async def revoke_user_access(
     resource_type: ResourceType,
     resource_id: int,
     user_id: int,
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
     visibility_service: VisibilityService = Depends(get_visibility_service),
 ):
@@ -352,7 +352,7 @@ async def revoke_user_access(
     description="Get status of Phase 1 → Phase 2 visibility migration (admin only)",
 )
 async def get_migration_status(
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(get_current_user),
     migration_service: VisibilityMigrationService = Depends(
         get_visibility_migration_service
     ),
@@ -382,7 +382,7 @@ async def get_migration_status(
     description="Execute Phase 1 → Phase 2 visibility migration (admin only)",
 )
 async def execute_migration(
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(get_current_user),
     migration_service: VisibilityMigrationService = Depends(
         get_visibility_migration_service
     ),
