@@ -12,7 +12,7 @@ from unittest.mock import Mock, patch
 
 import pytest
 
-from app.backups.adapters.legacy import BackupFileService
+from app.backups.application.file_service import BackupFileService
 from app.core.security import (
     FileOperationValidator,
     PathValidator,
@@ -509,19 +509,43 @@ class TestBackupServiceSecurity:
 
     @pytest.mark.asyncio
     async def test_backup_upload_security_validation(self):
-        """Test that backup upload validates security correctly."""
-        from unittest.mock import AsyncMock, Mock
+        """Test that backup upload validates security correctly.
 
-        from app.backups.adapters.legacy import BackupService
+        Migrated off the legacy `app.backups.adapters.legacy.BackupService`
+        facade (Issue #294): constructs the new DI-shaped
+        `app.backups.application.service.BackupService` directly with
+        in-memory fakes so the upload security path is exercised without
+        touching the database. The verified invariant is unchanged —
+        an upload containing a path-traversing tar entry must be
+        rejected with `FileOperationException("Security validation
+        failed: ...")` from `TarExtractor.validate_archive_safety`.
+        """
+        from unittest.mock import AsyncMock
+
+        from app.backups.application.service import BackupService
         from app.core.exceptions import FileOperationException
+        from tests.unit.backups.fakes import (
+            FakeBackupsUnitOfWork,
+            FakeServerReadPort,
+        )
 
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_path = Path(temp_dir)
+            backups_dir = temp_path / "backups"
 
-            # Create BackupService and set custom backup directory for testing
-            backup_service = BackupService()
-            backup_service.backups_directory = temp_path / "backups"
-            backup_service.backups_directory.mkdir()
+            # Seed the server-read port so `_get_server_or_raise(1)` resolves
+            # to a fake server entity — equivalent to the legacy
+            # `BackupValidationService.validate_server_for_backup` patch
+            # which used to inject a mock server with id=1.
+            server_read = FakeServerReadPort()
+            server_read.seed(id=1, directory_path=str(temp_path / "srv"))
+
+            uow = FakeBackupsUnitOfWork()
+            backup_service = BackupService(
+                uow=uow,
+                server_read=server_read,
+                backups_directory=backups_dir,
+            )
 
             # Create malicious backup file content
             malicious_content = io.BytesIO()
@@ -547,39 +571,28 @@ class TestBackupServiceSecurity:
             chunks.append(b"")  # End of file marker
             mock_upload_file.read = AsyncMock(side_effect=chunks)
 
-            # Create mock database session
-            mock_db = Mock()
+            # Should raise FileOperationException due to security validation failure
+            try:
+                result = await backup_service.upload_backup(
+                    server_id=1, file=mock_upload_file
+                )
+                # If we get here, the test failed - security validation should have caught the malicious file
+                pytest.fail(
+                    f"Expected security validation to fail, but upload succeeded: {result}"
+                )
+            except FileOperationException as e:
+                # This is what we expect - verify it's a security validation failure
+                assert "Security validation failed" in str(e), (
+                    f"Expected security validation error, got: {e}"
+                )
+            except Exception as e:
+                # Log any other exceptions for debugging
+                pytest.fail(f"Unexpected exception type: {type(e).__name__}: {e}")
 
-            # NOTE: After PR #264 the BackupValidationService shim is preserved
-            # for import-time compatibility, but its methods raise
-            # NotImplementedError; the actual validation logic moved into
-            # BackupService inline checks. The patch below is a no-op
-            # interceptor — this test still verifies tar-safety via
-            # TarExtractor.validate_archive_safety, not the patched validator.
-            with patch(
-                "app.backups.adapters.legacy.BackupValidationService.validate_server_for_backup"
-            ) as mock_validate:
-                mock_server = Mock()
-                mock_server.id = 1
-                mock_validate.return_value = mock_server
-
-                # Should raise FileOperationException due to security validation failure
-                try:
-                    result = await backup_service.upload_backup(
-                        server_id=1, file=mock_upload_file, db=mock_db
-                    )
-                    # If we get here, the test failed - security validation should have caught the malicious file
-                    pytest.fail(
-                        f"Expected security validation to fail, but upload succeeded: {result}"
-                    )
-                except FileOperationException as e:
-                    # This is what we expect - verify it's a security validation failure
-                    assert "Security validation failed" in str(e), (
-                        f"Expected security validation error, got: {e}"
-                    )
-                except Exception as e:
-                    # Log any other exceptions for debugging
-                    pytest.fail(f"Unexpected exception type: {type(e).__name__}: {e}")
+            # UoW must not commit on security failure (pre-commit rollback path).
+            assert uow.committed == 0, (
+                f"UoW should not commit on security failure, got committed={uow.committed}"
+            )
 
 
 class TestIntegrationSecurity:
