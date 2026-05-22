@@ -482,7 +482,9 @@ sys.exit(0)
             with patch.object(
                 manager, "_is_process_running", side_effect=mock_is_process_running
             ):
-                with patch("app.servers.application.minecraft_server.logger") as mock_logger:
+                with patch(
+                    "app.servers.application.minecraft_server.logger"
+                ) as mock_logger:
                     # Start monitoring task
                     monitor_task = asyncio.create_task(
                         manager._monitor_server(server_process)
@@ -567,7 +569,9 @@ sys.exit(0)
             with patch.object(
                 manager, "_is_process_running", side_effect=mock_is_process_running
             ):
-                with patch("app.servers.application.minecraft_server.logger") as mock_logger:
+                with patch(
+                    "app.servers.application.minecraft_server.logger"
+                ) as mock_logger:
                     # Start monitoring task
                     monitor_task = asyncio.create_task(
                         manager._monitor_server(server_process)

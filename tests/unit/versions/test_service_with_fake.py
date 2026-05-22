@@ -51,9 +51,7 @@ class TestVersionUpdateServiceWithFake:
     async def test_get_version_returns_none_when_missing(
         self, service: VersionUpdateService
     ) -> None:
-        assert (
-            await service.get_version(ServerType.vanilla, "1.99.0")
-        ) is None
+        assert (await service.get_version(ServerType.vanilla, "1.99.0")) is None
 
     @pytest.mark.asyncio
     async def test_get_version_stats_aggregates_by_type(

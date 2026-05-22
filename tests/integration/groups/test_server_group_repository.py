@@ -21,9 +21,7 @@ def repository(db) -> SqlAlchemyServerGroupRepository:
 
 
 def _seed_group(db, owner_id: int, *, name: str = "g", type=GroupType.op) -> Group:
-    row = Group(
-        name=name, description=None, type=type, players=[], owner_id=owner_id
-    )
+    row = Group(name=name, description=None, type=type, players=[], owner_id=owner_id)
     db.add(row)
     db.commit()
     db.refresh(row)
@@ -57,9 +55,7 @@ async def test_attach_and_find(repository, db, admin_user):
     server = _seed_server(db, admin_user.id, name="sA")
 
     entity = await repository.attach(
-        AttachServerGroupCommand(
-            server_id=server.id, group_id=group.id, priority=3
-        )
+        AttachServerGroupCommand(server_id=server.id, group_id=group.id, priority=3)
     )
     db.commit()
     assert entity.id is not None
@@ -76,12 +72,8 @@ async def test_count_for_group(repository, db, admin_user):
     s1 = _seed_server(db, admin_user.id, name="s1", directory_path="./servers/s1")
     s2 = _seed_server(db, admin_user.id, name="s2", directory_path="./servers/s2")
 
-    await repository.attach(
-        AttachServerGroupCommand(server_id=s1.id, group_id=group.id)
-    )
-    await repository.attach(
-        AttachServerGroupCommand(server_id=s2.id, group_id=group.id)
-    )
+    await repository.attach(AttachServerGroupCommand(server_id=s1.id, group_id=group.id))
+    await repository.attach(AttachServerGroupCommand(server_id=s2.id, group_id=group.id))
     db.commit()
 
     assert await repository.count_for_group(group.id) == 2
@@ -93,12 +85,8 @@ async def test_list_server_ids_for_group(repository, db, admin_user):
     s1 = _seed_server(db, admin_user.id, name="s1", directory_path="./servers/s1")
     s2 = _seed_server(db, admin_user.id, name="s2", directory_path="./servers/s2")
 
-    await repository.attach(
-        AttachServerGroupCommand(server_id=s1.id, group_id=group.id)
-    )
-    await repository.attach(
-        AttachServerGroupCommand(server_id=s2.id, group_id=group.id)
-    )
+    await repository.attach(AttachServerGroupCommand(server_id=s1.id, group_id=group.id))
+    await repository.attach(AttachServerGroupCommand(server_id=s2.id, group_id=group.id))
     db.commit()
 
     ids = await repository.list_server_ids_for_group(group.id)
@@ -106,9 +94,7 @@ async def test_list_server_ids_for_group(repository, db, admin_user):
 
 
 @pytest.mark.asyncio
-async def test_list_groups_for_server_priority_desc(
-    repository, db, admin_user
-):
+async def test_list_groups_for_server_priority_desc(repository, db, admin_user):
     g_lo = _seed_group(db, admin_user.id, name="low")
     g_hi = _seed_group(db, admin_user.id, name="high")
     s = _seed_server(db, admin_user.id, name="srv")
@@ -128,12 +114,8 @@ async def test_list_groups_for_server_priority_desc(
 @pytest.mark.asyncio
 async def test_list_server_dirs_for_group(repository, db, admin_user):
     group = _seed_group(db, admin_user.id)
-    s = _seed_server(
-        db, admin_user.id, name="srv", directory_path="./servers/dirX"
-    )
-    await repository.attach(
-        AttachServerGroupCommand(server_id=s.id, group_id=group.id)
-    )
+    s = _seed_server(db, admin_user.id, name="srv", directory_path="./servers/dirX")
+    await repository.attach(AttachServerGroupCommand(server_id=s.id, group_id=group.id))
     db.commit()
 
     pairs = await repository.list_server_dirs_for_group(group.id)
@@ -172,9 +154,7 @@ async def test_list_attachments_for_group_carries_server_status(
     repository, db, admin_user
 ):
     group = _seed_group(db, admin_user.id)
-    s = _seed_server(
-        db, admin_user.id, name="srvB", directory_path="./servers/srvB"
-    )
+    s = _seed_server(db, admin_user.id, name="srvB", directory_path="./servers/srvB")
     await repository.attach(
         AttachServerGroupCommand(server_id=s.id, group_id=group.id, priority=2)
     )
@@ -193,9 +173,7 @@ async def test_list_attachments_for_group_carries_server_status(
 async def test_detach_returns_true_then_false(repository, db, admin_user):
     group = _seed_group(db, admin_user.id)
     s = _seed_server(db, admin_user.id, name="srv")
-    await repository.attach(
-        AttachServerGroupCommand(server_id=s.id, group_id=group.id)
-    )
+    await repository.attach(AttachServerGroupCommand(server_id=s.id, group_id=group.id))
     db.commit()
 
     ok = await repository.detach(s.id, group.id)
@@ -203,9 +181,7 @@ async def test_detach_returns_true_then_false(repository, db, admin_user):
     assert ok is True
     assert (
         db.query(ServerGroup)
-        .filter(
-            ServerGroup.server_id == s.id, ServerGroup.group_id == group.id
-        )
+        .filter(ServerGroup.server_id == s.id, ServerGroup.group_id == group.id)
         .first()
         is None
     )

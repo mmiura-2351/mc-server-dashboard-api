@@ -97,7 +97,8 @@ class TestMinecraftServerManagerSimpleIntegration:
 
         # Patch at the module level where it's imported
         with patch(
-            "app.servers.application.minecraft_server.java_compatibility_service", mock_java_service
+            "app.servers.application.minecraft_server.java_compatibility_service",
+            mock_java_service,
         ):
             compatible, message, executable = await manager._check_java_compatibility(
                 "1.20.1"
@@ -117,7 +118,8 @@ class TestMinecraftServerManagerSimpleIntegration:
         mock_java_service.compatible = False
 
         with patch(
-            "app.servers.application.minecraft_server.java_compatibility_service", mock_java_service
+            "app.servers.application.minecraft_server.java_compatibility_service",
+            mock_java_service,
         ):
             compatible, message, executable = await manager._check_java_compatibility(
                 "1.20.1"
@@ -132,7 +134,8 @@ class TestMinecraftServerManagerSimpleIntegration:
     async def test_java_compatibility_success(self, manager, mock_java_service):
         """Test lines 130-143: Successful Java compatibility"""
         with patch(
-            "app.servers.application.minecraft_server.java_compatibility_service", mock_java_service
+            "app.servers.application.minecraft_server.java_compatibility_service",
+            mock_java_service,
         ):
             with patch("app.servers.application.minecraft_server.logger") as mock_logger:
                 compatible, message, executable = await manager._check_java_compatibility(
@@ -157,7 +160,8 @@ class TestMinecraftServerManagerSimpleIntegration:
         )
 
         with patch(
-            "app.servers.application.minecraft_server.java_compatibility_service", mock_java_service
+            "app.servers.application.minecraft_server.java_compatibility_service",
+            mock_java_service,
         ):
             with patch("app.servers.application.minecraft_server.logger") as mock_logger:
                 compatible, message, executable = await manager._check_java_compatibility(

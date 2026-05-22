@@ -28,9 +28,7 @@ class TestRefreshTokenLifecycle:
         assert user_id == 42
 
     @pytest.mark.asyncio
-    async def test_create_revokes_previous_token(
-        self, service: AuthService
-    ) -> None:
+    async def test_create_revokes_previous_token(self, service: AuthService) -> None:
         first = await service.create_refresh_token(user_id=42)
         second = await service.create_refresh_token(user_id=42)
         assert first != second
@@ -40,9 +38,7 @@ class TestRefreshTokenLifecycle:
         assert await service.verify_refresh_token(second) == 42
 
     @pytest.mark.asyncio
-    async def test_verify_unknown_token_returns_none(
-        self, service: AuthService
-    ) -> None:
+    async def test_verify_unknown_token_returns_none(self, service: AuthService) -> None:
         assert await service.verify_refresh_token("no-such-token") is None
 
     @pytest.mark.asyncio
@@ -52,9 +48,7 @@ class TestRefreshTokenLifecycle:
         assert await service.verify_refresh_token(token) is None
 
     @pytest.mark.asyncio
-    async def test_revoke_missing_returns_false(
-        self, service: AuthService
-    ) -> None:
+    async def test_revoke_missing_returns_false(self, service: AuthService) -> None:
         assert await service.revoke_refresh_token("ghost") is False
 
 

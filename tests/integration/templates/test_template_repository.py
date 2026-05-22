@@ -58,9 +58,7 @@ def _seed_template(
 
 class TestTemplateRepositoryReads:
     @pytest.mark.asyncio
-    async def test_get_returns_entity_with_creator_name(
-        self, repository, db, admin_user
-    ):
+    async def test_get_returns_entity_with_creator_name(self, repository, db, admin_user):
         row = _seed_template(db, admin_user, name="A")
         entity = await repository.get(row.id)
         assert entity is not None
@@ -104,9 +102,7 @@ class TestTemplateRepositoryListing:
         assert page.total == 2
 
     @pytest.mark.asyncio
-    async def test_list_paged_admin_sees_all(
-        self, repository, db, admin_user, test_user
-    ):
+    async def test_list_paged_admin_sees_all(self, repository, db, admin_user, test_user):
         _seed_template(db, admin_user, name="a", is_public=False)
         _seed_template(db, test_user, name="b", is_public=False)
         spec = TemplateListSpec(viewer_id=admin_user.id, viewer_is_admin=True)
@@ -129,9 +125,7 @@ class TestTemplateRepositoryListing:
         assert [e.name for e in page.entities] == ["b"]
 
     @pytest.mark.asyncio
-    async def test_list_paged_filters_by_server_type(
-        self, repository, db, admin_user
-    ):
+    async def test_list_paged_filters_by_server_type(self, repository, db, admin_user):
         _seed_template(db, admin_user, name="v", server_type=ServerType.vanilla)
         _seed_template(db, admin_user, name="p", server_type=ServerType.paper)
 
@@ -144,9 +138,7 @@ class TestTemplateRepositoryListing:
         assert [e.name for e in page.entities] == ["p"]
 
     @pytest.mark.asyncio
-    async def test_list_paged_filters_by_is_public(
-        self, repository, db, admin_user
-    ):
+    async def test_list_paged_filters_by_is_public(self, repository, db, admin_user):
         _seed_template(db, admin_user, name="pub", is_public=True)
         _seed_template(db, admin_user, name="priv", is_public=False)
 
@@ -206,16 +198,12 @@ class TestTemplateRepositoryCounts:
         assert await repository.count_owned_by(test_user.id) == 1
 
     @pytest.mark.asyncio
-    async def test_count_visible_by_server_type(
-        self, repository, db, admin_user
-    ):
+    async def test_count_visible_by_server_type(self, repository, db, admin_user):
         _seed_template(db, admin_user, name="v", server_type=ServerType.vanilla)
         _seed_template(db, admin_user, name="p", server_type=ServerType.paper)
         _seed_template(db, admin_user, name="p2", server_type=ServerType.paper)
 
-        stats = await repository.count_visible_by_server_type(
-            admin_user.id, True
-        )
+        stats = await repository.count_visible_by_server_type(admin_user.id, True)
         # Every ServerType is initialised to 0 by the adapter
         assert stats[ServerType.vanilla] == 1
         assert stats[ServerType.paper] == 2
@@ -224,9 +212,7 @@ class TestTemplateRepositoryCounts:
 
 class TestTemplateRepositoryDependentServers:
     @pytest.mark.asyncio
-    async def test_count_active_dependent_servers(
-        self, repository, db, admin_user
-    ):
+    async def test_count_active_dependent_servers(self, repository, db, admin_user):
         tpl = _seed_template(db, admin_user, name="dep-tpl")
 
         # Active server using the template
@@ -287,9 +273,7 @@ class TestTemplateRepositoryWrites:
         assert persisted.name == "created"
 
     @pytest.mark.asyncio
-    async def test_update_applies_only_set_fields(
-        self, repository, db, admin_user
-    ):
+    async def test_update_applies_only_set_fields(self, repository, db, admin_user):
         row = _seed_template(db, admin_user, name="old", is_public=False)
         original_desc = row.description
 
@@ -305,14 +289,10 @@ class TestTemplateRepositoryWrites:
 
     @pytest.mark.asyncio
     async def test_update_returns_none_for_unknown(self, repository):
-        assert (
-            await repository.update(99999, UpdateTemplateCommand(name="x")) is None
-        )
+        assert await repository.update(99999, UpdateTemplateCommand(name="x")) is None
 
     @pytest.mark.asyncio
-    async def test_delete_returns_true_then_false(
-        self, repository, db, admin_user
-    ):
+    async def test_delete_returns_true_then_false(self, repository, db, admin_user):
         row = _seed_template(db, admin_user, name="to-del")
         ok = await repository.delete(row.id)
         db.commit()
@@ -405,9 +385,7 @@ class TestSqlAlchemyTemplatesUnitOfWork:
                 )
                 # Intentionally no flush, no commit
 
-        assert any(
-            "exited with pending writes" in rec.message for rec in caplog.records
-        )
+        assert any("exited with pending writes" in rec.message for rec in caplog.records)
 
     @pytest.mark.asyncio
     async def test_requires_db_or_session_factory(self):

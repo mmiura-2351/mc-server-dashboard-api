@@ -130,7 +130,9 @@ class TestVersionManagementService:
 
     def test_get_version_statistics_success(self, management_service):
         """Test successful version statistics retrieval"""
-        with patch("app.versions.management.SqlAlchemyVersionRepository") as mock_repo_class:
+        with patch(
+            "app.versions.management.SqlAlchemyVersionRepository"
+        ) as mock_repo_class:
             # Mock repository
             mock_repo = Mock()
             mock_repo_class.return_value = mock_repo
@@ -163,7 +165,9 @@ class TestVersionManagementService:
 
     def test_get_version_statistics_with_errors(self, management_service):
         """Test version statistics with some errors"""
-        with patch("app.versions.management.SqlAlchemyVersionRepository") as mock_repo_class:
+        with patch(
+            "app.versions.management.SqlAlchemyVersionRepository"
+        ) as mock_repo_class:
             # Mock repository
             mock_repo = Mock()
             mock_repo_class.return_value = mock_repo
@@ -191,7 +195,9 @@ class TestVersionManagementService:
 
     def test_cleanup_old_versions_success(self, management_service):
         """Test successful version cleanup"""
-        with patch("app.versions.management.SqlAlchemyVersionRepository") as mock_repo_class:
+        with patch(
+            "app.versions.management.SqlAlchemyVersionRepository"
+        ) as mock_repo_class:
             # Mock repository
             mock_repo = Mock()
             mock_repo_class.return_value = mock_repo
@@ -220,7 +226,9 @@ class TestVersionManagementService:
 
     def test_cleanup_old_versions_no_cleanup_needed(self, management_service):
         """Test cleanup when no cleanup is needed"""
-        with patch("app.versions.management.SqlAlchemyVersionRepository") as mock_repo_class:
+        with patch(
+            "app.versions.management.SqlAlchemyVersionRepository"
+        ) as mock_repo_class:
             # Mock repository
             mock_repo = Mock()
             mock_repo_class.return_value = mock_repo
@@ -242,7 +250,9 @@ class TestVersionManagementService:
 
     def test_cleanup_old_versions_with_errors(self, management_service):
         """Test cleanup with some errors"""
-        with patch("app.versions.management.SqlAlchemyVersionRepository") as mock_repo_class:
+        with patch(
+            "app.versions.management.SqlAlchemyVersionRepository"
+        ) as mock_repo_class:
             # Mock repository
             mock_repo = Mock()
             mock_repo_class.return_value = mock_repo
@@ -273,7 +283,9 @@ class TestVersionManagementService:
 
     def test_validate_database_integrity_healthy(self, management_service):
         """Test database validation when everything is healthy"""
-        with patch("app.versions.management.SqlAlchemyVersionRepository") as mock_repo_class:
+        with patch(
+            "app.versions.management.SqlAlchemyVersionRepository"
+        ) as mock_repo_class:
             # Mock repository
             mock_repo = Mock()
             mock_repo_class.return_value = mock_repo
@@ -300,7 +312,9 @@ class TestVersionManagementService:
 
     def test_validate_database_integrity_with_issues(self, management_service):
         """Test database validation with issues found"""
-        with patch("app.versions.management.SqlAlchemyVersionRepository") as mock_repo_class:
+        with patch(
+            "app.versions.management.SqlAlchemyVersionRepository"
+        ) as mock_repo_class:
             # Mock repository
             mock_repo = Mock()
             mock_repo_class.return_value = mock_repo

@@ -52,8 +52,7 @@ def test_shim_reexports_exception_classes():
     assert shim_module.PlayerNotFoundInGroup is PlayerNotFoundInGroup
     assert shim_module.ServerNotFoundForAttachment is ServerNotFoundForAttachment
     assert (
-        shim_module.ServerGroupAttachmentExistsError
-        is ServerGroupAttachmentExistsError
+        shim_module.ServerGroupAttachmentExistsError is ServerGroupAttachmentExistsError
     )
     assert (
         shim_module.ServerGroupAttachmentNotFoundError

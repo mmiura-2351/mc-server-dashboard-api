@@ -422,22 +422,29 @@ class TestWebSocketServiceFixed:
         user.username = "testuser"
         user.role = Role.user
 
-        # Mock database and server
+        # Mock database session; the lookup now goes through ServerReadPort.
         db = Mock(spec=Session)
-        server = Mock(spec=Server)
-        server.id = server_id
-        db.query.return_value.filter.return_value.first.return_value = server
+        mock_server_entity = Mock()
+        mock_server_entity.id = server_id
 
         # Mock WebSocket disconnect after initial setup
         mock_websocket.receive_text.side_effect = WebSocketDisconnect()
 
         with (
+            patch(
+                "app.services.websocket_service.SqlAlchemyServerReadPort"
+            ) as mock_port_cls,
             patch.object(ws_service.connection_manager, "connect") as mock_connect,
             patch.object(ws_service.connection_manager, "disconnect") as mock_disconnect,
             patch.object(ws_service, "_send_initial_status") as mock_initial_status,
         ):
+            mock_port = mock_port_cls.return_value
+            mock_port.get = AsyncMock(return_value=mock_server_entity)
+
             await ws_service.handle_connection(mock_websocket, server_id, user, db)
 
+            mock_port_cls.assert_called_once_with(db)
+            mock_port.get.assert_awaited_once_with(server_id)
             # Verify connection was established and cleaned up
             mock_connect.assert_called_once_with(mock_websocket, server_id, user)
             mock_disconnect.assert_called_once_with(mock_websocket, server_id)
@@ -449,11 +456,15 @@ class TestWebSocketServiceFixed:
         server_id = 999
         user = Mock(spec=User)
 
-        # Mock database returning no server
         db = Mock(spec=Session)
-        db.query.return_value.filter.return_value.first.return_value = None
 
-        await ws_service.handle_connection(mock_websocket, server_id, user, db)
+        with patch(
+            "app.services.websocket_service.SqlAlchemyServerReadPort"
+        ) as mock_port_cls:
+            mock_port = mock_port_cls.return_value
+            mock_port.get = AsyncMock(return_value=None)
+
+            await ws_service.handle_connection(mock_websocket, server_id, user, db)
 
         # Verify websocket was closed
         mock_websocket.close.assert_called_once_with(code=1008, reason="Server not found")

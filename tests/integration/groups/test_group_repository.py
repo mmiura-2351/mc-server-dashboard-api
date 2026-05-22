@@ -64,9 +64,7 @@ class TestGroupRepositoryReads:
         assert await repository.get(99999) is None
 
     @pytest.mark.asyncio
-    async def test_find_by_owner_and_name(
-        self, repository, db, admin_user, test_user
-    ):
+    async def test_find_by_owner_and_name(self, repository, db, admin_user, test_user):
         _seed_group(db, admin_user.id, name="shared")
         _seed_group(db, test_user.id, name="shared")
 
@@ -112,17 +110,13 @@ class TestGroupRepositoryWrites:
         assert persisted is not None
 
     @pytest.mark.asyncio
-    async def test_update_applies_only_set_fields(
-        self, repository, db, admin_user
-    ):
+    async def test_update_applies_only_set_fields(self, repository, db, admin_user):
         row = _seed_group(db, admin_user.id, name="old")
         # Set a description so we can verify only `name` changed
         row.description = "original"
         db.commit()
 
-        updated = await repository.update(
-            row.id, UpdateGroupCommand(name="new")
-        )
+        updated = await repository.update(row.id, UpdateGroupCommand(name="new"))
         db.commit()
         assert updated is not None
         assert updated.name == "new"
@@ -133,9 +127,7 @@ class TestGroupRepositoryWrites:
         assert await repository.update(99999, UpdateGroupCommand(name="x")) is None
 
     @pytest.mark.asyncio
-    async def test_delete_returns_true_then_false(
-        self, repository, db, admin_user
-    ):
+    async def test_delete_returns_true_then_false(self, repository, db, admin_user):
         row = _seed_group(db, admin_user.id, name="to-del")
         ok = await repository.delete(row.id)
         db.commit()
@@ -149,13 +141,9 @@ class TestGroupRepositoryWrites:
 
 class TestGroupRepositoryPlayers:
     @pytest.mark.asyncio
-    async def test_add_player_persists_to_json(
-        self, repository, db, admin_user
-    ):
+    async def test_add_player_persists_to_json(self, repository, db, admin_user):
         row = _seed_group(db, admin_user.id)
-        entity = await repository.add_player(
-            row.id, "uuid-1", "alice"
-        )
+        entity = await repository.add_player(row.id, "uuid-1", "alice")
         db.commit()
         # Round-trip through ORM
         db.refresh(row)
@@ -167,9 +155,7 @@ class TestGroupRepositoryPlayers:
         assert len(entity.players) == 1
 
     @pytest.mark.asyncio
-    async def test_add_player_upserts_on_duplicate_uuid(
-        self, repository, db, admin_user
-    ):
+    async def test_add_player_upserts_on_duplicate_uuid(self, repository, db, admin_user):
         row = _seed_group(db, admin_user.id)
         await repository.add_player(row.id, "uuid-1", "alice")
         db.commit()
@@ -184,9 +170,7 @@ class TestGroupRepositoryPlayers:
             await repository.add_player(99999, "u", "n")
 
     @pytest.mark.asyncio
-    async def test_remove_player_removes_from_json(
-        self, repository, db, admin_user
-    ):
+    async def test_remove_player_removes_from_json(self, repository, db, admin_user):
         row = _seed_group(db, admin_user.id)
         await repository.add_player(row.id, "u1", "n1")
         await repository.add_player(row.id, "u2", "n2")
@@ -196,9 +180,7 @@ class TestGroupRepositoryPlayers:
         assert [p["uuid"] for p in entity.players] == ["u2"]
 
     @pytest.mark.asyncio
-    async def test_remove_player_unknown_player_raises(
-        self, repository, db, admin_user
-    ):
+    async def test_remove_player_unknown_player_raises(self, repository, db, admin_user):
         row = _seed_group(db, admin_user.id)
         await repository.add_player(row.id, "u1", "n1")
         db.commit()

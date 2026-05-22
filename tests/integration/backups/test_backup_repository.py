@@ -93,9 +93,7 @@ class TestBackupRepositoryReads:
         assert await repository.get(99999) is None
 
     @pytest.mark.asyncio
-    async def test_list_paged_filters_by_server(
-        self, repository, db, admin_user
-    ):
+    async def test_list_paged_filters_by_server(self, repository, db, admin_user):
         s1 = _seed_server(db, admin_user.id, name="L1", port=25567)
         s2 = _seed_server(db, admin_user.id, name="L2", port=25568)
         _seed_backup(db, s1.id, name="b-s1-a")
@@ -244,9 +242,7 @@ class TestBackupRepositoryWrites:
         assert updated.status == BackupStatus.completed
 
     @pytest.mark.asyncio
-    async def test_update_file_info_unknown_returns_none(
-        self, repository
-    ):
+    async def test_update_file_info_unknown_returns_none(self, repository):
         result = await repository.update_file_info(
             99999,
             UpdateBackupFileCommand(

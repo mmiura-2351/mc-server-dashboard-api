@@ -123,9 +123,7 @@ class TestBackupScheduleReads:
         assert s3.id not in due_ids  # disabled
 
     @pytest.mark.asyncio
-    async def test_list_logs_eager_loads_username(
-        self, repository, db, admin_user
-    ):
+    async def test_list_logs_eager_loads_username(self, repository, db, admin_user):
         server = _seed_server(db, admin_user.id, port=25607)
         log = BackupScheduleLog(
             server_id=server.id,

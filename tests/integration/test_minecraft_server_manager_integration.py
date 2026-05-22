@@ -175,7 +175,8 @@ print("[12:35:01] [Server thread/INFO]: Server stopped")
         mock_java_service.set_java_for_minecraft(None)
 
         with patch(
-            "app.servers.application.minecraft_server.java_compatibility_service", mock_java_service
+            "app.servers.application.minecraft_server.java_compatibility_service",
+            mock_java_service,
         ):
             compatible, message, executable = await manager._check_java_compatibility(
                 "1.20.1"
@@ -197,7 +198,8 @@ print("[12:35:01] [Server thread/INFO]: Server stopped")
         mock_java_service.set_java_for_minecraft(None)  # No compatible Java
 
         with patch(
-            "app.servers.application.minecraft_server.java_compatibility_service", mock_java_service
+            "app.servers.application.minecraft_server.java_compatibility_service",
+            mock_java_service,
         ):
             compatible, message, executable = await manager._check_java_compatibility(
                 "1.20.1"
@@ -222,7 +224,8 @@ print("[12:35:01] [Server thread/INFO]: Server stopped")
         )
 
         with patch(
-            "app.servers.application.minecraft_server.java_compatibility_service", mock_java_service
+            "app.servers.application.minecraft_server.java_compatibility_service",
+            mock_java_service,
         ):
             with patch("app.servers.application.minecraft_server.logger") as mock_logger:
                 compatible, message, executable = await manager._check_java_compatibility(

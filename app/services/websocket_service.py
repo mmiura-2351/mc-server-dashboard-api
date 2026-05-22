@@ -207,8 +207,7 @@ class WebSocketService:
     ):
         # Verify server exists via ServerReadPort (#228 PR 2f step 13).
         # Full mechanical move of this file is deferred to PR #3 (sweep);
-        # here we only retire the inline ORM lookup so the file no longer
-        # contains `db.query(Server)`.
+        # here we only retire the inline ORM lookup.
         server_read_port = SqlAlchemyServerReadPort(db)
         server = await server_read_port.get(server_id)
         if not server:

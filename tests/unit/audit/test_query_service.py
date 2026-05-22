@@ -55,9 +55,7 @@ async def test_list_logs_filter_by_user(
     repo.add(action="x", resource_type="t", user_id=2)
     repo.add(action="x", resource_type="t", user_id=2)
 
-    logs, total = await service.list_logs(
-        LogFilters(user_id=2), page=1, page_size=10
-    )
+    logs, total = await service.list_logs(LogFilters(user_id=2), page=1, page_size=10)
     assert total == 2
     assert all(log.user_id == 2 for log in logs)
 
@@ -70,9 +68,7 @@ async def test_list_logs_filter_by_action_substring(
     repo.add(action="auth_logout_success", resource_type="authentication")
     repo.add(action="server_start", resource_type="server")
 
-    logs, total = await service.list_logs(
-        LogFilters(action="auth"), page=1, page_size=10
-    )
+    logs, total = await service.list_logs(LogFilters(action="auth"), page=1, page_size=10)
     assert total == 2
     assert all("auth" in log.action for log in logs)
 

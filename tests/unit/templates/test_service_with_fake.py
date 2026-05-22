@@ -111,9 +111,7 @@ async def test_create_template_from_server_server_not_found(
     service: TemplateService,
 ):
     with pytest.raises(TemplateNotFoundError):
-        await service.create_template_from_server(
-            server_id=999, name="x", creator_id=1
-        )
+        await service.create_template_from_server(server_id=999, name="x", creator_id=1)
 
 
 @pytest.mark.asyncio
@@ -136,9 +134,7 @@ async def test_create_template_from_server_missing_directory(
         )
     )
     with pytest.raises(TemplateCreationError):
-        await service.create_template_from_server(
-            server_id=1, name="x", creator_id=1
-        )
+        await service.create_template_from_server(server_id=1, name="x", creator_id=1)
 
 
 # ----- create_custom_template -----
@@ -264,9 +260,7 @@ async def test_list_templates_non_admin_sees_only_visible(
     repo.seed(make_template_entity(id=2, created_by=2, is_public=False))
     repo.seed(make_template_entity(id=3, created_by=2, is_public=True))
 
-    page = await service.list_templates(
-        viewer_id=1, viewer_is_admin=False
-    )
+    page = await service.list_templates(viewer_id=1, viewer_is_admin=False)
     ids = {e.id for e in page.entities}
     # User 1 sees: their own (id=1) + public (id=3); NOT id=2
     assert ids == {1, 3}
@@ -279,9 +273,7 @@ async def test_list_templates_admin_sees_all(
 ):
     repo.seed(make_template_entity(id=1, created_by=1, is_public=False))
     repo.seed(make_template_entity(id=2, created_by=2, is_public=False))
-    page = await service.list_templates(
-        viewer_id=999, viewer_is_admin=True
-    )
+    page = await service.list_templates(viewer_id=999, viewer_is_admin=True)
     assert page.total == 2
 
 
@@ -289,12 +281,8 @@ async def test_list_templates_admin_sees_all(
 async def test_list_templates_filters_by_server_type(
     service: TemplateService, repo: FakeTemplateRepository
 ):
-    repo.seed(
-        make_template_entity(id=1, created_by=1, server_type=ServerType.vanilla)
-    )
-    repo.seed(
-        make_template_entity(id=2, created_by=1, server_type=ServerType.paper)
-    )
+    repo.seed(make_template_entity(id=1, created_by=1, server_type=ServerType.vanilla))
+    repo.seed(make_template_entity(id=2, created_by=1, server_type=ServerType.paper))
     page = await service.list_templates(
         viewer_id=1, viewer_is_admin=False, server_type=ServerType.paper
     )
@@ -306,9 +294,7 @@ async def test_list_templates_filters_by_server_type(
 
 @pytest.mark.asyncio
 async def test_update_returns_none_when_missing(service: TemplateService):
-    assert (
-        await service.update_template(999, viewer_id=1, viewer_is_admin=False) is None
-    )
+    assert await service.update_template(999, viewer_id=1, viewer_is_admin=False) is None
 
 
 @pytest.mark.asyncio
@@ -317,9 +303,7 @@ async def test_update_denies_non_owner(
 ):
     repo.seed(make_template_entity(id=1, created_by=1))
     with pytest.raises(TemplateAccessError):
-        await service.update_template(
-            1, viewer_id=99, viewer_is_admin=False, name="new"
-        )
+        await service.update_template(1, viewer_id=99, viewer_is_admin=False, name="new")
 
 
 @pytest.mark.asyncio
@@ -390,9 +374,7 @@ async def test_delete_happy_path_unlinks_archive(
 @pytest.mark.asyncio
 async def test_clone_template_source_not_found(service: TemplateService):
     with pytest.raises(TemplateNotFoundError):
-        await service.clone_template(
-            999, name="x", viewer_id=1, viewer_is_admin=False
-        )
+        await service.clone_template(999, name="x", viewer_id=1, viewer_is_admin=False)
 
 
 @pytest.mark.asyncio
@@ -401,9 +383,7 @@ async def test_clone_template_access_denied(
 ):
     repo.seed(make_template_entity(id=1, created_by=42, is_public=False))
     with pytest.raises(TemplateAccessError):
-        await service.clone_template(
-            1, name="x", viewer_id=99, viewer_is_admin=False
-        )
+        await service.clone_template(1, name="x", viewer_id=99, viewer_is_admin=False)
 
 
 @pytest.mark.asyncio
@@ -413,9 +393,7 @@ async def test_clone_template_duplicate_name(
     repo.seed(make_template_entity(id=1, created_by=1, name="src", is_public=True))
     repo.seed(make_template_entity(id=2, created_by=99, name="dup"))
     with pytest.raises(TemplateError, match="already exists"):
-        await service.clone_template(
-            1, name="dup", viewer_id=99, viewer_is_admin=False
-        )
+        await service.clone_template(1, name="dup", viewer_id=99, viewer_is_admin=False)
 
 
 @pytest.mark.asyncio
@@ -426,7 +404,10 @@ async def test_clone_template_happy_path(
 ):
     repo.seed(
         make_template_entity(
-            id=1, created_by=1, name="src", is_public=True,
+            id=1,
+            created_by=1,
+            name="src",
+            is_public=True,
             configuration={"k": "v"},
         )
     )
@@ -440,9 +421,7 @@ async def test_clone_template_happy_path(
     assert cloned.name == "dst"
     assert cloned.configuration == {"k": "v"}
     assert cloned.created_by == 99
-    new_archive = (
-        service.templates_directory / f"template_{cloned.id}_files.tar.gz"
-    )
+    new_archive = service.templates_directory / f"template_{cloned.id}_files.tar.gz"
     assert new_archive.exists()
 
 
@@ -458,14 +437,15 @@ async def test_router_style_clone_via_get_and_create_custom(
     works end-to-end against the fakes."""
     repo.seed(
         make_template_entity(
-            id=1, created_by=1, name="src", is_public=True,
+            id=1,
+            created_by=1,
+            name="src",
+            is_public=True,
             configuration={"k": "v"},
         )
     )
 
-    original = await service.get_template(
-        1, viewer_id=99, viewer_is_admin=False
-    )
+    original = await service.get_template(1, viewer_id=99, viewer_is_admin=False)
     assert original is not None
 
     cloned = await service.create_custom_template(
