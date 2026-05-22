@@ -315,54 +315,98 @@ class TestApplicationStartupShutdown:
         """Test successful database integration initialization.
 
         The lifespan now builds a fresh service via
-        `make_database_integration_service()` so we patch the factory
-        rather than the module-level singleton.
+        ``make_database_integration_service()`` and publishes it on the
+        ``database_integration_instance`` holder (PR #279 B1). We
+        assert the holder ends up with the freshly built mock, which is
+        what downstream callers (shim, routers) resolve through.
         """
+        from app.servers.application.database_integration import (
+            database_integration_instance,
+        )
+
         mock_service = AsyncMock()
         mock_service.initialize = MagicMock(return_value=None)
-        with (
-            patch(
-                "app.servers.application.database_integration.make_database_integration_service",
-                return_value=mock_service,
-            ),
-            patch("app.main.service_status") as mock_status,
-            patch("app.main.logger"),
-        ):
-            from app.main import _initialize_database_integration
+        previous = (
+            database_integration_instance.get()
+            if database_integration_instance.is_set()
+            else None
+        )
+        database_integration_instance.clear()
+        try:
+            with (
+                patch(
+                    "app.servers.application.database_integration.make_database_integration_service",
+                    return_value=mock_service,
+                ),
+                patch("app.main.service_status") as mock_status,
+                patch("app.main.logger"),
+            ):
+                from app.main import _initialize_database_integration
 
-            await _initialize_database_integration()
+                await _initialize_database_integration()
 
-            # Verify initialization calls
-            mock_service.initialize.assert_called_once()
-            mock_service.sync_server_states_with_restore.assert_awaited_once()
-            assert mock_status.database_integration_ready is True
+                # Verify initialization calls
+                mock_service.initialize.assert_called_once()
+                mock_service.sync_server_states_with_restore.assert_awaited_once()
+                assert mock_status.database_integration_ready is True
+                # Holder must hold the freshly built mock — this is what
+                # ``app.services.database_integration`` resolves through.
+                assert database_integration_instance.get() is mock_service
+        finally:
+            if previous is None:
+                database_integration_instance.clear()
+            else:
+                database_integration_instance.set(previous)
 
     @pytest.mark.asyncio
     async def test_initialize_database_integration_failure(self):
-        """Test database integration initialization failure"""
+        """Test database integration initialization failure.
+
+        The lifespan must leave the holder empty so a follow-up
+        ``database_integration_service`` lookup raises the clear
+        "not initialised" RuntimeError (PR #279 B1 holder-clear path).
+        """
+        from app.servers.application.database_integration import (
+            database_integration_instance,
+        )
+
         mock_service = MagicMock()
         mock_service.initialize.side_effect = Exception("Integration failed")
-        with (
-            patch(
-                "app.servers.application.database_integration.make_database_integration_service",
-                return_value=mock_service,
-            ),
-            patch("app.main.service_status") as mock_status,
-            patch("app.main.logger") as mock_logger,
-        ):
-            from app.main import _initialize_database_integration
+        previous = (
+            database_integration_instance.get()
+            if database_integration_instance.is_set()
+            else None
+        )
+        database_integration_instance.clear()
+        try:
+            with (
+                patch(
+                    "app.servers.application.database_integration.make_database_integration_service",
+                    return_value=mock_service,
+                ),
+                patch("app.main.service_status") as mock_status,
+                patch("app.main.logger") as mock_logger,
+            ):
+                from app.main import _initialize_database_integration
 
-            # Setup mock service status
-            mock_status.database_integration_ready = False
-            mock_status.failed_services = []
+                # Setup mock service status
+                mock_status.database_integration_ready = False
+                mock_status.failed_services = []
 
-            # Should not raise exception (non-critical)
-            await _initialize_database_integration()
+                # Should not raise exception (non-critical)
+                await _initialize_database_integration()
 
-            # Verify error handling
-            assert mock_status.database_integration_ready is False
-            assert "database_integration" in mock_status.failed_services
-            mock_logger.error.assert_called()
+                # Verify error handling
+                assert mock_status.database_integration_ready is False
+                assert "database_integration" in mock_status.failed_services
+                mock_logger.error.assert_called()
+                # Holder must remain empty so downstream lookups raise
+                # explicit RuntimeError rather than returning a
+                # half-initialised service.
+                assert not database_integration_instance.is_set()
+        finally:
+            if previous is not None:
+                database_integration_instance.set(previous)
 
     @pytest.mark.asyncio
     async def test_cleanup_services_success(self):
@@ -593,11 +637,21 @@ class TestServiceIntegrationBasic:
     """Basic integration tests for service imports"""
 
     def test_service_imports_work(self):
-        """Test that all services can be imported without errors"""
-        # Test database integration service import
-        from app.services.database_integration import database_integration_service
+        """Test that all services can be imported without errors.
 
-        assert database_integration_service is not None
+        The ``database_integration`` shim now resolves the service
+        lazily through ``database_integration_instance`` (PR #279 B1
+        holder pattern), so the import-only assertion targets the
+        factory + holder rather than the (lifespan-only) singleton.
+        """
+        # Test database integration service factory + holder import
+        from app.services.database_integration import (
+            database_integration_instance,
+            make_database_integration_service,
+        )
+
+        assert database_integration_instance is not None
+        assert make_database_integration_service is not None
 
         # Test websocket service import
         from app.services.websocket_service import websocket_service
@@ -615,14 +669,21 @@ class TestServiceIntegrationBasic:
         assert minecraft_server_manager is not None
 
     def test_service_instances_have_required_methods(self):
-        """Test that service instances have required methods"""
+        """Test that service instances have required methods.
+
+        For ``database_integration_service`` we inspect the class
+        directly because the module-level name is now resolved through
+        the holder (PR #279 B1) and only exists after lifespan startup.
+        """
+        from app.servers.application.database_integration import (
+            DatabaseIntegrationService,
+        )
         from app.services.backup_scheduler import backup_scheduler
-        from app.services.database_integration import database_integration_service
         from app.services.websocket_service import websocket_service
 
         # Database integration service methods
-        assert hasattr(database_integration_service, "initialize")
-        assert hasattr(database_integration_service, "sync_server_states")
+        assert hasattr(DatabaseIntegrationService, "initialize")
+        assert hasattr(DatabaseIntegrationService, "sync_server_states")
 
         # WebSocket service methods
         assert hasattr(websocket_service, "start_monitoring")

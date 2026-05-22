@@ -512,7 +512,10 @@ class TestDatabaseIntegrationPersistence:
         fake_uow = MagicMock()
         fake_uow.__aenter__ = AsyncMock(return_value=fake_uow)
         fake_uow.__aexit__ = AsyncMock(return_value=None)
-        fake_uow.servers.list_by_status = AsyncMock(return_value=[])
+        # ``sync_server_states_async`` now issues a single
+        # ``list_by_port(port=None, statuses=<all>)`` query (N3 of PR #279)
+        # instead of per-status iteration.
+        fake_uow.servers.list_by_port = AsyncMock(return_value=[])
         fake_uow.servers.batch_update_statuses = AsyncMock(return_value={})
         fake_uow.commit = AsyncMock()
 

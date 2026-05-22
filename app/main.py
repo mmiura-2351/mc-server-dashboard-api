@@ -139,8 +139,8 @@ async def _initialize_database_integration():
     try:
         logger.info("Initializing database integration service...")
         from app.servers.api.dependencies import make_server_repository_from_session
-        from app.servers.application import database_integration as di_module
         from app.servers.application.database_integration import (
+            database_integration_instance,
             make_database_integration_service,
         )
         from app.servers.application.minecraft_server import minecraft_server_manager
@@ -155,17 +155,25 @@ async def _initialize_database_integration():
 
         # Build a fresh integration service inside the running loop so
         # `initialize()` captures the correct loop for its sync→async
-        # bridge, then publish it on the module so legacy importers see
-        # the lifecycle-aware singleton.
+        # bridge, then publish it on the holder so legacy importers (the
+        # ``app.services.database_integration`` shim) resolve to the
+        # lifecycle-aware singleton via the module's ``__getattr__``.
         service = make_database_integration_service()
-        service.initialize()
-        di_module.database_integration_service = service
-        database_integration_service = service
+        try:
+            service.initialize()
+        except Exception:
+            # Initialize failed before publishing — make sure the holder
+            # stays empty so accessors raise the explicit "not
+            # initialised" error instead of returning a half-built
+            # instance.
+            database_integration_instance.clear()
+            raise
+        database_integration_instance.set(service)
         logger.info("Database integration service initialized")
 
         # Sync server states with error handling (enhanced with process restoration)
         try:
-            await database_integration_service.sync_server_states_with_restore()
+            await service.sync_server_states_with_restore()
             logger.info("Enhanced server states synchronized successfully")
         except Exception as sync_error:
             logger.warning(

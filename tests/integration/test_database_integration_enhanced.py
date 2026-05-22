@@ -18,7 +18,7 @@ import pytest
 
 from app.servers.application.database_integration import (
     DatabaseIntegrationService,
-    database_integration_service,
+    database_integration_instance,
     make_database_integration_service,
 )
 from app.servers.models import ServerStatus
@@ -247,8 +247,47 @@ class TestBatchAndReadHelpers:
 
 
 class TestModuleSingleton:
-    def test_singleton_instance_exists_and_is_correct_type(self) -> None:
-        assert isinstance(database_integration_service, DatabaseIntegrationService)
+    def test_holder_returns_lifespan_instance_when_set(self) -> None:
+        """Holder ``set()``/``get()`` round-trips the published instance."""
+        sentinel = make_database_integration_service()
+        previous = (
+            database_integration_instance.get()
+            if database_integration_instance.is_set()
+            else None
+        )
+        try:
+            database_integration_instance.set(sentinel)
+            assert database_integration_instance.get() is sentinel
+            # Shim resolves lazily through ``__getattr__`` to the same
+            # instance (regression pin for PR #279 B1).
+            from app.services import database_integration as shim
+
+            assert shim.database_integration_service is sentinel
+        finally:
+            if previous is None:
+                database_integration_instance.clear()
+            else:
+                database_integration_instance.set(previous)
+
+    def test_holder_raises_when_not_initialised(self) -> None:
+        """``get()`` raises a clear RuntimeError before lifespan startup."""
+        previous = (
+            database_integration_instance.get()
+            if database_integration_instance.is_set()
+            else None
+        )
+        database_integration_instance.clear()
+        try:
+            with pytest.raises(RuntimeError, match="not initialised"):
+                database_integration_instance.get()
+            # Same error surfaces through the shim's ``__getattr__``.
+            from app.services import database_integration as shim
+
+            with pytest.raises(RuntimeError, match="not initialised"):
+                _ = shim.database_integration_service
+        finally:
+            if previous is not None:
+                database_integration_instance.set(previous)
 
     def test_make_factory_returns_fresh_instance(self) -> None:
         a = make_database_integration_service()

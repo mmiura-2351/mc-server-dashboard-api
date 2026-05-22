@@ -196,14 +196,15 @@ class DatabaseIntegrationService:
             running_ids = set(minecraft_server_manager.list_running_servers())
             updates: Dict[int, ServerStatus] = {}
             async with self._uow_factory() as uow:
-                # The repository does not currently expose a "list all
-                # non-deleted" method — iterate by status. This matches
-                # the legacy `Server.is_deleted.is_(False)` query.
-                all_servers: List[ServerEntity] = []
-                for status in ServerStatus:
-                    all_servers.extend(
-                        await uow.servers.list_by_status(status, include_deleted=False)
-                    )
+                # Single-query fetch of every non-deleted server using the
+                # port=None / statuses=<all> overload (N3 optimisation —
+                # replaces the legacy per-status loop which issued one
+                # query per ``ServerStatus`` member).
+                all_servers: List[ServerEntity] = await uow.servers.list_by_port(
+                    port=None,
+                    statuses=list(ServerStatus),
+                    include_deleted=False,
+                )
                 for srv in all_servers:
                     is_running = srv.id in running_ids
                     if is_running and srv.status in (
@@ -308,15 +309,23 @@ class DatabaseIntegrationService:
 
         Same semantics as `update_server_status_sync`: if we are already
         on the loop thread, schedule the coroutine (non-blocking) and
-        return True as a best-effort signal. Cross-thread callers block
-        on the future's result.
+        return ``True`` as a best-effort signal. Cross-thread callers
+        block on the future's result.
+
+        Raises ``RuntimeError`` if the service has not been initialised
+        (loop never captured). The legacy ``asyncio.run(coro)`` fallback
+        was removed because it crashes with ``RuntimeError: asyncio.run()
+        cannot be called from a running event loop`` whenever invoked
+        from an async caller (e.g. FastAPI request handlers) — exactly
+        the conditions this bridge was added to support. Callers that
+        need a private loop should instantiate their own service.
         """
         loop = self._loop
         if loop is None:
-            # Fall back to running the coroutine in a private loop. This
-            # path is mostly hit by tests that don't go through the
-            # lifespan and just instantiate the service directly.
-            return asyncio.run(coro)
+            raise RuntimeError(
+                f"{self.__class__.__name__} not initialised; "
+                "call initialize() before sync entry points"
+            )
         try:
             current = asyncio.get_running_loop()
         except RuntimeError:
@@ -332,12 +341,45 @@ class DatabaseIntegrationService:
             return False
 
 
-# Module-level singleton (legacy compat). Initialised at import time so
-# legacy `from app.services.database_integration import
-# database_integration_service` (re-exported via the shim) still
-# resolves. The lifespan calls `initialize()` to capture the loop and
-# wire the callback.
-database_integration_service: "DatabaseIntegrationService"
+class _ServiceHolder:
+    """Process-wide holder for the lifecycle-aware ``DatabaseIntegrationService``.
+
+    Mirrors ``app/backups/__init__.py::backup_scheduler_instance`` (introduced
+    in PR #264). The FastAPI lifespan
+    (``app/main.py::_initialize_database_integration``) constructs the
+    service via :func:`make_database_integration_service`, runs
+    ``initialize()`` (which captures the running event loop for the
+    sync→async bridge), then publishes the instance via ``set()``.
+    Module-level callers — most importantly the legacy shim at
+    ``app/services/database_integration.py`` — resolve through ``get()``
+    at access time, so they always see the lifespan-built singleton
+    rather than a stale import-time instance bound before the loop was
+    available.
+    """
+
+    def __init__(self) -> None:
+        self._instance: Optional[DatabaseIntegrationService] = None
+
+    def set(self, instance: DatabaseIntegrationService) -> None:
+        self._instance = instance
+
+    def get(self) -> DatabaseIntegrationService:
+        if self._instance is None:
+            raise RuntimeError(
+                "database_integration_service is not initialised; "
+                "FastAPI lifespan startup must complete first."
+            )
+        return self._instance
+
+    def clear(self) -> None:
+        """Reset to the un-initialised state (lifespan partial-failure / test helper)."""
+        self._instance = None
+
+    def is_set(self) -> bool:
+        return self._instance is not None
+
+
+database_integration_instance = _ServiceHolder()
 
 
 def make_database_integration_service() -> DatabaseIntegrationService:
@@ -347,13 +389,30 @@ def make_database_integration_service() -> DatabaseIntegrationService:
     return DatabaseIntegrationService(uow_factory=make_servers_uow_from_session_factory)
 
 
-database_integration_service = make_database_integration_service()
+def __getattr__(name: str) -> Any:
+    """Lazy resolver for the legacy ``database_integration_service`` name.
+
+    Returning the holder's current instance on attribute access lets test
+    code that still imports the symbol (e.g. ``test_database_integration_enhanced``)
+    keep working, while ensuring access happens *after* the lifespan has
+    initialised the singleton. Raises ``RuntimeError`` (via the holder)
+    if accessed pre-init — a clear error rather than the silent
+    ``RuntimeError: asyncio.run() cannot be called from a running event
+    loop`` failure that the old import-time instance produced when its
+    captured loop never existed.
+    """
+    if name == "database_integration_service":
+        return database_integration_instance.get()
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
-__all__ = [
+# ``database_integration_service`` is resolved lazily via __getattr__
+# (PEP 562); ruff's F822 cannot see PEP-562 names so it is suppressed.
+__all__ = [  # noqa: F822
     "DatabaseIntegrationService",
     "StatusUpdateCallback",
     "UowFactory",
+    "database_integration_instance",
     "database_integration_service",
     "make_database_integration_service",
 ]
