@@ -54,9 +54,7 @@ class TestPortValidation:
         return _make_entity()
 
     @pytest.mark.asyncio
-    async def test_validate_port_availability_no_conflict(
-        self, manager, mock_server
-    ):
+    async def test_validate_port_availability_no_conflict(self, manager, mock_server):
         """Port available when repo returns no conflicts and socket is free."""
         repo = _make_repo(conflicts=[])
         with patch("socket.socket") as mock_socket:
@@ -81,18 +79,14 @@ class TestPortValidation:
         conflicting.status = ServerStatus.running
         repo = _make_repo(conflicts=[conflicting])
 
-        available, message = await manager._validate_port_availability(
-            mock_server, repo
-        )
+        available, message = await manager._validate_port_availability(mock_server, repo)
 
         assert available is False
         assert "already in use by running server 'existing-server'" in message
         assert "Stop the server to free up the port" in message
 
     @pytest.mark.asyncio
-    async def test_validate_port_availability_system_conflict(
-        self, manager, mock_server
-    ):
+    async def test_validate_port_availability_system_conflict(self, manager, mock_server):
         """No DB conflict but `connect_ex == 0` -> external port-in-use."""
         repo = _make_repo(conflicts=[])
         with patch("socket.socket") as mock_socket:
@@ -109,18 +103,29 @@ class TestPortValidation:
 
     @pytest.mark.asyncio
     async def test_validate_port_availability_no_repo(self, manager, mock_server):
-        """No repository -> skip DB check, only socket probe runs."""
+        """No repository (test escape hatch) -> skip DB check, only socket probe runs."""
         with patch("socket.socket") as mock_socket:
             mock_sock_instance = Mock()
             mock_sock_instance.connect_ex.return_value = 1
             mock_socket.return_value = mock_sock_instance
 
             available, message = await manager._validate_port_availability(
-                mock_server, None
+                mock_server, None, _for_test_default=True
             )
 
         assert available is True
         assert "available" in message
+
+    @pytest.mark.asyncio
+    async def test_validate_port_availability_missing_repo_raises(
+        self, manager, mock_server
+    ):
+        """Production path with no repository -> fail loud (#281)."""
+        with pytest.raises(RuntimeError, match="requires an explicit ServerRepository"):
+            await manager._validate_port_availability(mock_server)
+
+        with pytest.raises(RuntimeError, match="requires an explicit ServerRepository"):
+            await manager._validate_port_availability(mock_server, None)
 
     @pytest.mark.asyncio
     async def test_validate_port_availability_socket_exception(
@@ -144,9 +149,7 @@ class TestPortValidation:
         repo = Mock()
         repo.list_by_port = AsyncMock(side_effect=Exception("Database error"))
 
-        available, message = await manager._validate_port_availability(
-            mock_server, repo
-        )
+        available, message = await manager._validate_port_availability(mock_server, repo)
 
         assert available is False
         assert "Port validation failed: Database error" in message
@@ -161,17 +164,13 @@ class TestPortValidation:
         conflicting.status = ServerStatus.starting
         repo = _make_repo(conflicts=[conflicting])
 
-        available, message = await manager._validate_port_availability(
-            mock_server, repo
-        )
+        available, message = await manager._validate_port_availability(mock_server, repo)
 
         assert available is False
         assert "already in use by starting server 'starting-server'" in message
 
     @pytest.mark.asyncio
-    async def test_validate_port_availability_self_exclusion(
-        self, manager, mock_server
-    ):
+    async def test_validate_port_availability_self_exclusion(self, manager, mock_server):
         """`exclude_id=server.id` keeps the server from conflicting with itself."""
         repo = _make_repo(conflicts=[])
         with patch("socket.socket") as mock_socket:

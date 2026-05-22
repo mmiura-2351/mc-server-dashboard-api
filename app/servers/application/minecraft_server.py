@@ -1305,13 +1305,34 @@ class MinecraftServerManager:
         self,
         server: ServerEntity,
         server_repository: Optional[ServerRepository] = None,
+        *,
+        _for_test_default: bool = False,
     ) -> tuple[bool, str]:
         """Validate that the server's port is not already in use by another running server
 
         This method checks both:
         1. Database for servers using the same port and currently running/starting
         2. System-level port availability for external processes
+
+        Production callers MUST pass an explicit ``ServerRepository`` so the
+        database conflict check actually runs. Silently skipping the DB
+        check when production forgets to wire the repository would let a
+        port conflict slip past pre-flight validation (#281); we therefore
+        fail loud with ``RuntimeError`` in that case.
+
+        ``_for_test_default`` is a test-only escape hatch: it acknowledges
+        that the caller intentionally wants the socket-only probe (no DB
+        check) and suppresses the ``RuntimeError`` guard. Production code
+        MUST NOT set this flag.
         """
+        if server_repository is None and not _for_test_default:
+            raise RuntimeError(
+                "_validate_port_availability requires an explicit ServerRepository "
+                "in production code paths to perform the database port-conflict "
+                "check. Pass `server_repository=...`, or set "
+                "`_for_test_default=True` in test-only contexts that intentionally "
+                "exercise the socket-only probe."
+            )
         try:
             # First check database for servers using the same port through
             # the injected ``ServerRepository``. The legacy
