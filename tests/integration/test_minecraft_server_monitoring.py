@@ -179,8 +179,9 @@ sys.exit(0)
 
             # If status change didn't happen naturally, verify the logs were at least read
             if len(running_status_changes) == 0:
-                # Manually trigger status update to verify callback works
-                manager._notify_status_change(1, ServerStatus.running)
+                # Manually trigger status update to verify callback works.
+                # Issue #280: `_notify_status_change` is now async.
+                await manager._notify_status_change(1, ServerStatus.running)
                 running_status_changes = [
                     (sid, status)
                     for sid, status in status_changes
