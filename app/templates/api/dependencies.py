@@ -11,14 +11,25 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.servers.adapters.read_port import SqlAlchemyServerReadPort
 from app.servers.domain.ports import ServerReadPort
+from app.templates.adapters.repository import SqlAlchemyTemplateRepository
 from app.templates.adapters.uow import SqlAlchemyTemplatesUnitOfWork
 from app.templates.application.service import TemplateService
-from app.templates.domain.ports import TemplatesUnitOfWork
+from app.templates.domain.ports import TemplateRepository, TemplatesUnitOfWork
 
 
 def get_templates_uow(db: Session = Depends(get_db)) -> TemplatesUnitOfWork:
     """Return a `TemplatesUnitOfWork` bound to the current request's session."""
     return SqlAlchemyTemplatesUnitOfWork(db=db)
+
+
+def get_template_repository(db: Session = Depends(get_db)) -> TemplateRepository:
+    """Return a request-scoped `TemplateRepository`.
+
+    Symmetric with `get_server_repository` / `get_backup_repository`.
+    Introduced in #228 PR 2b so the authorization service can hold a
+    sibling-Port reference for the future `check_template_access`.
+    """
+    return SqlAlchemyTemplateRepository(db)
 
 
 def get_server_read_port(db: Session = Depends(get_db)) -> ServerReadPort:

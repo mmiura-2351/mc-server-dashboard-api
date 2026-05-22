@@ -5,8 +5,9 @@ from sqlalchemy.orm import Session
 
 from app.auth.dependencies import get_current_user
 from app.core.database import get_db
+from app.servers.api.dependencies import get_authorization_service
+from app.servers.application.authorization import AuthorizationService
 from app.servers.models import ServerType
-from app.services.authorization_service import authorization_service
 from app.templates.api.dependencies import get_template_service
 from app.templates.application.service import (
     TemplateService as _ApplicationTemplateService,
@@ -46,6 +47,7 @@ async def create_template_from_server(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
     template_service: _ApplicationTemplateService = Depends(get_template_service),
+    auth: AuthorizationService = Depends(get_authorization_service),
 ):
     """
     Create a template from an existing server
@@ -60,10 +62,10 @@ async def create_template_from_server(
     """
     try:
         # Check server access
-        authorization_service.check_server_access(server_id, current_user, db)
+        await auth.check_server_access(server_id, current_user)
 
         # Only operators and admins can create templates
-        if not authorization_service.can_create_template(current_user):
+        if not AuthorizationService.can_create_template(current_user):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Only operators and admins can create templates",
@@ -113,7 +115,7 @@ async def create_custom_template(
     """
     try:
         # Only operators and admins can create templates
-        if not authorization_service.can_create_template(current_user):
+        if not AuthorizationService.can_create_template(current_user):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Only operators and admins can create templates",
@@ -353,7 +355,7 @@ async def clone_template(
     """
     try:
         # Only operators and admins can create templates
-        if not authorization_service.can_create_template(current_user):
+        if not AuthorizationService.can_create_template(current_user):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Only operators and admins can create templates",

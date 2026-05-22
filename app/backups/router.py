@@ -1,10 +1,11 @@
 """Backup REST API router.
 
 Endpoints depend on `BackupService` via `Depends(get_backup_service)`,
-and on `authorization_service` for cross-domain access checks (Server,
-Backup ownership). The DB session is still passed through to
-`authorization_service` (legacy `db.query` calls inside that helper
-are tracked under #228 punch-list).
+and on `AuthorizationService` (instance-injected via
+`Depends(get_authorization_service)`) for cross-domain access checks
+(Server, Backup ownership). Post-#228 PR 2b the access checks are
+async and resolve resources through Repository Ports rather than
+direct `db.query` calls.
 """
 
 import os
@@ -49,8 +50,9 @@ from app.core.exceptions import (
     FileOperationException,
     ServerNotFoundException,
 )
+from app.servers.api.dependencies import get_authorization_service
+from app.servers.application.authorization import AuthorizationService
 from app.servers.models import BackupStatus, BackupType
-from app.services.authorization_service import authorization_service
 from app.templates.api.dependencies import get_template_service
 from app.templates.application.service import TemplateService
 from app.users.domain.value_objects import Role
@@ -102,12 +104,13 @@ async def create_backup(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
     backup_service: BackupService = Depends(get_backup_service),
+    auth: AuthorizationService = Depends(get_authorization_service),
 ):
     """Create a backup for a server."""
     try:
-        authorization_service.check_server_access(server_id, current_user, db)
+        await auth.check_server_access(server_id, current_user)
 
-        if not authorization_service.can_create_backup(current_user):
+        if not AuthorizationService.can_create_backup(current_user):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Insufficient permissions to create backups",
@@ -148,11 +151,12 @@ async def upload_backup(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
     backup_service: BackupService = Depends(get_backup_service),
+    auth: AuthorizationService = Depends(get_authorization_service),
     _: None = Depends(validate_upload_size),
 ):
     """Upload a backup file for a server."""
     try:
-        authorization_service.check_server_access(server_id, current_user, db)
+        await auth.check_server_access(server_id, current_user)
 
         if not file.filename:
             raise HTTPException(
@@ -199,10 +203,11 @@ async def list_server_backups(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
     backup_service: BackupService = Depends(get_backup_service),
+    auth: AuthorizationService = Depends(get_authorization_service),
 ):
     """List backups for a specific server."""
     try:
-        authorization_service.check_server_access(server_id, current_user, db)
+        await auth.check_server_access(server_id, current_user)
 
         page_result = await backup_service.list_backups(
             server_id=server_id,
@@ -295,11 +300,12 @@ async def get_backup(
     backup_id: int,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
+    auth: AuthorizationService = Depends(get_authorization_service),
 ):
     """Get backup details by ID."""
     try:
-        backup = authorization_service.check_backup_access(backup_id, current_user, db)
-        return BackupResponse.from_orm(backup)
+        backup = await auth.check_backup_access(backup_id, current_user)
+        return backup_entity_to_response(backup)
 
     except HTTPException:
         raise
@@ -317,13 +323,14 @@ async def restore_backup(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
     backup_service: BackupService = Depends(get_backup_service),
+    auth: AuthorizationService = Depends(get_authorization_service),
 ):
     """Restore a backup."""
     try:
-        backup = authorization_service.check_backup_access(backup_id, current_user, db)
+        backup = await auth.check_backup_access(backup_id, current_user)
 
         target_server_id = request.target_server_id or backup.server_id
-        authorization_service.check_server_access(target_server_id, current_user, db)
+        await auth.check_server_access(target_server_id, current_user)
 
         success = await backup_service.restore_backup(
             backup_id=backup_id,
@@ -361,6 +368,7 @@ async def restore_backup_and_create_template(
     db: Session = Depends(get_db),
     backup_service: BackupService = Depends(get_backup_service),
     template_service: TemplateService = Depends(get_template_service),
+    auth: AuthorizationService = Depends(get_authorization_service),
 ):
     """Restore a backup and create a template from it.
 
@@ -370,10 +378,10 @@ async def restore_backup_and_create_template(
     other.
     """
     try:
-        backup = authorization_service.check_backup_access(backup_id, current_user, db)
+        backup = await auth.check_backup_access(backup_id, current_user)
 
         target_server_id = request.target_server_id or backup.server_id
-        authorization_service.check_server_access(target_server_id, current_user, db)
+        await auth.check_server_access(target_server_id, current_user)
 
         restored = await backup_service.restore_backup(
             backup_id=backup_id,
@@ -437,10 +445,11 @@ async def download_backup(
     backup_id: int,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
+    auth: AuthorizationService = Depends(get_authorization_service),
 ):
     """Download a backup file."""
     try:
-        backup = authorization_service.check_backup_access(backup_id, current_user, db)
+        backup = await auth.check_backup_access(backup_id, current_user)
 
         if backup.status != BackupStatus.completed:
             raise HTTPException(
@@ -454,7 +463,10 @@ async def download_backup(
                 detail="Backup file not found on disk",
             )
 
-        backup_filename = f"{backup.server.name}_{backup.name}_{backup.id}.tar.gz"
+        # `server_name` is denormalised onto `BackupEntity` (post-#228),
+        # replacing the legacy `backup.server.name` relationship access.
+        server_name = backup.server_name or f"server_{backup.server_id}"
+        backup_filename = f"{server_name}_{backup.name}_{backup.id}.tar.gz"
 
         return FileResponse(
             path=backup.file_path,
@@ -478,12 +490,20 @@ async def delete_backup(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
     backup_service: BackupService = Depends(get_backup_service),
+    auth: AuthorizationService = Depends(get_authorization_service),
 ):
     """Delete a backup."""
     try:
-        backup = authorization_service.check_backup_access(backup_id, current_user, db)
+        backup = await auth.check_backup_access(backup_id, current_user)
 
-        if not authorization_service.can_delete_backup(backup, current_user):
+        # The legacy `can_delete_backup(backup, user)` reached through
+        # `backup.server.owner_id` (ORM relationship). With the domain
+        # entity that relationship is denormalised away, so we fetch
+        # the parent server explicitly and pass it as the third arg.
+        parent = await auth.check_server_access(
+            backup.server_id, current_user, log_access=False
+        )
+        if not AuthorizationService.can_delete_backup(backup, current_user, parent):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Only admins and server owners can delete backups",
@@ -512,10 +532,11 @@ async def get_server_backup_statistics(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
     backup_service: BackupService = Depends(get_backup_service),
+    auth: AuthorizationService = Depends(get_authorization_service),
 ):
     """Get backup statistics for a server."""
     try:
-        authorization_service.check_server_access(server_id, current_user, db)
+        await auth.check_server_access(server_id, current_user)
         stats = await backup_service.get_backup_statistics(server_id=server_id)
         return backup_statistics_to_response(stats)
 

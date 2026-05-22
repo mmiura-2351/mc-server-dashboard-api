@@ -13,10 +13,15 @@ incrementally without touching this file again.
 from fastapi import Depends
 from sqlalchemy.orm import Session
 
+from app.backups.api.dependencies import get_backup_repository
+from app.backups.domain.ports import BackupRepository
 from app.core.database import SessionLocal, get_db
 from app.servers.adapters.repository import SqlAlchemyServerRepository
 from app.servers.adapters.uow import SqlAlchemyServersUnitOfWork
+from app.servers.application.authorization import AuthorizationService
 from app.servers.domain.ports import ServerRepository, ServersUnitOfWork
+from app.templates.api.dependencies import get_template_repository
+from app.templates.domain.ports import TemplateRepository
 
 
 def get_servers_uow(db: Session = Depends(get_db)) -> ServersUnitOfWork:
@@ -31,6 +36,20 @@ def get_server_repository(db: Session = Depends(get_db)) -> ServerRepository:
     Production writes should go through `get_servers_uow`.
     """
     return SqlAlchemyServerRepository(db)
+
+
+def get_authorization_service(
+    server_repo: ServerRepository = Depends(get_server_repository),
+    backup_repo: BackupRepository = Depends(get_backup_repository),
+    template_repo: TemplateRepository = Depends(get_template_repository),
+) -> AuthorizationService:
+    """Return a per-request `AuthorizationService` with sibling Ports wired.
+
+    Introduced in #228 PR 2b: replaces the legacy module-level
+    `authorization_service` singleton (which depended on the caller
+    threading `db: Session` through every check).
+    """
+    return AuthorizationService(server_repo, backup_repo, template_repo)
 
 
 def make_servers_uow_from_session_factory() -> ServersUnitOfWork:

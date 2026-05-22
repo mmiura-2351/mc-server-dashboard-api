@@ -31,7 +31,8 @@ from app.backups.schemas import (
     SchedulerStatusResponse,
 )
 from app.core.database import get_db
-from app.services.authorization_service import authorization_service
+from app.servers.api.dependencies import get_authorization_service
+from app.servers.application.authorization import AuthorizationService
 from app.users.domain.value_objects import Role
 from app.users.models import User
 
@@ -49,10 +50,11 @@ async def create_backup_schedule(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
     scheduler: BackupSchedulerService = Depends(get_backup_scheduler_service),
+    auth: AuthorizationService = Depends(get_authorization_service),
 ):
     """Create a backup schedule for a server."""
     try:
-        authorization_service.check_server_access(server_id, current_user, db)
+        await auth.check_server_access(server_id, current_user)
 
         entity = await scheduler.create_schedule(
             server_id=server_id,
@@ -87,10 +89,11 @@ async def get_backup_schedule(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
     scheduler: BackupSchedulerService = Depends(get_backup_scheduler_service),
+    auth: AuthorizationService = Depends(get_authorization_service),
 ):
     """Get backup schedule for a server."""
     try:
-        authorization_service.check_server_access(server_id, current_user, db)
+        await auth.check_server_access(server_id, current_user)
 
         entity = await scheduler.get_schedule(server_id=server_id)
         if not entity:
@@ -119,10 +122,11 @@ async def update_backup_schedule(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
     scheduler: BackupSchedulerService = Depends(get_backup_scheduler_service),
+    auth: AuthorizationService = Depends(get_authorization_service),
 ):
     """Update backup schedule for a server."""
     try:
-        authorization_service.check_server_access(server_id, current_user, db)
+        await auth.check_server_access(server_id, current_user)
 
         entity = await scheduler.update_schedule(
             server_id=server_id,
@@ -154,10 +158,11 @@ async def delete_backup_schedule(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
     scheduler: BackupSchedulerService = Depends(get_backup_scheduler_service),
+    auth: AuthorizationService = Depends(get_authorization_service),
 ):
     """Delete backup schedule for a server."""
     try:
-        authorization_service.check_server_access(server_id, current_user, db)
+        await auth.check_server_access(server_id, current_user)
 
         success = await scheduler.delete_schedule(
             server_id=server_id, executed_by_user_id=current_user.id
@@ -188,10 +193,11 @@ async def get_backup_schedule_logs(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
     scheduler: BackupSchedulerService = Depends(get_backup_scheduler_service),
+    auth: AuthorizationService = Depends(get_authorization_service),
 ):
     """Get backup schedule logs for a server."""
     try:
-        authorization_service.check_server_access(server_id, current_user, db)
+        await auth.check_server_access(server_id, current_user)
 
         logs = await scheduler.list_logs_for_server(server_id, page=page, size=size)
         return [backup_schedule_log_entity_to_response(log) for log in logs]

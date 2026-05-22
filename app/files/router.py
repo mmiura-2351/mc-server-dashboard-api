@@ -30,7 +30,8 @@ from app.files.schemas import (
     RestoreResponse,
     ServerFileHistoryStatsResponse,
 )
-from app.services.authorization_service import authorization_service
+from app.servers.api.dependencies import get_authorization_service
+from app.servers.application.authorization import AuthorizationService
 from app.services.file_management_service import file_management_service
 from app.types import FileType
 from app.users.domain.value_objects import Role
@@ -50,10 +51,11 @@ async def read_file(
     image: bool = False,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
+    auth: AuthorizationService = Depends(get_authorization_service),
 ):
     """Read content of a text file or image"""
     # Check server access
-    authorization_service.check_server_access(server_id, current_user, db)
+    await auth.check_server_access(server_id, current_user)
 
     # Get file info first
     files = await file_management_service.get_server_files(
@@ -106,10 +108,11 @@ async def download_file(
     file_path: str,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
+    auth: AuthorizationService = Depends(get_authorization_service),
 ):
     """Download a file or directory (as zip) from server"""
     # Check server access
-    authorization_service.check_server_access(server_id, current_user, db)
+    await auth.check_server_access(server_id, current_user)
 
     file_location, filename = await file_management_service.download_file(
         server_id=server_id,
@@ -134,7 +137,7 @@ async def upload_file(
     db: Session = Depends(get_db),
 ):
     """Upload a file to server directory"""
-    if not authorization_service.can_modify_files(current_user):
+    if not AuthorizationService.can_modify_files(current_user):
         raise HTTPException(status_code=403, detail="Insufficient permissions")
 
     result = await file_management_service.upload_file(
@@ -155,12 +158,13 @@ async def search_files(
     request: FileSearchRequest,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
+    auth: AuthorizationService = Depends(get_authorization_service),
 ):
     """Search for files in server directory"""
     from app.files.schemas import FileSearchResult
 
     # Check server access
-    authorization_service.check_server_access(server_id, current_user, db)
+    await auth.check_server_access(server_id, current_user)
 
     search_result = await file_management_service.search_files(
         server_id=server_id,
@@ -226,7 +230,7 @@ async def create_directory(
     db: Session = Depends(get_db),
 ):
     """Create a new directory in server"""
-    if not authorization_service.can_modify_files(current_user):
+    if not AuthorizationService.can_modify_files(current_user):
         raise HTTPException(status_code=403, detail="Insufficient permissions")
 
     full_path = f"{directory_path}/{request.name}".strip("/")
@@ -254,10 +258,11 @@ async def get_file_edit_history(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
     file_history_service: FileHistoryService = Depends(get_file_history_service),
+    auth: AuthorizationService = Depends(get_authorization_service),
 ):
     """Get edit history for a file"""
     # Check server access
-    authorization_service.check_server_access(server_id, current_user, db)
+    await auth.check_server_access(server_id, current_user)
 
     # Get file history
     history = await file_history_service.get_file_history(
@@ -282,10 +287,11 @@ async def get_file_version_content(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
     file_history_service: FileHistoryService = Depends(get_file_history_service),
+    auth: AuthorizationService = Depends(get_authorization_service),
 ):
     """Get content of specific version"""
     # Check server access
-    authorization_service.check_server_access(server_id, current_user, db)
+    await auth.check_server_access(server_id, current_user)
 
     # Get version content
     content, history_entity = await file_history_service.get_version_content(
@@ -315,14 +321,15 @@ async def restore_from_version(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
     file_history_service: FileHistoryService = Depends(get_file_history_service),
+    auth: AuthorizationService = Depends(get_authorization_service),
 ):
     """Restore file from specific version"""
     # Check permissions (Phase 1: all users can restore files)
-    if not authorization_service.can_modify_files(current_user):
+    if not AuthorizationService.can_modify_files(current_user):
         raise HTTPException(status_code=403, detail="Insufficient permissions")
 
     # Check server access
-    authorization_service.check_server_access(server_id, current_user, db)
+    await auth.check_server_access(server_id, current_user)
 
     # Restore from version
     content, backup_created = await file_history_service.restore_from_history(
@@ -359,6 +366,7 @@ async def delete_file_version(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
     file_history_service: FileHistoryService = Depends(get_file_history_service),
+    auth: AuthorizationService = Depends(get_authorization_service),
 ):
     """Delete specific version (admin only)"""
     # Check admin permissions
@@ -366,7 +374,7 @@ async def delete_file_version(
         raise HTTPException(status_code=403, detail="Admin access required")
 
     # Check server access
-    authorization_service.check_server_access(server_id, current_user, db)
+    await auth.check_server_access(server_id, current_user)
 
     # Delete version
     await file_history_service.delete_version(
@@ -388,10 +396,11 @@ async def get_server_file_history_stats(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
     file_history_service: FileHistoryService = Depends(get_file_history_service),
+    auth: AuthorizationService = Depends(get_authorization_service),
 ):
     """Get file edit history statistics for server"""
     # Check server access
-    authorization_service.check_server_access(server_id, current_user, db)
+    await auth.check_server_access(server_id, current_user)
 
     # Get statistics
     stats = await file_history_service.get_server_statistics(server_id=server_id)
@@ -416,6 +425,7 @@ async def list_server_files(
     file_type: Optional[FileType] = None,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
+    auth: AuthorizationService = Depends(get_authorization_service),
 ):
     """List files and directories in server directory"""
     import logging
@@ -424,7 +434,7 @@ async def list_server_files(
 
     try:
         # Check server access
-        authorization_service.check_server_access(server_id, current_user, db)
+        await auth.check_server_access(server_id, current_user)
 
         logger.info(f"Listing files for server {server_id}, path: '{path}'")
 
@@ -485,7 +495,7 @@ async def write_file(
     db: Session = Depends(get_db),
 ):
     """Write content to a file"""
-    if not authorization_service.can_modify_files(current_user):
+    if not AuthorizationService.can_modify_files(current_user):
         raise HTTPException(status_code=403, detail="Insufficient permissions")
 
     result = await file_management_service.write_file(
@@ -511,7 +521,7 @@ async def delete_file(
     db: Session = Depends(get_db),
 ):
     """Delete a file or directory from server"""
-    if not authorization_service.can_modify_files(current_user):
+    if not AuthorizationService.can_modify_files(current_user):
         raise HTTPException(status_code=403, detail="Insufficient permissions")
 
     result = await file_management_service.delete_file(
@@ -536,7 +546,7 @@ async def rename_file(
     db: Session = Depends(get_db),
 ):
     """Rename a file or directory"""
-    if not authorization_service.can_modify_files(current_user):
+    if not AuthorizationService.can_modify_files(current_user):
         raise HTTPException(status_code=403, detail="Insufficient permissions")
 
     result = await file_management_service.rename_file(

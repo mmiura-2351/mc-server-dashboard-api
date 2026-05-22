@@ -90,9 +90,7 @@ async def get_audit_logs(
     Get audit logs with filtering and pagination.
     Only admins can view all logs, other users can only view their own logs.
     """
-    authorization_service = AuthorizationService()
-
-    if not authorization_service.is_admin(current_user):
+    if not AuthorizationService.is_admin(current_user):
         if user_id is not None and user_id != current_user.id:
             raise HTTPException(
                 status_code=403, detail="You can only view your own audit logs"
@@ -144,9 +142,7 @@ async def get_security_alerts(
     service: AuditQueryService = Depends(get_audit_query_service),
 ):
     """Recent security alerts (admin only)."""
-    authorization_service = AuthorizationService()
-
-    if not authorization_service.is_admin(current_user):
+    if not AuthorizationService.is_admin(current_user):
         raise HTTPException(
             status_code=403, detail="Only administrators can view security alerts"
         )
@@ -178,9 +174,7 @@ async def get_user_activity(
 
     Users can view their own activity; admins can view any user's.
     """
-    authorization_service = AuthorizationService()
-
-    if not authorization_service.is_admin(current_user) and user_id != current_user.id:
+    if not AuthorizationService.is_admin(current_user) and user_id != current_user.id:
         raise HTTPException(status_code=403, detail="You can only view your own activity")
 
     # Verify target user exists via the cross-domain UserReadPort
@@ -211,9 +205,7 @@ async def get_audit_statistics(
     service: AuditQueryService = Depends(get_audit_query_service),
 ):
     """Audit log statistics and summaries (admin only)."""
-    authorization_service = AuthorizationService()
-
-    if not authorization_service.is_admin(current_user):
+    if not AuthorizationService.is_admin(current_user):
         raise HTTPException(
             status_code=403, detail="Only administrators can view audit statistics"
         )
