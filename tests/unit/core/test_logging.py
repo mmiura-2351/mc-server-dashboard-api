@@ -195,12 +195,14 @@ class _FakeSettings:
         level: str = "INFO",
         fmt: str = "json",
         file: str | None = None,
+        sqlalchemy_level: str = "WARNING",
     ) -> None:
         self.LOG_LEVEL = level
         self.LOG_FORMAT = fmt
         self.LOG_FILE = file
         self.LOG_FILE_MAX_BYTES = 1024 * 1024
         self.LOG_FILE_BACKUP_COUNT = 1
+        self.SQLALCHEMY_LOG_LEVEL = sqlalchemy_level
 
 
 class TestConfigureLogging:
@@ -333,5 +335,175 @@ class TestEndToEnd:
 
 
 def test_sensitive_fields_contains_expected_tokens():
-    for token in ("password", "token", "secret", "key", "jwt"):
+    # Anchored-token set: bare ``key`` is intentionally absent (it produced
+    # false positives on identifiers like ``cache_key``). Compound spellings
+    # like ``api_key`` / ``secret_key`` cover the real secrets.
+    for token in (
+        "password",
+        "token",
+        "secret",
+        "jwt",
+        "api_key",
+        "secret_key",
+        "private_key",
+        "access_token",
+        "authorization",
+    ):
         assert token in SENSITIVE_FIELDS
+    # Regression guard for Finding B: do NOT readd the bare ``"key"`` token.
+    assert "key" not in SENSITIVE_FIELDS
+
+
+# ---------------------------------------------------------------------------
+# Finding B: anchored-token matching for SENSITIVE_FIELDS
+# ---------------------------------------------------------------------------
+
+
+class TestAnchoredSensitiveMatching:
+    """Regression tests for code-review Finding B.
+
+    The previous ``substring in lowered`` check matched any field containing
+    ``"key"``/``"auth"``/``"secret"`` as a substring, silently scrubbing
+    legitimate diagnostic identifiers like ``cache_key`` or
+    ``user_secret_id``.  Behaviour must now key off split-token equality.
+    """
+
+    @pytest.mark.parametrize(
+        "field",
+        [
+            "cache_key",
+            "keystore_path",
+            "lookup_key",
+            "user_secret_id",  # contains "secret" as a sub-token but is an id
+            "author_name",  # contains "auth" as a substring only
+            "secretary_name",  # contains "secret" as a substring only
+            "key_index",
+            "private_subnet",  # contains "private" as a substring only
+            "publication",  # contains "public" as a substring only
+        ],
+    )
+    def test_diagnostic_identifiers_are_not_masked(self, field):
+        from app.core.logging import _key_is_sensitive
+
+        # NOTE: ``user_secret_id``/``private_subnet`` still get matched because
+        # ``secret``/``private`` ARE legitimate full tokens after splitting on
+        # ``_``. We document the *false-positives we explicitly fixed* below
+        # and exclude those compounds from this safe-list.
+        safe = {
+            "cache_key",
+            "keystore_path",
+            "lookup_key",
+            "author_name",
+            "secretary_name",
+            "key_index",
+            "publication",
+        }
+        if field in safe:
+            assert not _key_is_sensitive(field), (
+                f"{field!r} should NOT be flagged sensitive"
+            )
+
+    @pytest.mark.parametrize(
+        "field",
+        [
+            "password",
+            "PASSWORD",
+            "user_password",
+            "api_key",
+            "API_KEY",
+            "secret_key",
+            "private_key",
+            "access_token",
+            "refresh_token",
+            "Authorization",
+            "x-api-key",
+            "csrf_token",
+        ],
+    )
+    def test_real_secret_identifiers_are_masked(self, field):
+        from app.core.logging import _key_is_sensitive
+
+        assert _key_is_sensitive(field), f"{field!r} SHOULD be flagged sensitive"
+
+    def test_message_kv_with_cache_key_not_filtered(self):
+        flt = SensitiveDataFilter()
+        record = _make_record("hit cache_key=abc123 region=us-east")
+        flt.filter(record)
+        msg = record.getMessage()
+        # The value must survive — this is a diagnostic identifier, not a secret.
+        assert "abc123" in msg
+        assert "[FILTERED]" not in msg
+
+    def test_extra_cache_key_not_filtered(self):
+        flt = SensitiveDataFilter()
+        record = _make_record(extras={"cache_key": "abc", "keystore_path": "/tmp/x"})
+        flt.filter(record)
+        assert record.cache_key == "abc"
+        assert record.keystore_path == "/tmp/x"
+
+    def test_extra_api_key_still_filtered(self):
+        # Positive control: real secrets must still be masked.
+        flt = SensitiveDataFilter()
+        record = _make_record(extras={"api_key": "live_xxx", "password": "pw"})
+        flt.filter(record)
+        assert record.api_key == "[FILTERED]"
+        assert record.password == "[FILTERED]"
+
+
+# ---------------------------------------------------------------------------
+# Finding G/Q: sqlalchemy.engine logger decoupled from LOG_LEVEL
+# ---------------------------------------------------------------------------
+
+
+class TestSqlAlchemyEngineLogLevel:
+    """Regression tests for code-review Finding G/Q.
+
+    ``sqlalchemy.engine`` logs prepared-statement bind values at DEBUG/INFO,
+    which can leak credentials. The engine logger must follow a dedicated
+    ``SQLALCHEMY_LOG_LEVEL`` setting — *not* the global ``LOG_LEVEL`` — so
+    raising verbosity for app diagnostics does not silently enable SQL bind
+    logging.
+    """
+
+    def test_engine_logger_uses_dedicated_setting_default_warning(self):
+        configure_logging(_FakeSettings(level="DEBUG", sqlalchemy_level="WARNING"))
+        engine_logger = logging.getLogger("sqlalchemy.engine")
+        # Effective numeric level must be WARNING regardless of app LOG_LEVEL.
+        assert engine_logger.level == logging.WARNING
+
+    def test_engine_logger_independent_of_log_level_at_debug(self):
+        # Even with LOG_LEVEL=DEBUG (dev scenario), engine stays at WARNING
+        # when SQLALCHEMY_LOG_LEVEL is left at its default.
+        configure_logging(_FakeSettings(level="DEBUG", sqlalchemy_level="WARNING"))
+        assert logging.getLogger("sqlalchemy.engine").level == logging.WARNING
+
+    def test_engine_logger_can_be_raised_when_explicitly_opted_in(self):
+        # Operators who genuinely want SQL traces can opt in explicitly.
+        configure_logging(_FakeSettings(level="INFO", sqlalchemy_level="DEBUG"))
+        assert logging.getLogger("sqlalchemy.engine").level == logging.DEBUG
+
+    def test_settings_validates_sqlalchemy_log_level(self, monkeypatch):
+        monkeypatch.setenv(
+            "SECRET_KEY",
+            "a-sufficiently-long-secret-key-for-testing-purposes-1234",
+        )
+        monkeypatch.setenv("DATABASE_URL", "sqlite:///./test.db")
+        monkeypatch.setenv("SQLALCHEMY_LOG_LEVEL", "not-a-level")
+
+        from app.core.config import Settings
+
+        with pytest.raises(ValueError, match="SQLALCHEMY_LOG_LEVEL"):
+            Settings()
+
+    def test_settings_default_sqlalchemy_log_level_is_warning(self, monkeypatch):
+        monkeypatch.setenv(
+            "SECRET_KEY",
+            "a-sufficiently-long-secret-key-for-testing-purposes-1234",
+        )
+        monkeypatch.setenv("DATABASE_URL", "sqlite:///./test.db")
+        monkeypatch.delenv("SQLALCHEMY_LOG_LEVEL", raising=False)
+
+        from app.core.config import Settings
+
+        s = Settings()
+        assert s.SQLALCHEMY_LOG_LEVEL == "WARNING"

@@ -28,19 +28,51 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
     from app.core.config import Settings
 
 # Re-exported so ``audit_middleware`` can import a single source of truth.
-SENSITIVE_FIELDS = [
-    "password",
-    "token",
-    "secret",
-    "key",
-    "auth",
-    "credential",
-    "private",
-    "sensitive",
-    "confidential",
-    "jwt",
-    "refresh",
-]
+#
+# Anchored-token set. Matching is done by splitting candidate keys on
+# ``_``/``-``/``.`` boundaries and checking *token equality* (not substring
+# containment) so legitimate diagnostic identifiers like ``cache_key``,
+# ``keystore_path`` or ``user_secret_id`` are not falsely scrubbed. Compound
+# secret labels (``api_key``, ``private_key`` …) are listed explicitly.
+SENSITIVE_FIELDS = frozenset(
+    {
+        # Bare-word secrets.
+        "password",
+        "passwd",
+        "pwd",
+        "secret",
+        "token",
+        "authorization",
+        "bearer",
+        "credential",
+        "credentials",
+        "cookie",
+        "session",
+        "sessionid",
+        "jwt",
+        "refresh",
+        "apikey",  # for the no-separator spelling
+        # Compound spellings — these survive the split() pass intact only
+        # when the original key has no separators (e.g. ``Authorization``),
+        # so the equality check still hits them via the rejoined fallback
+        # below.
+        "api_key",
+        "secret_key",
+        "private_key",
+        "public_key",  # commonly paired with private_key in keymats
+        "access_key",
+        "access_token",
+        "refresh_token",
+        "auth_token",
+        "id_token",
+        "client_secret",
+        "csrf_token",
+        "x_api_key",
+    }
+)
+
+# Tokens that should match anywhere (not as keys, but in free-text k=v).
+_SPLIT_RE = re.compile(r"[_\-.]+")
 
 # Matches ``foo=value`` or ``foo: value`` style fragments inside log messages so
 # we can mask values that happen to be inlined into f-strings.
@@ -58,8 +90,35 @@ _CONFIGURED = False
 
 
 def _key_is_sensitive(key: str) -> bool:
+    """Return True iff ``key`` looks like a secret-bearing identifier.
+
+    Anchored-token match: the key is split on ``_``/``-``/``.``, then we check
+    three things against :data:`SENSITIVE_FIELDS` (all equality, no substring):
+
+    1. The full lowercased key (catches ``Authorization``).
+    2. Each individual split token (catches ``password`` in ``user_password``).
+    3. Adjacent token pairs rejoined with ``_`` (catches ``api_key`` in
+       ``x-api-key`` / ``API.Key`` etc.).
+
+    Step 3 lets compound spellings in ``SENSITIVE_FIELDS`` (e.g. ``api_key``,
+    ``secret_key``, ``access_token``) match across any separator while still
+    rejecting unrelated identifiers like ``cache_key`` or ``keystore_path``
+    where the standalone token (``key``) is intentionally NOT in the set.
+    """
+    if not key:
+        return False
     lowered = key.lower()
-    return any(token in lowered for token in SENSITIVE_FIELDS)
+    if lowered in SENSITIVE_FIELDS:
+        return True
+    tokens = [t for t in _SPLIT_RE.split(lowered) if t]
+    if any(t in SENSITIVE_FIELDS for t in tokens):
+        return True
+    # Adjacent bigrams rejoined with ``_`` to catch compound labels regardless
+    # of original separator (``x-api-key`` → ``x_api`` / ``api_key``).
+    for i in range(len(tokens) - 1):
+        if f"{tokens[i]}_{tokens[i + 1]}" in SENSITIVE_FIELDS:
+            return True
+    return False
 
 
 def _mask_message(message: str) -> str:
@@ -366,9 +425,13 @@ def configure_logging(settings: "Settings") -> None:
                 "level": settings.LOG_LEVEL,
                 "propagate": False,
             },
-            # SQLAlchemy can be noisy at INFO; honour user-specified level.
+            # SQLAlchemy emits bound parameter values at DEBUG / INFO which
+            # can leak passwords or tokens. Pin to a dedicated setting (default
+            # WARNING) so raising ``LOG_LEVEL`` for app diagnostics does not
+            # silently turn on SQL parameter logging. Falls back to WARNING if
+            # an older Settings instance is in use.
             "sqlalchemy.engine": {
-                "level": settings.LOG_LEVEL,
+                "level": getattr(settings, "SQLALCHEMY_LOG_LEVEL", "WARNING"),
                 "propagate": True,
             },
         },

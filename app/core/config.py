@@ -70,6 +70,12 @@ class Settings(BaseSettings):
     LOG_FILE: Optional[str] = None
     LOG_FILE_MAX_BYTES: int = 10 * 1024 * 1024  # 10 MiB
     LOG_FILE_BACKUP_COUNT: int = 5
+    # Dedicated level for the ``sqlalchemy.engine`` logger. Kept separate from
+    # ``LOG_LEVEL`` because SQLAlchemy emits prepared-statement bind values at
+    # ``DEBUG``/``INFO``, which can leak passwords / tokens when an operator
+    # raises the global verbosity. Default ``WARNING`` keeps the engine quiet
+    # regardless of ``LOG_LEVEL``.
+    SQLALCHEMY_LOG_LEVEL: str = "WARNING"
 
     @field_validator("SECRET_KEY")
     @classmethod
@@ -104,6 +110,18 @@ class Settings(BaseSettings):
         upper = v.upper()
         if upper not in allowed:
             raise ValueError(f"LOG_LEVEL must be one of {sorted(allowed)}, got: {v!r}")
+        return upper
+
+    @field_validator("SQLALCHEMY_LOG_LEVEL")
+    @classmethod
+    def validate_sqlalchemy_log_level(cls, v: str) -> str:
+        """Validate SQLALCHEMY_LOG_LEVEL is a recognised logging level."""
+        allowed = {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}
+        upper = v.upper()
+        if upper not in allowed:
+            raise ValueError(
+                f"SQLALCHEMY_LOG_LEVEL must be one of {sorted(allowed)}, got: {v!r}"
+            )
         return upper
 
     @field_validator("LOG_FILE_MAX_BYTES")

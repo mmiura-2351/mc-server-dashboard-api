@@ -14,6 +14,7 @@ from app.core.database import SessionLocal
 # single source of truth (see issue #24). Local alias preserved for backward
 # compatibility with any callers that imported it from this module.
 from app.core.logging import SENSITIVE_FIELDS  # noqa: F401
+from app.core.logging import _key_is_sensitive as _logging_key_is_sensitive
 
 logger = logging.getLogger(__name__)
 
@@ -84,8 +85,10 @@ class AuditTracker:
 
         filtered = {}
         for key, value in details.items():
-            # Filter sensitive fields
-            if any(sensitive in key.lower() for sensitive in SENSITIVE_FIELDS):
+            # Filter sensitive fields (anchored-token match — see
+            # ``app.core.logging._key_is_sensitive`` for why we no longer
+            # use substring containment).
+            if _logging_key_is_sensitive(key):
                 filtered[key] = "[FILTERED]"
             elif isinstance(value, dict):
                 filtered[key] = self._filter_sensitive_data(value)
