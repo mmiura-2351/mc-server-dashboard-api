@@ -1,12 +1,6 @@
 from fastapi import status
 
-from app.auth.auth import create_access_token
-
-
-def get_auth_headers(username: str):
-    """認証ヘッダーを生成"""
-    token = create_access_token(data={"sub": username})
-    return {"Authorization": f"Bearer {token}"}
+from tests.helpers.auth import auth_headers_for as get_auth_headers
 
 
 class TestApprovalMessages:

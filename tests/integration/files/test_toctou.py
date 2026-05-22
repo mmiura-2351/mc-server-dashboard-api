@@ -21,28 +21,21 @@ from app.files.adapters.uow import SqlAlchemyFilesUnitOfWork
 from app.files.application.service import FileHistoryService
 from app.files.models import FileEditHistory
 from app.servers.adapters.read_port import SqlAlchemyServerReadPort
-from app.servers.models import Server, ServerStatus, ServerType
+from app.servers.models import Server
 from tests.conftest import TestingSessionLocal
+from tests.helpers.servers import make_server
 
 
 @pytest.fixture
 def server(db, admin_user) -> Server:
-    s = Server(
+    return make_server(
+        db,
+        admin_user,
         name="TOCTOU Test Server",
         description="for file-history TOCTOU tests",
-        minecraft_version="1.20.1",
-        server_type=ServerType.vanilla,
-        status=ServerStatus.stopped,
         directory_path="./servers/toctou",
         port=25700,
-        max_memory=1024,
-        max_players=20,
-        owner_id=admin_user.id,
     )
-    db.add(s)
-    db.commit()
-    db.refresh(s)
-    return s
 
 
 @pytest.mark.asyncio

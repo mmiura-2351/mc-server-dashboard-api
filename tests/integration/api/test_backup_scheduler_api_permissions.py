@@ -2,16 +2,16 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
-from app.auth.auth import create_access_token
 from app.backups import backup_scheduler_instance
 from app.backups.adapters.uow import SqlAlchemyBackupsUnitOfWork
 from app.backups.application.scheduler import BackupSchedulerService
 from app.backups.models import BackupSchedule
-from app.main import app
 from app.servers.adapters.read_port import SqlAlchemyServerReadPort
 from app.servers.models import Server
 from app.users.domain.value_objects import Role
 from app.users.models import User
+from tests.helpers.auth import auth_headers_for
+from tests.helpers.users import make_user
 
 
 @pytest.fixture(autouse=True)
@@ -36,75 +36,38 @@ def _bootstrap_scheduler_instance(db: Session):
 class TestBackupSchedulerAPIPermissions:
     """Backup scheduler API permission tests"""
 
-    @pytest.fixture
-    def client(self):
-        """Test client"""
-        return TestClient(app)
-
-    # Use admin_user from conftest.py
+    # `client` and `admin_user` come from the root conftest.
 
     @pytest.fixture
-    def operator_user(self, db: Session):
-        """Operator user"""
-        # Check if operator user already exists
-        existing_user = db.query(User).filter_by(username="operator_user").first()
-        if existing_user:
-            return existing_user
-
-        user = User(
+    def operator_user(self, db: Session) -> User:
+        """Operator user (distinct from the root `operator_user` fixture
+        because permission tests assert against a per-test username)."""
+        return make_user(
+            db,
             username="operator_user",
             email="operator@example.com",
-            hashed_password="hashed_password",
             role=Role.operator,
-            is_active=True,
-            is_approved=True,
         )
-        db.add(user)
-        db.commit()
-        db.refresh(user)
-        return user
 
     @pytest.fixture
-    def regular_user(self, db: Session):
-        """Regular user"""
-        # Check if regular user already exists
-        existing_user = db.query(User).filter_by(username="regular_user").first()
-        if existing_user:
-            return existing_user
-
-        user = User(
+    def regular_user(self, db: Session) -> User:
+        """Regular user."""
+        return make_user(
+            db,
             username="regular_user",
             email="user@example.com",
-            hashed_password="hashed_password",
             role=Role.user,
-            is_active=True,
-            is_approved=True,
         )
-        db.add(user)
-        db.commit()
-        db.refresh(user)
-        return user
 
     @pytest.fixture
-    def other_user(self, db: Session):
-        """Other user (not server owner)"""
-        # Check if other user already exists
-        existing_user = db.query(User).filter_by(username="other_user").first()
-        if existing_user:
-            return existing_user
-
-        user = User(
+    def other_user(self, db: Session) -> User:
+        """Other user (not server owner)."""
+        return make_user(
+            db,
             username="other_user",
             email="other@example.com",
-            hashed_password="hashed_password",
             role=Role.operator,
-            is_active=True,
-            is_approved=True,
         )
-        db.add(user)
-        db.commit()
-        db.refresh(user)
-        return user
 
     @pytest.fixture
     def owner_server(self, db: Session, operator_user: User):
@@ -145,9 +108,8 @@ class TestBackupSchedulerAPIPermissions:
         return server
 
     def get_auth_headers(self, user: User):
-        """Get authentication header"""
-        token = create_access_token(data={"sub": user.username})
-        return {"Authorization": f"Bearer {token}"}
+        """Get authentication header (delegated to shared helper)."""
+        return auth_headers_for(user.username)
 
     def test_create_schedule_as_server_owner(
         self, client: TestClient, db: Session, operator_user: User, owner_server: Server

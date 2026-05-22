@@ -12,7 +12,8 @@ import pytest
 from app.groups.adapters.repository import SqlAlchemyServerGroupRepository
 from app.groups.domain.entities import AttachServerGroupCommand
 from app.groups.models import Group, GroupType, ServerGroup
-from app.servers.models import Server, ServerStatus, ServerType
+from app.servers.models import Server, ServerStatus
+from tests.helpers.servers import make_server
 
 
 @pytest.fixture
@@ -28,31 +29,22 @@ def _seed_group(db, owner_id: int, *, name: str = "g", type=GroupType.op) -> Gro
     return row
 
 
-def _seed_server(
-    db, owner_id: int, *, name: str, directory_path: str = "./servers/x"
-) -> Server:
-    row = Server(
+def _seed_server(db, owner, *, name: str, directory_path: str = "./servers/x") -> Server:
+    """Wrapper around `tests.helpers.servers.make_server` retaining the
+    existing call sites' shape (name=, directory_path=)."""
+    return make_server(
+        db,
+        owner,
         name=name,
         description=None,
-        minecraft_version="1.20.1",
-        server_type=ServerType.vanilla,
-        status=ServerStatus.stopped,
         directory_path=directory_path,
-        port=25565,
-        max_memory=1024,
-        max_players=20,
-        owner_id=owner_id,
     )
-    db.add(row)
-    db.commit()
-    db.refresh(row)
-    return row
 
 
 @pytest.mark.asyncio
 async def test_attach_and_find(repository, db, admin_user):
     group = _seed_group(db, admin_user.id)
-    server = _seed_server(db, admin_user.id, name="sA")
+    server = _seed_server(db, admin_user, name="sA")
 
     entity = await repository.attach(
         AttachServerGroupCommand(server_id=server.id, group_id=group.id, priority=3)
@@ -69,8 +61,8 @@ async def test_attach_and_find(repository, db, admin_user):
 @pytest.mark.asyncio
 async def test_count_for_group(repository, db, admin_user):
     group = _seed_group(db, admin_user.id)
-    s1 = _seed_server(db, admin_user.id, name="s1", directory_path="./servers/s1")
-    s2 = _seed_server(db, admin_user.id, name="s2", directory_path="./servers/s2")
+    s1 = _seed_server(db, admin_user, name="s1", directory_path="./servers/s1")
+    s2 = _seed_server(db, admin_user, name="s2", directory_path="./servers/s2")
 
     await repository.attach(AttachServerGroupCommand(server_id=s1.id, group_id=group.id))
     await repository.attach(AttachServerGroupCommand(server_id=s2.id, group_id=group.id))
@@ -82,8 +74,8 @@ async def test_count_for_group(repository, db, admin_user):
 @pytest.mark.asyncio
 async def test_list_server_ids_for_group(repository, db, admin_user):
     group = _seed_group(db, admin_user.id)
-    s1 = _seed_server(db, admin_user.id, name="s1", directory_path="./servers/s1")
-    s2 = _seed_server(db, admin_user.id, name="s2", directory_path="./servers/s2")
+    s1 = _seed_server(db, admin_user, name="s1", directory_path="./servers/s1")
+    s2 = _seed_server(db, admin_user, name="s2", directory_path="./servers/s2")
 
     await repository.attach(AttachServerGroupCommand(server_id=s1.id, group_id=group.id))
     await repository.attach(AttachServerGroupCommand(server_id=s2.id, group_id=group.id))
@@ -97,7 +89,7 @@ async def test_list_server_ids_for_group(repository, db, admin_user):
 async def test_list_groups_for_server_priority_desc(repository, db, admin_user):
     g_lo = _seed_group(db, admin_user.id, name="low")
     g_hi = _seed_group(db, admin_user.id, name="high")
-    s = _seed_server(db, admin_user.id, name="srv")
+    s = _seed_server(db, admin_user, name="srv")
 
     await repository.attach(
         AttachServerGroupCommand(server_id=s.id, group_id=g_lo.id, priority=1)
@@ -114,7 +106,7 @@ async def test_list_groups_for_server_priority_desc(repository, db, admin_user):
 @pytest.mark.asyncio
 async def test_list_server_dirs_for_group(repository, db, admin_user):
     group = _seed_group(db, admin_user.id)
-    s = _seed_server(db, admin_user.id, name="srv", directory_path="./servers/dirX")
+    s = _seed_server(db, admin_user, name="srv", directory_path="./servers/dirX")
     await repository.attach(AttachServerGroupCommand(server_id=s.id, group_id=group.id))
     db.commit()
 
@@ -135,7 +127,7 @@ async def test_list_attachments_for_server_returns_view_with_player_count(
         ]
     )
     db.commit()
-    s = _seed_server(db, admin_user.id, name="srv")
+    s = _seed_server(db, admin_user, name="srv")
     await repository.attach(
         AttachServerGroupCommand(server_id=s.id, group_id=group.id, priority=4)
     )
@@ -154,7 +146,7 @@ async def test_list_attachments_for_group_carries_server_status(
     repository, db, admin_user
 ):
     group = _seed_group(db, admin_user.id)
-    s = _seed_server(db, admin_user.id, name="srvB", directory_path="./servers/srvB")
+    s = _seed_server(db, admin_user, name="srvB", directory_path="./servers/srvB")
     await repository.attach(
         AttachServerGroupCommand(server_id=s.id, group_id=group.id, priority=2)
     )
@@ -172,7 +164,7 @@ async def test_list_attachments_for_group_carries_server_status(
 @pytest.mark.asyncio
 async def test_detach_returns_true_then_false(repository, db, admin_user):
     group = _seed_group(db, admin_user.id)
-    s = _seed_server(db, admin_user.id, name="srv")
+    s = _seed_server(db, admin_user, name="srv")
     await repository.attach(AttachServerGroupCommand(server_id=s.id, group_id=group.id))
     db.commit()
 

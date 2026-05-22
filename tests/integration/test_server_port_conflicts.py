@@ -4,7 +4,8 @@ import pytest
 from fastapi import status
 from fastapi.testclient import TestClient
 
-from app.servers.models import Server, ServerStatus, ServerType
+from app.servers.models import ServerStatus, ServerType
+from tests.helpers.servers import make_server
 
 # Every test in this file calls `POST /api/v1/servers`, which triggers
 # real Java discovery inside MinecraftServerManager — skip without a JRE.
@@ -31,7 +32,9 @@ class TestServerPortConflicts:
         db.add(version)
         db.commit()
         # Create a server with port 25565
-        first_server = Server(
+        make_server(
+            db,
+            admin_user,
             name="First Server",
             description="A server",
             minecraft_version="1.21.6",
@@ -39,12 +42,7 @@ class TestServerPortConflicts:
             status=ServerStatus.stopped,
             directory_path="./servers/first_server",
             port=25565,
-            max_memory=1024,
-            max_players=20,
-            owner_id=admin_user.id,
         )
-        db.add(first_server)
-        db.commit()
 
         # Mock JAR download and caching to avoid actual network calls
         with (
@@ -106,7 +104,9 @@ class TestServerPortConflicts:
         db.commit()
 
         # Create a stopped server with port 25566
-        stopped_server = Server(
+        make_server(
+            db,
+            admin_user,
             name="Stopped Server",
             description="A stopped server",
             minecraft_version="1.21.6",
@@ -114,12 +114,7 @@ class TestServerPortConflicts:
             status=ServerStatus.stopped,
             directory_path="./servers/stopped_server",
             port=25566,
-            max_memory=1024,
-            max_players=20,
-            owner_id=admin_user.id,
         )
-        db.add(stopped_server)
-        db.commit()
 
         # Mock JAR download and caching to avoid actual network calls
         with (
@@ -181,7 +176,9 @@ class TestServerPortConflicts:
         db.commit()
 
         # Create a starting server with port 25567
-        starting_server = Server(
+        make_server(
+            db,
+            admin_user,
             name="Starting Server",
             description="A starting server",
             minecraft_version="1.21.6",
@@ -189,12 +186,7 @@ class TestServerPortConflicts:
             status=ServerStatus.starting,
             directory_path="./servers/starting_server",
             port=25567,
-            max_memory=1024,
-            max_players=20,
-            owner_id=admin_user.id,
         )
-        db.add(starting_server)
-        db.commit()
 
         # Mock JAR download and caching to avoid actual network calls
         with (

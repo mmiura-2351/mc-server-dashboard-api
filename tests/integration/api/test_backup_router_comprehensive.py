@@ -12,7 +12,6 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from fastapi import status
 
-from app.auth.auth import create_access_token
 from app.backups.api.dependencies import get_backup_service
 from app.backups.application.service import BackupService
 from app.backups.domain.entities import (
@@ -30,12 +29,7 @@ from app.main import app
 from app.servers.models import Server, ServerType
 from app.users.domain.value_objects import Role
 from app.users.models import User
-
-
-def get_auth_headers(username: str):
-    """Generate authentication headers"""
-    token = create_access_token(data={"sub": username})
-    return {"Authorization": f"Bearer {token}"}
+from tests.helpers.auth import auth_headers_for as get_auth_headers
 
 
 def make_entity(

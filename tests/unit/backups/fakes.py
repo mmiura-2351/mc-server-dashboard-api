@@ -4,11 +4,10 @@ These structurally implement the Protocols in
 `app.backups.domain.ports`. They let unit tests exercise the backups
 application service without a database.
 
-`FakeServerReadPort` is reused from `tests.unit.files.fakes` (or kept
-local here when the existing one lacks fields). For #227 we use a
-local lightweight `FakeServerReadPort` because the legacy
-`tests/unit/files/fakes.py` `get` method may not return all the fields
-the backup service touches.
+`FakeServerReadPort` is the unified implementation re-exported from
+`tests.unit.servers.fakes` (#168). The previous local copy is gone;
+import via `from tests.unit.backups.fakes import FakeServerReadPort`
+still works thanks to the re-export below.
 """
 
 from dataclasses import replace
@@ -30,8 +29,6 @@ from app.backups.domain.entities import (
     UpdateBackupScheduleCommand,
 )
 from app.backups.models import BackupStatus, BackupType, ScheduleAction
-from app.servers.domain.entities import ServerEntity
-from app.servers.models import ServerType
 
 
 def _utcnow() -> datetime:
@@ -308,50 +305,10 @@ class FakeBackupsUnitOfWork:
 
 
 # ---------------------------------------------------------------------------
-# Server read port fake
+# Server read port fake (re-exported from tests.unit.servers.fakes, #168)
 # ---------------------------------------------------------------------------
 
-
-class FakeServerReadPort:
-    """Lightweight `ServerReadPort` for backup unit tests."""
-
-    def __init__(self) -> None:
-        self._servers: Dict[int, ServerEntity] = {}
-
-    async def get_directory_path(self, server_id: int) -> Optional[str]:
-        s = self._servers.get(server_id)
-        return s.directory_path if s else None
-
-    async def get(self, server_id: int) -> Optional[ServerEntity]:
-        return self._servers.get(server_id)
-
-    def seed(
-        self,
-        *,
-        id: int,
-        owner_id: int = 1,
-        name: str = "srv",
-        directory_path: str = "/srv",
-        port: int = 25565,
-        server_type: ServerType = ServerType.vanilla,
-        minecraft_version: str = "1.20.1",
-        max_memory: int = 1024,
-        max_players: int = 20,
-    ) -> ServerEntity:
-        entity = ServerEntity(
-            id=id,
-            name=name,
-            directory_path=directory_path,
-            minecraft_version=minecraft_version,
-            server_type=server_type,
-            port=port,
-            max_memory=max_memory,
-            max_players=max_players,
-            owner_id=owner_id,
-        )
-        self._servers[id] = entity
-        return entity
-
+from tests.unit.servers.fakes import FakeServerReadPort  # noqa: E402,F401
 
 # ---------------------------------------------------------------------------
 # Helper for constructing entities in tests

@@ -19,6 +19,7 @@ from app.servers.application.authorization import AuthorizationService
 from app.servers.models import Server, ServerStatus, ServerType
 from app.users.domain.value_objects import Role
 from app.users.models import User
+from tests.helpers.servers import make_server
 
 
 class TestPhase1ComplianceBasicOperations:
@@ -84,20 +85,15 @@ class TestPhase1ComplianceResourceAccess:
     ):
         """Test that users can view servers through visibility system (Phase 1+2)"""
         # Create a server owned by admin
-        server = Server(
+        server = make_server(
+            db,
+            admin_user,
             name="Test Server",
             description="Test server for visibility",
             minecraft_version="1.19.4",
-            server_type=ServerType.vanilla,
-            status=ServerStatus.stopped,
             directory_path="./servers/test_visibility",
             port=25565,
-            max_memory=1024,
-            max_players=20,
-            owner_id=admin_user.id,
         )
-        db.add(server)
-        db.commit()
 
         # New permission model: all users can access all servers regardless of visibility config
         try:
@@ -187,20 +183,15 @@ class TestPhase1ComplianceOperationalRequirements:
     def test_operate_servers_requirement(self, db: Session, test_user):
         """Test operate servers requirement - users can access servers they have visibility to"""
         # Create a server
-        server = Server(
+        server = make_server(
+            db,
+            test_user,  # User owns this server
             name="Operational Test Server",
             description="Test server operations",
             minecraft_version="1.19.4",
-            server_type=ServerType.vanilla,
-            status=ServerStatus.stopped,
             directory_path="./servers/operational_test",
             port=25567,
-            max_memory=1024,
-            max_players=20,
-            owner_id=test_user.id,  # User owns this server
         )
-        db.add(server)
-        db.commit()
 
         # User should be able to access their own server (owner privilege)
         try:

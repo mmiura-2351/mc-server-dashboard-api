@@ -369,9 +369,13 @@ class TestServerExportImport:
         db.commit()
 
         # Create a stopped server with port 25565
-        from app.servers.models import Server
+        from tests.helpers.servers import make_server
 
-        stopped_server = Server(
+        # Existence of a row with this port is enough for the port-conflict
+        # check; the entity isn't referenced again in this test.
+        make_server(
+            db,
+            admin_user,
             name="Stopped Server",
             description="A stopped server",
             minecraft_version="1.21.6",
@@ -379,12 +383,7 @@ class TestServerExportImport:
             status=ServerStatus.stopped,
             directory_path="./servers/stopped_server",
             port=25565,
-            max_memory=1024,
-            max_players=20,
-            owner_id=admin_user.id,
         )
-        db.add(stopped_server)
-        db.commit()
 
         # Create test ZIP file
         zip_buffer = io.BytesIO()

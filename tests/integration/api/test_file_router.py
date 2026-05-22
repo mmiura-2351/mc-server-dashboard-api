@@ -4,17 +4,11 @@ from unittest.mock import AsyncMock, patch
 
 from fastapi import HTTPException, status
 
-from app.auth.auth import create_access_token
 from app.core.exceptions import (
     FileOperationException,
 )
 from app.types import FileType
-
-
-def get_auth_headers(username: str):
-    """認証ヘッダーを生成"""
-    token = create_access_token(data={"sub": username})
-    return {"Authorization": f"Bearer {token}"}
+from tests.helpers.auth import auth_headers_for as get_auth_headers
 
 
 class TestFileRouter:
@@ -24,9 +18,7 @@ class TestFileRouter:
         "app.servers.application.authorization.AuthorizationService.check_server_access",
         new_callable=AsyncMock,
     )
-    @patch(
-        "app.files.application.management.file_management_service.get_server_files"
-    )
+    @patch("app.files.application.management.file_management_service.get_server_files")
     def test_get_server_files_success(
         self, mock_get_files, mock_check_access, client, admin_user
     ):
@@ -68,9 +60,7 @@ class TestFileRouter:
         "app.servers.application.authorization.AuthorizationService.check_server_access",
         new_callable=AsyncMock,
     )
-    @patch(
-        "app.files.application.management.file_management_service.get_server_files"
-    )
+    @patch("app.files.application.management.file_management_service.get_server_files")
     def test_get_server_files_with_path_filter(
         self, mock_get_files, mock_check_access, client, admin_user
     ):
@@ -88,9 +78,7 @@ class TestFileRouter:
         "app.servers.application.authorization.AuthorizationService.check_server_access",
         new_callable=AsyncMock,
     )
-    @patch(
-        "app.files.application.management.file_management_service.get_server_files"
-    )
+    @patch("app.files.application.management.file_management_service.get_server_files")
     def test_get_server_files_with_type_filter(
         self, mock_get_files, mock_check_access, client, admin_user
     ):
@@ -110,9 +98,7 @@ class TestFileRouter:
         "app.servers.application.authorization.AuthorizationService.check_server_access",
         new_callable=AsyncMock,
     )
-    @patch(
-        "app.files.application.management.file_management_service.get_server_files"
-    )
+    @patch("app.files.application.management.file_management_service.get_server_files")
     @patch("app.files.application.management.file_management_service.read_file")
     def test_read_file_success(
         self, mock_read_file, mock_get_files, mock_check_access, client, admin_user
@@ -147,9 +133,7 @@ class TestFileRouter:
         "app.servers.application.authorization.AuthorizationService.check_server_access",
         new_callable=AsyncMock,
     )
-    @patch(
-        "app.files.application.management.file_management_service.get_server_files"
-    )
+    @patch("app.files.application.management.file_management_service.get_server_files")
     @patch("app.files.application.management.file_management_service.read_file")
     def test_read_file_with_encoding(
         self, mock_read_file, mock_get_files, mock_check_access, client, admin_user
@@ -183,9 +167,7 @@ class TestFileRouter:
         "app.servers.application.authorization.AuthorizationService.check_server_access",
         new_callable=AsyncMock,
     )
-    @patch(
-        "app.files.application.management.file_management_service.get_server_files"
-    )
+    @patch("app.files.application.management.file_management_service.get_server_files")
     @patch(
         "app.files.application.management.file_management_service.read_image_as_base64"
     )
@@ -419,9 +401,7 @@ class TestFileRouter:
         new_callable=AsyncMock,
     )
     @patch("app.servers.application.authorization.AuthorizationService.can_modify_files")
-    @patch(
-        "app.files.application.management.file_management_service.create_directory"
-    )
+    @patch("app.files.application.management.file_management_service.create_directory")
     def test_create_directory_success(
         self, mock_create_dir, mock_can_modify, mock_check_access, client, admin_user
     ):

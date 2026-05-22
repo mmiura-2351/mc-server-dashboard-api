@@ -186,9 +186,7 @@ class FakeServerRepository:
             result[sid] = await self.update_status(sid, new_status)
         return result
 
-    async def update_port(
-        self, server_id: int, port: int
-    ) -> Optional[ServerEntity]:
+    async def update_port(self, server_id: int, port: int) -> Optional[ServerEntity]:
         existing = self._records.get(server_id)
         if existing is None:
             return None
@@ -284,7 +282,78 @@ def make_server_entity(
     )
 
 
+class FakeServerReadPort:
+    """Dict-backed `ServerReadPort` for unit tests.
+
+    Consolidates the previously duplicated FakeServerReadPort
+    implementations from `tests/unit/backups/fakes.py` and
+    `tests/unit/files/fakes.py` (Issue #168).
+
+    Stores per-server `directory_path` and (optionally) a full
+    `ServerEntity` snapshot consumed by `ServerReadPort.get`. The two
+    stores are kept independent so tests that only exercise
+    file-history surfaces stay terse, while groups/templates tests can
+    seed a full entity (including `owner_id`, which the groups domain
+    reads to apply the "admin-or-server-owner" rule — see
+    `app.groups.application.service._can_manage_server_groups`).
+    """
+
+    def __init__(
+        self,
+        paths: Optional[Dict[int, Optional[str]]] = None,
+        servers: Optional[Dict[int, ServerEntity]] = None,
+    ) -> None:
+        self._paths: Dict[int, Optional[str]] = dict(paths or {})
+        self._servers: Dict[int, ServerEntity] = dict(servers or {})
+
+    async def get_directory_path(self, server_id: int) -> Optional[str]:
+        if server_id in self._paths:
+            return self._paths[server_id]
+        s = self._servers.get(server_id)
+        return s.directory_path if s else None
+
+    async def get(self, server_id: int) -> Optional[ServerEntity]:
+        return self._servers.get(server_id)
+
+    def set_path(self, server_id: int, path: Optional[str]) -> None:
+        self._paths[server_id] = path
+
+    def set_server(self, server: ServerEntity) -> None:
+        """Register a `ServerEntity` and mirror its `directory_path`."""
+        self._servers[server.id] = server
+        self._paths[server.id] = server.directory_path
+
+    def seed(
+        self,
+        *,
+        id: int,
+        owner_id: int = 1,
+        name: str = "srv",
+        directory_path: str = "/srv",
+        port: int = 25565,
+        server_type: ServerType = ServerType.vanilla,
+        minecraft_version: str = "1.20.1",
+        max_memory: int = 1024,
+        max_players: int = 20,
+    ) -> ServerEntity:
+        """Seed a `ServerEntity` directly (backups-style API)."""
+        entity = ServerEntity(
+            id=id,
+            name=name,
+            directory_path=directory_path,
+            minecraft_version=minecraft_version,
+            server_type=server_type,
+            port=port,
+            max_memory=max_memory,
+            max_players=max_players,
+            owner_id=owner_id,
+        )
+        self.set_server(entity)
+        return entity
+
+
 __all__ = [
+    "FakeServerReadPort",
     "FakeServerRepository",
     "FakeServersUnitOfWork",
     "make_server_entity",

@@ -3,7 +3,6 @@
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from fastapi.testclient import TestClient
 
 from app.main import ServiceStatus, app, service_status
 
@@ -116,10 +115,7 @@ class TestServiceStatusComprehensive:
 class TestHealthEndpointComprehensive:
     """Comprehensive tests for health check endpoints"""
 
-    @pytest.fixture
-    def client(self):
-        """Create test client"""
-        return TestClient(app)
+    # `client` fixture provided by tests/conftest.py (Issue #168).
 
     def test_health_endpoint_healthy_all_services(self, client):
         """Test health endpoint when all services are healthy"""
@@ -634,10 +630,7 @@ class TestApplicationConfiguration:
 class TestApiV1EndpointsNew:
     """Test new /api/v1 prefixed health and metrics endpoints (TDD approach)"""
 
-    @pytest.fixture
-    def client(self):
-        """Create test client"""
-        return TestClient(app)
+    # `client` fixture provided by tests/conftest.py (Issue #168).
 
     def test_api_v1_health_endpoint_healthy_all_services(self, client):
         """Test /api/v1/health endpoint when all services are healthy"""
