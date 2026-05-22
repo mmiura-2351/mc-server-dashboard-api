@@ -45,8 +45,22 @@ class TestMinecraftServerLifecycleIntegration:
 
     @pytest.fixture
     def manager(self):
-        """Create manager with realistic configuration"""
-        return MinecraftServerManager(log_queue_size=100)
+        """Create manager with realistic configuration.
+
+        After #228 PR 2d, the port-conflict check inside `start_server`
+        routes through `ServerRepository.list_by_port(...)`. Wire an
+        empty fake here so a `Mock(spec=Session)` does not propagate
+        into the lazy `SqlAlchemyServerRepository` default.
+        """
+        from unittest.mock import AsyncMock
+
+        repo = Mock()
+        repo.list_by_port = AsyncMock(return_value=[])
+        mgr = MinecraftServerManager(
+            log_queue_size=100,
+            server_repository_factory=lambda _db: repo,
+        )
+        return mgr
 
     @pytest.fixture
     def mock_java_service(self):
@@ -93,6 +107,7 @@ online-mode=true
         session = Mock(spec=Session)
         session.query.return_value.filter.return_value.first.return_value = None
         return session
+
 
     @pytest_asyncio.fixture
     async def long_running_process_command(self, tmp_path):
@@ -184,12 +199,12 @@ sys.exit(0)
             return await original_create_subprocess(*args, **kwargs)
 
         with patch(
-            "app.services.minecraft_server.java_compatibility_service", mock_java_service
+            "app.servers.application.minecraft_server.java_compatibility_service", mock_java_service
         ):
             with patch(
                 "asyncio.create_subprocess_exec", side_effect=mock_create_subprocess
             ):
-                with patch("app.services.minecraft_server.logger") as mock_logger:
+                with patch("app.servers.application.minecraft_server.logger") as mock_logger:
                     # Record status changes
                     status_changes = []
 
@@ -276,7 +291,7 @@ sys.exit(0)
             conflict_socket.listen(1)
 
             with patch(
-                "app.services.minecraft_server.java_compatibility_service",
+                "app.servers.application.minecraft_server.java_compatibility_service",
                 mock_java_service,
             ):
                 # Mock the sync to return success without changing the port
@@ -284,7 +299,7 @@ sys.exit(0)
                 with patch.object(
                     manager, "_perform_bidirectional_sync", return_value=True
                 ):
-                    with patch("app.services.minecraft_server.logger") as mock_logger:
+                    with patch("app.servers.application.minecraft_server.logger") as mock_logger:
                         result = await manager.start_server(
                             lifecycle_server, mock_db_session
                         )
@@ -318,9 +333,9 @@ sys.exit(0)
         mock_java_service.discover_java_installations = AsyncMock(return_value={})
 
         with patch(
-            "app.services.minecraft_server.java_compatibility_service", mock_java_service
+            "app.servers.application.minecraft_server.java_compatibility_service", mock_java_service
         ):
-            with patch("app.services.minecraft_server.logger") as mock_logger:
+            with patch("app.servers.application.minecraft_server.logger") as mock_logger:
                 result = await manager.start_server(lifecycle_server, mock_db_session)
 
                 # Verify failure
@@ -346,9 +361,9 @@ sys.exit(0)
         jar_path.unlink()
 
         with patch(
-            "app.services.minecraft_server.java_compatibility_service", mock_java_service
+            "app.servers.application.minecraft_server.java_compatibility_service", mock_java_service
         ):
-            with patch("app.services.minecraft_server.logger") as mock_logger:
+            with patch("app.servers.application.minecraft_server.logger") as mock_logger:
                 result = await manager.start_server(lifecycle_server, mock_db_session)
 
                 # Verify failure
@@ -371,10 +386,10 @@ sys.exit(0)
 
         # Mock daemon process creation to fail with OSError
         with patch(
-            "app.services.minecraft_server.java_compatibility_service", mock_java_service
+            "app.servers.application.minecraft_server.java_compatibility_service", mock_java_service
         ):
             with patch("os.fork", side_effect=OSError("Permission denied")):
-                with patch("app.services.minecraft_server.logger") as mock_logger:
+                with patch("app.servers.application.minecraft_server.logger") as mock_logger:
                     result = await manager.start_server(lifecycle_server, mock_db_session)
 
                     # Verify failure
@@ -416,7 +431,7 @@ sys.exit(0)
                 return False  # Process dies during monitoring
 
         with patch(
-            "app.services.minecraft_server.java_compatibility_service", mock_java_service
+            "app.servers.application.minecraft_server.java_compatibility_service", mock_java_service
         ):
             with patch.object(manager, "_create_daemon_process") as mock_daemon:
                 mock_daemon.return_value = mock_pid  # Return mock PID
@@ -424,7 +439,7 @@ sys.exit(0)
                 with patch.object(
                     manager, "_is_process_running", side_effect=mock_is_process_running
                 ):
-                    with patch("app.services.minecraft_server.logger") as mock_logger:
+                    with patch("app.servers.application.minecraft_server.logger") as mock_logger:
                         result = await manager.start_server(
                             lifecycle_server, mock_db_session
                         )
@@ -491,7 +506,7 @@ sys.exit(0)
 
         manager.set_status_update_callback(record_status_change)
 
-        with patch("app.services.minecraft_server.logger") as mock_logger:
+        with patch("app.servers.application.minecraft_server.logger") as mock_logger:
             # Execute graceful shutdown
             result = await manager.stop_server(1, force=False)
 
@@ -545,7 +560,7 @@ sys.exit(0)
         manager.set_status_update_callback(record_status_change)
 
         with patch.object(manager, "_cleanup_server_process") as mock_cleanup:
-            with patch("app.services.minecraft_server.logger") as mock_logger:
+            with patch("app.servers.application.minecraft_server.logger") as mock_logger:
                 result = await manager.stop_server(1)
 
                 # Verify successful handling
@@ -610,7 +625,7 @@ sys.exit(0)
 
         manager.set_status_update_callback(record_status_change)
 
-        with patch("app.services.minecraft_server.logger") as mock_logger:
+        with patch("app.servers.application.minecraft_server.logger") as mock_logger:
             # After timeout, we need to mock the second wait call for termination
             def side_effect_wait(*args, **kwargs):
                 # First call times out, subsequent calls succeed
@@ -723,7 +738,7 @@ sys.exit(0)
         manager.set_status_update_callback(record_status_change)
 
         with patch.object(manager, "_cleanup_server_process") as mock_cleanup:
-            with patch("app.services.minecraft_server.logger") as mock_logger:
+            with patch("app.servers.application.minecraft_server.logger") as mock_logger:
                 result = await manager.stop_server(1)
 
                 # Should still complete cleanup even with exceptions
@@ -877,7 +892,7 @@ sys.exit(0)
         )
         manager.processes[1] = server_process
 
-        with patch("app.services.minecraft_server.logger") as mock_logger:
+        with patch("app.servers.application.minecraft_server.logger") as mock_logger:
             result = await manager.send_command(1, "test command")
 
             assert result is False

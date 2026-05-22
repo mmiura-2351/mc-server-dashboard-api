@@ -1,6 +1,6 @@
 """Comprehensive tests for main application startup and lifecycle"""
 
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
@@ -312,34 +312,41 @@ class TestApplicationStartupShutdown:
 
     @pytest.mark.asyncio
     async def test_initialize_database_integration_success(self):
-        """Test successful database integration initialization"""
+        """Test successful database integration initialization.
+
+        The lifespan now builds a fresh service via
+        `make_database_integration_service()` so we patch the factory
+        rather than the module-level singleton.
+        """
+        mock_service = AsyncMock()
+        mock_service.initialize = MagicMock(return_value=None)
         with (
             patch(
-                "app.services.database_integration.database_integration_service"
-            ) as mock_service,
+                "app.servers.application.database_integration.make_database_integration_service",
+                return_value=mock_service,
+            ),
             patch("app.main.service_status") as mock_status,
-            patch("app.main.logger") as mock_logger,
+            patch("app.main.logger"),
         ):
             from app.main import _initialize_database_integration
-
-            # Mock successful initialization
-            mock_service.initialize.return_value = None
-            mock_service.sync_server_states_with_restore.return_value = None
 
             await _initialize_database_integration()
 
             # Verify initialization calls
             mock_service.initialize.assert_called_once()
-            mock_service.sync_server_states_with_restore.assert_called_once()
+            mock_service.sync_server_states_with_restore.assert_awaited_once()
             assert mock_status.database_integration_ready is True
 
     @pytest.mark.asyncio
     async def test_initialize_database_integration_failure(self):
         """Test database integration initialization failure"""
+        mock_service = MagicMock()
+        mock_service.initialize.side_effect = Exception("Integration failed")
         with (
             patch(
-                "app.services.database_integration.database_integration_service"
-            ) as mock_service,
+                "app.servers.application.database_integration.make_database_integration_service",
+                return_value=mock_service,
+            ),
             patch("app.main.service_status") as mock_status,
             patch("app.main.logger") as mock_logger,
         ):
@@ -348,9 +355,6 @@ class TestApplicationStartupShutdown:
             # Setup mock service status
             mock_status.database_integration_ready = False
             mock_status.failed_services = []
-
-            # Mock initialization failure
-            mock_service.initialize.side_effect = Exception("Integration failed")
 
             # Should not raise exception (non-critical)
             await _initialize_database_integration()
@@ -371,7 +375,7 @@ class TestApplicationStartupShutdown:
 
         with (
             patch(
-                "app.services.minecraft_server.minecraft_server_manager"
+                "app.servers.application.minecraft_server.minecraft_server_manager"
             ) as mock_mc_manager,
             patch("app.backups.backup_scheduler_instance") as mock_holder,
             patch("app.services.websocket_service.websocket_service") as mock_ws_service,

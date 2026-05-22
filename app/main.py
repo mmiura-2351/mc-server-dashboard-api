@@ -138,9 +138,29 @@ async def _initialize_database_integration():
     """Initialize database integration - important but not critical"""
     try:
         logger.info("Initializing database integration service...")
-        from app.services.database_integration import database_integration_service
+        from app.servers.api.dependencies import make_server_repository_from_session
+        from app.servers.application import database_integration as di_module
+        from app.servers.application.database_integration import (
+            make_database_integration_service,
+        )
+        from app.servers.application.minecraft_server import minecraft_server_manager
 
-        database_integration_service.initialize()
+        # Late-bind the server-repository factory on the manager
+        # singleton so the port-conflict check inside `start_server`
+        # can go through the Repository instead of `db_session.query`
+        # (R-17 / #228 PR 2d).
+        minecraft_server_manager.server_repository_factory = (
+            make_server_repository_from_session
+        )
+
+        # Build a fresh integration service inside the running loop so
+        # `initialize()` captures the correct loop for its sync→async
+        # bridge, then publish it on the module so legacy importers see
+        # the lifecycle-aware singleton.
+        service = make_database_integration_service()
+        service.initialize()
+        di_module.database_integration_service = service
+        database_integration_service = service
         logger.info("Database integration service initialized")
 
         # Sync server states with error handling (enhanced with process restoration)
@@ -236,7 +256,7 @@ async def _cleanup_services():
     # Stop Minecraft server manager (with configurable behavior)
     try:
         logger.info("Shutting down Minecraft server manager...")
-        from app.services.minecraft_server import minecraft_server_manager
+        from app.servers.application.minecraft_server import minecraft_server_manager
 
         await minecraft_server_manager.shutdown_all()
         if settings.KEEP_SERVERS_ON_SHUTDOWN:

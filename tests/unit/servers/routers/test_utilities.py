@@ -345,7 +345,14 @@ class TestUtilitiesRouterSimple:
     @pytest.mark.asyncio
     @patch("app.services.database_integration.database_integration_service")
     async def test_sync_server_states_error(self, mock_db_service, admin_user):
-        """Test server state sync with database error"""
+        """Test server state sync with database error.
+
+        Patch via the shim path (`app.services.database_integration`) since
+        the route does a local `from app.services.database_integration
+        import database_integration_service` — the shim re-exports the
+        canonical singleton, but `patch` binds names where they are
+        looked up, not where they live.
+        """
         from app.servers.routers.utilities import sync_server_states
 
         mock_db_service.sync_server_states.side_effect = Exception("Database error")
