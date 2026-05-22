@@ -20,6 +20,10 @@ from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
 from app.auth.dependencies import get_current_user
+from app.backups.domain.exceptions import (
+    BackupNotFoundError,
+    BackupParentServerMissingError,
+)
 from app.core.database import get_db
 from app.servers.api.dependencies import (
     get_authorization_service,
@@ -33,6 +37,7 @@ from app.servers.application.service import (
 from app.servers.application.service import (
     _server_service_legacy as server_service,  # legacy module-level alias for old unit tests
 )
+from app.servers.domain.exceptions import ServerAccessError, ServerNotFoundError
 from app.servers.domain.ports import ServerRepository
 from app.servers.models import ServerStatus, ServerType
 from app.servers.schemas import (
@@ -148,7 +153,16 @@ async def export_server(
             },
         )
 
-    except HTTPException:
+    except (
+        HTTPException,
+        ServerNotFoundError,
+        ServerAccessError,
+        BackupNotFoundError,
+        BackupParentServerMissingError,
+    ):
+        # Re-raise domain exceptions so the global handlers in
+        # ``app.core.error_handlers`` can map them to HTTP responses
+        # without being swallowed by the catch-all below (#273).
         raise
     except Exception as e:
         logger.error(f"Failed to export server {server_id}: {str(e)}")
@@ -316,7 +330,16 @@ async def import_server(
 
             return server
 
-    except HTTPException:
+    except (
+        HTTPException,
+        ServerNotFoundError,
+        ServerAccessError,
+        BackupNotFoundError,
+        BackupParentServerMissingError,
+    ):
+        # Re-raise domain exceptions so the global handlers in
+        # ``app.core.error_handlers`` can map them to HTTP responses
+        # without being swallowed by the catch-all below (#273).
         raise
     except Exception as e:
         logger.error(f"Failed to import server: {str(e)}")

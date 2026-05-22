@@ -1,42 +1,61 @@
-"""Authorization service — relocated from `app.services.authorization_service`.
+"""Authorization service — framework-agnostic application-layer policy.
 
-Migrated under #228 (PR 2b/?):
+Originally relocated from ``app.services.authorization_service`` under
+#228 (PR 2b). Refactored under #273 + #292 to:
 
-- ``check_server_access`` / ``check_backup_access`` are now ``async def``
-  and resolve resources through sibling Repository Ports
-  (``ServerRepository``, ``BackupRepository``) instead of bare
-  ``db.query`` calls. They return the domain entities
-  (``ServerEntity`` / ``BackupEntity``); the routers that still need
-  the SQLAlchemy ``Server`` row (notably the start/restart paths,
+- Remove every FastAPI import (``HTTPException``, ``Request``,
+  ``status``) so the application layer no longer leaks framework
+  concerns through its public signatures. Resource-resolution failures
+  now raise plain Python domain exceptions
+  (``ServerNotFoundError``, ``BackupNotFoundError``,
+  ``BackupParentServerMissingError``); a global FastAPI exception
+  handler registered in ``app.core.error_handlers`` maps them back to
+  the HTTP responses the API contract requires.
+- Drop the inline ``AuditService.log_permission_check`` calls. Audit
+  logging is a router-side concern (it needs the ``Request`` object)
+  and the two production callsites — both in
+  ``app.servers.routers.control`` — re-emit the success event after the
+  access check returns.
+- Delete the ``require_role`` / ``require_admin_or_operator``
+  decorators (#292). They were preserved only for legacy tests that
+  were retired in #290; production code never bound them.
+
+Method semantics:
+
+- ``check_server_access`` / ``check_backup_access`` remain ``async``
+  and resolve aggregates through sibling Repository Ports
+  (``ServerRepository``, ``BackupRepository``). They return the domain
+  entities (``ServerEntity`` / ``BackupEntity``); routers that still
+  need the SQLAlchemy ``Server`` row (notably the start/restart paths,
   which hand the object to ``minecraft_server_manager.start_server``
   for mutation by ``simplified_sync_service``) refetch the ORM row
   separately as a transitional pattern until #149 finishes.
-- ``AuthorizationService`` is now instance-based: the constructor
-  receives the three sibling Repositories so callers wire it via
-  FastAPI ``Depends(get_authorization_service)`` rather than calling a
+- ``AuthorizationService`` is instance-based: the constructor receives
+  the three sibling Repositories so callers wire it via FastAPI
+  ``Depends(get_authorization_service)`` rather than calling a
   module-level singleton.
 - Boolean helpers (``is_admin``, ``can_*``) remain ``@staticmethod``
   because they read only fields of ``User`` and do not touch the
   database.
-- ``can_delete_backup`` now accepts the parent ``ServerEntity`` (its
-  one previous caller used to pass an ORM ``Backup`` and reach through
+- ``can_delete_backup`` accepts the parent ``ServerEntity`` (its one
+  previous caller used to pass an ORM ``Backup`` and reach through
   ``backup.server.owner_id``; that path is no longer available off the
   domain entity, so the caller passes the server explicitly).
 
 The legacy module path ``app.services.authorization_service`` continues
 to re-export ``AuthorizationService`` for tests that have not yet been
-relocated; the module-level ``authorization_service`` singleton has
-been removed because every router now goes through DI.
+relocated; the module-level ``authorization_service`` singleton was
+removed under #228 because every router now goes through DI.
 """
 
-from functools import wraps
-from typing import Optional
-
-from fastapi import HTTPException, Request, status
-
 from app.backups.domain.entities import BackupEntity
+from app.backups.domain.exceptions import (
+    BackupNotFoundError,
+    BackupParentServerMissingError,
+)
 from app.backups.domain.ports import BackupRepository
 from app.servers.domain.entities import ServerEntity
+from app.servers.domain.exceptions import ServerNotFoundError
 from app.servers.domain.ports import ServerRepository
 from app.servers.models import Backup, Server
 from app.templates.domain.ports import TemplateRepository
@@ -71,82 +90,50 @@ class AuthorizationService:
         self,
         server_id: int,
         user: User,
-        request: Optional[Request] = None,
-        log_access: bool = True,
     ) -> ServerEntity:
         """Verify ``user`` may access the server identified by ``server_id``.
 
-        Returns the ``ServerEntity`` on success. Raises ``HTTPException``
-        with status 404 if the server is missing. All authenticated users
-        may access every server today (Phase 1 model from the legacy
-        implementation); the audit-log event is preserved for parity.
+        Returns the ``ServerEntity`` on success. Raises
+        ``ServerNotFoundError`` (mapped to HTTP 404 by the global
+        exception handler) when the server is missing. All
+        authenticated users may access every server today (Phase 1
+        policy from the legacy implementation).
 
         ``include_deleted=True`` matches the legacy ``db.query(Server)``
-        which returned soft-deleted rows — the backup-restore paths rely
-        on that behaviour.
+        which returned soft-deleted rows — the backup-restore paths
+        rely on that behaviour.
+
+        Audit logging is intentionally **not** performed here. Callers
+        that need to emit a ``permission_check`` audit event must do
+        so after this method returns (the only two such callsites live
+        in ``app.servers.routers.control``).
         """
         server = await self._server_repo.get(server_id, include_deleted=True)
         if server is None:
-            if log_access and request:
-                from app.audit.service import AuditService
-
-                AuditService.log_permission_check(
-                    request=request,
-                    resource_type="server",
-                    resource_id=server_id,
-                    permission="access",
-                    granted=False,
-                    user_id=user.id,
-                    details={"reason": "server_not_found"},
-                )
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, detail="Server not found"
-            )
+            raise ServerNotFoundError("Server not found")
 
         # Phase 1: every authenticated user may access every server.
-        if log_access and request:
-            from app.audit.service import AuditService
-
-            AuditService.log_permission_check(
-                request=request,
-                resource_type="server",
-                resource_id=server_id,
-                permission="access",
-                granted=True,
-                user_id=user.id,
-                details={
-                    "server_name": server.name,
-                    "owner_id": server.owner_id,
-                    "user_role": user.role.value,
-                },
-            )
-
         return server
 
     async def check_backup_access(
         self,
         backup_id: int,
         user: User,
-        request: Optional[Request] = None,
     ) -> BackupEntity:
         """Verify ``user`` may access the backup identified by ``backup_id``.
 
         Returns the ``BackupEntity`` on success. Mirrors the legacy
-        behaviour: 404 on missing backup, 404 on missing parent server,
+        behaviour: ``BackupNotFoundError`` on missing backup,
+        ``BackupParentServerMissingError`` on missing parent server,
         otherwise allowed (Phase 1).
         """
         backup = await self._backup_repo.get(backup_id)
         if backup is None:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, detail="Backup not found"
-            )
+            raise BackupNotFoundError("Backup not found")
 
         server = await self._server_repo.get(backup.server_id, include_deleted=True)
         if server is None:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Server not found for backup",
-            )
+            raise BackupParentServerMissingError("Server not found for backup")
 
         return backup
 
@@ -230,68 +217,6 @@ class AuthorizationService:
         raise ValueError(
             "can_delete_backup requires the parent server when called with a BackupEntity"
         )
-
-    @staticmethod
-    def require_role(required_role: Role):
-        """Decorator preserved for parity with the legacy class.
-
-        Production code does not use this decorator — the only callers
-        are tests under ``tests/unit/services/test_authorization_service``.
-        """
-
-        def decorator(func):
-            @wraps(func)
-            async def wrapper(*args, **kwargs):
-                current_user = kwargs.get("current_user")
-                if not current_user:
-                    for arg in args:
-                        if isinstance(arg, User):
-                            current_user = arg
-                            break
-                if not current_user:
-                    raise HTTPException(
-                        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                        detail="Current user not found in request",
-                    )
-                if current_user.role != required_role and current_user.role != Role.admin:
-                    raise HTTPException(
-                        status_code=status.HTTP_403_FORBIDDEN,
-                        detail=f"Requires {required_role.value} role or higher",
-                    )
-                return await func(*args, **kwargs)
-
-            return wrapper
-
-        return decorator
-
-    @staticmethod
-    def require_admin_or_operator():
-        """Decorator preserved for parity with the legacy class (test-only)."""
-
-        def decorator(func):
-            @wraps(func)
-            async def wrapper(*args, **kwargs):
-                current_user = kwargs.get("current_user")
-                if not current_user:
-                    for arg in args:
-                        if isinstance(arg, User):
-                            current_user = arg
-                            break
-                if not current_user:
-                    raise HTTPException(
-                        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                        detail="Current user not found in request",
-                    )
-                if current_user.role == Role.user:
-                    raise HTTPException(
-                        status_code=status.HTTP_403_FORBIDDEN,
-                        detail="Only operators and admins can perform this action",
-                    )
-                return await func(*args, **kwargs)
-
-            return wrapper
-
-        return decorator
 
     @staticmethod
     def filter_servers_for_user(user: User, servers, db=None) -> list:

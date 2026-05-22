@@ -23,3 +23,20 @@ class BackupScheduleNotFoundError(BackupError):
 
 class BackupScheduleAlreadyExistsError(BackupError):
     """Raised when a schedule for the given server already exists."""
+
+
+# Aliases for the framework-agnostic authorization-service raise sites
+# introduced in #273. ``BackupDomainError`` is the umbrella base used by
+# the global exception handlers; the two concrete subclasses pair with
+# the legacy HTTP-404 raises that previously lived inside
+# ``AuthorizationService.check_backup_access``.
+class BackupDomainError(BackupError):
+    """Base for domain errors surfaced by the backups application layer."""
+
+
+class BackupNotFoundError(BackupDomainError):
+    """Raised when a requested backup does not exist (HTTP 404)."""
+
+
+class BackupParentServerMissingError(BackupDomainError):
+    """Raised when a backup's parent server cannot be resolved (HTTP 404)."""
