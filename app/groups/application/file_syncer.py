@@ -85,6 +85,41 @@ class GroupFileSyncer:
             real_time_commands = real_time_server_commands
         self._real_time_commands = real_time_commands
 
+    async def broadcast_group_change(
+        self,
+        server_id: int,
+        server_path: Path,
+        group_type: GroupType,
+        change_type: str,
+        removed_players: Optional[List[Optional[Dict[str, Any]]]] = None,
+    ) -> bool:
+        """Forward a real-time group-change command to the running server.
+
+        Public wrapper around the injected `real_time_commands`
+        collaborator. Callers (e.g. `GroupService`) MUST go through this
+        method instead of reaching into the private
+        `_real_time_commands` attribute — exposing the collaborator
+        keeps the call graph shallow and respects the Law of Demeter
+        (see Issue #262).
+
+        Args mirror
+        `RealTimeServerCommands.handle_group_change_commands`:
+        `change_type` is one of "update", "attach", "detach",
+        "player_add", "player_remove"; `removed_players` carries the
+        deop-broadcast payload for op detach / player_remove.
+
+        Returns the collaborator's success flag; raises whatever the
+        collaborator raises so callers can apply their own best-effort
+        log-and-continue semantics.
+        """
+        return await self._real_time_commands.handle_group_change_commands(
+            server_id,
+            server_path,
+            group_type,
+            change_type,
+            removed_players=removed_players,
+        )
+
     async def update_server_files(self, server_id: int) -> None:
         """Regenerate ops.json + whitelist.json for one server.
 

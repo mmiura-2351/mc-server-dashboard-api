@@ -446,7 +446,7 @@ class GroupService:
 
         # Best-effort real-time commands
         try:
-            await self._file_syncer._real_time_commands.handle_group_change_commands(
+            await self._file_syncer.broadcast_group_change(
                 server_id, Path(server.directory_path), existing.type, "attach"
             )
         except Exception as cmd_error:
@@ -524,12 +524,12 @@ class GroupService:
             )
 
         try:
-            await self._file_syncer._real_time_commands.handle_group_change_commands(
+            await self._file_syncer.broadcast_group_change(
                 server_id,
                 Path(server.directory_path),
                 existing.type,
                 "detach",
-                removed_players,
+                removed_players=removed_players,
             )
         except Exception as cmd_error:
             logger.warning(
@@ -593,7 +593,7 @@ class GroupService:
             async with self._uow as uow:
                 attached = await uow.server_groups.list_server_dirs_for_group(group_id)
             for server_id, directory_path in attached:
-                await self._file_syncer._real_time_commands.handle_group_change_commands(
+                await self._file_syncer.broadcast_group_change(
                     server_id,
                     Path(directory_path),
                     group_type,
