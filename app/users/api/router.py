@@ -11,9 +11,12 @@ a `UserEntity` at the call site so the application service stays
 entity-only.
 """
 
-from fastapi import APIRouter, Depends
+from typing import Optional, Union
+
+from fastapi import APIRouter, Depends, Query
 
 from app.auth.dependencies import get_current_user
+from app.core.pagination import PaginatedResponse, build_pagination_meta
 from app.users import schemas
 from app.users.api.dependencies import get_user_service
 from app.users.application.results import UserWithToken
@@ -146,13 +149,51 @@ async def delete_user_account(
     return {"message": "Account deleted successfully"}
 
 
-@router.get("/", response_model=list[schemas.User])
+@router.get(
+    "/",
+    response_model=Union[list[schemas.User], PaginatedResponse[schemas.User]],
+)
 async def get_all_users(
+    page: Optional[int] = Query(
+        None,
+        ge=1,
+        description=(
+            "Opt-in 1-based page number. Omit both ``page`` and ``size`` "
+            "to receive the legacy unpaginated list (Issue #76 Phase 1)."
+        ),
+    ),
+    size: Optional[int] = Query(
+        None,
+        ge=1,
+        le=100,
+        description="Opt-in page size (max 100); see ``page``.",
+    ),
     current_user: User = Depends(get_current_user),
     service: UserService = Depends(get_user_service),
 ):
+    """List users.
+
+    Issue #76 (Phase 1): when neither ``page`` nor ``size`` is supplied,
+    the endpoint returns the legacy unpaginated ``list[User]`` so older
+    clients keep working. Supplying either parameter switches the
+    response to the canonical
+    :class:`app.core.pagination.PaginatedResponse` shape.
+    """
     users = await service.get_all_users(_to_entity(current_user))
-    return [_to_schema(u) for u in users]
+    serialised = [_to_schema(u) for u in users]
+    if page is None and size is None:
+        return serialised
+    effective_page = page or 1
+    effective_size = size or 50
+    total = len(serialised)
+    start = (effective_page - 1) * effective_size
+    end = start + effective_size
+    return PaginatedResponse[schemas.User](
+        items=serialised[start:end],
+        pagination=build_pagination_meta(
+            total=total, page=effective_page, size=effective_size
+        ),
+    )
 
 
 @router.delete("/{user_id}")

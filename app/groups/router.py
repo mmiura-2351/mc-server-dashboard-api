@@ -102,16 +102,33 @@ async def create_group(
 @router.get("", response_model=GroupListResponse)
 async def list_groups(
     group_type: Optional[GroupType] = Query(None, description="Filter by group type"),
+    page: int = Query(1, ge=1, description="Page number"),
+    size: int = Query(50, ge=1, le=100, description="Page size"),
     current_user: User = Depends(get_current_user),
     group_service: _ApplicationGroupService = Depends(get_group_service),
 ):
-    """List groups visible to the current user (Phase 1 = all groups)."""
+    """List groups visible to the current user (Phase 1 = all groups).
+
+    Issue #76 (Phase 1): adds ``page`` / ``size`` query parameters and
+    the canonical ``pagination`` response block. ``total`` continues to
+    reflect the full filtered count so legacy clients keep working.
+    The slice is computed in-memory — switching to a SQL-side
+    ``LIMIT/OFFSET`` is tracked as part of the broader pagination
+    migration follow-up.
+    """
     try:
+        from app.core.pagination import build_pagination_meta
+
         entities = await group_service.list_groups(
             actor_id=current_user.id, group_type=group_type
         )
-        responses = [_entity_to_response(e) for e in entities]
-        return GroupListResponse(groups=responses, total=len(responses))
+        total = len(entities)
+        start = (page - 1) * size
+        end = start + size
+        sliced = entities[start:end]
+        responses = [_entity_to_response(e) for e in sliced]
+        pagination = build_pagination_meta(total=total, page=page, size=size)
+        return GroupListResponse(groups=responses, total=total, pagination=pagination)
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

@@ -239,11 +239,20 @@ async def list_server_backups(
             size=size,
         )
 
+        # Issue #76 (Phase 1): retain legacy keys + add ``pagination``.
+        from app.core.pagination import build_pagination_meta
+
+        pagination = build_pagination_meta(
+            total=page_result.total,
+            page=page_result.page,
+            size=page_result.size,
+        )
         return BackupListResponse(
             backups=[backup_entity_to_response(e) for e in page_result.entities],
             total=page_result.total,
             page=page_result.page,
             size=page_result.size,
+            pagination=pagination,
         )
 
     except (
@@ -286,11 +295,20 @@ async def list_all_backups(
             size=size,
         )
 
+        # Issue #76 (Phase 1): retain legacy keys + add ``pagination``.
+        from app.core.pagination import build_pagination_meta
+
+        pagination = build_pagination_meta(
+            total=page_result.total,
+            page=page_result.page,
+            size=page_result.size,
+        )
         return BackupListResponse(
             backups=[backup_entity_to_response(e) for e in page_result.entities],
             total=page_result.total,
             page=page_result.page,
             size=page_result.size,
+            pagination=pagination,
         )
 
     except (

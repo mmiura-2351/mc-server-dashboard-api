@@ -284,10 +284,23 @@ class ServerResponse(BaseModel):
 
 
 class ServerListResponse(BaseModel):
+    """Server list response.
+
+    Issue #76 (Phase 1): legacy ``servers`` / ``total`` / ``page`` /
+    ``size`` keys preserved; ``pagination`` is the new canonical block
+    (:class:`app.core.pagination.PaginationMeta`).
+    """
+
     servers: List[ServerResponse]
     total: int
     page: int
     size: int
+    pagination: Optional["PaginationMeta"] = None
+
+
+from app.core.pagination import PaginationMeta  # noqa: E402
+
+ServerListResponse.model_rebuild()
 
 
 class ServerStatusResponse(BaseModel):

@@ -209,7 +209,9 @@ class AuditMiddleware(BaseHTTPMiddleware):
         if not self.enabled:
             return await call_next(request)
 
-        # Skip audit logging for health check and monitoring endpoints
+        # Even on health-check / docs paths we still resolve a request
+        # ID so error responses originating from those routes (e.g. a
+        # /docs misconfiguration) carry the trace identifier.
         if self.exclude_health_checks and request.url.path in [
             "/health",
             "/api/v1/health",
@@ -223,11 +225,19 @@ class AuditMiddleware(BaseHTTPMiddleware):
             "/docs",
             "/openapi.json",
         ]:
+            request.state.request_id = self._resolve_request_id(request)
             return await call_next(request)
 
-        # Generate correlation ID for this request
-        correlation_id = str(uuid.uuid4())
+        # Generate correlation ID for this request, honoring an
+        # incoming ``X-Request-ID`` header so distributed callers can
+        # propagate trace identifiers (Issue #76). Falls back to a fresh
+        # UUID4 when the header is absent or malformed.
+        correlation_id = self._resolve_request_id(request)
         request_id_context.set(correlation_id)
+        # Expose on request.state so downstream consumers (e.g. the
+        # global exception handlers in ``app.core.error_handlers``) can
+        # embed it in error payloads without re-reading the ContextVar.
+        request.state.request_id = correlation_id
 
         # Extract IP address
         ip_address = self._extract_ip_address(request)
@@ -302,6 +312,22 @@ class AuditMiddleware(BaseHTTPMiddleware):
         )
 
         return response
+
+    def _resolve_request_id(self, request: Request) -> str:
+        """Return a correlation ID, honoring an inbound ``X-Request-ID``.
+
+        Tolerates whitespace and caps at 128 chars to keep the field
+        safe to log / persist; falls back to a fresh UUID4 when the
+        header is missing, empty, or exceeds the cap (rather than
+        truncating, which would let a hostile caller spoof
+        ``X-Request-ID`` to match an unrelated upstream trace).
+        """
+        incoming = request.headers.get("X-Request-ID")
+        if incoming is not None:
+            candidate = incoming.strip()
+            if candidate and len(candidate) <= 128:
+                return candidate
+        return str(uuid.uuid4())
 
     def _extract_ip_address(self, request: Request) -> Optional[str]:
         """Extract client IP address from request"""

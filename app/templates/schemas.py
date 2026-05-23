@@ -171,12 +171,24 @@ class TemplateResponse(BaseModel):
 
 
 class TemplateListResponse(BaseModel):
-    """Response schema for template list with pagination"""
+    """Response schema for template list with pagination.
+
+    Issue #76 (Phase 1): keeps legacy ``templates`` / ``total`` /
+    ``page`` / ``size`` keys for back-compat; adds an optional
+    ``pagination`` block mirroring :class:`app.core.pagination.PaginationMeta`
+    so new consumers can switch to the canonical shape.
+    """
 
     templates: List[TemplateResponse]
     total: int
     page: int
     size: int
+    pagination: Optional["PaginationMeta"] = None
+
+
+from app.core.pagination import PaginationMeta  # noqa: E402
+
+TemplateListResponse.model_rebuild()
 
 
 class TemplateStatisticsResponse(BaseModel):
