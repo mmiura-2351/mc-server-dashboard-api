@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 
 from app.core.exceptions import FileOperationException
 from app.servers.application.service import ServerJarService, ServerService
+from app.servers.domain.exceptions import UnsupportedMinecraftVersionError
 from app.servers.models import ServerType
 from app.servers.schemas import ServerCreateRequest
 from app.users.domain.value_objects import Role
@@ -177,8 +178,12 @@ class TestDatabaseVersionIntegration:
             port=25565,
         )
 
-        # Mock filesystem and validation to avoid unrelated errors
-        # Also mock jar service to ensure version validation happens first
+        # Mock filesystem and validation to avoid unrelated errors. The
+        # Issue #33 preflight calls ``ServerService._is_version_supported_db``
+        # directly (see ``_validate_creation_preconditions``) so we patch
+        # that and force it to report the version as unsupported; the
+        # resulting domain error is ``UnsupportedMinecraftVersionError``
+        # (HTTP 400 with ``error_code=SERVER_UNSUPPORTED_VERSION``).
         with (
             patch.object(
                 server_service.validation_service, "validate_server_uniqueness"
@@ -188,21 +193,22 @@ class TestDatabaseVersionIntegration:
                 server_service.filesystem_service, "create_server_directory"
             ) as mock_dir,
             patch.object(
-                server_service.jar_service, "_is_version_supported_db"
-            ) as mock_jar_version_check,
+                server_service, "_is_version_supported_db"
+            ) as mock_version_check,
         ):
             mock_unique.return_value = None
             mock_java.return_value = None
             mock_dir.return_value = Path("/tmp/test-server")
-            # Make jar service version check return False (unsupported)
-            mock_jar_version_check.return_value = False
+            # Make preflight version check return False (unsupported)
+            mock_version_check.return_value = False
 
-            # Should raise FileOperationException wrapping the version validation error
-            with pytest.raises(FileOperationException) as exc_info:
+            # Should raise the actionable domain exception introduced in
+            # Issue #33 (mapped to HTTP 400 by error_handlers.py).
+            with pytest.raises(UnsupportedMinecraftVersionError) as exc_info:
                 await server_service.create_server(request, mock_admin_user, db)
 
-            # Verify error message mentions unsupported version
-            assert "not supported" in str(exc_info.value.detail).lower()
+            assert exc_info.value.version == "1.99.99"
+            assert exc_info.value.server_type == "vanilla"
 
     @pytest.mark.asyncio
     async def test_database_only_performance(self, jar_service, db, sample_db_version):
