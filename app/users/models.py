@@ -27,6 +27,13 @@ class User(Base):
     # those users see an `X-Password-Policy-Warning` header on every
     # successful login until they rotate their credential.
     password_set_at = Column(DateTime(timezone=True), nullable=True)
+    # Issue #237: monotonically increasing counter embedded as the
+    # ``tv`` claim of every access token. Incremented on deactivation,
+    # password change, or admin-forced logout so previously issued
+    # JWTs are rejected at the dependency layer (`_authenticate`),
+    # eliminating the access-token-TTL window during which a revoked
+    # credential would otherwise remain usable.
+    token_version = Column(Integer, nullable=False, default=0, server_default="0")
 
     # Relationships
     servers = relationship("Server", back_populates="owner")

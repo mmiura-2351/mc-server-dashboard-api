@@ -52,3 +52,17 @@ class AuthService:
             if ok:
                 await uow.commit()
             return ok
+
+    async def revoke_all_refresh_tokens_for(self, user_id: int) -> int:
+        """Revoke every active refresh token owned by *user_id*.
+
+        Issue #237: complements the access-token ``token_version`` bump
+        performed by ``UserService.deactivate_user`` (and friends) so
+        the revoked user cannot pivot to ``/auth/refresh`` to mint a
+        fresh access token. Returns the number of rows revoked so
+        callers can audit the impact.
+        """
+        async with self._uow as uow:
+            revoked = await uow.refresh_tokens.revoke_active_for_user(user_id)
+            await uow.commit()
+            return revoked

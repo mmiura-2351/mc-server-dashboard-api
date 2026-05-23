@@ -33,6 +33,7 @@ def _user_to_entity(u: User) -> UserEntity:
         created_at=u.created_at,
         updated_at=u.updated_at,
         password_set_at=u.password_set_at,
+        token_version=u.token_version or 0,
     )
 
 
