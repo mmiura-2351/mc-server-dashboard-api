@@ -47,7 +47,7 @@ class FileEditHistory(Base):
         String(64), nullable=True
     )  # SHA256 hash for duplicate detection
     editor_user_id = Column(
-        Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+        Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True
     )
     created_at = Column(DateTime, default=utcnow, nullable=False)
     description = Column(Text, nullable=True)  # Optional description of the edit

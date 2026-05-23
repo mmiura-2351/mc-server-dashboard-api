@@ -33,17 +33,17 @@ class Server(Base):
     name = Column(String(100), nullable=False)
     description = Column(Text)
     minecraft_version = Column(String(20), nullable=False)
-    server_type: Column[ServerType] = Column(Enum(ServerType), nullable=False)
+    server_type: Column[ServerType] = Column(Enum(ServerType), nullable=False, index=True)
     status: Column[ServerStatus] = Column(
-        Enum(ServerStatus), default=ServerStatus.stopped
+        Enum(ServerStatus), default=ServerStatus.stopped, index=True
     )
     directory_path = Column(String(500), nullable=False)
     port = Column(Integer, default=25565)
     max_memory = Column(Integer, default=1024)  # MB
     max_players = Column(Integer, default=20)
-    owner_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    owner_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
     template_id = Column(Integer, ForeignKey("templates.id"), nullable=True)
-    is_deleted = Column(Boolean, default=False)
+    is_deleted = Column(Boolean, default=False, index=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()

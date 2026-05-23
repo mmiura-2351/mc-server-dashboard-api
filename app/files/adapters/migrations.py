@@ -14,6 +14,8 @@ Per `docs/ARCHITECTURE.md` §4.3, domain-specific DDL lives under
 import logging
 from typing import Any
 
+from sqlalchemy import text
+
 logger = logging.getLogger(__name__)
 
 
@@ -35,8 +37,6 @@ def migrate_file_history_unique_index(engine: Any) -> None:
     Called once during application startup, immediately after
     `Base.metadata.create_all`.
     """
-    from sqlalchemy import text
-
     with engine.connect() as conn:
         # Pre-check: detect any existing duplicate (server_id, file_path,
         # version_number) tuples that would block the unique index.
@@ -104,4 +104,44 @@ def migrate_file_history_unique_index(engine: Any) -> None:
                 "ON file_edit_history (server_id, file_path, version_number)"
             )
         )
+        conn.commit()
+
+
+# Performance indexes added in Issue #75 Phase 1. `editor_user_id`
+# accelerates "edits by user" lookups in the audit UI; the column is
+# also the FK target for `ON DELETE SET NULL`, where some engines
+# (notably MySQL/InnoDB) require an index for cascade efficiency.
+_FILE_HISTORY_INDEXES: tuple[tuple[str, str], ...] = (
+    ("ix_file_edit_history_editor_user_id", "editor_user_id"),
+)
+
+
+def migrate_file_history_indexes(engine: Any) -> None:
+    """Idempotent migration: ensure performance indexes exist on
+    ``file_edit_history``.
+
+    Distinct from :func:`migrate_file_history_unique_index`, which
+    installs the correctness-critical UNIQUE constraint and aborts
+    startup on duplicate rows. This helper only adds performance
+    hints — failures are logged at WARNING and swallowed.
+
+    Called once during application startup, immediately after
+    ``Base.metadata.create_all``.
+    """
+    with engine.connect() as conn:
+        for index_name, column in _FILE_HISTORY_INDEXES:
+            try:
+                conn.execute(
+                    text(
+                        f"CREATE INDEX IF NOT EXISTS {index_name} "
+                        f"ON file_edit_history ({column})"
+                    )
+                )
+            except Exception as exc:  # pragma: no cover - defensive
+                logger.warning(
+                    "Failed to create index %s on file_edit_history(%s): %s",
+                    index_name,
+                    column,
+                    exc,
+                )
         conn.commit()

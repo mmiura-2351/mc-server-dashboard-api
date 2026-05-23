@@ -30,7 +30,7 @@ class Group(Base):
     description = Column(Text)
     type: Column[GroupType] = Column(Enum(GroupType), nullable=False)
     players = Column(JSON, nullable=False)  # Array of player objects
-    owner_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    owner_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
     is_template = Column(Boolean, default=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(
@@ -99,7 +99,7 @@ class ServerGroup(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     server_id = Column(Integer, ForeignKey("servers.id"), nullable=False)
-    group_id = Column(Integer, ForeignKey("groups.id"), nullable=False)
+    group_id = Column(Integer, ForeignKey("groups.id"), nullable=False, index=True)
     priority = Column(Integer, default=0)
     attached_at = Column(DateTime(timezone=True), server_default=func.now())
 

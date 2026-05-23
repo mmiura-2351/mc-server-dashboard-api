@@ -32,6 +32,7 @@ from sqlalchemy import (
     DateTime,
     Enum,
     ForeignKey,
+    Index,
     Integer,
     String,
     Text,
@@ -57,19 +58,29 @@ class Backup(Base):
     __tablename__ = "backups"
 
     id = Column(Integer, primary_key=True, index=True)
-    server_id = Column(Integer, ForeignKey("servers.id"), nullable=False)
+    server_id = Column(Integer, ForeignKey("servers.id"), nullable=False, index=True)
     name = Column(String(100), nullable=False)
     description = Column(Text)
     file_path = Column(String(500), nullable=False)
     file_size = Column(BigInteger, nullable=False)  # bytes
     backup_type: Column[BackupType] = Column(Enum(BackupType), default=BackupType.manual)
     status: Column[BackupStatus] = Column(
-        Enum(BackupStatus), default=BackupStatus.creating
+        Enum(BackupStatus), default=BackupStatus.creating, index=True
     )
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     # Relationships
     server = relationship("Server", back_populates="backups")
+
+    # Composite index optimizes the common "list a server's backups newest
+    # first" query path (e.g. `BackupRepository.list_by_server`). The
+    # composite covers single-column `server_id` lookups via the b-tree
+    # prefix-rule, so the standalone `index=True` on `server_id` above is
+    # technically redundant — we keep it for clarity and to match the
+    # `ix_backups_server_id` name SQLAlchemy emits.
+    __table_args__ = (
+        Index("ix_backups_server_id_created_at", "server_id", "created_at"),
+    )
 
 
 class ScheduleAction(str, PyEnum):

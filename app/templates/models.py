@@ -51,11 +51,11 @@ class Template(Base):
     name = Column(String(100), nullable=False)
     description = Column(Text)
     minecraft_version = Column(String(20), nullable=False)
-    server_type: Column[ServerType] = Column(Enum(ServerType), nullable=False)
+    server_type: Column[ServerType] = Column(Enum(ServerType), nullable=False, index=True)
     configuration = Column(JSON, nullable=False)  # server.properties and other settings
     default_groups = Column(JSON)  # Default group attachments
-    created_by = Column(Integer, ForeignKey("users.id"), nullable=False)
-    is_public = Column(Boolean, default=False)
+    created_by = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    is_public = Column(Boolean, default=False, index=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
