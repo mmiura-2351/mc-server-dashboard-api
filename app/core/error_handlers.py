@@ -39,7 +39,15 @@ from app.backups.domain.exceptions import (
     BackupScheduleNotFoundError,
 )
 from app.core.error_schemas import ErrorDetail, ErrorResponse
-from app.core.exceptions import APIException
+from app.core.exceptions import (
+    APIException,
+    DiskSpaceError,
+    FileAccessDeniedError,
+    FileMissingError,
+    FileOperationException,
+    FileTooLargeError,
+    InvalidFileTypeError,
+)
 from app.core.visibility.domain.exceptions import (
     DuplicateGrantError,
     InvalidVisibilityTypeError,
@@ -559,14 +567,26 @@ def register_exception_handlers(app: FastAPI) -> None:
             fallback_code="VISIBILITY_ERROR",
         )
 
-    # --- APIException (legacy HTTPException subclass) ---------------
+    # --- File operations (Issue #35) --------------------------------
+    # Each file subclass declares its own ``error_code`` and the parent
+    # ``APIException`` already carries the status code; registering a
+    # dedicated handler per subclass keeps the wire-level mapping
+    # explicit and makes the test surface for the file taxonomy
+    # discoverable in isolation.
 
-    @app.exception_handler(APIException)
-    async def _api_exception(request: Request, exc: APIException):
-        # `APIException` already subclasses `HTTPException` and FastAPI's
-        # default handler would render `{"detail": ...}`. Override so
-        # the new structured payload is emitted while still preserving
-        # the legacy `detail` field for back-compat.
+    def _api_exception_response(request: Request, exc: APIException) -> JSONResponse:
+        extra_details_fn = getattr(exc, "extra_details", None)
+        details: Optional[List[ErrorDetail]] = None
+        if callable(extra_details_fn):
+            try:
+                collected = extra_details_fn()
+                if collected:
+                    details = list(collected)
+            except Exception:  # pragma: no cover - defensive
+                logger.exception(
+                    "extra_details_failed",
+                    extra={"error_code": getattr(exc, "error_code", None)},
+                )
         return JSONResponse(
             status_code=exc.status_code,
             headers=getattr(exc, "headers", None),
@@ -575,8 +595,47 @@ def register_exception_handlers(app: FastAPI) -> None:
                 error_code=getattr(exc, "error_code", "API_ERROR") or "API_ERROR",
                 message=str(exc.detail) if exc.detail else "API error",
                 status_code=exc.status_code,
+                details=details,
             ),
         )
+
+    @app.exception_handler(FileMissingError)
+    async def _file_missing(request: Request, exc: FileMissingError):
+        return _api_exception_response(request, exc)
+
+    @app.exception_handler(FileAccessDeniedError)
+    async def _file_access_denied(request: Request, exc: FileAccessDeniedError):
+        return _api_exception_response(request, exc)
+
+    @app.exception_handler(FileTooLargeError)
+    async def _file_too_large(request: Request, exc: FileTooLargeError):
+        return _api_exception_response(request, exc)
+
+    @app.exception_handler(InvalidFileTypeError)
+    async def _file_invalid_type(request: Request, exc: InvalidFileTypeError):
+        return _api_exception_response(request, exc)
+
+    @app.exception_handler(DiskSpaceError)
+    async def _file_disk_space(request: Request, exc: DiskSpaceError):
+        return _api_exception_response(request, exc)
+
+    @app.exception_handler(FileOperationException)
+    async def _file_operation_failed(request: Request, exc: FileOperationException):
+        # Generic fallback (500) — subclass handlers above already
+        # capture the targeted statuses.
+        return _api_exception_response(request, exc)
+
+    # --- APIException (legacy HTTPException subclass) ---------------
+
+    @app.exception_handler(APIException)
+    async def _api_exception(request: Request, exc: APIException):
+        # `APIException` already subclasses `HTTPException` and FastAPI's
+        # default handler would render `{"detail": ...}`. Override so
+        # the new structured payload is emitted while still preserving
+        # the legacy `detail` field for back-compat. Forwards
+        # ``extra_details()`` for subclasses (e.g. file operation
+        # exceptions under Issue #35) that surface structured context.
+        return _api_exception_response(request, exc)
 
     # --- Validation (422) -------------------------------------------
 

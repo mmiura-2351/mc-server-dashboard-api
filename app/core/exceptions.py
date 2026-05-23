@@ -1,7 +1,10 @@
+import errno
 import logging
-from typing import Any, ClassVar, Dict, NoReturn, Optional
+from typing import Any, ClassVar, Dict, List, NoReturn, Optional
 
 from fastapi import HTTPException, status
+
+from app.core.error_schemas import ErrorDetail
 
 logger = logging.getLogger(__name__)
 
@@ -138,15 +141,281 @@ class ServerStateException(APIException):
 
 
 class FileOperationException(APIException):
-    """Exception for file operation errors."""
+    """Exception for file operation errors (generic 500 fallback).
+
+    Issue #35 split out targeted subclasses (:class:`FileMissingError`,
+    :class:`FileAccessDeniedError`, :class:`FileTooLargeError`,
+    :class:`InvalidFileTypeError`, :class:`DiskSpaceError`) that map to
+    more accurate HTTP statuses and carry actionable
+    ``suggested_actions`` via :meth:`extra_details`. ``FileOperationException``
+    is retained as the catch-all for unexpected I/O failures that don't
+    fit those categories — mapped to HTTP 500.
+    """
 
     error_code: ClassVar[str] = "FILE_OPERATION_FAILED"
+    _http_status: ClassVar[int] = status.HTTP_500_INTERNAL_SERVER_ERROR
+    _log_level: ClassVar[str] = "error"
 
-    def __init__(self, operation: str, file_path: str, reason: str = ""):
+    def __init__(
+        self,
+        operation: str,
+        file_path: str,
+        reason: str = "",
+        *,
+        technical_details: Optional[str] = None,
+    ):
+        self.operation = operation
+        self.file_path = file_path
+        self.reason = reason
+        self.technical_details = technical_details or reason
+        detail = self._build_detail(operation, file_path, reason)
+        super().__init__(self._http_status, detail, log_level=self._log_level)
+
+    @staticmethod
+    def _build_detail(operation: str, file_path: str, reason: str) -> str:
         detail = f"Failed to {operation} file {file_path}"
         if reason:
             detail += f": {reason}"
-        super().__init__(status.HTTP_500_INTERNAL_SERVER_ERROR, detail, log_level="error")
+        return detail
+
+    def _suggested_actions(self) -> List[str]:
+        return []
+
+    def extra_details(self) -> List[ErrorDetail]:
+        """Surface structured context through the standard error envelope.
+
+        Adds the operation target, machine-readable technical details,
+        and a small list of suggested next steps that the frontend can
+        render inline. Mirrors the pattern established by the Issue #33
+        server-creation exceptions.
+        """
+        details: List[ErrorDetail] = [
+            ErrorDetail(
+                field="file_path",
+                message=self.file_path,
+                code="FILE_PATH",
+            )
+        ]
+        if self.technical_details:
+            details.append(
+                ErrorDetail(
+                    field=None,
+                    message=self.technical_details,
+                    code="TECHNICAL_DETAILS",
+                )
+            )
+        for action in self._suggested_actions():
+            details.append(
+                ErrorDetail(
+                    field=None,
+                    message=action,
+                    code="SUGGESTED_ACTION",
+                )
+            )
+        return details
+
+
+class FileMissingError(FileOperationException):
+    """Raised when an expected file or directory does not exist.
+
+    Mapped to HTTP 404. Distinct from Python's builtin
+    :class:`FileNotFoundError` so callers can ``except`` either kind
+    explicitly. Carries the missing path via :attr:`file_path`.
+    """
+
+    error_code: ClassVar[str] = "FILE_NOT_FOUND"
+    _http_status: ClassVar[int] = status.HTTP_404_NOT_FOUND
+    _log_level: ClassVar[str] = "warning"
+
+    def __init__(
+        self,
+        operation: str,
+        file_path: str,
+        reason: str = "Path not found",
+        *,
+        technical_details: Optional[str] = None,
+    ):
+        super().__init__(
+            operation, file_path, reason, technical_details=technical_details
+        )
+
+    def _suggested_actions(self) -> List[str]:
+        return [
+            "Verify the file path is correct and exists on the server",
+            "Refresh the file listing to see the current directory contents",
+        ]
+
+
+class FileAccessDeniedError(FileOperationException):
+    """Raised when the filesystem or policy denies access to a file.
+
+    Mapped to HTTP 403. Use this for OS-level ``PermissionError`` /
+    ``EACCES`` as well as policy denials (e.g. attempting to modify a
+    restricted file without the admin role).
+    """
+
+    error_code: ClassVar[str] = "FILE_ACCESS_DENIED"
+    _http_status: ClassVar[int] = status.HTTP_403_FORBIDDEN
+    _log_level: ClassVar[str] = "warning"
+
+    def __init__(
+        self,
+        operation: str,
+        file_path: str,
+        reason: str = "Permission denied",
+        *,
+        technical_details: Optional[str] = None,
+    ):
+        super().__init__(
+            operation, file_path, reason, technical_details=technical_details
+        )
+
+    def _suggested_actions(self) -> List[str]:
+        return [
+            "Confirm you have permission to modify this file",
+            "Contact an administrator if the file is restricted",
+        ]
+
+
+class FileTooLargeError(FileOperationException):
+    """Raised when a file exceeds the operation's size limit.
+
+    Mapped to HTTP 413 (Payload Too Large). Carries the offending size
+    and (optionally) the configured limit so the client can render an
+    actionable message.
+    """
+
+    error_code: ClassVar[str] = "FILE_TOO_LARGE"
+    _http_status: ClassVar[int] = status.HTTP_413_REQUEST_ENTITY_TOO_LARGE
+    _log_level: ClassVar[str] = "warning"
+
+    def __init__(
+        self,
+        operation: str,
+        file_path: str,
+        reason: str = "File exceeds maximum allowed size",
+        *,
+        size_bytes: Optional[int] = None,
+        max_bytes: Optional[int] = None,
+        technical_details: Optional[str] = None,
+    ):
+        self.size_bytes = size_bytes
+        self.max_bytes = max_bytes
+        super().__init__(
+            operation, file_path, reason, technical_details=technical_details
+        )
+
+    def _suggested_actions(self) -> List[str]:
+        actions = ["Compress or split the file before retrying"]
+        if self.max_bytes is not None:
+            actions.append(f"Keep file size at or below {self.max_bytes} bytes")
+        return actions
+
+    def extra_details(self) -> List[ErrorDetail]:
+        details = super().extra_details()
+        if self.size_bytes is not None:
+            details.append(
+                ErrorDetail(
+                    field="size_bytes",
+                    message=str(self.size_bytes),
+                    code="FILE_SIZE_BYTES",
+                )
+            )
+        if self.max_bytes is not None:
+            details.append(
+                ErrorDetail(
+                    field="max_bytes",
+                    message=str(self.max_bytes),
+                    code="FILE_MAX_BYTES",
+                )
+            )
+        return details
+
+
+class InvalidFileTypeError(FileOperationException):
+    """Raised when an operation is attempted on an unsupported file type.
+
+    Mapped to HTTP 400. Examples: reading a directory as text, uploading
+    an archive with an unrecognised extension, treating a binary file as
+    an image.
+    """
+
+    error_code: ClassVar[str] = "INVALID_FILE_TYPE"
+    _http_status: ClassVar[int] = status.HTTP_400_BAD_REQUEST
+    _log_level: ClassVar[str] = "warning"
+
+    def __init__(
+        self,
+        operation: str,
+        file_path: str,
+        reason: str = "Invalid or unsupported file type",
+        *,
+        detected_type: Optional[str] = None,
+        expected_types: Optional[List[str]] = None,
+        technical_details: Optional[str] = None,
+    ):
+        self.detected_type = detected_type
+        self.expected_types = list(expected_types or [])
+        super().__init__(
+            operation, file_path, reason, technical_details=technical_details
+        )
+
+    def _suggested_actions(self) -> List[str]:
+        actions = ["Choose a file of a supported type and try again"]
+        if self.expected_types:
+            actions.append("Supported types: " + ", ".join(self.expected_types))
+        return actions
+
+    def extra_details(self) -> List[ErrorDetail]:
+        details = super().extra_details()
+        if self.detected_type:
+            details.append(
+                ErrorDetail(
+                    field="detected_type",
+                    message=self.detected_type,
+                    code="DETECTED_FILE_TYPE",
+                )
+            )
+        for expected in self.expected_types:
+            details.append(
+                ErrorDetail(
+                    field="expected_types",
+                    message=expected,
+                    code="EXPECTED_FILE_TYPE",
+                )
+            )
+        return details
+
+
+class DiskSpaceError(FileOperationException):
+    """Raised when a write fails because the device is out of space.
+
+    Mapped to HTTP 507 (Insufficient Storage). Triggered by
+    :data:`errno.ENOSPC` from the OS layer.
+    """
+
+    error_code: ClassVar[str] = "DISK_SPACE_INSUFFICIENT"
+    _http_status: ClassVar[int] = status.HTTP_507_INSUFFICIENT_STORAGE
+    _log_level: ClassVar[str] = "error"
+
+    def __init__(
+        self,
+        operation: str,
+        file_path: str,
+        reason: str = "Insufficient disk space",
+        *,
+        technical_details: Optional[str] = None,
+    ):
+        super().__init__(
+            operation, file_path, reason, technical_details=technical_details
+        )
+
+    def _suggested_actions(self) -> List[str]:
+        return [
+            "Free up space on the server's storage volume",
+            "Delete unused backups or old log files",
+            "Contact an administrator to provision additional storage",
+        ]
 
 
 class DatabaseOperationException(APIException):
@@ -199,9 +468,47 @@ def handle_database_error(operation: str, table: str, error: Exception) -> NoRet
 
 
 def handle_file_error(operation: str, file_path: str, error: Exception) -> NoReturn:
-    """Utility function to handle and raise file operation errors consistently."""
+    """Utility function to map OS / library errors to the right exception.
+
+    Issue #35 introduced :class:`FileMissingError`,
+    :class:`FileAccessDeniedError`, :class:`FileTooLargeError`,
+    :class:`InvalidFileTypeError`, and :class:`DiskSpaceError` so the
+    standard error response carries the correct HTTP status and
+    actionable ``suggested_actions``. This helper dispatches on
+    ``errno`` and built-in exception type before falling back to the
+    generic 500 :class:`FileOperationException`.
+
+    If ``error`` is already one of the new ``FileOperationException``
+    subclasses (or the base class itself) it is re-raised unchanged —
+    callers can safely raise a specific subclass and route it through
+    this helper without losing context.
+    """
     logger.error(f"File {operation} failed for {file_path}: {str(error)}")
-    raise FileOperationException(operation, file_path, str(error))
+
+    # Pass-through: a more specific subclass already carries the right
+    # status/code/details — preserve it instead of demoting to generic.
+    if isinstance(error, FileOperationException):
+        raise error
+
+    reason = str(error)
+    err_no = getattr(error, "errno", None)
+
+    if err_no == errno.ENOSPC:
+        raise DiskSpaceError(operation, file_path, technical_details=reason)
+    if isinstance(error, PermissionError) or err_no == errno.EACCES:
+        raise FileAccessDeniedError(operation, file_path, technical_details=reason)
+    if isinstance(error, FileNotFoundError) or err_no == errno.ENOENT:
+        raise FileMissingError(operation, file_path, technical_details=reason)
+    if isinstance(error, IsADirectoryError) or err_no == errno.EISDIR:
+        raise InvalidFileTypeError(
+            operation,
+            file_path,
+            "Path is a directory, not a file",
+            detected_type="directory",
+            technical_details=reason,
+        )
+
+    raise FileOperationException(operation, file_path, reason)
 
 
 def validate_server_access(server, user_id: str) -> None:
