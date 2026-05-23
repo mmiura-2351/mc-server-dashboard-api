@@ -22,6 +22,11 @@ class User(Base):
     updated_at = Column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
+    # Issue #73: timestamp of the most recent password set/rotation.
+    # NULL for accounts that pre-date the password-policy release —
+    # those users see an `X-Password-Policy-Warning` header on every
+    # successful login until they rotate their credential.
+    password_set_at = Column(DateTime(timezone=True), nullable=True)
 
     # Relationships
     servers = relationship("Server", back_populates="owner")

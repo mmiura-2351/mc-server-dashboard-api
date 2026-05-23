@@ -719,18 +719,37 @@ class TestJavaCompatibilityServiceMissingCoverage:
             assert "Version error" in message
 
     def test_validate_java_compatibility_internal_exception(self, service):
-        """Test internal exception in validate_java_compatibility (line 340)"""
-        java17 = JavaVersionInfo(17, 0, 1)
+        """Test internal exception in validate_java_compatibility (line 340).
 
-        # Force an exception during compatibility checking by patching a method called internally
-        with (
-            patch.object(service, "get_required_java_version", return_value=17),
-            patch("builtins.getattr", side_effect=Exception("Internal error")),
-        ):
-            compatible, message = service.validate_java_compatibility("1.18.0", java17)
+        Previously this test patched ``builtins.getattr`` globally to force an
+        exception inside the body of ``validate_java_compatibility``. That is
+        catastrophic under pytest-xdist: ``getattr`` is invoked from countless
+        framework call sites (pytest, asyncio, logging, traceback rendering),
+        and the mock raising at one of those sites recursed indefinitely
+        inside the error-reporting machinery, killing the worker with
+        ``RecursionError`` and hanging CI (see PR #333 review follow-up).
+
+        The narrower replacement makes the ``java_version`` argument itself
+        raise from one of the ``is_compatible_with_java_*`` properties the
+        service consults, which exercises the same ``except Exception``
+        branch without poisoning the global namespace.
+        """
+
+        class _BoomVersion:
+            major_version = 17
+
+            @property
+            def is_compatible_with_java_17(self) -> bool:
+                raise RuntimeError("Internal error")
+
+        with patch.object(service, "get_required_java_version", return_value=17):
+            compatible, message = service.validate_java_compatibility(
+                "1.18.0", _BoomVersion()
+            )
 
             assert compatible is False
             assert "Failed to validate Java compatibility" in message
+            assert "Internal error" in message
 
     def test_generate_compatibility_error_message_all_java_versions(self, service):
         """Test error message generation for all Java versions (lines 376, 380, 381->384)"""

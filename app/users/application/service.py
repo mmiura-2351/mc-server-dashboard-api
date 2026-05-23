@@ -8,12 +8,14 @@ Result DTOs that cross the application/api boundary live in
 `application.results`.
 """
 
+from datetime import datetime, timezone
 from typing import List
 
 from fastapi import HTTPException, status
 from passlib.context import CryptContext
 
 from app.auth.auth import create_access_token
+from app.users.application.password_policy import get_password_policy
 from app.users.application.results import UserWithToken
 from app.users.domain.entities import (
     CreateUserCommand,
@@ -21,7 +23,7 @@ from app.users.domain.entities import (
     UserEntity,
 )
 from app.users.domain.ports import UsersUnitOfWork
-from app.users.domain.value_objects import Role
+from app.users.domain.value_objects import PasswordPolicyError, Role
 
 # The password hasher is a pure CPU operation with no I/O — its presence
 # in the application layer does not violate the framework-isolation rule.
@@ -58,6 +60,10 @@ class UserService:
         The first registered user is automatically promoted to `admin`
         and pre-approved, matching the legacy behaviour.
         """
+        # Defense-in-depth: the schema validator already enforced this
+        # for HTTP callers, but direct service callers (and tests) get
+        # the same guarantee here.
+        self._enforce_password_policy(plain_password, username=username, email=email)
         async with self._uow as uow:
             existing = await uow.users.get_by_username(username)
             if existing is not None:
@@ -85,6 +91,7 @@ class UserService:
                     hashed_password=hashed,
                     role=role,
                     is_approved=is_approved,
+                    password_set_at=datetime.now(timezone.utc),
                 )
             )
             await uow.commit()
@@ -240,11 +247,22 @@ class UserService:
                 detail="Current password is incorrect",
             )
 
+        # Defense-in-depth password-policy check (mirrors the schema
+        # validator). Raises HTTP 400 if the new password is weak.
+        self._enforce_password_policy(
+            new_plain_password,
+            username=current_user.username,
+            email=current_user.email,
+        )
+
         new_hash = pwd_context.hash(new_plain_password)
         async with self._uow as uow:
             updated = await uow.users.update(
                 current_user.id,
-                UpdateUserCommand(hashed_password=new_hash),
+                UpdateUserCommand(
+                    hashed_password=new_hash,
+                    password_set_at=datetime.now(timezone.utc),
+                ),
             )
             await uow.commit()
             assert updated is not None
@@ -282,3 +300,23 @@ class UserService:
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Only admin can perform this action",
             )
+
+    @staticmethod
+    def _enforce_password_policy(
+        plain_password: str,
+        *,
+        username: str,
+        email: str,
+    ) -> None:
+        """Translate a `PasswordPolicyError` into HTTP 400.
+
+        Direct service callers (and tests) get the same protection as
+        HTTP callers whose Pydantic schema validator would 422 them.
+        """
+        try:
+            get_password_policy().validate(plain_password, username=username, email=email)
+        except PasswordPolicyError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Password does not meet policy: {exc}",
+            ) from exc

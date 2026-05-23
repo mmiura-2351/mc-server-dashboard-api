@@ -245,6 +245,55 @@ class Settings(BaseSettings):
             return Environment.DEVELOPMENT
         return Environment(v)
 
+    # Password policy (Issue #73 — see docs/SECURITY.md). Production
+    # defaults follow OWASP ASVS L1 + NIST 800-63B guidance. The
+    # `PASSWORD_*` overrides are honoured by
+    # `app.users.application.password_policy.get_password_policy()`.
+    PASSWORD_MIN_LENGTH: int = 12
+    PASSWORD_MAX_LENGTH: int = 128
+    PASSWORD_REQUIRE_COMPLEXITY: bool = True
+    PASSWORD_CHECK_COMMON_LIST: bool = True
+    PASSWORD_FORBID_USER_INFO: bool = True
+    PASSWORD_FORBID_SIMPLE_PATTERNS: bool = True
+    # ISO-8601 date marking the policy release; users whose
+    # `password_set_at` is NULL or older are "grandfathered" and
+    # receive a warning header on successful login until they rotate.
+    PASSWORD_POLICY_RELEASE_DATE: str = "2026-05-23"
+
+    # Brute-force protection (Issue #73). Sliding-window counts of
+    # failed logins are stored in `login_attempts`; lockouts in
+    # `account_lockouts`. Lockout duration grows exponentially up to
+    # `BRUTE_FORCE_LOCKOUT_MAX_SECONDS`.
+    BRUTE_FORCE_ENABLED: bool = True
+    BRUTE_FORCE_USERNAME_THRESHOLD: int = 5
+    BRUTE_FORCE_USERNAME_WINDOW_SECONDS: int = 900  # 15 min
+    BRUTE_FORCE_LOCKOUT_BASE_SECONDS: int = 900  # 15 min
+    BRUTE_FORCE_LOCKOUT_MAX_SECONDS: int = 86400  # 24 h
+    BRUTE_FORCE_IP_THRESHOLD: int = 20
+    # IP lockout is a pure sliding-window check (no durable lockout row),
+    # so the per-IP "retry after" returned to the client is the residual
+    # of `BRUTE_FORCE_IP_WINDOW_SECONDS`. We deliberately removed
+    # `BRUTE_FORCE_IP_LOCKOUT_SECONDS` (PR #333 review): keeping two
+    # independent knobs let `retry_after` lie when they diverged.
+    BRUTE_FORCE_IP_WINDOW_SECONDS: int = 300  # 5 min
+    # Artificial delay (milliseconds) added to *every* failed-auth
+    # path so attackers cannot use response latency to enumerate
+    # valid usernames or to detect lockout state.
+    BRUTE_FORCE_DELAY_MS: int = 200
+
+    # Reverse-proxy trust (Issue #73 review). See docs/SECURITY.md.
+    # When False (default) X-Forwarded-For / X-Real-IP are *ignored*
+    # entirely; the brute-force tracker uses `request.client.host`
+    # only. When True, XFF / X-Real-IP are honoured ONLY if the
+    # immediate peer (`request.client.host`) is listed in
+    # `TRUSTED_PROXIES`. This prevents an attacker from spoofing the
+    # source IP via XFF to dodge per-IP lockout.
+    TRUST_PROXY_HEADERS: bool = False
+    # Comma-separated list of trusted proxy IPs (no CIDR). Example:
+    # "10.0.0.1,127.0.0.1". Empty list + TRUST_PROXY_HEADERS=True
+    # effectively disables XFF trust (safe-by-default).
+    TRUSTED_PROXIES: str = ""
+
     @field_validator("SECRET_KEY")
     @classmethod
     def validate_secret_key(cls, v: str) -> str:
@@ -385,6 +434,60 @@ class Settings(BaseSettings):
             raise ValueError("health check timing settings must be in (0, 60] seconds")
         return v
 
+    @field_validator("PASSWORD_MIN_LENGTH")
+    @classmethod
+    def validate_password_min_length(cls, v: int) -> int:
+        # Bcrypt truncates beyond 72 bytes; the lower bound is the most
+        # permissive that still satisfies NIST 800-63B "minimum 8".
+        if v < 8 or v > 72:
+            raise ValueError("PASSWORD_MIN_LENGTH must be between 8 and 72")
+        return v
+
+    @field_validator("PASSWORD_MAX_LENGTH")
+    @classmethod
+    def validate_password_max_length(cls, v: int) -> int:
+        # Upper bound limits DoS via huge bcrypt inputs; the lower
+        # bound keeps the policy meaningful relative to the minimum.
+        if v < 32 or v > 1024:
+            raise ValueError("PASSWORD_MAX_LENGTH must be between 32 and 1024")
+        return v
+
+    @field_validator("BRUTE_FORCE_USERNAME_THRESHOLD", "BRUTE_FORCE_IP_THRESHOLD")
+    @classmethod
+    def validate_brute_force_threshold(cls, v: int) -> int:
+        if v < 1 or v > 1000:
+            raise ValueError("brute-force threshold must be between 1 and 1000")
+        return v
+
+    @field_validator(
+        "BRUTE_FORCE_USERNAME_WINDOW_SECONDS",
+        "BRUTE_FORCE_IP_WINDOW_SECONDS",
+    )
+    @classmethod
+    def validate_brute_force_window(cls, v: int) -> int:
+        if v < 30 or v > 86400:
+            raise ValueError("brute-force window must be between 30 and 86400 seconds")
+        return v
+
+    @field_validator(
+        "BRUTE_FORCE_LOCKOUT_BASE_SECONDS",
+        "BRUTE_FORCE_LOCKOUT_MAX_SECONDS",
+    )
+    @classmethod
+    def validate_brute_force_lockout(cls, v: int) -> int:
+        if v < 1 or v > 7 * 86400:
+            raise ValueError(
+                "brute-force lockout duration must be between 1 second and 7 days"
+            )
+        return v
+
+    @field_validator("BRUTE_FORCE_DELAY_MS")
+    @classmethod
+    def validate_brute_force_delay(cls, v: int) -> int:
+        if v < 0 or v > 5000:
+            raise ValueError("BRUTE_FORCE_DELAY_MS must be between 0 and 5000 ms")
+        return v
+
     # ------------------------------------------------------------------
     # Cross-field / environment-aware validators
     # ------------------------------------------------------------------
@@ -478,6 +581,19 @@ class Settings(BaseSettings):
             return []
         return [
             origin.strip() for origin in self.CORS_ORIGINS.split(",") if origin.strip()
+        ]
+
+    @property
+    def trusted_proxies_list(self) -> List[str]:
+        """Parse TRUSTED_PROXIES from a comma-separated string.
+
+        Returns an empty list if unset. Caller is responsible for
+        gating on `TRUST_PROXY_HEADERS` before consulting this list.
+        """
+        if not self.TRUSTED_PROXIES:
+            return []
+        return [
+            entry.strip() for entry in self.TRUSTED_PROXIES.split(",") if entry.strip()
         ]
 
     @property

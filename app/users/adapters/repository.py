@@ -32,6 +32,7 @@ def _user_to_entity(u: User) -> UserEntity:
         is_approved=u.is_approved,
         created_at=u.created_at,
         updated_at=u.updated_at,
+        password_set_at=u.password_set_at,
     )
 
 
@@ -82,6 +83,7 @@ class SqlAlchemyUserRepository:
             hashed_password=command.hashed_password,
             role=command.role,
             is_approved=command.is_approved,
+            password_set_at=command.password_set_at,
         )
         self.db.add(row)
         self.db.flush()

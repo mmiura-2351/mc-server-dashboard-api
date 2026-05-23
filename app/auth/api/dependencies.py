@@ -9,6 +9,7 @@ from fastapi import Depends
 from sqlalchemy.orm import Session
 
 from app.auth.adapters.uow import SqlAlchemyAuthUnitOfWork
+from app.auth.application.brute_force_service import BruteForceService
 from app.auth.application.service import AuthService
 from app.auth.domain.ports import AuthUnitOfWork
 from app.core.database import get_db
@@ -24,3 +25,8 @@ def get_auth_service(
 ) -> AuthService:
     """Return an `AuthService` wired with the UoW."""
     return AuthService(uow=uow)
+
+
+def get_brute_force_service(db: Session = Depends(get_db)) -> BruteForceService:
+    """Return a `BruteForceService` bound to the request session."""
+    return BruteForceService(db=db)
