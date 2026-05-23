@@ -86,8 +86,28 @@ class GroupResponse(BaseModel):
 
 
 class GroupListResponse(BaseModel):
+    """Group list response.
+
+    Legacy keys (``groups``, ``total``) are preserved for back-compat
+    with existing frontend clients (Issue #76, Phase 1). New consumers
+    should read the ``pagination`` block which mirrors the canonical
+    :class:`app.core.pagination.PaginationMeta`.
+    """
+
     groups: List[GroupResponse]
     total: int
+    # ``Optional`` rather than required so callers that never paginate
+    # (e.g. older integration tests) can still construct the legacy
+    # shape without breaking.
+    pagination: Optional["PaginationMeta"] = None
+
+
+# Late-binding import to avoid a circular dep with app.core.pagination
+# (pagination doesn't import schemas, but staying late keeps the
+# module-load order obvious for future readers).
+from app.core.pagination import PaginationMeta  # noqa: E402
+
+GroupListResponse.model_rebuild()
 
 
 class PlayerAddRequest(BaseModel):

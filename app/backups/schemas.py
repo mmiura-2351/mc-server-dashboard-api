@@ -135,12 +135,23 @@ class BackupResponse(BaseModel):
 
 
 class BackupListResponse(BaseModel):
-    """Response schema for backup list with pagination"""
+    """Response schema for backup list with pagination.
+
+    Issue #76 (Phase 1): legacy ``backups`` / ``total`` / ``page`` /
+    ``size`` keys retained for back-compat; ``pagination`` is the new
+    canonical block (:class:`app.core.pagination.PaginationMeta`).
+    """
 
     backups: List[BackupResponse]
     total: int
     page: int
     size: int
+    pagination: Optional["PaginationMeta"] = None
+
+
+from app.core.pagination import PaginationMeta  # noqa: E402
+
+BackupListResponse.model_rebuild()
 
 
 class BackupStatisticsResponse(BaseModel):

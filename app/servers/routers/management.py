@@ -116,7 +116,17 @@ async def list_servers(
             owner_id=owner_id, page=page, size=size
         )
 
-        return ServerListResponse(**result)
+        # Issue #76 (Phase 1): retain legacy ``page``/``size``/``total``
+        # keys (via ``**result``) and additionally surface the canonical
+        # ``pagination`` block so new clients can switch over.
+        from app.core.pagination import build_pagination_meta
+
+        pagination = build_pagination_meta(
+            total=int(result.get("total", 0)),
+            page=int(result.get("page", page)),
+            size=int(result.get("size", size)),
+        )
+        return ServerListResponse(**result, pagination=pagination)
 
     except Exception as e:
         raise HTTPException(

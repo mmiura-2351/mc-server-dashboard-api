@@ -23,6 +23,7 @@ from app.audit.domain.entities import AuditLogEntity, LogFilters
 from app.audit.service import AuditService
 from app.auth.dependencies import get_current_user
 from app.core.database import get_db
+from app.core.pagination import PaginationMeta, build_pagination_meta
 from app.servers.application.authorization import AuthorizationService
 from app.users.domain.ports import UserReadPort
 from app.users.models import User
@@ -45,10 +46,18 @@ class AuditLogResponse(BaseModel):
 
 
 class AuditLogListResponse(BaseModel):
+    """Audit log list response.
+
+    Issue #76 (Phase 1): retains legacy ``page`` / ``page_size`` /
+    ``total_count`` keys; adds ``pagination`` (canonical
+    :class:`app.core.pagination.PaginationMeta`).
+    """
+
     logs: List[AuditLogResponse]
     total_count: int
     page: int
     page_size: int
+    pagination: Optional[PaginationMeta] = None
 
 
 def _entity_to_response(entity: AuditLogEntity) -> AuditLogResponse:
@@ -79,7 +88,18 @@ async def get_audit_logs(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
     page: int = Query(1, ge=1, description="Page number"),
-    page_size: int = Query(50, ge=1, le=100, description="Number of logs per page"),
+    # Accept either ``page_size`` (legacy) or ``size`` (Issue #76
+    # canonical) on the wire. Internally we keep using ``page_size``;
+    # if both are supplied, ``size`` wins (the canonical name).
+    page_size: int = Query(
+        50, ge=1, le=100, description="Legacy: number of logs per page"
+    ),
+    size: Optional[int] = Query(
+        None,
+        ge=1,
+        le=100,
+        description="Canonical page size (Issue #76); overrides ``page_size``",
+    ),
     user_id: Optional[int] = Query(None, description="Filter by user ID"),
     action: Optional[str] = Query(None, description="Filter by action"),
     resource_type: Optional[str] = Query(None, description="Filter by resource type"),
@@ -90,6 +110,10 @@ async def get_audit_logs(
     Get audit logs with filtering and pagination.
     Only admins can view all logs, other users can only view their own logs.
     """
+    # Resolve effective page size: canonical ``size`` wins when both
+    # legacy ``page_size`` and ``size`` are supplied.
+    effective_page_size = size if size is not None else page_size
+
     if not AuthorizationService.is_admin(current_user):
         if user_id is not None and user_id != current_user.id:
             raise HTTPException(
@@ -108,7 +132,7 @@ async def get_audit_logs(
                 "resource_type": resource_type,
                 "resource_id": resource_id,
             },
-            "pagination": {"page": page, "page_size": page_size},
+            "pagination": {"page": page, "page_size": effective_page_size},
         },
         user_id=current_user.id,
     )
@@ -119,13 +143,19 @@ async def get_audit_logs(
         resource_type=resource_type,
         resource_id=resource_id,
     )
-    logs, total_count = await service.list_logs(filters, page=page, page_size=page_size)
+    logs, total_count = await service.list_logs(
+        filters, page=page, page_size=effective_page_size
+    )
 
+    pagination = build_pagination_meta(
+        total=total_count, page=page, size=effective_page_size
+    )
     return AuditLogListResponse(
         logs=[_entity_to_response(log) for log in logs],
         total_count=total_count,
         page=page,
-        page_size=page_size,
+        page_size=effective_page_size,
+        pagination=pagination,
     )
 
 

@@ -9,6 +9,8 @@ These types are introduced under #228 (PR 1/3) and are unwired from
 the runtime in this PR; PR #2 rewires the callers.
 """
 
+from typing import ClassVar
+
 from app.core.exceptions import (
     ServerAccessDeniedException,
     ServerNotFoundException,
@@ -18,6 +20,8 @@ from app.core.exceptions import (
 class ServerError(Exception):
     """Base exception for server-domain operations."""
 
+    error_code: ClassVar[str] = "SERVER_ERROR"
+
 
 class ServerNotFoundError(ServerError):
     """Raised when a requested server does not exist.
@@ -25,6 +29,8 @@ class ServerNotFoundError(ServerError):
     Pairs with the legacy `ServerNotFoundException` (HTTP 404). The
     router/application boundary may catch either depending on context.
     """
+
+    error_code: ClassVar[str] = "SERVER_NOT_FOUND"
 
 
 class ServerAlreadyExistsError(ServerError):
@@ -36,12 +42,16 @@ class ServerAlreadyExistsError(ServerError):
     inserts.
     """
 
+    error_code: ClassVar[str] = "SERVER_ALREADY_EXISTS"
+
 
 class ServerAccessError(ServerError):
     """Raised when the actor is not permitted to access the server.
 
     Pairs with the legacy `ServerAccessDeniedException` (HTTP 403).
     """
+
+    error_code: ClassVar[str] = "SERVER_ACCESS_DENIED"
 
 
 class InvalidServerStateError(ServerError):
@@ -50,6 +60,8 @@ class InvalidServerStateError(ServerError):
     E.g. starting an already-running server, deleting a server with a
     live process attached. The router maps this to HTTP 409.
     """
+
+    error_code: ClassVar[str] = "SERVER_INVALID_STATE"
 
 
 # Re-export the legacy exceptions so callers migrating over to the

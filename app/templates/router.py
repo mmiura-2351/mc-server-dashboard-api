@@ -203,11 +203,21 @@ async def list_templates(
             TemplateResponse.from_entity(entity) for entity in page_result.entities
         ]
 
+        # Issue #76 (Phase 1): retain legacy ``page``/``size``/``total``
+        # and additionally surface the canonical ``pagination`` block.
+        from app.core.pagination import build_pagination_meta
+
+        pagination = build_pagination_meta(
+            total=page_result.total,
+            page=page_result.page,
+            size=page_result.size,
+        )
         return TemplateListResponse(
             templates=template_responses,
             total=page_result.total,
             page=page_result.page,
             size=page_result.size,
+            pagination=pagination,
         )
 
     except Exception as e:

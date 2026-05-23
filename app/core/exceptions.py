@@ -1,5 +1,5 @@
 import logging
-from typing import Any, Dict, NoReturn, Optional
+from typing import Any, ClassVar, Dict, NoReturn, Optional
 
 from fastapi import HTTPException, status
 
@@ -7,7 +7,16 @@ logger = logging.getLogger(__name__)
 
 
 class APIException(HTTPException):
-    """Base exception class for API errors with consistent error handling."""
+    """Base exception class for API errors with consistent error handling.
+
+    Subclasses set ``error_code`` (a ``ClassVar[str]``) to the canonical
+    machine-readable identifier surfaced by the global exception handler
+    (see :mod:`app.core.error_handlers` and :class:`app.core.error_schemas.ErrorResponse`).
+    Issue #76 introduced this taxonomy; codes follow ``<DOMAIN>_<KIND>``
+    in SCREAMING_SNAKE_CASE.
+    """
+
+    error_code: ClassVar[str] = "API_ERROR"
 
     def __init__(
         self,
@@ -28,6 +37,8 @@ class APIException(HTTPException):
 class ResourceNotFoundException(APIException):
     """Exception for when a requested resource is not found."""
 
+    error_code: ClassVar[str] = "RESOURCE_NOT_FOUND"
+
     def __init__(self, resource_type: str, resource_id: str):
         detail = f"{resource_type} with ID {resource_id} not found"
         super().__init__(status.HTTP_404_NOT_FOUND, detail)
@@ -36,12 +47,16 @@ class ResourceNotFoundException(APIException):
 class ServerNotFoundException(ResourceNotFoundException):
     """Exception for when a server is not found."""
 
+    error_code: ClassVar[str] = "SERVER_NOT_FOUND"
+
     def __init__(self, server_id: str):
         super().__init__("Server", server_id)
 
 
 class UserNotFoundException(ResourceNotFoundException):
     """Exception for when a user is not found."""
+
+    error_code: ClassVar[str] = "USER_NOT_FOUND"
 
     def __init__(self, user_id: str):
         super().__init__("User", user_id)
@@ -50,12 +65,16 @@ class UserNotFoundException(ResourceNotFoundException):
 class GroupNotFoundException(ResourceNotFoundException):
     """Exception for when a group is not found."""
 
+    error_code: ClassVar[str] = "GROUP_NOT_FOUND"
+
     def __init__(self, group_id: str):
         super().__init__("Group", group_id)
 
 
 class BackupNotFoundException(ResourceNotFoundException):
     """Exception for when a backup is not found."""
+
+    error_code: ClassVar[str] = "BACKUP_NOT_FOUND"
 
     def __init__(self, backup_id: str):
         super().__init__("Backup", backup_id)
@@ -64,12 +83,16 @@ class BackupNotFoundException(ResourceNotFoundException):
 class TemplateNotFoundException(ResourceNotFoundException):
     """Exception for when a template is not found."""
 
+    error_code: ClassVar[str] = "TEMPLATE_NOT_FOUND"
+
     def __init__(self, template_id: str):
         super().__init__("Template", template_id)
 
 
 class AccessDeniedException(APIException):
     """Exception for access denied scenarios."""
+
+    error_code: ClassVar[str] = "ACCESS_DENIED"
 
     def __init__(self, resource_type: str = "resource", action: str = "access"):
         detail = f"Access denied: insufficient permissions to {action} {resource_type}"
@@ -79,6 +102,8 @@ class AccessDeniedException(APIException):
 class ServerAccessDeniedException(AccessDeniedException):
     """Exception for server access denied."""
 
+    error_code: ClassVar[str] = "SERVER_ACCESS_DENIED"
+
     def __init__(self, server_id: str):
         detail = f"Access denied: insufficient permissions to access server {server_id}"
         super().__init__(status.HTTP_403_FORBIDDEN, detail)
@@ -87,12 +112,16 @@ class ServerAccessDeniedException(AccessDeniedException):
 class InvalidRequestException(APIException):
     """Exception for invalid request data."""
 
+    error_code: ClassVar[str] = "INVALID_REQUEST"
+
     def __init__(self, detail: str):
         super().__init__(status.HTTP_400_BAD_REQUEST, detail)
 
 
 class ConflictException(APIException):
     """Exception for resource conflicts."""
+
+    error_code: ClassVar[str] = "RESOURCE_CONFLICT"
 
     def __init__(self, detail: str):
         super().__init__(status.HTTP_409_CONFLICT, detail)
@@ -101,6 +130,8 @@ class ConflictException(APIException):
 class ServerStateException(APIException):
     """Exception for invalid server state operations."""
 
+    error_code: ClassVar[str] = "SERVER_INVALID_STATE"
+
     def __init__(self, server_id: str, current_state: str, required_state: str):
         detail = f"Server {server_id} is {current_state}, but {required_state} is required for this operation"
         super().__init__(status.HTTP_400_BAD_REQUEST, detail)
@@ -108,6 +139,8 @@ class ServerStateException(APIException):
 
 class FileOperationException(APIException):
     """Exception for file operation errors."""
+
+    error_code: ClassVar[str] = "FILE_OPERATION_FAILED"
 
     def __init__(self, operation: str, file_path: str, reason: str = ""):
         detail = f"Failed to {operation} file {file_path}"
@@ -119,6 +152,8 @@ class FileOperationException(APIException):
 class DatabaseOperationException(APIException):
     """Exception for database operation errors."""
 
+    error_code: ClassVar[str] = "DATABASE_OPERATION_FAILED"
+
     def __init__(self, operation: str, table: str, reason: str = ""):
         detail = f"Database {operation} failed for {table}"
         if reason:
@@ -129,12 +164,16 @@ class DatabaseOperationException(APIException):
 class AuthenticationException(APIException):
     """Exception for authentication failures."""
 
+    error_code: ClassVar[str] = "AUTHENTICATION_FAILED"
+
     def __init__(self, detail: str = "Invalid authentication credentials"):
         super().__init__(status.HTTP_401_UNAUTHORIZED, detail)
 
 
 class UserNotApprovedException(APIException):
     """Exception for unapproved user access attempts."""
+
+    error_code: ClassVar[str] = "USER_NOT_APPROVED"
 
     def __init__(self):
         detail = "User account is not approved yet"
@@ -143,6 +182,8 @@ class UserNotApprovedException(APIException):
 
 class MinecraftServerException(APIException):
     """Exception for Minecraft server operation errors."""
+
+    error_code: ClassVar[str] = "MINECRAFT_SERVER_ERROR"
 
     def __init__(self, server_id: str, operation: str, reason: str = ""):
         detail = f"Failed to {operation} Minecraft server {server_id}"
