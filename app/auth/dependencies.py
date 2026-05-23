@@ -115,7 +115,10 @@ def _authenticate(
         raise _CREDENTIALS_EXCEPTION
 
     presented_tv = payload.get("tv", 0)
-    if not isinstance(presented_tv, int):
+    # NOTE: ``bool`` is a subclass of ``int`` in Python, so ``isinstance(True, int)``
+    # is ``True``. Reject bools explicitly to prevent a ``"tv": true`` claim from
+    # being treated as ``1`` and bypassing the version check.
+    if not isinstance(presented_tv, int) or isinstance(presented_tv, bool):
         raise _CREDENTIALS_EXCEPTION
 
     current_tv = user.token_version or 0
