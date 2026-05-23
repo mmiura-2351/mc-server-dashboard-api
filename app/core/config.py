@@ -270,12 +270,29 @@ class Settings(BaseSettings):
     BRUTE_FORCE_LOCKOUT_BASE_SECONDS: int = 900  # 15 min
     BRUTE_FORCE_LOCKOUT_MAX_SECONDS: int = 86400  # 24 h
     BRUTE_FORCE_IP_THRESHOLD: int = 20
+    # IP lockout is a pure sliding-window check (no durable lockout row),
+    # so the per-IP "retry after" returned to the client is the residual
+    # of `BRUTE_FORCE_IP_WINDOW_SECONDS`. We deliberately removed
+    # `BRUTE_FORCE_IP_LOCKOUT_SECONDS` (PR #333 review): keeping two
+    # independent knobs let `retry_after` lie when they diverged.
     BRUTE_FORCE_IP_WINDOW_SECONDS: int = 300  # 5 min
-    BRUTE_FORCE_IP_LOCKOUT_SECONDS: int = 300  # 5 min
     # Artificial delay (milliseconds) added to *every* failed-auth
     # path so attackers cannot use response latency to enumerate
     # valid usernames or to detect lockout state.
     BRUTE_FORCE_DELAY_MS: int = 200
+
+    # Reverse-proxy trust (Issue #73 review). See docs/SECURITY.md.
+    # When False (default) X-Forwarded-For / X-Real-IP are *ignored*
+    # entirely; the brute-force tracker uses `request.client.host`
+    # only. When True, XFF / X-Real-IP are honoured ONLY if the
+    # immediate peer (`request.client.host`) is listed in
+    # `TRUSTED_PROXIES`. This prevents an attacker from spoofing the
+    # source IP via XFF to dodge per-IP lockout.
+    TRUST_PROXY_HEADERS: bool = False
+    # Comma-separated list of trusted proxy IPs (no CIDR). Example:
+    # "10.0.0.1,127.0.0.1". Empty list + TRUST_PROXY_HEADERS=True
+    # effectively disables XFF trust (safe-by-default).
+    TRUSTED_PROXIES: str = ""
 
     @field_validator("SECRET_KEY")
     @classmethod
@@ -564,6 +581,19 @@ class Settings(BaseSettings):
             return []
         return [
             origin.strip() for origin in self.CORS_ORIGINS.split(",") if origin.strip()
+        ]
+
+    @property
+    def trusted_proxies_list(self) -> List[str]:
+        """Parse TRUSTED_PROXIES from a comma-separated string.
+
+        Returns an empty list if unset. Caller is responsible for
+        gating on `TRUST_PROXY_HEADERS` before consulting this list.
+        """
+        if not self.TRUSTED_PROXIES:
+            return []
+        return [
+            entry.strip() for entry in self.TRUSTED_PROXIES.split(",") if entry.strip()
         ]
 
     @property

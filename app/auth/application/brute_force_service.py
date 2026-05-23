@@ -94,12 +94,19 @@ class BruteForceService:
         # ----- IP-based lockout -----
         retry_ip = 0
         if ip_address:
+            window_seconds = settings.BRUTE_FORCE_IP_WINDOW_SECONDS
+            since = now - timedelta(seconds=window_seconds)
             recent_ip_failures = self._count_failures(
                 ip_address=ip_address,
-                since=now - timedelta(seconds=settings.BRUTE_FORCE_IP_WINDOW_SECONDS),
+                since=since,
             )
             if recent_ip_failures >= settings.BRUTE_FORCE_IP_THRESHOLD:
-                retry_ip = settings.BRUTE_FORCE_IP_LOCKOUT_SECONDS
+                retry_ip = self._ip_window_remaining(
+                    ip_address=ip_address,
+                    since=since,
+                    window_seconds=window_seconds,
+                    now=now,
+                )
 
         if retry_username and retry_ip:
             return LockoutStatus(
@@ -181,9 +188,21 @@ class BruteForceService:
         username: Optional[str] = None,
         ip_address: Optional[str] = None,
     ) -> int:
+        # PR #333 review (Blocker 2): exclude `authentication_error`
+        # rows from the lockout count. Those rows are recorded for
+        # *audit only* when `authenticate_user` raises something other
+        # than the canonical 401 (e.g. pending-approval users hitting
+        # the standard 403). The intent expressed in the caller is
+        # "do not punish" — but as long as the count included those
+        # rows, a legitimate pending-approval user trying their own
+        # password 5 times would still trip the lockout. We exclude
+        # them here so the audit trail stays intact without bumping
+        # the counter.
         q = self._db.query(func.count(LoginAttempt.id)).filter(
             LoginAttempt.success.is_(False),
             LoginAttempt.attempted_at >= since,
+            (LoginAttempt.failure_reason.is_(None))
+            | (LoginAttempt.failure_reason != "authentication_error"),
         )
         if username is not None:
             q = q.filter(LoginAttempt.username == username)
@@ -243,7 +262,8 @@ class BruteForceService:
         if not ip_address:
             return None
         now = _now()
-        window_start = now - timedelta(seconds=settings.BRUTE_FORCE_IP_WINDOW_SECONDS)
+        window_seconds = settings.BRUTE_FORCE_IP_WINDOW_SECONDS
+        window_start = now - timedelta(seconds=window_seconds)
         self._db.flush()
         failures = self._count_failures(ip_address=ip_address, since=window_start)
         if failures < settings.BRUTE_FORCE_IP_THRESHOLD:
@@ -253,14 +273,66 @@ class BruteForceService:
         # to durably commit per-IP entries because the table key is
         # the username). We surface the event so the caller can audit
         # the first crossing of the threshold.
+        retry_after = self._ip_window_remaining(
+            ip_address=ip_address,
+            since=window_start,
+            window_seconds=window_seconds,
+            now=now,
+        )
         logger.warning(
-            "brute_force.ip_blocked ip=%s window_failures=%s", ip_address, failures
+            "brute_force.ip_blocked ip=%s window_failures=%s retry_after=%s",
+            ip_address,
+            failures,
+            retry_after,
         )
         return LockoutStatus(
             locked=True,
-            retry_after_seconds=settings.BRUTE_FORCE_IP_LOCKOUT_SECONDS,
+            retry_after_seconds=retry_after,
             reason="ip_locked",
         )
+
+    def _ip_window_remaining(
+        self,
+        *,
+        ip_address: str,
+        since: datetime,
+        window_seconds: int,
+        now: datetime,
+    ) -> int:
+        """Return seconds until the oldest in-window failure ages out.
+
+        PR #333 review (Blocker 3): the IP lockout is a pure sliding-
+        window check (no durable lockout row), so the only honest
+        `retry_after` we can give the client is the residual lifetime
+        of the in-window failure set. Concretely: the IP becomes
+        unblocked once the *oldest* in-window failure ages past the
+        window, dropping the count below the threshold.
+
+        Returns the configured window as a conservative upper bound
+        when the calculation cannot determine a precise value (e.g.
+        no rows present — should not happen for a triggered lockout).
+        """
+        oldest = (
+            self._db.query(func.min(LoginAttempt.attempted_at))
+            .filter(
+                LoginAttempt.success.is_(False),
+                LoginAttempt.attempted_at >= since,
+                LoginAttempt.ip_address == ip_address,
+                (LoginAttempt.failure_reason.is_(None))
+                | (LoginAttempt.failure_reason != "authentication_error"),
+            )
+            .scalar()
+        )
+        if oldest is None:
+            return window_seconds
+        oldest_aware = _aware(oldest) or oldest
+        expires_at = oldest_aware + timedelta(seconds=window_seconds)
+        remaining = int((expires_at - now).total_seconds()) + 1
+        if remaining < 1:
+            return 1
+        if remaining > window_seconds:
+            return window_seconds
+        return remaining
 
     @staticmethod
     def _lockout_duration(lockout_count: int) -> int:

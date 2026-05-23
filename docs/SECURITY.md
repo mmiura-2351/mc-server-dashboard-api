@@ -64,8 +64,41 @@ deferred to Phase 2 (out of scope for the Phase 1 PR).
 | Lockout cap (exponential back-off)       | 86,400 s    | `BRUTE_FORCE_LOCKOUT_MAX_SECONDS`         |
 | IP-based threshold                       | 20 failures | `BRUTE_FORCE_IP_THRESHOLD`                |
 | IP sliding-window                        | 300 s       | `BRUTE_FORCE_IP_WINDOW_SECONDS`           |
-| IP lockout duration                      | 300 s       | `BRUTE_FORCE_IP_LOCKOUT_SECONDS`          |
 | Artificial response delay (anti-timing)  | 200 ms      | `BRUTE_FORCE_DELAY_MS`                    |
+
+> The per-IP lockout is a pure sliding-window check; there is no
+> separate `IP_LOCKOUT_SECONDS` knob. The `Retry-After` header
+> reflects the residual lifetime of the in-window failure set (the
+> moment the oldest failure ages out the count drops back below
+> the threshold). Having two independent knobs let `Retry-After`
+> lie when they diverged, so the redundant setting was removed in
+> the PR #333 review.
+
+### Reverse-proxy trust (X-Forwarded-For)
+
+| Control                     | Default | Override               |
+| --------------------------- | ------- | ---------------------- |
+| Trust forwarded headers     | `false` | `TRUST_PROXY_HEADERS`  |
+| Trusted proxy peer IPs      | empty   | `TRUSTED_PROXIES`      |
+
+The brute-force tracker derives the source IP via `_extract_ip` in
+`app.auth.api.router`. By default the immediate peer
+(`request.client.host`) is used and **X-Forwarded-For / X-Real-IP
+are ignored entirely** — without this guard, any caller could spoof
+an arbitrary source IP via the header and dodge per-IP lockout.
+
+To opt in when running behind a reverse proxy, set both:
+
+```
+TRUST_PROXY_HEADERS=true
+TRUSTED_PROXIES=10.0.0.1,127.0.0.1   # the proxy peers you trust
+```
+
+The forwarded header is honoured **only** when the immediate peer
+appears in `TRUSTED_PROXIES`. Operators MUST configure this pair
+when deploying behind nginx / haproxy / ALB; otherwise per-IP
+brute-force protection effectively falls back to "all requests
+share the proxy's IP", which is far less granular but still safe.
 
 ### Tables
 

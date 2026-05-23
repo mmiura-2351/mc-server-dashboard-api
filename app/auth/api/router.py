@@ -37,16 +37,40 @@ class TokenResponse(BaseModel):
 
 
 def _extract_ip(request: Request) -> Optional[str]:
-    """Best-effort client IP extraction (matches audit logic)."""
-    forwarded_for = request.headers.get("X-Forwarded-For")
-    if forwarded_for:
-        return forwarded_for.split(",")[0].strip()
-    real_ip = request.headers.get("X-Real-IP")
-    if real_ip:
-        return real_ip
-    if request.client:
-        return request.client.host
-    return None
+    """Extract the source IP used for brute-force tracking.
+
+    Security note (Issue #73 review): trusting ``X-Forwarded-For`` /
+    ``X-Real-IP`` unconditionally would let any attacker spoof an
+    arbitrary source IP by setting the header, defeating per-IP
+    lockout. We therefore honour the forwarded headers only when:
+
+    1. ``TRUST_PROXY_HEADERS`` is explicitly enabled, AND
+    2. the immediate peer (``request.client.host``) is listed in
+       ``TRUSTED_PROXIES``.
+
+    In all other cases the immediate peer address wins. Operators
+    running behind a reverse proxy must opt in via the config knob;
+    see ``docs/SECURITY.md``.
+    """
+    peer = request.client.host if request.client else None
+
+    if settings.TRUST_PROXY_HEADERS:
+        trusted = settings.trusted_proxies_list
+        if peer is not None and peer in trusted:
+            forwarded_for = request.headers.get("X-Forwarded-For")
+            if forwarded_for:
+                # Use the left-most entry — the original client per
+                # RFC 7239 §5.2 convention.
+                first = forwarded_for.split(",")[0].strip()
+                if first:
+                    return first
+            real_ip = request.headers.get("X-Real-IP")
+            if real_ip:
+                return real_ip.strip()
+        # Peer is not a trusted proxy: fall through and use the peer
+        # address itself (ignoring any spoofed headers).
+
+    return peer
 
 
 async def _artificial_delay() -> None:

@@ -92,3 +92,44 @@ class TestBruteForceLockout:
                 data={"username": "testuser", "password": "wrongpw!"},
             )
             assert r.status_code == 401
+
+
+class TestPendingApprovalNotLockedOut:
+    """PR #333 review (Blocker 2). Pending-approval users hit the
+    ``authentication_error`` path because ``authenticate_user`` raises
+    HTTP 403 rather than the canonical 401. Those attempts must NOT
+    advance the lockout counter — otherwise a legitimate user trying
+    their own real password would be locked out at the threshold.
+    """
+
+    def test_pending_user_real_password_does_not_trigger_429(
+        self, client, unapproved_user, enable_brute_force, db
+    ):
+        # Username threshold from `enable_brute_force` is 3.
+        # 10 consecutive attempts with the REAL password — must NEVER
+        # return 429 (only 403 from the pending-approval guard).
+        for _ in range(10):
+            r = client.post(
+                "/api/v1/auth/token",
+                data={"username": "unapproved", "password": "unapprovedpassword"},
+            )
+            assert r.status_code == 403, (
+                f"expected 403 from pending-approval guard, got {r.status_code}: "
+                f"{r.text}"
+            )
+
+        # Audit rows ARE present (with failure_reason=authentication_error)
+        # but the lockout row must NOT exist.
+        audit_rows = (
+            db.query(LoginAttempt)
+            .filter(LoginAttempt.username == "unapproved")
+            .all()
+        )
+        assert len(audit_rows) == 10
+        assert all(a.failure_reason == "authentication_error" for a in audit_rows)
+        lockout = (
+            db.query(AccountLockout)
+            .filter(AccountLockout.username == "unapproved")
+            .first()
+        )
+        assert lockout is None or lockout.locked_until is None
