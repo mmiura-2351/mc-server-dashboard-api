@@ -28,6 +28,7 @@ from app.core.visibility_router import router as visibility_router  # noqa: E402
 from app.files.router import router as files_router  # noqa: E402
 from app.groups.router import router as groups_router  # noqa: E402
 from app.health.api.dependencies import get_health_check_service  # noqa: E402
+from app.health.api.metrics import metrics_router  # noqa: E402
 from app.health.api.router import build_legacy_payload  # noqa: E402
 from app.health.api.router import router as health_router  # noqa: E402
 from app.health.application.service import HealthCheckService  # noqa: E402
@@ -492,24 +493,18 @@ async def health_check_v1(
     )
 
 
-@app.get("/metrics", tags=["monitoring"])
-async def get_metrics():
-    """Get performance metrics and statistics"""
-    from datetime import datetime
-
-    metrics = get_performance_metrics()
-
-    return {
-        "timestamp": datetime.now().isoformat(),
-        "performance": metrics,
-        "service_status": service_status.get_status(),
-        "message": "Performance metrics collected successfully",
-    }
+# NOTE: `/metrics` is now served by `metrics_router` (Issue #329) in
+# Prometheus exposition format. The legacy JSON snapshot remains
+# available at `/api/v1/metrics` for existing dashboards / tooling.
 
 
 @app.get("/api/v1/metrics", tags=["monitoring"])
 async def get_metrics_v1():
-    """Get performance metrics and statistics"""
+    """Legacy JSON performance snapshot.
+
+    Retained for backward compatibility. New consumers should scrape
+    the Prometheus-format `/metrics` endpoint instead.
+    """
     from datetime import datetime
 
     metrics = get_performance_metrics()
@@ -566,3 +561,7 @@ app.include_router(audit_router, tags=["audit"])
 # k8s paths; the admin detail endpoint declares its own
 # ``/api/v1/health/detail`` path on the route.
 app.include_router(health_router)
+
+# Prometheus exposition endpoint (Issue #329). Mounted without a
+# prefix so scrapers can use the canonical `/metrics` path.
+app.include_router(metrics_router)

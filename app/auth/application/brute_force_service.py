@@ -154,6 +154,16 @@ class BruteForceService:
         )
         self._db.add(attempt)
 
+        # Surface the attempt in Prometheus (Issue #329). Import inline
+        # to avoid pulling the health API package into the auth domain
+        # graph at module-import time.
+        try:
+            from app.health.api.metrics import login_attempts_total
+
+            login_attempts_total.labels(result="success" if success else "failure").inc()
+        except Exception:  # noqa: BLE001 — metrics must never break auth
+            logger.debug("Failed to increment login_attempts_total", exc_info=True)
+
         triggered: Optional[LockoutStatus] = None
         if success:
             # Successful login clears any existing username lockout
