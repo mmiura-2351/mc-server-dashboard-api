@@ -33,6 +33,7 @@ from app.groups.domain.exceptions import (
 from app.middleware.audit_middleware import AuditMiddleware
 from app.servers.domain.exceptions import (
     JavaCompatibilityError,
+    NoAvailablePortError,
     ServerAccessError,
     ServerJarDownloadError,
     ServerNameConflictError,
@@ -124,6 +125,10 @@ def _build_app() -> FastAPI:
             reason="network",
             retry_hint="Check internet connectivity",
         )
+
+    @app.get("/raise-server-no-port-available")
+    def _server_no_port_available():
+        raise NoAvailablePortError(start_port=25565)
 
     @app.get("/raise-legacy-not-found")
     def _legacy_nf():
@@ -250,6 +255,21 @@ class TestServerCreationActionableErrors:
             d.get("message") for d in details if d.get("code") == "JAVA_AVAILABLE"
         ]
         assert "17" in available
+
+    def test_server_no_port_available_returns_409_with_resolution_hint(self):
+        """Issue #32: ``NoAvailablePortError`` surfaces as 409 with structured details."""
+        r = _client().get("/raise-server-no-port-available")
+        assert r.status_code == 409
+        body = r.json()
+        assert body["error"] == "SERVER_NO_PORT_AVAILABLE"
+        details = body.get("details") or []
+        # First detail pinpoints the exhausted range; second carries the
+        # resolution hint (stop a server or widen the range).
+        assert any(
+            d.get("field") == "port" and d.get("code") == "NO_AVAILABLE_PORT"
+            for d in details
+        )
+        assert any(d.get("code") == "RESOLUTION_STEP" for d in details)
 
     def test_server_jar_download_failed_returns_502_with_retry_hint(self):
         r = _client().get("/raise-server-jar-download-failed")

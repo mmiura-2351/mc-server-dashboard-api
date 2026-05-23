@@ -60,6 +60,7 @@ from app.groups.domain.exceptions import (
 from app.servers.domain.exceptions import (
     InvalidServerStateError,
     JavaCompatibilityError,
+    NoAvailablePortError,
     ServerAccessError,
     ServerAlreadyExistsError,
     ServerCreationRollbackError,
@@ -236,6 +237,16 @@ def register_exception_handlers(app: FastAPI) -> None:
             status_code=status.HTTP_409_CONFLICT,
             default_message="Port already in use by another server",
             fallback_code="SERVER_PORT_CONFLICT",
+        )
+
+    @app.exception_handler(NoAvailablePortError)
+    async def _server_no_port_available(request: Request, exc: NoAvailablePortError):
+        return _domain_response(
+            request,
+            exc,
+            status_code=status.HTTP_409_CONFLICT,
+            default_message="No available port in the searched range",
+            fallback_code="SERVER_NO_PORT_AVAILABLE",
         )
 
     @app.exception_handler(UnsupportedMinecraftVersionError)
