@@ -49,7 +49,7 @@ Each daemon process creates a PID file containing:
 }
 ```
 
-**PID File Location**: `{server_directory}/minecraft_server.pid`
+**PID File Location**: `{server_directory}/server.pid`
 
 #### Auto-Recovery on Startup
 When the API starts, it:
@@ -272,37 +272,23 @@ grep "RCON" logs/app.log
 
 ## Migration Guide
 
-### From Subprocess to Daemon
+If you are **upgrading an existing deployment** from a pre-PR-#60 commit,
+follow the dedicated guide:
+[`docs/DAEMON_MIGRATION.md`](DAEMON_MIGRATION.md). It covers the full
+pre-upgrade checklist (stop every server first — old `asyncio`-tracked
+processes cannot be adopted), the step-by-step upgrade, post-upgrade
+verification, and rollback procedure.
 
-1. **Backup Current State**
-   ```bash
-   # Stop all servers
-   curl -X POST /api/v1/servers/shutdown-all
+Short summary:
 
-   # Backup database
-   cp app.db app.db.backup
-   ```
-
-2. **Update Configuration**
-   ```bash
-   export DAEMON_MODE=double_fork
-   export DAEMON_ENABLE_PERSISTENCE=true
-   ```
-
-3. **Restart API**
-   ```bash
-   # API will auto-detect and migrate
-   uv run fastapi dev
-   ```
-
-4. **Verify Migration**
-   ```bash
-   # Check process restoration
-   curl /api/v1/health
-
-   # Verify server status
-   curl /api/v1/servers/
-   ```
+1. Stop every Minecraft server via `POST /api/v1/servers/{server_id}/stop`.
+2. Back up the application DB and the `servers/` directory.
+3. Record the current git SHA (needed for rollback).
+4. Pull the new code, run `uv sync`, and review new `DAEMON_*` env vars.
+5. Restart the API; auto-sync rehydrates `server.pid` files for any
+   freshly-started daemons.
+6. Verify with `curl /api/v1/health`, `ps -eo pid,ppid,args | grep server.jar`,
+   and inspection of `server.pid` JSON.
 
 ## Future Enhancements
 
@@ -321,31 +307,31 @@ grep "RCON" logs/app.log
 
 ### Server Lifecycle Endpoints
 
-```python
-# Start server (creates daemon)
-POST /api/v1/servers/{server_id}/start
+The HTTP surface that interacts with the daemon manager is the existing
+server-control router under `/api/v1/servers/` (see
+`app/servers/routers/control.py`):
 
-# Stop server (graceful daemon shutdown)
-POST /api/v1/servers/{server_id}/stop
-
-# Server status (includes daemon process info)
-GET /api/v1/servers/{server_id}/status
-
-# Process information
-GET /api/v1/servers/{server_id}/process-info
+```text
+POST   /api/v1/servers/{server_id}/start    # creates daemon via _create_daemon_process
+POST   /api/v1/servers/{server_id}/stop     # graceful daemon shutdown (RCON /stop, then SIGTERM)
+POST   /api/v1/servers/{server_id}/restart  # stop + start
+GET    /api/v1/servers/{server_id}/status   # ServerStatusResponse; reflects post-AUTO_SYNC state
 ```
 
-### Process Management Endpoints
+There are **no dedicated `/api/v1/processes/…` endpoints** and **no
+bulk `shutdown-all` endpoint** at this time. Bulk shutdown happens
+implicitly when the API exits **and** `KEEP_SERVERS_ON_SHUTDOWN=False`
+(see [`docs/DAEMON_MIGRATION.md`](DAEMON_MIGRATION.md) §3.1). For
+introspecting individual daemons from outside the API, read the
+`server.pid` JSON directly or use `ps -eo pid,ppid,args`.
 
-```python
-# List all daemon processes
-GET /api/v1/processes/
+### Health endpoints (Issue #21)
 
-# Process details
-GET /api/v1/processes/{pid}
-
-# Force cleanup
-DELETE /api/v1/processes/{pid}
+```text
+GET /healthz                   # cheap liveness, no DB I/O
+GET /readyz                    # readiness; runs all registered checks
+GET /api/v1/health             # legacy back-compat alias
+GET /api/v1/health/detail      # admin-only verbose report
 ```
 
 This architecture provides a robust, scalable, and maintainable solution for Minecraft server process management while ensuring security, performance, and reliability.
