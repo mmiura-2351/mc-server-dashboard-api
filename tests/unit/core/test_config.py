@@ -6,7 +6,20 @@ Tests focus on configuration validation, field validators, and property methods
 import pytest
 from pydantic import ValidationError
 
-from app.core.config import Settings
+from app.core.config import Environment, Settings
+
+# Issue #22: many of the legacy tests below assume the original behaviour
+# (development overlay, sqlite-friendly defaults). The conftest sets
+# ENVIRONMENT=testing process-wide for the suite, so we pin it back to
+# ``development`` here via an autouse fixture so the per-env testing overlay
+# (LOG_LEVEL=WARNING, KEEP_SERVERS_ON_SHUTDOWN=False, ...) does not bleed
+# into assertions that predate the overlay feature. Tests that explicitly
+# need another environment construct Settings with ``ENVIRONMENT=...``.
+
+
+@pytest.fixture(autouse=True)
+def _pin_development_environment(monkeypatch):
+    monkeypatch.setenv("ENVIRONMENT", "development")
 
 
 class TestSettingsValidators:
@@ -50,7 +63,8 @@ class TestSettingsValidators:
         with pytest.raises(ValidationError) as exc_info:
             Settings(
                 SECRET_KEY="this-is-a-very-secure-secret-key-with-sufficient-length",
-                DATABASE_URL="sqlite:///test.db",
+                # Issue #22: production now rejects sqlite as well.
+                DATABASE_URL="postgresql://user:pw@db/app",
                 ENVIRONMENT="production",
                 CORS_ORIGINS="https://example.com,http://localhost:3000",
             )
@@ -64,7 +78,7 @@ class TestSettingsValidators:
         with pytest.raises(ValidationError) as exc_info:
             Settings(
                 SECRET_KEY="this-is-a-very-secure-secret-key-with-sufficient-length",
-                DATABASE_URL="sqlite:///test.db",
+                DATABASE_URL="postgresql://user:pw@db/app",
                 ENVIRONMENT="production",
                 CORS_ORIGINS="https://example.com,http://127.0.0.1:3000",
             )
@@ -77,12 +91,13 @@ class TestSettingsValidators:
         """Test CORS validation for production with valid origins"""
         settings = Settings(
             SECRET_KEY="this-is-a-very-secure-secret-key-with-sufficient-length",
-            DATABASE_URL="sqlite:///test.db",
+            DATABASE_URL="postgresql://user:pw@db/app",
             ENVIRONMENT="production",
             CORS_ORIGINS="https://example.com,https://api.example.com",
         )
 
         assert settings.ENVIRONMENT == "production"
+        assert settings.is_production
         assert settings.CORS_ORIGINS == "https://example.com,https://api.example.com"
 
     def test_validate_cors_for_development_localhost_allowed(self):
@@ -348,7 +363,7 @@ class TestSettingsProperties:
         """Test is_development property returns False for non-development environment"""
         settings = Settings(
             SECRET_KEY="this-is-a-very-secure-secret-key-with-sufficient-length",
-            DATABASE_URL="sqlite:///test.db",
+            DATABASE_URL="postgresql://user:pw@db/app",
             ENVIRONMENT="production",
             CORS_ORIGINS="https://example.com",  # Valid production CORS
         )
@@ -369,7 +384,7 @@ class TestSettingsProperties:
         """Test is_production property returns True for production environment (line 131)"""
         settings = Settings(
             SECRET_KEY="this-is-a-very-secure-secret-key-with-sufficient-length",
-            DATABASE_URL="sqlite:///test.db",
+            DATABASE_URL="postgresql://user:pw@db/app",
             ENVIRONMENT="production",
             CORS_ORIGINS="https://example.com",  # Valid production CORS
         )
@@ -390,12 +405,13 @@ class TestSettingsProperties:
         """Test is_production property is case insensitive"""
         settings = Settings(
             SECRET_KEY="this-is-a-very-secure-secret-key-with-sufficient-length",
-            DATABASE_URL="sqlite:///test.db",
+            DATABASE_URL="postgresql://user:pw@db/app",
             ENVIRONMENT="PRODUCTION",
             CORS_ORIGINS="https://example.com",  # Valid production CORS
         )
 
         assert settings.is_production is True
+        assert settings.ENVIRONMENT == Environment.PRODUCTION
 
     def test_java_discovery_paths_list_empty(self):
         """Test java_discovery_paths_list property with empty paths"""

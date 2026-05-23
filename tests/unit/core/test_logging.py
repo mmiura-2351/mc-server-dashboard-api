@@ -258,7 +258,8 @@ class TestProductionDebugRejection:
             "SECRET_KEY",
             "a-sufficiently-long-secret-key-for-testing-purposes-1234",
         )
-        monkeypatch.setenv("DATABASE_URL", "sqlite:///./test.db")
+        # Issue #22: production now requires a non-sqlite DATABASE_URL.
+        monkeypatch.setenv("DATABASE_URL", "postgresql://user:pw@db/app")
         monkeypatch.setenv("ENVIRONMENT", "production")
         # Production CORS must not be localhost; provide a placeholder.
         monkeypatch.setenv("CORS_ORIGINS", "https://example.com")
@@ -275,7 +276,7 @@ class TestProductionDebugRejection:
             "SECRET_KEY",
             "a-sufficiently-long-secret-key-for-testing-purposes-1234",
         )
-        monkeypatch.setenv("DATABASE_URL", "sqlite:///./test.db")
+        monkeypatch.setenv("DATABASE_URL", "postgresql://user:pw@db/app")
         monkeypatch.setenv("ENVIRONMENT", "production")
         monkeypatch.setenv("CORS_ORIGINS", "https://example.com")
         monkeypatch.setenv("LOG_LEVEL", "INFO")
