@@ -156,10 +156,17 @@ class TestServerPortConflicts:
         if server_dir.exists():
             shutil.rmtree(server_dir)
 
-    def test_create_server_allows_duplicate_ports_with_any_status(
+    def test_create_server_rejects_duplicate_port_when_existing_is_active(
         self, client: TestClient, admin_headers, db, admin_user
     ):
-        """Test that creating servers with duplicate ports is allowed regardless of existing server status"""
+        """Issue #33: creation must reject a port already held by an
+        active server (``starting`` or ``running``) and return a 409 with
+        structured ``suggested_ports`` so the frontend can offer free
+        alternatives without a second round-trip.
+
+        Stopped servers do NOT block reuse — that behaviour is preserved
+        by the two preceding tests.
+        """
         # First, create a version in the database to ensure it's supported
         from app.core.datetime_utils import utcnow
         from app.versions.models import MinecraftVersion
@@ -175,7 +182,7 @@ class TestServerPortConflicts:
         db.add(version)
         db.commit()
 
-        # Create a starting server with port 25567
+        # Create a starting server with port 25567 — this should block reuse
         make_server(
             db,
             admin_user,
@@ -200,10 +207,10 @@ class TestServerPortConflicts:
             mock_cache.return_value = "/cache/test-vanilla-1.21.6.jar"
             mock_copy.return_value = "/server/server.jar"
 
-            # Try to create another server with the same port - this should now succeed
+            # Try to create another server with the same port — must 409
             server_data = {
                 "name": "New Server",
-                "description": "This should succeed",
+                "description": "Conflicts with active server on 25567",
                 "minecraft_version": "1.21.6",
                 "server_type": "vanilla",
                 "port": 25567,
@@ -215,15 +222,26 @@ class TestServerPortConflicts:
                 "/api/v1/servers/", headers=admin_headers, json=server_data
             )
 
-            assert response.status_code == status.HTTP_201_CREATED
-            server_response = response.json()
-            assert server_response["port"] == 25567
-            assert server_response["name"] == "New Server"
+            assert response.status_code == status.HTTP_409_CONFLICT
+            body = response.json()
+            # Standardized error envelope (Issue #76): ``error`` is the
+            # machine code, ``details`` is a list of ErrorDetail entries.
+            assert body["error"] == "SERVER_PORT_CONFLICT"
+            details = body["details"]
+            assert isinstance(details, list) and len(details) >= 1
 
-        # Cleanup
-        import shutil
-        from pathlib import Path
+            # First detail is the conflict itself; subsequent entries
+            # (if any) are PORT_SUGGESTION candidates populated by
+            # ``port_allocator.find_available_ports``.
+            conflict = next(d for d in details if d["code"] == "PORT_IN_USE")
+            assert conflict["field"] == "port"
+            assert "25567" in conflict["message"]
+            assert "Starting Server" in conflict["message"]
 
-        server_dir = Path(server_response["directory_path"])
-        if server_dir.exists():
-            shutil.rmtree(server_dir)
+            suggestions = [
+                int(d["message"]) for d in details if d["code"] == "PORT_SUGGESTION"
+            ]
+            # Suggestions start after the held port and never include it.
+            assert 25567 not in suggestions
+            for suggested in suggestions:
+                assert suggested >= 25568

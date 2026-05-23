@@ -374,3 +374,38 @@ class ServerExportResponse(BaseModel):
     file_size: int
     created_at: datetime
     download_url: str
+
+
+class ValidateServerCreationResponse(BaseModel):
+    """Response payload for ``POST /api/v1/servers/validate`` (Issue #33).
+
+    ``warnings`` reuses :class:`~app.core.error_schemas.ErrorDetail` so
+    the validation feedback shape is identical to the structured
+    ``details`` carried by failure responses (the frontend only needs
+    one renderer).
+    """
+
+    valid: bool = Field(
+        ..., description="True when the request would create successfully."
+    )
+    warnings: List["ErrorDetail"] = Field(
+        default_factory=list,
+        description=(
+            "Structured per-field issues. Empty when ``valid`` is True. "
+            "Each entry mirrors the ``details`` shape used by failure "
+            "responses so a single renderer covers both flows."
+        ),
+    )
+    suggested_ports: List[int] = Field(
+        default_factory=list,
+        description=(
+            "Up to 3 free ports starting near the requested one. Surfaced "
+            "even on a successful validation so frontends can render "
+            "near-by alternatives."
+        ),
+    )
+
+
+from app.core.error_schemas import ErrorDetail  # noqa: E402
+
+ValidateServerCreationResponse.model_rebuild()

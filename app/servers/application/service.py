@@ -43,10 +43,12 @@ import re
 import shlex
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Dict, Optional
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
+from app.core.error_schemas import ErrorDetail
 from app.core.exceptions import (
     ConflictException,
+    FileOperationException,
     InvalidRequestException,
     handle_file_error,
 )
@@ -73,6 +75,10 @@ from app.servers.adapters._legacy_helpers import (
     validate_server_operation_legacy,
 )
 from app.servers.application.minecraft_server import minecraft_server_manager
+from app.servers.application.port_allocator import (
+    find_available_ports,
+    port_holder,
+)
 from app.servers.application.server_properties_generator import (
     server_properties_generator,
 )
@@ -80,6 +86,14 @@ from app.servers.domain.entities import (
     CreateServerCommand,
     ServerListSpec,
     UpdateServerCommand,
+)
+from app.servers.domain.exceptions import (
+    JavaCompatibilityError,
+    ServerCreationRollbackError,
+    ServerJarDownloadError,
+    ServerNameConflictError,
+    ServerPortConflictError,
+    UnsupportedMinecraftVersionError,
 )
 from app.servers.domain.ports import ServerRepository, ServersUnitOfWork
 from app.servers.models import (
@@ -101,6 +115,8 @@ from app.versions.application.java_compatibility import java_compatibility_servi
 # runtime (ARCHITECTURE §4.2, #285).
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
+
+    from app.servers.schemas import ValidateServerCreationResponse
 
 logger = logging.getLogger(__name__)
 
@@ -423,42 +439,77 @@ class ServerService:
     ) -> ServerResponse:
         """Create a new Minecraft server.
 
+        Performs pre-flight validation (name uniqueness, port
+        availability among active servers, version support, Java
+        compatibility) **before** mutating the filesystem so failure
+        modes surface as actionable structured errors rather than
+        partially-created server directories (Issue #33).
+
         Uses the injected `ServersUnitOfWork` and `ServerRepository`
         when available; otherwise falls back to the legacy
         `ServerDatabaseService` path so test fixtures that construct
         `ServerService()` without DI continue to work.
         """
-        # Uniqueness check via repo (or legacy validation service when no DI).
-        if self._server_repo is not None:
-            existing = await self._server_repo.get_by_name(request.name)
-            if existing is not None:
-                raise ConflictException(
-                    f"Server with name '{request.name}' already exists"
-                )
-        else:
-            await self.validation_service.validate_server_uniqueness(request, db)
+        # ---- Pre-flight validation (Issue #33) -----------------------
+        # All checks below MUST raise domain exceptions with a stable
+        # ``error_code``; the global handler maps them to actionable
+        # HTTP responses.
+        await self._validate_creation_preconditions(request, db)
 
-        ServerSecurityValidator.validate_server_name(request.name)
-        ServerSecurityValidator.validate_memory_value(request.max_memory)
-
-        if not await self._is_version_supported_db(
-            db, request.server_type, request.minecraft_version
-        ):
-            raise InvalidRequestException(
-                f"Version {request.minecraft_version} is not supported for "
-                f"{request.server_type.value}. Minimum supported version: 1.8"
-            )
-
-        await self._validate_java_compatibility(request.minecraft_version)
-
+        # ---- Filesystem + persistence stage --------------------------
+        logger.info(
+            "server_create_step",
+            extra={
+                "stage": "directory_create",
+                "server_name": request.name,
+                "owner_id": owner.id,
+            },
+        )
         server_dir = await self.filesystem_service.create_server_directory(request.name)
 
         try:
-            await self.jar_service.get_server_jar(
-                request.server_type, request.minecraft_version, server_dir, db
+            logger.info(
+                "server_create_step",
+                extra={
+                    "stage": "jar_download",
+                    "server_name": request.name,
+                    "server_type": request.server_type.value,
+                    "minecraft_version": request.minecraft_version,
+                },
             )
+            try:
+                await self.jar_service.get_server_jar(
+                    request.server_type, request.minecraft_version, server_dir, db
+                )
+            except (
+                ServerJarDownloadError,
+                UnsupportedMinecraftVersionError,
+            ):
+                # Already an actionable domain exception — propagate.
+                raise
+            except FileOperationException as e:
+                # `_legacy_helpers.ServerJarService.get_server_jar`
+                # currently funnels every JAR failure through
+                # ``handle_file_error`` which re-raises as
+                # FileOperationException. Re-classify as a structured
+                # ``ServerJarDownloadError`` so the frontend gets a 502
+                # with a retry hint instead of a generic 500.
+                raise ServerJarDownloadError(
+                    server_type=request.server_type.value,
+                    version=request.minecraft_version,
+                    reason=str(e.detail) if e.detail else "unknown",
+                    retry_hint=(
+                        "Check upstream availability and retry. Clearing "
+                        "the JAR cache may help if a partial download "
+                        "is suspected."
+                    ),
+                ) from e
 
             # Persist via UoW + repo when DI wired; legacy path otherwise.
+            logger.info(
+                "server_create_step",
+                extra={"stage": "persist", "server_name": request.name},
+            )
             if self._uow is not None:
                 server = await self._create_via_uow(request, owner, server_dir)
             else:
@@ -466,6 +517,14 @@ class ServerService:
                     request, owner, str(server_dir), db
                 )
 
+            logger.info(
+                "server_create_step",
+                extra={
+                    "stage": "generate_files",
+                    "server_name": request.name,
+                    "server_id": server.id,
+                },
+            )
             await self.filesystem_service.generate_server_files(
                 server, request, server_dir
             )
@@ -508,9 +567,194 @@ class ServerService:
             return ServerResponse.model_validate(server)
 
         except Exception as e:
-            await self.filesystem_service.cleanup_server_directory(server_dir)
-            logger.error(f"Failed to create server {request.name}: {e}")
+            stage = "post_directory"
+            error_code = getattr(e, "error_code", e.__class__.__name__)
+            logger.exception(
+                "server_create_failed",
+                extra={
+                    "stage": stage,
+                    "error_code": error_code,
+                    "server_name": request.name,
+                },
+            )
+            try:
+                await self.filesystem_service.cleanup_server_directory(server_dir)
+            except Exception as cleanup_error:  # pragma: no cover - defensive
+                logger.error(
+                    "server_create_rollback_failed",
+                    extra={
+                        "stage": stage,
+                        "error_code": error_code,
+                        "server_name": request.name,
+                        "rollback_error": str(cleanup_error),
+                    },
+                )
+                # Surface the rollback failure to the caller so an
+                # operator can intervene (a stranded directory remains
+                # on disk). Chain the original error for traceability.
+                raise ServerCreationRollbackError(
+                    stage=stage,
+                    original_error=str(e),
+                ) from cleanup_error
             raise
+
+    async def _validate_creation_preconditions(
+        self, request: ServerCreateRequest, db: Session
+    ) -> None:
+        """Run all pre-flight checks for ``create_server`` (Issue #33).
+
+        Order is deliberate: cheap in-memory and DB-only checks first
+        (name, port), then the version lookup, then the Java probe
+        which may need to walk the filesystem. Each failure raises a
+        dedicated domain exception with an ``error_code`` and (where
+        relevant) structured ``extra_details``.
+        """
+        # ---- Name uniqueness ----
+        logger.info(
+            "server_create_step",
+            extra={"stage": "name_check", "server_name": request.name},
+        )
+        if self._server_repo is not None:
+            existing = await self._server_repo.get_by_name(request.name)
+            if existing is not None:
+                raise ServerNameConflictError(request.name)
+        else:
+            # Legacy fallback used by unit tests that construct
+            # ``ServerService()`` without DI. Translate the legacy
+            # ``ConflictException`` into the structured error so the
+            # router contract stays uniform.
+            try:
+                await self.validation_service.validate_server_uniqueness(request, db)
+            except ConflictException as e:
+                raise ServerNameConflictError(request.name) from e
+
+        # ---- Static safety checks ----
+        ServerSecurityValidator.validate_server_name(request.name)
+        ServerSecurityValidator.validate_memory_value(request.max_memory)
+
+        # ---- Port pre-flight ----
+        logger.info(
+            "server_create_step",
+            extra={
+                "stage": "port_check",
+                "server_name": request.name,
+                "port": request.port,
+            },
+        )
+        if self._server_repo is not None:
+            holder_name = await port_holder(self._server_repo, request.port)
+            if holder_name is not None:
+                suggestions = await find_available_ports(
+                    self._server_repo, start_port=request.port + 1, count=3
+                )
+                raise ServerPortConflictError(
+                    port=request.port,
+                    conflicting_server=holder_name,
+                    suggested_ports=suggestions,
+                )
+
+        # ---- Version support ----
+        logger.info(
+            "server_create_step",
+            extra={
+                "stage": "version_check",
+                "server_name": request.name,
+                "server_type": request.server_type.value,
+                "minecraft_version": request.minecraft_version,
+            },
+        )
+        try:
+            supported = await self._is_version_supported_db(
+                db, request.server_type, request.minecraft_version
+            )
+        except InvalidRequestException as e:
+            # Both DB and upstream lookups failed — surface as the
+            # version-unsupported domain code so the frontend can
+            # offer a retry instead of rendering a 500.
+            raise UnsupportedMinecraftVersionError(
+                version=request.minecraft_version,
+                server_type=request.server_type.value,
+            ) from e
+        if not supported:
+            raise UnsupportedMinecraftVersionError(
+                version=request.minecraft_version,
+                server_type=request.server_type.value,
+            )
+
+        # ---- Java compatibility ----
+        logger.info(
+            "server_create_step",
+            extra={
+                "stage": "java_check",
+                "server_name": request.name,
+                "minecraft_version": request.minecraft_version,
+            },
+        )
+        await self._validate_java_compatibility(request.minecraft_version)
+
+    async def validate_creation_request(
+        self, request: ServerCreateRequest, db: Session
+    ) -> "ValidateServerCreationResponse":
+        """Pre-validate a create-server request without mutating state.
+
+        Powers the ``POST /api/v1/servers/validate`` endpoint added under
+        Issue #33 so frontends can render inline validation feedback
+        before committing the user to the create button. Returns a
+        :class:`ValidateServerCreationResponse` with ``valid=False`` and
+        a populated ``warnings`` list on failure (rather than raising)
+        so the caller can render multiple issues at once.
+        """
+        from app.servers.schemas import ValidateServerCreationResponse
+
+        warnings: List[ErrorDetail] = []
+        try:
+            await self._validate_creation_preconditions(request, db)
+            valid = True
+        except (
+            ServerNameConflictError,
+            ServerPortConflictError,
+            UnsupportedMinecraftVersionError,
+            JavaCompatibilityError,
+        ) as exc:
+            valid = False
+            warnings.append(
+                ErrorDetail(
+                    field=None,
+                    message=str(exc),
+                    code=exc.error_code,
+                )
+            )
+            extra_fn = getattr(exc, "extra_details", None)
+            if callable(extra_fn):
+                try:
+                    warnings.extend(list(extra_fn()))
+                except Exception:  # pragma: no cover - defensive
+                    pass
+        except InvalidRequestException as exc:
+            valid = False
+            warnings.append(
+                ErrorDetail(
+                    field=None,
+                    message=str(exc.detail) if exc.detail else "invalid request",
+                    code=getattr(exc, "error_code", "INVALID_REQUEST"),
+                )
+            )
+
+        # Always provide at least one alternative port suggestion when
+        # the repo is wired — useful both for the conflict path and for
+        # frontends that want to show "free ports near your choice"
+        # affordances independent of any failure.
+        suggested_ports: List[int] = []
+        if self._server_repo is not None:
+            suggested_ports = await find_available_ports(
+                self._server_repo, start_port=request.port, count=3
+            )
+
+        return ValidateServerCreationResponse(
+            valid=valid,
+            warnings=warnings,
+            suggested_ports=suggested_ports,
+        )
 
     async def _create_via_uow(
         self, request: ServerCreateRequest, owner: User, server_dir: Path
@@ -932,7 +1176,21 @@ class ServerService:
             logger.error(f"Failed to sync server.properties for server {server.id}: {e}")
 
     async def _validate_java_compatibility(self, minecraft_version: str) -> None:
+        """Verify a compatible Java runtime is installed for ``minecraft_version``.
+
+        Raises :class:`JavaCompatibilityError` with structured context
+        (required version, available versions) so the frontend can
+        render an actionable install hint (Issue #33).
+        """
         try:
+            required_version: Optional[int] = None
+            try:
+                required_version = java_compatibility_service.get_required_java_version(
+                    minecraft_version
+                )
+            except Exception:  # pragma: no cover - best-effort metadata
+                required_version = None
+
             java_version = await java_compatibility_service.get_java_for_minecraft(
                 minecraft_version
             )
@@ -940,26 +1198,14 @@ class ServerService:
                 installations = (
                     await java_compatibility_service.discover_java_installations()
                 )
-                if not installations:
-                    raise InvalidRequestException(
-                        "No Java installations found. "
-                        "Please install OpenJDK and ensure it's accessible. "
-                        "You can also configure specific Java paths in .env file."
-                    )
-                else:
-                    available_versions = list(installations.keys())
-                    required_version = (
-                        java_compatibility_service.get_required_java_version(
-                            minecraft_version
-                        )
-                    )
-                    raise InvalidRequestException(
-                        f"Minecraft {minecraft_version} requires Java "
-                        f"{required_version}, but only Java {available_versions} are "
-                        "available. Please install Java "
-                        f"{required_version} or configure "
-                        f"JAVA_{required_version}_PATH in .env."
-                    )
+                available_versions: List[int] = (
+                    list(installations.keys()) if installations else []
+                )
+                raise JavaCompatibilityError(
+                    minecraft_version=minecraft_version,
+                    required_java=required_version,
+                    available_java=available_versions,
+                )
 
             is_compatible, compatibility_message = (
                 java_compatibility_service.validate_java_compatibility(
@@ -972,19 +1218,37 @@ class ServerService:
                     f"Java compatibility validation failed for Minecraft "
                     f"{minecraft_version}: {compatibility_message}"
                 )
-                raise InvalidRequestException(compatibility_message)
+                raise JavaCompatibilityError(
+                    minecraft_version=minecraft_version,
+                    required_java=required_version,
+                    available_java=[java_version.major_version],
+                    message=compatibility_message,
+                )
 
             logger.info(
                 f"Java compatibility validated for Minecraft {minecraft_version}: "
                 f"Using Java {java_version.major_version} at "
                 f"{java_version.executable_path}"
             )
-        except InvalidRequestException:
+        except JavaCompatibilityError:
             raise
+        except InvalidRequestException as e:
+            # Translate the legacy code-path (still raised by older
+            # ``java_compatibility_service`` failure modes) into the
+            # structured Issue #33 exception.
+            raise JavaCompatibilityError(
+                minecraft_version=minecraft_version,
+                required_java=None,
+                message=str(e.detail) if e.detail else str(e),
+            ) from e
         except Exception as e:
             error_message = f"Java compatibility validation failed: {e}"
             logger.error(error_message, exc_info=True)
-            raise InvalidRequestException(error_message)
+            raise JavaCompatibilityError(
+                minecraft_version=minecraft_version,
+                required_java=None,
+                message=error_message,
+            ) from e
 
 
 # Global default instance for legacy import paths. Constructed without

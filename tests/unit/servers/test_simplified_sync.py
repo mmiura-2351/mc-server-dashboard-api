@@ -79,10 +79,12 @@ class TestBidirectionalSync:
             f.write("server-port=25599\n")
             f.write("max-players=20\n")
 
-        success, description, updated = (
-            await simplified_sync_service.perform_simplified_sync(
-                test_server, properties_path, repo
-            )
+        (
+            success,
+            description,
+            updated,
+        ) = await simplified_sync_service.perform_simplified_sync(
+            test_server, properties_path, repo
         )
 
         assert success is True
@@ -105,10 +107,12 @@ class TestBidirectionalSync:
             f.write("max-players=20\n")
             f.write("motd=A Minecraft Server\n")
 
-        success, description, updated = (
-            await simplified_sync_service.perform_simplified_sync(
-                test_server, properties_path, repo
-            )
+        (
+            success,
+            description,
+            updated,
+        ) = await simplified_sync_service.perform_simplified_sync(
+            test_server, properties_path, repo
         )
 
         assert success is True
@@ -122,10 +126,12 @@ class TestBidirectionalSync:
         """No sync needed when ports already match (simplified logic)."""
         properties_path = Path(test_server.directory_path) / "server.properties"
 
-        success, description, updated = (
-            await simplified_sync_service.perform_simplified_sync(
-                test_server, properties_path, repo
-            )
+        (
+            success,
+            description,
+            updated,
+        ) = await simplified_sync_service.perform_simplified_sync(
+            test_server, properties_path, repo
         )
 
         assert success is True
@@ -143,10 +149,12 @@ class TestBidirectionalSync:
             f.write("max-players=20\n")
             f.write("motd=Manually Edited Server\n")
 
-        success, description, updated = (
-            await simplified_sync_service.perform_simplified_sync(
-                test_server, properties_path, repo
-            )
+        (
+            success,
+            description,
+            updated,
+        ) = await simplified_sync_service.perform_simplified_sync(
+            test_server, properties_path, repo
         )
 
         assert success is True
@@ -177,10 +185,12 @@ class TestBidirectionalSync:
         synced_entity = await repo.get(test_server.id)
         assert synced_entity is not None
 
-        success, description, updated = (
-            await simplified_sync_service.perform_simplified_sync(
-                synced_entity, properties_path, repo
-            )
+        (
+            success,
+            description,
+            updated,
+        ) = await simplified_sync_service.perform_simplified_sync(
+            synced_entity, properties_path, repo
         )
         assert success is True
         assert "No sync needed" in description

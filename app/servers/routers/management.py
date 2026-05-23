@@ -16,7 +16,6 @@ from app.backups.domain.exceptions import (
     BackupParentServerMissingError,
 )
 from app.core.database import get_db
-from app.core.exceptions import ConflictException
 from app.servers.api.dependencies import (
     get_authorization_service,
     get_server_service,
@@ -36,6 +35,7 @@ from app.servers.schemas import (
     ServerListResponse,
     ServerResponse,
     ServerUpdateRequest,
+    ValidateServerCreationResponse,
 )
 from app.users.models import User
 
@@ -74,25 +74,46 @@ async def create_server(
     - **template_id**: Optional template to apply
     - **server_properties**: Custom server.properties overrides
     - **attach_groups**: Groups to attach on creation
+
+    Failure modes raise structured domain exceptions
+    (``SERVER_NAME_CONFLICT``, ``SERVER_PORT_CONFLICT``,
+    ``SERVER_UNSUPPORTED_VERSION``, ``SERVER_JAVA_INCOMPATIBLE``,
+    ``SERVER_JAR_DOWNLOAD_FAILED`` etc.) mapped to actionable HTTP
+    responses by the global handlers in
+    :mod:`app.core.error_handlers` (Issue #33).
     """
-    try:
-        # Phase 1: All users can create servers
-        if not AuthorizationService.can_create_server(current_user):
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Insufficient permissions to create servers",
-            )
+    # Phase 1: All users can create servers
+    if not AuthorizationService.can_create_server(current_user):
+        raise ServerAccessError("Insufficient permissions to create servers")
 
-        server = await server_service.create_server(request, current_user, db)
-        return server
+    return await server_service.create_server(request, current_user, db)
 
-    except ConflictException as e:
-        raise e  # Already has proper HTTP status code
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to create server: {str(e)}",
-        )
+
+@router.post(
+    "/validate",
+    response_model=ValidateServerCreationResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def validate_server_creation(
+    request: ServerCreateRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    server_service: ServerService = Depends(get_server_service),
+):
+    """Pre-validate a server-creation request without persisting (Issue #33).
+
+    Mirrors the validation pipeline of ``POST /api/v1/servers`` so the
+    frontend can render inline error/warning UI before the user
+    commits. Returns ``200 OK`` with ``valid=false`` (rather than
+    raising) so multiple issues can be surfaced in one round-trip.
+
+    Authorization mirrors create — the same ``can_create_server`` gate
+    is enforced.
+    """
+    if not AuthorizationService.can_create_server(current_user):
+        raise ServerAccessError("Insufficient permissions to validate server creation")
+
+    return await server_service.validate_creation_request(request, db)
 
 
 @router.get("", response_model=ServerListResponse)
