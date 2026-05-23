@@ -399,3 +399,130 @@ class TestExceptionInheritance:
         # ServerAccessDeniedException should inherit from HTTPException due to line 84 override
         exception = ServerAccessDeniedException("server-123")
         assert exception.status_code == status.HTTP_403_FORBIDDEN
+
+
+# ---------------------------------------------------------------------------
+# Issue #35: file-operation exception taxonomy
+# ---------------------------------------------------------------------------
+
+
+class TestFileOperationExceptionTaxonomy:
+    """Coverage for the file-operation exception subclasses introduced
+    under Issue #35 — verifies status codes, ``error_code`` constants,
+    and ``extra_details()`` payload shape.
+    """
+
+    def test_file_missing_error_status_and_code(self):
+        from app.core.exceptions import FileMissingError
+
+        exc = FileMissingError("read", "/srv/foo.txt")
+        assert exc.status_code == status.HTTP_404_NOT_FOUND
+        assert exc.error_code == "FILE_NOT_FOUND"
+        assert exc.file_path == "/srv/foo.txt"
+        assert isinstance(exc, FileOperationException)
+
+    def test_file_missing_error_extra_details(self):
+        from app.core.exceptions import FileMissingError
+
+        details = FileMissingError("read", "/srv/foo.txt").extra_details()
+        codes = {d.code for d in details}
+        # File path + technical details + at least one suggested action
+        assert "FILE_PATH" in codes
+        assert "SUGGESTED_ACTION" in codes
+
+    def test_file_access_denied_error_status_and_code(self):
+        from app.core.exceptions import FileAccessDeniedError
+
+        exc = FileAccessDeniedError("write", "/srv/ops.json")
+        assert exc.status_code == status.HTTP_403_FORBIDDEN
+        assert exc.error_code == "FILE_ACCESS_DENIED"
+
+    def test_file_too_large_error_carries_size_metadata(self):
+        from app.core.exceptions import FileTooLargeError
+
+        exc = FileTooLargeError(
+            "upload",
+            "/srv/big.zip",
+            size_bytes=200_000_000,
+            max_bytes=100_000_000,
+        )
+        assert exc.status_code == status.HTTP_413_REQUEST_ENTITY_TOO_LARGE
+        assert exc.error_code == "FILE_TOO_LARGE"
+        details = {d.code: d.message for d in exc.extra_details()}
+        assert details["FILE_SIZE_BYTES"] == "200000000"
+        assert details["FILE_MAX_BYTES"] == "100000000"
+
+    def test_invalid_file_type_error_carries_detected_type(self):
+        from app.core.exceptions import InvalidFileTypeError
+
+        exc = InvalidFileTypeError(
+            "read",
+            "/srv/world",
+            detected_type="directory",
+            expected_types=[".txt", ".yml"],
+        )
+        assert exc.status_code == status.HTTP_400_BAD_REQUEST
+        assert exc.error_code == "INVALID_FILE_TYPE"
+        codes = [d.code for d in exc.extra_details()]
+        assert "DETECTED_FILE_TYPE" in codes
+        assert codes.count("EXPECTED_FILE_TYPE") == 2
+
+    def test_disk_space_error_status_and_code(self):
+        from app.core.exceptions import DiskSpaceError
+
+        exc = DiskSpaceError("write", "/srv/foo.txt")
+        assert exc.status_code == status.HTTP_507_INSUFFICIENT_STORAGE
+        assert exc.error_code == "DISK_SPACE_INSUFFICIENT"
+
+
+class TestHandleFileErrorErrnoDispatch:
+    """Coverage for the errno-aware dispatch added to ``handle_file_error``
+    under Issue #35. The helper must translate OS-level errors into the
+    correct domain subclass while preserving any already-raised
+    :class:`FileOperationException`.
+    """
+
+    def test_dispatches_ENOSPC_to_disk_space_error(self):
+        import errno as _errno
+
+        from app.core.exceptions import DiskSpaceError
+
+        err = OSError(_errno.ENOSPC, "No space left on device")
+        with pytest.raises(DiskSpaceError) as info:
+            handle_file_error("write", "/srv/foo.txt", err)
+        assert info.value.status_code == status.HTTP_507_INSUFFICIENT_STORAGE
+
+    def test_dispatches_PermissionError_to_file_access_denied(self):
+        from app.core.exceptions import FileAccessDeniedError
+
+        with pytest.raises(FileAccessDeniedError) as info:
+            handle_file_error("write", "/srv/foo.txt", PermissionError("denied"))
+        assert info.value.status_code == status.HTTP_403_FORBIDDEN
+
+    def test_dispatches_FileNotFoundError_to_file_missing(self):
+        from app.core.exceptions import FileMissingError
+
+        with pytest.raises(FileMissingError) as info:
+            handle_file_error("read", "/srv/foo.txt", FileNotFoundError("missing"))
+        assert info.value.status_code == status.HTTP_404_NOT_FOUND
+
+    def test_dispatches_IsADirectoryError_to_invalid_file_type(self):
+        from app.core.exceptions import InvalidFileTypeError
+
+        with pytest.raises(InvalidFileTypeError):
+            handle_file_error("read", "/srv/world", IsADirectoryError("isdir"))
+
+    def test_preserves_existing_file_operation_subclass(self):
+        from app.core.exceptions import FileMissingError
+
+        existing = FileMissingError("access", "/srv/foo.txt")
+        with pytest.raises(FileMissingError) as info:
+            handle_file_error("access", "/srv/foo.txt", existing)
+        # Same instance — no demotion to generic 500
+        assert info.value is existing
+
+    def test_fallback_to_generic_file_operation_exception(self):
+        with pytest.raises(FileOperationException) as info:
+            handle_file_error("write", "/srv/foo.txt", RuntimeError("boom"))
+        # Generic fallback retains the original 500 status
+        assert info.value.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR

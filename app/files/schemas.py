@@ -30,8 +30,27 @@ class FileReadResponse(BaseModel):
     image_data: Optional[str] = None
 
 
+# 50 MiB cap on inbound write payloads; mirrors the heuristic the
+# frontend uses to short-circuit oversized edits before they reach the
+# API. Anything larger should go through ``upload`` which streams.
+MAX_FILE_WRITE_BYTES = 50 * 1024 * 1024
+# 100 MB upper bound for stored ``file_size`` metadata (sanity check
+# only — actual disk usage is enforced elsewhere).
+MAX_FILE_SIZE_BYTES = 100_000_000
+# SHA-256 hex digest pattern for ``FileHistoryRecord.content_hash``.
+SHA256_HEX_PATTERN = r"^[A-Fa-f0-9]{64}$"
+
+
 class FileWriteRequest(BaseModel):
-    content: str
+    content: str = Field(
+        ...,
+        max_length=MAX_FILE_WRITE_BYTES,
+        description=(
+            "File content to persist. Capped at "
+            f"{MAX_FILE_WRITE_BYTES} characters (~50 MiB) — upload "
+            "binary or larger files through the upload endpoint instead."
+        ),
+    )
     encoding: str = Field("utf-8", description="File encoding")
     create_backup: bool = Field(True, description="Create backup before writing")
 
@@ -103,8 +122,21 @@ class FileHistoryRecord(BaseModel):
     file_path: str
     version_number: int
     backup_file_path: str
-    file_size: int
-    content_hash: Optional[str]
+    file_size: int = Field(
+        ...,
+        ge=0,
+        le=MAX_FILE_SIZE_BYTES,
+        description=(
+            "Backup file size in bytes. Bounded to "
+            f"{MAX_FILE_SIZE_BYTES} bytes to guard against "
+            "malformed metadata."
+        ),
+    )
+    content_hash: Optional[str] = Field(
+        None,
+        pattern=SHA256_HEX_PATTERN,
+        description="SHA-256 hex digest of the stored content (lower-case).",
+    )
     editor_user_id: Optional[int]
     editor_username: Optional[str]
     created_at: datetime

@@ -873,3 +873,153 @@ class TestFileRenameRouter:
             json={"new_name": "renamed.txt"},
         )
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
+
+
+# ---------------------------------------------------------------------------
+# Issue #36 Phase 1 + Issue #35: audit wiring and structured error envelope
+# ---------------------------------------------------------------------------
+
+
+class TestFileRouterAuditWiring:
+    """Verify ``AuditService.log_file_event`` is invoked from the router
+    for both success and failure paths on the mutating endpoints (#36
+    Phase 1), and that file-domain exceptions surface through the global
+    error handlers with the standard envelope (#35).
+    """
+
+    @patch("app.files.router.AuditService.log_file_event")
+    @patch(
+        "app.servers.application.authorization.AuthorizationService.check_server_access",
+        new_callable=AsyncMock,
+    )
+    @patch("app.servers.application.authorization.AuthorizationService.can_modify_files")
+    @patch("app.files.application.management.file_management_service.write_file")
+    def test_write_file_emits_audit_event_on_success(
+        self,
+        mock_write_file,
+        mock_can_modify,
+        mock_check_access,
+        mock_audit,
+        client,
+        admin_user,
+    ):
+        mock_check_access.return_value = None
+        mock_can_modify.return_value = True
+        mock_write_file.return_value = {
+            "message": "File updated successfully",
+            "file": {
+                "name": "server.properties",
+                "path": "server.properties",
+                "type": FileType.text,
+                "is_directory": False,
+                "size": 5,
+                "modified": datetime.now(),
+                "permissions": {"read": True, "write": True, "execute": False},
+            },
+            "backup_created": True,
+        }
+
+        headers = get_auth_headers(admin_user.username)
+        response = client.put(
+            "/api/v1/files/servers/1/files/server.properties",
+            json={"content": "hello", "encoding": "utf-8", "create_backup": True},
+            headers=headers,
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        mock_audit.assert_called_once()
+        kwargs = mock_audit.call_args.kwargs
+        assert kwargs["action"] == "write"
+        assert kwargs["server_id"] == 1
+        assert kwargs["file_path"] == "server.properties"
+        assert kwargs["details"]["encoding"] == "utf-8"
+        assert kwargs["details"]["backup_created"] is True
+        assert kwargs["details"]["bytes"] == 5
+        assert "duration_ms" in kwargs["details"]
+
+    @patch("app.files.router.AuditService.log_file_event")
+    @patch(
+        "app.servers.application.authorization.AuthorizationService.check_server_access",
+        new_callable=AsyncMock,
+    )
+    @patch("app.servers.application.authorization.AuthorizationService.can_modify_files")
+    @patch("app.files.application.management.file_management_service.write_file")
+    def test_write_file_emits_failure_audit_on_error(
+        self,
+        mock_write_file,
+        mock_can_modify,
+        mock_check_access,
+        mock_audit,
+        client,
+        admin_user,
+    ):
+        from app.core.exceptions import FileMissingError
+
+        mock_check_access.return_value = None
+        mock_can_modify.return_value = True
+        mock_write_file.side_effect = FileMissingError("write", "server.properties")
+
+        headers = get_auth_headers(admin_user.username)
+        response = client.put(
+            "/api/v1/files/servers/1/files/server.properties",
+            json={"content": "hi", "encoding": "utf-8", "create_backup": False},
+            headers=headers,
+        )
+
+        # File-domain exception maps to 404 with structured envelope
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+        body = response.json()
+        assert body["error"] == "FILE_NOT_FOUND"
+        assert body["status_code"] == 404
+        assert "request_id" in body
+        # ``details`` carries the structured ``extra_details`` payload
+        codes = {d["code"] for d in (body.get("details") or [])}
+        assert "FILE_PATH" in codes
+        assert "SUGGESTED_ACTION" in codes
+
+        # Failure audit event was emitted with error_type
+        mock_audit.assert_called_once()
+        kwargs = mock_audit.call_args.kwargs
+        assert kwargs["action"] == "write_failure"
+        assert kwargs["details"]["error_type"] == "FileMissingError"
+
+    @patch("app.files.router.AuditService.log_file_event")
+    @patch("app.servers.application.authorization.AuthorizationService.can_modify_files")
+    @patch("app.files.application.management.file_management_service.delete_file")
+    def test_delete_file_emits_audit_event_on_success(
+        self,
+        mock_delete_file,
+        mock_can_modify,
+        mock_audit,
+        client,
+        admin_user,
+    ):
+        mock_can_modify.return_value = True
+        mock_delete_file.return_value = {"message": "File 'foo' deleted successfully"}
+
+        headers = get_auth_headers(admin_user.username)
+        response = client.delete(
+            "/api/v1/files/servers/1/files/foo",
+            headers=headers,
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        mock_audit.assert_called_once()
+        assert mock_audit.call_args.kwargs["action"] == "delete"
+
+    def test_write_request_size_limit_returns_422(self, client, admin_user):
+        """``FileWriteRequest.content`` carries a 50 MiB cap (Issue #35).
+
+        The router rejects oversized payloads at validation time before
+        the audit hook runs.
+        """
+        from app.files.schemas import MAX_FILE_WRITE_BYTES
+
+        oversized = "a" * (MAX_FILE_WRITE_BYTES + 1)
+        headers = get_auth_headers(admin_user.username)
+        response = client.put(
+            "/api/v1/files/servers/1/files/foo.txt",
+            json={"content": oversized, "encoding": "utf-8", "create_backup": False},
+            headers=headers,
+        )
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY

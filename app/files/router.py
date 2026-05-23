@@ -1,14 +1,22 @@
-from typing import Optional
+import logging
+import time
+from typing import Any, Dict, Optional
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
+from fastapi import (
+    APIRouter,
+    Depends,
+    File,
+    Form,
+    HTTPException,
+    Query,
+    Request,
+    UploadFile,
+)
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
+from app.audit.application.legacy_facade import AuditService
 from app.auth.dependencies import get_current_user
-from app.backups.domain.exceptions import (
-    BackupNotFoundError,
-    BackupParentServerMissingError,
-)
 from app.core.database import get_db
 from app.files.api.dependencies import get_file_history_service
 from app.files.application.management import file_management_service
@@ -37,12 +45,43 @@ from app.files.schemas import (
 )
 from app.servers.api.dependencies import get_authorization_service
 from app.servers.application.authorization import AuthorizationService
-from app.servers.domain.exceptions import ServerAccessError, ServerNotFoundError
 from app.types import FileType
 from app.users.domain.value_objects import Role
 from app.users.models import User
 
+logger = logging.getLogger(__name__)
 router = APIRouter()
+
+
+def _duration_ms(start: float) -> int:
+    """Round elapsed wall-clock to integer milliseconds for audit detail."""
+    return int((time.perf_counter() - start) * 1000)
+
+
+def _safe_audit(
+    request: Request,
+    action: str,
+    server_id: int,
+    file_path: str,
+    details: Optional[Dict[str, Any]] = None,
+) -> None:
+    """Wrap :class:`AuditService.log_file_event` so a logging failure
+    can never mask the underlying business outcome (Issue #36 Phase 1).
+
+    Audit emission goes through the request-scoped tracker which is
+    flushed by the middleware; raising here would convert a successful
+    write into a 500.
+    """
+    try:
+        AuditService.log_file_event(
+            request=request,
+            action=action,
+            server_id=server_id,
+            file_path=file_path,
+            details=details or {},
+        )
+    except Exception:  # pragma: no cover - defensive
+        logger.exception("audit_log_failed", extra={"action": action})
 
 
 # Specific endpoints first (before the general path parameter routes)
@@ -98,6 +137,9 @@ async def read_file(
         db=db,
     )
 
+    # NB: ``read`` is intentionally not audited — high-traffic and
+    # low risk. Audit wiring covers write/delete/rename/upload/create/
+    # restore/delete_version per Issue #36 Phase 1.
     return FileReadResponse(
         content=content,
         encoding=detected_encoding,
@@ -135,6 +177,7 @@ async def download_file(
 @router.post("/servers/{server_id}/files/upload", response_model=FileUploadResponse)
 async def upload_file(
     server_id: int,
+    request: Request,
     file: UploadFile = File(...),
     destination_path: str = Form(""),
     extract_if_archive: bool = Form(False),
@@ -145,15 +188,46 @@ async def upload_file(
     if not AuthorizationService.can_modify_files(current_user):
         raise HTTPException(status_code=403, detail="Insufficient permissions")
 
-    result = await file_management_service.upload_file(
-        server_id=server_id,
-        file=file,
-        destination_path=destination_path,
-        extract_if_archive=extract_if_archive,
-        user=current_user,
-        db=db,
+    start = time.perf_counter()
+    audit_path = (
+        f"{destination_path}/{file.filename}".strip("/")
+        if destination_path
+        else (file.filename or "")
     )
+    try:
+        result = await file_management_service.upload_file(
+            server_id=server_id,
+            file=file,
+            destination_path=destination_path,
+            extract_if_archive=extract_if_archive,
+            user=current_user,
+            db=db,
+        )
+    except Exception as exc:
+        _safe_audit(
+            request,
+            "upload_failure",
+            server_id,
+            audit_path,
+            details={
+                "duration_ms": _duration_ms(start),
+                "error_type": type(exc).__name__,
+                "extract_if_archive": extract_if_archive,
+            },
+        )
+        raise
 
+    _safe_audit(
+        request,
+        "upload",
+        server_id,
+        audit_path,
+        details={
+            "duration_ms": _duration_ms(start),
+            "extract_if_archive": extract_if_archive,
+            "extracted_count": len(result.get("extracted_files", [])),
+        },
+    )
     return FileUploadResponse(**result)
 
 
@@ -230,7 +304,8 @@ async def search_files(
 async def create_directory(
     server_id: int,
     directory_path: str,
-    request: DirectoryCreateRequest,
+    payload: DirectoryCreateRequest,
+    request: Request,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -238,14 +313,35 @@ async def create_directory(
     if not AuthorizationService.can_modify_files(current_user):
         raise HTTPException(status_code=403, detail="Insufficient permissions")
 
-    full_path = f"{directory_path}/{request.name}".strip("/")
+    full_path = f"{directory_path}/{payload.name}".strip("/")
 
-    result = await file_management_service.create_directory(
-        server_id=server_id,
-        directory_path=full_path,
-        db=db,
+    start = time.perf_counter()
+    try:
+        result = await file_management_service.create_directory(
+            server_id=server_id,
+            directory_path=full_path,
+            db=db,
+        )
+    except Exception as exc:
+        _safe_audit(
+            request,
+            "create_directory_failure",
+            server_id,
+            full_path,
+            details={
+                "duration_ms": _duration_ms(start),
+                "error_type": type(exc).__name__,
+            },
+        )
+        raise
+
+    _safe_audit(
+        request,
+        "create_directory",
+        server_id,
+        full_path,
+        details={"duration_ms": _duration_ms(start)},
     )
-
     return DirectoryCreateResponse(**result)
 
 
@@ -322,7 +418,8 @@ async def restore_from_version(
     server_id: int,
     file_path: str,
     version: int,
-    request: RestoreFromVersionRequest,
+    payload: RestoreFromVersionRequest,
+    request: Request,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
     file_history_service: FileHistoryService = Depends(get_file_history_service),
@@ -336,21 +433,48 @@ async def restore_from_version(
     # Check server access
     await auth.check_server_access(server_id, current_user)
 
-    # Restore from version
-    content, backup_created = await file_history_service.restore_from_history(
-        server_id=server_id,
-        file_path=file_path,
-        version_number=version,
-        user_id=current_user.id,
-        create_backup_before_restore=request.create_backup_before_restore,
-        description=request.description,
-    )
+    start = time.perf_counter()
+    try:
+        # Restore from version
+        content, backup_created = await file_history_service.restore_from_history(
+            server_id=server_id,
+            file_path=file_path,
+            version_number=version,
+            user_id=current_user.id,
+            create_backup_before_restore=payload.create_backup_before_restore,
+            description=payload.description,
+        )
+    except Exception as exc:
+        _safe_audit(
+            request,
+            "restore_version_failure",
+            server_id,
+            file_path,
+            details={
+                "duration_ms": _duration_ms(start),
+                "version": version,
+                "error_type": type(exc).__name__,
+            },
+        )
+        raise
 
     # Get updated file info
     files = await file_management_service.get_server_files(
         server_id=server_id, path=file_path, db=db
     )
     file_info = FileInfoResponse(**files[0]) if files else None
+
+    _safe_audit(
+        request,
+        "restore_version",
+        server_id,
+        file_path,
+        details={
+            "duration_ms": _duration_ms(start),
+            "version": version,
+            "backup_created": backup_created,
+        },
+    )
 
     return RestoreResponse(
         message=f"Successfully restored '{file_path}' to version {version}",
@@ -368,6 +492,7 @@ async def delete_file_version(
     server_id: int,
     file_path: str,
     version: int,
+    request: Request,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
     file_history_service: FileHistoryService = Depends(get_file_history_service),
@@ -381,9 +506,35 @@ async def delete_file_version(
     # Check server access
     await auth.check_server_access(server_id, current_user)
 
-    # Delete version
-    await file_history_service.delete_version(
-        server_id=server_id, file_path=file_path, version_number=version
+    start = time.perf_counter()
+    try:
+        # Delete version
+        await file_history_service.delete_version(
+            server_id=server_id, file_path=file_path, version_number=version
+        )
+    except Exception as exc:
+        _safe_audit(
+            request,
+            "delete_version_failure",
+            server_id,
+            file_path,
+            details={
+                "duration_ms": _duration_ms(start),
+                "version": version,
+                "error_type": type(exc).__name__,
+            },
+        )
+        raise
+
+    _safe_audit(
+        request,
+        "delete_version",
+        server_id,
+        file_path,
+        details={
+            "duration_ms": _duration_ms(start),
+            "version": version,
+        },
     )
 
     return DeleteVersionResponse(
@@ -432,71 +583,37 @@ async def list_server_files(
     db: Session = Depends(get_db),
     auth: AuthorizationService = Depends(get_authorization_service),
 ):
-    """List files and directories in server directory"""
-    import logging
+    """List files and directories in server directory.
 
-    logger = logging.getLogger(__name__)
+    Domain exceptions raised by the service layer (``ServerNotFoundError``,
+    ``ServerAccessError``, ``FileMissingError``, etc.) propagate to the
+    global handlers in :mod:`app.core.error_handlers`. The legacy
+    manual ``except`` chain was removed under Issue #35 now that every
+    file exception has a structured handler that emits the standard
+    error envelope.
+    """
+    # Check server access
+    await auth.check_server_access(server_id, current_user)
 
-    try:
-        # Check server access
-        await auth.check_server_access(server_id, current_user)
+    logger.info(f"Listing files for server {server_id}, path: '{path}'")
 
-        logger.info(f"Listing files for server {server_id}, path: '{path}'")
+    files = await file_management_service.get_server_files(
+        server_id=server_id,
+        path=path,
+        file_type=file_type,
+        db=db,
+    )
 
-        files = await file_management_service.get_server_files(
-            server_id=server_id,
-            path=path,
-            file_type=file_type,
-            db=db,
-        )
+    # Convert dict results to schema objects
+    file_responses = [FileInfoResponse(**file_data) for file_data in files]
 
-        # Convert dict results to schema objects
-        file_responses = [FileInfoResponse(**file_data) for file_data in files]
+    logger.info(f"Successfully listed {len(file_responses)} files for server {server_id}")
 
-        logger.info(
-            f"Successfully listed {len(file_responses)} files for server {server_id}"
-        )
-
-        return FileListResponse(
-            files=file_responses,
-            current_path=path,
-            total_files=len(file_responses),
-        )
-    except (
-        ServerNotFoundError,
-        ServerAccessError,
-        BackupNotFoundError,
-        BackupParentServerMissingError,
-    ):
-        # Re-raise domain exceptions so the global handlers in
-        # ``app.core.error_handlers`` can map them to HTTP responses
-        # without being swallowed by the catch-all below (#273).
-        raise
-    except Exception as e:
-        logger.error(f"Error listing files for server {server_id}: {str(e)}")
-
-        # Check if it's a server not found error
-        from app.core.exceptions import ServerNotFoundException
-
-        if isinstance(e, ServerNotFoundException):
-            raise HTTPException(status_code=404, detail=f"Server {server_id} not found")
-
-        # Check if it's a file operation error (directory doesn't exist)
-        from app.core.exceptions import FileOperationException
-
-        if isinstance(e, FileOperationException) and "Path not found" in str(e):
-            raise HTTPException(
-                status_code=404, detail=f"Directory not found for server {server_id}"
-            )
-
-        # Check if it's an access denied error
-        from app.core.exceptions import AccessDeniedException
-
-        if isinstance(e, AccessDeniedException):
-            raise HTTPException(status_code=403, detail="Access denied")
-
-        # Generic server error for other cases
-        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+    return FileListResponse(
+        files=file_responses,
+        current_path=path,
+        total_files=len(file_responses),
+    )
 
 
 @router.put(
@@ -505,7 +622,8 @@ async def list_server_files(
 async def write_file(
     server_id: int,
     file_path: str,
-    request: FileWriteRequest,
+    payload: FileWriteRequest,
+    request: Request,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -513,14 +631,44 @@ async def write_file(
     if not AuthorizationService.can_modify_files(current_user):
         raise HTTPException(status_code=403, detail="Insufficient permissions")
 
-    result = await file_management_service.write_file(
-        server_id=server_id,
-        file_path=file_path,
-        content=request.content,
-        encoding=request.encoding,
-        create_backup=request.create_backup,
-        user=current_user,
-        db=db,
+    start = time.perf_counter()
+    content_bytes = len(payload.content.encode(payload.encoding, errors="replace"))
+    try:
+        result = await file_management_service.write_file(
+            server_id=server_id,
+            file_path=file_path,
+            content=payload.content,
+            encoding=payload.encoding,
+            create_backup=payload.create_backup,
+            user=current_user,
+            db=db,
+        )
+    except Exception as exc:
+        _safe_audit(
+            request,
+            "write_failure",
+            server_id,
+            file_path,
+            details={
+                "duration_ms": _duration_ms(start),
+                "encoding": payload.encoding,
+                "bytes": content_bytes,
+                "error_type": type(exc).__name__,
+            },
+        )
+        raise
+
+    _safe_audit(
+        request,
+        "write",
+        server_id,
+        file_path,
+        details={
+            "duration_ms": _duration_ms(start),
+            "encoding": payload.encoding,
+            "bytes": content_bytes,
+            "backup_created": bool(result.get("backup_created")),
+        },
     )
 
     return FileWriteResponse(**result)
@@ -532,6 +680,7 @@ async def write_file(
 async def delete_file(
     server_id: int,
     file_path: str,
+    request: Request,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -539,11 +688,33 @@ async def delete_file(
     if not AuthorizationService.can_modify_files(current_user):
         raise HTTPException(status_code=403, detail="Insufficient permissions")
 
-    result = await file_management_service.delete_file(
-        server_id=server_id,
-        file_path=file_path,
-        user=current_user,
-        db=db,
+    start = time.perf_counter()
+    try:
+        result = await file_management_service.delete_file(
+            server_id=server_id,
+            file_path=file_path,
+            user=current_user,
+            db=db,
+        )
+    except Exception as exc:
+        _safe_audit(
+            request,
+            "delete_failure",
+            server_id,
+            file_path,
+            details={
+                "duration_ms": _duration_ms(start),
+                "error_type": type(exc).__name__,
+            },
+        )
+        raise
+
+    _safe_audit(
+        request,
+        "delete",
+        server_id,
+        file_path,
+        details={"duration_ms": _duration_ms(start)},
     )
 
     return FileDeleteResponse(**result)
@@ -556,7 +727,8 @@ async def delete_file(
 async def rename_file(
     server_id: int,
     file_path: str,
-    request: FileRenameRequest,
+    payload: FileRenameRequest,
+    request: Request,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -564,12 +736,39 @@ async def rename_file(
     if not AuthorizationService.can_modify_files(current_user):
         raise HTTPException(status_code=403, detail="Insufficient permissions")
 
-    result = await file_management_service.rename_file(
-        server_id=server_id,
-        file_path=file_path,
-        new_name=request.new_name,
-        user=current_user,
-        db=db,
+    start = time.perf_counter()
+    try:
+        result = await file_management_service.rename_file(
+            server_id=server_id,
+            file_path=file_path,
+            new_name=payload.new_name,
+            user=current_user,
+            db=db,
+        )
+    except Exception as exc:
+        _safe_audit(
+            request,
+            "rename_failure",
+            server_id,
+            file_path,
+            details={
+                "duration_ms": _duration_ms(start),
+                "new_name": payload.new_name,
+                "error_type": type(exc).__name__,
+            },
+        )
+        raise
+
+    _safe_audit(
+        request,
+        "rename",
+        server_id,
+        file_path,
+        details={
+            "duration_ms": _duration_ms(start),
+            "new_name": payload.new_name,
+            "new_path": result.get("new_path"),
+        },
     )
 
     return FileRenameResponse(**result)

@@ -11,7 +11,9 @@ from sqlalchemy.orm import Session
 
 from app.core.exceptions import (
     AccessDeniedException,
+    FileMissingError,
     FileOperationException,
+    InvalidFileTypeError,
     InvalidRequestException,
     ServerNotFoundException,
     handle_file_error,
@@ -121,16 +123,23 @@ class FileValidationService:
     def validate_path_exists(self, target_path: Path) -> None:
         """Validate target path exists"""
         if not target_path.exists():
-            raise FileOperationException("access", str(target_path), "Path not found")
+            raise FileMissingError("access", str(target_path))
 
     def validate_file_readable(self, file_path: Path) -> None:
         """Validate file is readable"""
         if file_path.is_dir():
-            raise FileOperationException(
-                "read", str(file_path), "Path is a directory, not a file"
+            raise InvalidFileTypeError(
+                "read",
+                str(file_path),
+                "Path is a directory, not a file",
+                detected_type="directory",
             )
 
         if not self._is_readable_file(file_path):
+            # ``AccessDeniedException`` (403) preserved for backwards
+            # compatibility with existing tests; the policy denial is
+            # distinct from OS-level permission errors, which are mapped
+            # to :class:`FileAccessDeniedError` by ``handle_file_error``.
             raise AccessDeniedException("file", "read")
 
     def validate_file_writable(self, file_path: Path, user: User) -> None:
@@ -491,6 +500,9 @@ class FileOperationService:
                 shutil.rmtree(path)
                 return "directory"
             else:
+                # Builtin ``FileNotFoundError`` is intercepted by
+                # ``handle_file_error`` and re-raised as the structured
+                # :class:`FileMissingError` (404).
                 raise FileNotFoundError(f"Path does not exist: {path}")
         except Exception as e:
             handle_file_error("delete", str(path), e)
@@ -1132,7 +1144,9 @@ class FileManagementService:
         # Create destination path (same directory, new name)
         destination_path = source_path.parent / new_name
 
-        # Check if destination already exists
+        # Check if destination already exists. Kept as the generic
+        # ``FileOperationException`` (500) for now — adding a dedicated
+        # ``FileAlreadyExistsError`` is tracked under #36 follow-ups.
         if destination_path.exists():
             raise FileOperationException(
                 "rename",
