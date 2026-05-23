@@ -137,9 +137,43 @@ async def _initialize_database():
         # file_edit_history.version_number against TOCTOU races.
         # Aborts startup if pre-existing duplicates are detected so
         # operators can deduplicate before retrying.
-        from app.files.adapters.migrations import migrate_file_history_unique_index
+        from app.files.adapters.migrations import (
+            migrate_file_history_indexes,
+            migrate_file_history_unique_index,
+        )
 
         migrate_file_history_unique_index(engine)
+
+        # Issue #75 Phase 1: performance indexes for hot query paths.
+        # Each helper is best-effort: it logs WARNING and continues
+        # on per-index DDL failure so a single bad-index error cannot
+        # abort startup. Correctness-critical migrations (above)
+        # stay separate and continue to raise.
+        from app.audit.adapters.migrations import migrate_audit_indexes
+        from app.auth.adapters.migrations import migrate_login_attempt_indexes
+        from app.backups.adapters.migrations import migrate_backup_indexes
+        from app.groups.adapters.migrations import migrate_group_indexes
+        from app.servers.adapters.migrations import migrate_server_indexes
+        from app.templates.adapters.migrations import migrate_template_indexes
+
+        for helper in (
+            migrate_server_indexes,
+            migrate_backup_indexes,
+            migrate_group_indexes,
+            migrate_template_indexes,
+            migrate_audit_indexes,
+            migrate_login_attempt_indexes,
+            migrate_file_history_indexes,
+        ):
+            try:
+                helper(engine)
+            except Exception as exc:
+                # Defence in depth: per-index failures are already
+                # swallowed inside each helper, but a catastrophic
+                # connect-time error would surface here. Log WARNING
+                # and continue so an index-migration regression
+                # cannot block the application from booting.
+                logger.warning("Index migration %s failed: %s", helper.__name__, exc)
 
         # Issue #237: backfill `users.token_version` on pre-existing
         # databases so the JWT-revocation logic in

@@ -14,7 +14,7 @@ These tables intentionally live in the auth domain even though
 — that placement is grandfathered for backwards compatibility.
 """
 
-from sqlalchemy import Boolean, Column, DateTime, Integer, String, Text
+from sqlalchemy import Boolean, Column, DateTime, Index, Integer, String, Text
 from sqlalchemy.sql import func
 
 from app.core.database import Base
@@ -44,6 +44,16 @@ class LoginAttempt(Base):
     # "invalid_credentials", "account_locked", "unapproved").
     # NULL on successful attempts.
     failure_reason = Column(String(64), nullable=True)
+
+    # Composite index for the brute-force sliding-window query:
+    # `SELECT COUNT(*) FROM login_attempts WHERE username = ?
+    #     AND attempted_at >= ?`. The single-column `username` /
+    # `attempted_at` indexes above remain useful for orthogonal
+    # access patterns (admin search by username only,
+    # time-bounded global scans).
+    __table_args__ = (
+        Index("ix_login_attempts_username_attempted", "username", "attempted_at"),
+    )
 
 
 class AccountLockout(Base):

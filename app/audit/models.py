@@ -1,7 +1,7 @@
 import json
 from typing import Any, Dict, Optional
 
-from sqlalchemy import JSON, Column, DateTime, ForeignKey, Integer, String
+from sqlalchemy import JSON, Column, DateTime, ForeignKey, Index, Integer, String
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 
@@ -12,9 +12,9 @@ class AuditLog(Base):
     __tablename__ = "audit_logs"
 
     id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
-    action = Column(String(100), nullable=False)
-    resource_type = Column(String(50), nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
+    action = Column(String(100), nullable=False, index=True)
+    resource_type = Column(String(50), nullable=False, index=True)
     resource_id = Column(Integer, nullable=True)
     details = Column(JSON)
     ip_address = Column(String(45))  # IPv6 support
@@ -22,6 +22,18 @@ class AuditLog(Base):
 
     # Relationships
     user = relationship("User")
+
+    # Composite + standalone indexes that match audit's hot query paths:
+    # `ix_audit_logs_created_at` accelerates time-window scans
+    # (e.g. "show the last hour"); `ix_audit_logs_user_created` covers
+    # the per-user audit timeline ordered by recency. Note: the
+    # composite's `user_id` prefix means single-column `user_id`
+    # lookups can reuse it, but we keep the standalone `user_id`
+    # `index=True` above to surface intent in the model definition.
+    __table_args__ = (
+        Index("ix_audit_logs_created_at", "created_at"),
+        Index("ix_audit_logs_user_created", "user_id", "created_at"),
+    )
 
     def get_details(self) -> Dict[str, Any]:
         """Get details as Python dict"""
