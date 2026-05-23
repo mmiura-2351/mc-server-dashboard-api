@@ -189,7 +189,9 @@ async def login(
                 detail="Incorrect username or password",
             )
 
-        access_token = create_access_token(data={"sub": user_entity.username})
+        access_token = create_access_token(
+            data={"sub": user_entity.username, "tv": user_entity.token_version}
+        )
         refresh_token = await auth_service.create_refresh_token(user_entity.id)
 
         await brute_force.record_attempt(
@@ -311,7 +313,9 @@ async def refresh_access_token(
             detail="User not found or inactive",
         )
 
-    access_token = create_access_token(data={"sub": user.username})
+    access_token = create_access_token(
+        data={"sub": user.username, "tv": user.token_version}
+    )
     new_refresh_token = await auth_service.create_refresh_token(user.id)
 
     AuditService.log_authentication_event(

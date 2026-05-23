@@ -164,6 +164,79 @@ class UserService:
             assert updated is not None
             return updated
 
+    async def deactivate_user(
+        self, current_user: UserEntity, target_user_id: int
+    ) -> UserEntity:
+        """Admin-forced deactivation (Issue #237).
+
+        Flips ``is_active`` to False and bumps ``token_version`` in a
+        single UoW transaction. Returns the updated entity so the
+        caller can invoke ``AuthService.revoke_all_refresh_tokens_for``
+        outside this transaction. (Refresh-token revocation lives in
+        the auth domain's own UoW; keeping the two concerns in
+        separate transactions matches the existing layering and is
+        acceptable because the access-token ``tv`` bump alone is
+        already sufficient to block any *new* refresh exchange from
+        minting a usable access token.)
+        """
+        self._require_admin(current_user)
+        async with self._uow as uow:
+            target = await uow.users.get_by_id(target_user_id)
+            if target is None:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND, detail="User not found"
+                )
+            if target.id == current_user.id:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Cannot deactivate your own account",
+                )
+            # Mirror the `delete_user_by_admin` last-admin guard so an
+            # operator cannot accidentally lock out every admin by
+            # deactivation (which would be just as catastrophic as
+            # deletion).
+            if target.role == Role.admin and target.is_active:
+                admin_count = await uow.users.count_by_role(Role.admin)
+                if admin_count <= 1:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="Cannot deactivate the last admin user",
+                    )
+            updated = await uow.users.update(
+                target_user_id,
+                UpdateUserCommand(
+                    is_active=False,
+                    token_version=(target.token_version or 0) + 1,
+                ),
+            )
+            await uow.commit()
+            assert updated is not None
+            return updated
+
+    async def reactivate_user(
+        self, current_user: UserEntity, target_user_id: int
+    ) -> UserEntity:
+        """Admin-forced reactivation (Issue #237).
+
+        Restores ``is_active=True`` without changing ``token_version``
+        — a previously revoked access token whose `tv` was bumped on
+        deactivation will still be rejected (which is the desired
+        property; the user must log in afresh).
+        """
+        self._require_admin(current_user)
+        async with self._uow as uow:
+            target = await uow.users.get_by_id(target_user_id)
+            if target is None:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND, detail="User not found"
+                )
+            updated = await uow.users.update(
+                target_user_id, UpdateUserCommand(is_active=True)
+            )
+            await uow.commit()
+            assert updated is not None
+            return updated
+
     async def delete_user_by_admin(
         self, current_user: UserEntity, target_user_id: int
     ) -> None:
@@ -229,7 +302,9 @@ class UserService:
             assert updated is not None
 
         access_token = (
-            create_access_token(data={"sub": updated.username})
+            create_access_token(
+                data={"sub": updated.username, "tv": updated.token_version}
+            )
             if username_changed
             else ""
         )
@@ -256,18 +331,27 @@ class UserService:
         )
 
         new_hash = pwd_context.hash(new_plain_password)
+        # Issue #237: bumping `token_version` here invalidates every
+        # previously issued access token (and indirectly every refresh
+        # exchange that would have minted one with the old `tv`).
+        # The new token returned below carries the bumped value so the
+        # caller's UI session continues uninterrupted.
+        next_tv = (current_user.token_version or 0) + 1
         async with self._uow as uow:
             updated = await uow.users.update(
                 current_user.id,
                 UpdateUserCommand(
                     hashed_password=new_hash,
                     password_set_at=datetime.now(timezone.utc),
+                    token_version=next_tv,
                 ),
             )
             await uow.commit()
             assert updated is not None
 
-        access_token = create_access_token(data={"sub": updated.username})
+        access_token = create_access_token(
+            data={"sub": updated.username, "tv": updated.token_version}
+        )
         return UserWithToken(user=updated, access_token=access_token)
 
     async def delete_user_account(

@@ -13,8 +13,11 @@ entity-only.
 
 from typing import Optional, Union
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
 
+from app.audit.service import AuditService
+from app.auth.api.dependencies import get_auth_service
+from app.auth.application.service import AuthService
 from app.auth.dependencies import get_current_user
 from app.core.pagination import PaginatedResponse, build_pagination_meta
 from app.users import schemas
@@ -46,6 +49,8 @@ def _to_entity(user: User) -> UserEntity:
         is_approved=user.is_approved,
         created_at=user.created_at,
         updated_at=user.updated_at,
+        password_set_at=user.password_set_at,
+        token_version=user.token_version or 0,
     )
 
 
@@ -204,3 +209,58 @@ async def delete_user_by_admin(
 ):
     await service.delete_user_by_admin(_to_entity(current_user), user_id)
     return {"message": "User deleted successfully"}
+
+
+@router.post("/{user_id}/deactivate", response_model=schemas.User)
+async def deactivate_user(
+    user_id: int,
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    service: UserService = Depends(get_user_service),
+    auth_service: AuthService = Depends(get_auth_service),
+):
+    """Admin-only: deactivate *user_id* and revoke all their refresh tokens.
+
+    Issue #237: bumps ``token_version`` so every previously issued
+    access token for the target is rejected by ``_authenticate`` on
+    the next request, closing the access-token-TTL window during
+    which a deactivated user would otherwise remain authenticated.
+    Also revokes the target's refresh tokens so they cannot pivot to
+    ``/auth/refresh``.
+    """
+    updated = await service.deactivate_user(_to_entity(current_user), user_id)
+    revoked_count = await auth_service.revoke_all_refresh_tokens_for(user_id)
+    AuditService.log_user_management_event(
+        request=request,
+        action="deactivated",
+        target_user_id=user_id,
+        current_user_id=current_user.id,
+        details={
+            "target_username": updated.username,
+            "refresh_tokens_revoked": revoked_count,
+        },
+    )
+    return _to_schema(updated)
+
+
+@router.post("/{user_id}/reactivate", response_model=schemas.User)
+async def reactivate_user(
+    user_id: int,
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    service: UserService = Depends(get_user_service),
+):
+    """Admin-only: restore ``is_active=True`` for a previously deactivated user.
+
+    Does **not** roll back ``token_version`` — the previously revoked
+    access tokens stay rejected and the user must log in afresh.
+    """
+    updated = await service.reactivate_user(_to_entity(current_user), user_id)
+    AuditService.log_user_management_event(
+        request=request,
+        action="reactivated",
+        target_user_id=user_id,
+        current_user_id=current_user.id,
+        details={"target_username": updated.username},
+    )
+    return _to_schema(updated)

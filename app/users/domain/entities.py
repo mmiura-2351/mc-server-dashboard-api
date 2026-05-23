@@ -27,6 +27,11 @@ class UserEntity:
     # Timestamp the password was last set/rotated. NULL for users
     # that pre-date the password-policy release (Issue #73).
     password_set_at: Optional[datetime] = None
+    # Monotonically increasing counter embedded as the ``tv`` JWT
+    # claim. Bumped on deactivation / password change / admin-forced
+    # logout to invalidate previously issued access tokens within
+    # their TTL window (Issue #237).
+    token_version: int = 0
 
 
 @dataclass(frozen=True)
@@ -57,6 +62,10 @@ class UpdateUserCommand:
     is_active: Optional[bool] = None
     is_approved: Optional[bool] = None
     password_set_at: Optional[datetime] = None
+    # New monotonic counter (Issue #237). Sparse-update semantics:
+    # `None` means "leave untouched"; the caller must compute the
+    # next value (current + 1) explicitly so the bump is auditable.
+    token_version: Optional[int] = None
 
     def applied_fields(self) -> dict:
         """Return only the fields the caller actually set (i.e. non-`None`).

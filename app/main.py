@@ -141,6 +141,14 @@ async def _initialize_database():
 
         migrate_file_history_unique_index(engine)
 
+        # Issue #237: backfill `users.token_version` on pre-existing
+        # databases so the JWT-revocation logic in
+        # `app.auth.dependencies._authenticate` can rely on the
+        # column being present.
+        from app.users.adapters.migrations import migrate_users_token_version
+
+        migrate_users_token_version(engine)
+
         service_status.database_ready = True
         logger.info("Database tables initialized successfully")
     except Exception as e:

@@ -70,6 +70,8 @@ class FakeUserRepository:
             is_approved=command.is_approved,
             created_at=now,
             updated_at=now,
+            password_set_at=command.password_set_at,
+            token_version=0,
         )
         self._next_id += 1
         return self._put(user)
