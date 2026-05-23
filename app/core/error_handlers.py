@@ -59,10 +59,17 @@ from app.groups.domain.exceptions import (
 )
 from app.servers.domain.exceptions import (
     InvalidServerStateError,
+    JavaCompatibilityError,
     ServerAccessError,
     ServerAlreadyExistsError,
+    ServerCreationRollbackError,
+    ServerDirectoryCreationError,
     ServerError,
+    ServerJarDownloadError,
+    ServerNameConflictError,
     ServerNotFoundError,
+    ServerPortConflictError,
+    UnsupportedMinecraftVersionError,
 )
 from app.templates.domain.exceptions import (
     TemplateAccessError,
@@ -124,9 +131,27 @@ def _domain_response(
     default_message: str,
     fallback_code: str,
 ) -> JSONResponse:
-    """Render a domain-exception payload (uses ``error_code`` if defined)."""
+    """Render a domain-exception payload (uses ``error_code`` if defined).
+
+    If the exception exposes an ``extra_details()`` method (Issue #33
+    introduced it on the new server-creation exceptions so structured
+    field-level context can travel through the same response envelope
+    used by 422 validation errors) the returned :class:`ErrorDetail`
+    list is forwarded into the response ``details`` array. Exceptions
+    that do not implement the method fall through to the legacy single
+    ``message`` shape unchanged.
+    """
     error_code = getattr(exc, "error_code", fallback_code) or fallback_code
     message = str(exc) or default_message
+    extra_details_fn = getattr(exc, "extra_details", None)
+    details: Optional[List[ErrorDetail]] = None
+    if callable(extra_details_fn):
+        try:
+            collected = extra_details_fn()
+            if collected:
+                details = list(collected)
+        except Exception:  # pragma: no cover - defensive
+            logger.exception("extra_details_failed", extra={"error_code": error_code})
     return JSONResponse(
         status_code=status_code,
         content=_build_payload(
@@ -134,6 +159,7 @@ def _domain_response(
             error_code=error_code,
             message=message,
             status_code=status_code,
+            details=details,
         ),
     )
 
@@ -181,6 +207,89 @@ def register_exception_handlers(app: FastAPI) -> None:
             status_code=status.HTTP_409_CONFLICT,
             default_message="Server is in an invalid state for this operation",
             fallback_code="SERVER_INVALID_STATE",
+        )
+
+    # --- Issue #33: actionable server-creation errors ----------------
+    # Registered before the generic ``ServerError`` handler so the more
+    # specific code/status pair wins (FastAPI matches on exception
+    # type, not order, but registering the specific handler ensures
+    # the dispatcher resolves it as the canonical mapping for that
+    # type — important when subclass relationships exist, e.g.
+    # ``ServerNameConflictError`` extends ``ServerAlreadyExistsError``
+    # which the dispatcher would otherwise short-circuit on).
+
+    @app.exception_handler(ServerNameConflictError)
+    async def _server_name_conflict(request: Request, exc: ServerNameConflictError):
+        return _domain_response(
+            request,
+            exc,
+            status_code=status.HTTP_409_CONFLICT,
+            default_message="Server name already taken",
+            fallback_code="SERVER_NAME_CONFLICT",
+        )
+
+    @app.exception_handler(ServerPortConflictError)
+    async def _server_port_conflict(request: Request, exc: ServerPortConflictError):
+        return _domain_response(
+            request,
+            exc,
+            status_code=status.HTTP_409_CONFLICT,
+            default_message="Port already in use by another server",
+            fallback_code="SERVER_PORT_CONFLICT",
+        )
+
+    @app.exception_handler(UnsupportedMinecraftVersionError)
+    async def _server_unsupported_version(
+        request: Request, exc: UnsupportedMinecraftVersionError
+    ):
+        return _domain_response(
+            request,
+            exc,
+            status_code=status.HTTP_400_BAD_REQUEST,
+            default_message="Minecraft version is not supported",
+            fallback_code="SERVER_UNSUPPORTED_VERSION",
+        )
+
+    @app.exception_handler(JavaCompatibilityError)
+    async def _server_java_incompatible(request: Request, exc: JavaCompatibilityError):
+        return _domain_response(
+            request,
+            exc,
+            status_code=status.HTTP_400_BAD_REQUEST,
+            default_message="No compatible Java runtime found",
+            fallback_code="SERVER_JAVA_INCOMPATIBLE",
+        )
+
+    @app.exception_handler(ServerJarDownloadError)
+    async def _server_jar_download_failed(request: Request, exc: ServerJarDownloadError):
+        return _domain_response(
+            request,
+            exc,
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            default_message="Failed to download server JAR from upstream",
+            fallback_code="SERVER_JAR_DOWNLOAD_FAILED",
+        )
+
+    @app.exception_handler(ServerDirectoryCreationError)
+    async def _server_directory_failed(
+        request: Request, exc: ServerDirectoryCreationError
+    ):
+        return _domain_response(
+            request,
+            exc,
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            default_message="Failed to create server directory",
+            fallback_code="SERVER_DIRECTORY_FAILED",
+        )
+
+    @app.exception_handler(ServerCreationRollbackError)
+    async def _server_rollback_failed(request: Request, exc: ServerCreationRollbackError):
+        return _domain_response(
+            request,
+            exc,
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            default_message="Server creation failed and rollback did not complete",
+            fallback_code="SERVER_CREATION_ROLLBACK_FAILED",
         )
 
     @app.exception_handler(ServerError)

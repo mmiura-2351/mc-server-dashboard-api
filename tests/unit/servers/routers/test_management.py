@@ -48,7 +48,16 @@ class TestServerManagementRouter:
     async def test_create_server_general_exception(
         self, mock_can_create, mock_server_service, admin_user
     ):
-        """Test create server with general exception (lines 69-72)"""
+        """Generic service exceptions now propagate to the global handler.
+
+        Issue #33 removed the catch-all ``except Exception`` from
+        ``create_server`` so structured domain exceptions reach the
+        global handler in :mod:`app.core.error_handlers` unmolested.
+        Anything that escapes the service is the bare ``Exception``
+        type — assert it bubbles up rather than being re-wrapped as a
+        500 ``HTTPException`` (the global handler does the mapping
+        now).
+        """
         from app.servers.routers.management import create_server
         from app.servers.schemas import ServerCreateRequest
 
@@ -66,7 +75,7 @@ class TestServerManagementRouter:
             max_players=20,
         )
 
-        with pytest.raises(HTTPException) as exc_info:
+        with pytest.raises(Exception, match="Database error"):
             await create_server(
                 request=request,
                 background_tasks=BackgroundTasks(),
@@ -74,9 +83,6 @@ class TestServerManagementRouter:
                 db=Mock(),
                 server_service=mock_server_service,
             )
-
-        assert exc_info.value.status_code == 500
-        assert "Failed to create server" in str(exc_info.value.detail)
 
     @pytest.mark.asyncio
     @patch("app.servers.routers.management.server_service")
@@ -208,13 +214,19 @@ class TestServerManagementRouter:
     async def test_create_server_conflict_exception_passthrough(
         self, mock_can_create, mock_server_service, admin_user
     ):
-        """Test create server with ConflictException passthrough (lines 67-68)"""
-        from app.core.exceptions import ConflictException
+        """Domain conflict exceptions propagate to the global handler.
+
+        Issue #33 removed the catch-all wrapper from the router; the
+        ``ServerNameConflictError`` is now mapped to HTTP 409 by
+        :mod:`app.core.error_handlers` rather than by an inline router
+        ``except``. Assert the exception bubbles unmolested.
+        """
+        from app.servers.domain.exceptions import ServerNameConflictError
         from app.servers.routers.management import create_server
         from app.servers.schemas import ServerCreateRequest
 
-        # Mock server service to raise ConflictException
-        conflict_exception = ConflictException("Port already in use")
+        # Mock server service to raise the structured domain error
+        conflict_exception = ServerNameConflictError("test-server")
         mock_server_service.create_server = AsyncMock(side_effect=conflict_exception)
 
         request = ServerCreateRequest(
@@ -227,14 +239,86 @@ class TestServerManagementRouter:
             max_players=20,
         )
 
-        # ConflictException should be re-raised as-is
-        with pytest.raises(ConflictException):
+        with pytest.raises(ServerNameConflictError):
             await create_server(
                 request=request,
                 background_tasks=BackgroundTasks(),
                 current_user=admin_user,
                 db=Mock(),
                 server_service=mock_server_service,
+            )
+
+    # ---- Issue #33: /validate endpoint --------------------------------
+
+    @pytest.mark.asyncio
+    @patch(
+        "app.servers.application.authorization.AuthorizationService.can_create_server",
+        return_value=True,
+    )
+    async def test_validate_server_creation_passes_through_to_service(
+        self, mock_can_create, admin_user
+    ):
+        """``/validate`` delegates to ``server_service.validate_creation_request``."""
+        from app.servers.routers.management import validate_server_creation
+        from app.servers.schemas import (
+            ServerCreateRequest,
+            ValidateServerCreationResponse,
+        )
+
+        mock_service = Mock()
+        expected = ValidateServerCreationResponse(
+            valid=True, warnings=[], suggested_ports=[25565, 25566, 25567]
+        )
+        mock_service.validate_creation_request = AsyncMock(return_value=expected)
+
+        request = ServerCreateRequest(
+            name="test-server",
+            minecraft_version="1.20.1",
+            server_type=ServerType.vanilla,
+            port=25565,
+            max_memory=1024,
+            max_players=20,
+        )
+
+        result = await validate_server_creation(
+            request=request,
+            current_user=admin_user,
+            db=Mock(),
+            server_service=mock_service,
+        )
+
+        assert result is expected
+        mock_service.validate_creation_request.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    @patch(
+        "app.servers.application.authorization.AuthorizationService.can_create_server",
+        return_value=False,
+    )
+    async def test_validate_server_creation_authorization_denied(
+        self, mock_can_create, admin_user
+    ):
+        """``/validate`` enforces the same ``can_create_server`` gate as ``POST``."""
+        from app.servers.domain.exceptions import ServerAccessError
+        from app.servers.routers.management import validate_server_creation
+        from app.servers.schemas import ServerCreateRequest
+
+        mock_service = Mock()
+        request = ServerCreateRequest(
+            name="x",
+            minecraft_version="1.20.1",
+            server_type=ServerType.vanilla,
+            port=25565,
+            max_memory=1024,
+            max_players=20,
+        )
+
+        with pytest.raises(ServerAccessError):
+            await validate_server_creation(
+                request=request,
+                current_user=admin_user,
+                db=Mock(),
+                server_service=mock_service,
             )
 
     @pytest.mark.asyncio

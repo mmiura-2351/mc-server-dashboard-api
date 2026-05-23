@@ -31,6 +31,7 @@ from app.servers.api.dependencies import (
     get_server_service,
 )
 from app.servers.application.authorization import AuthorizationService
+from app.servers.application.port_allocator import find_available_ports
 from app.servers.application.service import (
     ServerService,
 )
@@ -39,7 +40,7 @@ from app.servers.application.service import (
 )
 from app.servers.domain.exceptions import ServerAccessError, ServerNotFoundError
 from app.servers.domain.ports import ServerRepository
-from app.servers.models import ServerStatus, ServerType
+from app.servers.models import ServerType
 from app.servers.schemas import (
     ServerCreateRequest,
     ServerImportRequest,
@@ -270,28 +271,20 @@ async def import_server(
                         detail=f"Invalid export file: missing {field} in metadata",
                     )
 
-            # Find available port (only check running servers).
-            # Previous implementation applied Python's `not` to the
-            # SQLAlchemy is_deleted Column, which always evaluates to
-            # False, so `used_ports` was permanently empty and port
-            # 25565 was always offered even when occupied. Route
-            # through the Server Repository's
-            # `list_by_port(port=None, statuses=...)` which excludes
-            # soft-deleted rows by default.
-            used_servers = await server_repo.list_by_port(
-                port=None,
-                statuses=[ServerStatus.running, ServerStatus.starting],
+            # Find available port (only check active servers).
+            # Routed through the shared ``port_allocator`` helper so the
+            # active-status filter (running/starting) stays in lock-step
+            # with the create-server pre-flight check added under
+            # Issue #33.
+            suggestions = await find_available_ports(
+                server_repo, start_port=25565, count=1
             )
-            used_ports = {s.port for s in used_servers}
-
-            port = 25565
-            while port in used_ports:
-                port += 1
-                if port > 65535:
-                    raise HTTPException(
-                        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                        detail="No available ports for server",
-                    )
+            if not suggestions:
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail="No available ports for server",
+                )
+            port = suggestions[0]
 
             # Create server record
             create_request = ServerCreateRequest(

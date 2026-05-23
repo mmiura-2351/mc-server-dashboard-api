@@ -32,8 +32,13 @@ from app.groups.domain.exceptions import (
 )
 from app.middleware.audit_middleware import AuditMiddleware
 from app.servers.domain.exceptions import (
+    JavaCompatibilityError,
     ServerAccessError,
+    ServerJarDownloadError,
+    ServerNameConflictError,
     ServerNotFoundError,
+    ServerPortConflictError,
+    UnsupportedMinecraftVersionError,
 )
 from app.templates.domain.exceptions import TemplateNotFoundError
 
@@ -85,6 +90,40 @@ def _build_app() -> FastAPI:
     @app.get("/raise-template-not-found")
     def _template_nf():
         raise TemplateNotFoundError("nope")
+
+    # ---- Issue #33: server-creation actionable errors ----
+    @app.get("/raise-server-name-conflict")
+    def _server_name_conflict():
+        raise ServerNameConflictError("dup-name")
+
+    @app.get("/raise-server-port-conflict")
+    def _server_port_conflict():
+        raise ServerPortConflictError(
+            port=25565,
+            conflicting_server="other-server",
+            suggested_ports=[25566, 25567, 25568],
+        )
+
+    @app.get("/raise-server-unsupported-version")
+    def _server_unsupported_version():
+        raise UnsupportedMinecraftVersionError(version="0.1", server_type="vanilla")
+
+    @app.get("/raise-server-java-incompatible")
+    def _server_java_incompatible():
+        raise JavaCompatibilityError(
+            minecraft_version="1.21.1",
+            required_java=21,
+            available_java=[17],
+        )
+
+    @app.get("/raise-server-jar-download-failed")
+    def _server_jar_download_failed():
+        raise ServerJarDownloadError(
+            server_type="vanilla",
+            version="1.21.6",
+            reason="network",
+            retry_hint="Check internet connectivity",
+        )
 
     @app.get("/raise-legacy-not-found")
     def _legacy_nf():
@@ -157,6 +196,74 @@ class TestDomainExceptionHandlers:
         r = _client().get("/raise-template-not-found")
         assert r.status_code == 404
         assert r.json()["error"] == "TEMPLATE_NOT_FOUND"
+
+
+class TestServerCreationActionableErrors:
+    """Verify Issue #33 server-creation exceptions surface ``extra_details``."""
+
+    def test_server_name_conflict_returns_409_with_field_detail(self):
+        r = _client().get("/raise-server-name-conflict")
+        assert r.status_code == 409
+        body = r.json()
+        assert body["error"] == "SERVER_NAME_CONFLICT"
+        details = body.get("details") or []
+        # The name field detail comes from ``ServerNameConflictError.extra_details``.
+        assert any(
+            d.get("field") == "name" and d.get("code") == "SERVER_NAME_TAKEN"
+            for d in details
+        )
+
+    def test_server_port_conflict_returns_409_with_suggestions(self):
+        r = _client().get("/raise-server-port-conflict")
+        assert r.status_code == 409
+        body = r.json()
+        assert body["error"] == "SERVER_PORT_CONFLICT"
+        details = body.get("details") or []
+        # First entry pinpoints the conflicting port.
+        assert any(
+            d.get("field") == "port" and d.get("code") == "PORT_IN_USE" for d in details
+        )
+        # Suggested ports are appended with the ``PORT_SUGGESTION`` code.
+        suggestion_messages = [
+            d.get("message") for d in details if d.get("code") == "PORT_SUGGESTION"
+        ]
+        assert suggestion_messages == ["25566", "25567", "25568"]
+
+    def test_server_unsupported_version_returns_400(self):
+        r = _client().get("/raise-server-unsupported-version")
+        assert r.status_code == 400
+        body = r.json()
+        assert body["error"] == "SERVER_UNSUPPORTED_VERSION"
+        details = body.get("details") or []
+        assert any(d.get("code") == "VERSION_NOT_SUPPORTED" for d in details)
+        assert any(d.get("code") == "RESOLUTION_STEP" for d in details)
+
+    def test_server_java_incompatible_returns_400_with_available_versions(self):
+        r = _client().get("/raise-server-java-incompatible")
+        assert r.status_code == 400
+        body = r.json()
+        assert body["error"] == "SERVER_JAVA_INCOMPATIBLE"
+        details = body.get("details") or []
+        assert any(d.get("code") == "JAVA_REQUIRED" for d in details)
+        # Available Java versions encoded as ``JAVA_AVAILABLE`` rows.
+        available = [
+            d.get("message") for d in details if d.get("code") == "JAVA_AVAILABLE"
+        ]
+        assert "17" in available
+
+    def test_server_jar_download_failed_returns_502_with_retry_hint(self):
+        r = _client().get("/raise-server-jar-download-failed")
+        assert r.status_code == 502
+        body = r.json()
+        assert body["error"] == "SERVER_JAR_DOWNLOAD_FAILED"
+        details = body.get("details") or []
+        # The structured reason + retry hint travel through ``details``.
+        assert any(d.get("code") == "JAR_DOWNLOAD_REASON" for d in details)
+        assert any(
+            d.get("code") == "RESOLUTION_STEP"
+            and "internet connectivity" in (d.get("message") or "")
+            for d in details
+        )
 
 
 class TestLegacyAPIExceptionHandler:

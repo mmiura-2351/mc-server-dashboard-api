@@ -210,7 +210,16 @@ class TestServerService:
     async def test_create_server_unsupported_version(
         self, server_service, mock_request, mock_user, mock_db
     ):
-        """Test server creation with unsupported version (database validation)"""
+        """Server creation with an unsupported version raises a structured error.
+
+        Issue #33 replaced the generic ``InvalidRequestException`` with
+        :class:`UnsupportedMinecraftVersionError` so the global handler
+        can render an actionable ``SERVER_UNSUPPORTED_VERSION`` 400
+        response. The message still names the offending version + type
+        so existing UI strings continue to match.
+        """
+        from app.servers.domain.exceptions import UnsupportedMinecraftVersionError
+
         # Mock validation to pass initial checks
         server_service.validation_service.validate_server_uniqueness = AsyncMock()
 
@@ -223,10 +232,12 @@ class TestServerService:
             # Mock the database version validation method to return False
             server_service._is_version_supported_db = AsyncMock(return_value=False)
 
-            with pytest.raises(InvalidRequestException) as exc_info:
+            with pytest.raises(UnsupportedMinecraftVersionError) as exc_info:
                 await server_service.create_server(mock_request, mock_user, mock_db)
 
-            assert "Version 1.20.1 is not supported for vanilla" in str(exc_info.value)
+            assert exc_info.value.error_code == "SERVER_UNSUPPORTED_VERSION"
+            assert exc_info.value.version == "1.20.1"
+            assert exc_info.value.server_type == "vanilla"
 
     @pytest.mark.asyncio
     async def test_get_server_success(self, server_service, mock_db):
