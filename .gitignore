@@ -36,3 +36,9 @@ coverage.json
 
 # Test screenshots
 /screenshots/
+
+# direnv / nix-direnv (Issue #173)
+# `.envrc` itself is committed (loads the Nix devShell); local overrides
+# and the direnv cache directory must not be.
+.envrc.local
+.direnv/

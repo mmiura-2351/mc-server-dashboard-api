@@ -79,6 +79,44 @@ A comprehensive FastAPI-based backend system for managing multiple Minecraft ser
 
 The API will be available at `http://localhost:8000` with interactive documentation at `/docs`.
 
+### Optional: Nix-based development environment
+
+For a fully reproducible system-level toolchain (Python 3.13, `uv`,
+JDK 21, `just`, `pre-commit`, `git`), the repository ships a minimal
+[`flake.nix`](./flake.nix). This is **strictly opt-in** — the standard
+`uv sync` workflow above continues to work without any of the steps
+below, so non-Nix contributors are unaffected.
+
+**Prerequisites**: install [Nix](https://nixos.org/download) with
+flakes enabled (the [Determinate Systems installer](https://zero-to-nix.com/start/install)
+enables flakes by default).
+
+**Manual entry** — enter the devShell on demand:
+
+```bash
+nix develop
+uv sync --group dev
+uv run pre-commit install --hook-type pre-commit --hook-type pre-push
+```
+
+**Automatic with direnv** (recommended) — `cd` into the repo and the
+devShell loads itself; `cd` out and it unloads:
+
+```bash
+# one-time install of direnv + nix-direnv, then in this directory:
+direnv allow
+```
+
+`.envrc` (committed) contains `use flake`, which delegates activation
+to [`nix-direnv`](https://github.com/nix-community/nix-direnv). Place
+host-specific overrides in `.envrc.local` (gitignored).
+
+**Relationship to the standard workflow**: Nix manages the *system*
+toolchain (interpreter, JDK, CLI utilities); `uv` continues to manage
+Python *dependencies* inside `.venv`. The two layers are independent,
+so you can adopt or drop Nix without touching `pyproject.toml` /
+`uv.lock`.
+
 ## Documentation
 
 ### 📚 Core Documentation
