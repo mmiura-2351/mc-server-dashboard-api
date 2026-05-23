@@ -212,3 +212,6 @@ class TestDatabaseIntegration:
         # These operations should not fail (even if no models are defined)
         Base.metadata.create_all(bind=engine)
         Base.metadata.drop_all(bind=engine)
+
+        # Restore schema for subsequent tests (session-scoped fixture in conftest)
+        Base.metadata.create_all(bind=engine)

@@ -15,6 +15,7 @@ from fastapi import HTTPException, status
 from passlib.context import CryptContext
 
 from app.auth.auth import create_access_token
+from app.core.config import settings
 from app.users.application.password_policy import get_password_policy
 from app.users.application.results import UserWithToken
 from app.users.domain.entities import (
@@ -27,7 +28,18 @@ from app.users.domain.value_objects import PasswordPolicyError, Role
 
 # The password hasher is a pure CPU operation with no I/O — its presence
 # in the application layer does not violate the framework-isolation rule.
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+#
+# Rounds are driven by `settings.PASSWORD_BCRYPT_ROUNDS` (default 12 in
+# production, 4 in the testing overlay — see `_PER_ENV_DEFAULTS`). The
+# behaviour of the test-only `tests/helpers/security.pwd_context` is now
+# matched by this production hasher under `ENVIRONMENT=testing`, so user
+# fixtures built via the helper and users created via `UserService.register_user`
+# share the same cost factor (and the same fast-path latency in CI). Issue #79.
+pwd_context = CryptContext(
+    schemes=["bcrypt"],
+    deprecated="auto",
+    bcrypt__rounds=settings.PASSWORD_BCRYPT_ROUNDS,
+)
 
 
 class UserService:

@@ -73,6 +73,10 @@ _PER_ENV_DEFAULTS: Dict[Environment, Dict[str, Any]] = {
         "KEEP_SERVERS_ON_SHUTDOWN": False,
         "AUTO_SYNC_ON_STARTUP": False,
         "DATABASE_MAX_RETRIES": 1,
+        # Drop bcrypt cost to the minimum (4) in tests to cut hash time
+        # from ~150ms to ~0.5ms per call. Mirrors tests/helpers/security
+        # which already pins rounds=4 for fixture-built hashes. Issue #79.
+        "PASSWORD_BCRYPT_ROUNDS": 4,
     },
     Environment.STAGING: {
         "LOG_LEVEL": "INFO",
@@ -281,6 +285,15 @@ class Settings(BaseSettings):
     # valid usernames or to detect lockout state.
     BRUTE_FORCE_DELAY_MS: int = 200
 
+    # Bcrypt cost factor used by the production `pwd_context` in
+    # `app.users.application.service`. The production default of 12
+    # is the OWASP ASVS L1 minimum; the testing overlay drops this
+    # to 4 (see `_PER_ENV_DEFAULTS`) to keep registration / login
+    # tests fast — bcrypt time grows ~2x per round, so 12 -> 4 yields
+    # an ~256x speedup per hash. Anything <4 is rejected by bcrypt
+    # itself; anything >15 takes seconds per call and is impractical.
+    PASSWORD_BCRYPT_ROUNDS: int = 12
+
     # Reverse-proxy trust (Issue #73 review). See docs/SECURITY.md.
     # When False (default) X-Forwarded-For / X-Real-IP are *ignored*
     # entirely; the brute-force tracker uses `request.client.host`
@@ -486,6 +499,19 @@ class Settings(BaseSettings):
     def validate_brute_force_delay(cls, v: int) -> int:
         if v < 0 or v > 5000:
             raise ValueError("BRUTE_FORCE_DELAY_MS must be between 0 and 5000 ms")
+        return v
+
+    @field_validator("PASSWORD_BCRYPT_ROUNDS")
+    @classmethod
+    def validate_password_bcrypt_rounds(cls, v: int) -> int:
+        """Validate PASSWORD_BCRYPT_ROUNDS is within bcrypt's supported range.
+
+        Lower bound 4 matches bcrypt's hard minimum (passlib refuses anything
+        below 4). Upper bound 15 keeps per-hash latency under ~5s on commodity
+        hardware; values above 15 are operationally impractical.
+        """
+        if not (4 <= v <= 15):
+            raise ValueError("PASSWORD_BCRYPT_ROUNDS must be in [4, 15]")
         return v
 
     # ------------------------------------------------------------------
