@@ -24,6 +24,9 @@ class UserEntity:
     id: Optional[int] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
+    # Timestamp the password was last set/rotated. NULL for users
+    # that pre-date the password-policy release (Issue #73).
+    password_set_at: Optional[datetime] = None
 
 
 @dataclass(frozen=True)
@@ -35,6 +38,7 @@ class CreateUserCommand:
     hashed_password: str
     role: Role
     is_approved: bool
+    password_set_at: Optional[datetime] = None
 
 
 @dataclass(frozen=True)
@@ -52,6 +56,7 @@ class UpdateUserCommand:
     role: Optional[Role] = None
     is_active: Optional[bool] = None
     is_approved: Optional[bool] = None
+    password_set_at: Optional[datetime] = None
 
     def applied_fields(self) -> dict:
         """Return only the fields the caller actually set (i.e. non-`None`).

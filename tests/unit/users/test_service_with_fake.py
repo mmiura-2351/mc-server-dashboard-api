@@ -52,29 +52,29 @@ def regular_entity() -> UserEntity:
 class TestRegisterUser:
     @pytest.mark.asyncio
     async def test_first_user_becomes_admin(self, service: UserService) -> None:
-        user = await service.register_user("alice", "alice@x.com", "pw1234")
+        user = await service.register_user("alice", "alice@x.com", "pw123456")
         assert user.role == Role.admin
         assert user.is_approved is True
 
     @pytest.mark.asyncio
     async def test_second_user_is_pending(self, service: UserService) -> None:
-        await service.register_user("alice", "alice@x.com", "pw1234")
-        user = await service.register_user("bob", "bob@x.com", "pw1234")
+        await service.register_user("alice", "alice@x.com", "pw123456")
+        user = await service.register_user("bob", "bob@x.com", "pw123456")
         assert user.role == Role.user
         assert user.is_approved is False
 
     @pytest.mark.asyncio
     async def test_duplicate_username_rejected(self, service: UserService) -> None:
-        await service.register_user("alice", "alice@x.com", "pw1234")
+        await service.register_user("alice", "alice@x.com", "pw123456")
         with pytest.raises(HTTPException) as exc:
-            await service.register_user("alice", "alice2@x.com", "pw1234")
+            await service.register_user("alice", "alice2@x.com", "pw123456")
         assert exc.value.status_code == 400
 
     @pytest.mark.asyncio
     async def test_duplicate_email_rejected(self, service: UserService) -> None:
-        await service.register_user("alice", "shared@x.com", "pw1234")
+        await service.register_user("alice", "shared@x.com", "pw123456")
         with pytest.raises(HTTPException) as exc:
-            await service.register_user("bob", "shared@x.com", "pw1234")
+            await service.register_user("bob", "shared@x.com", "pw123456")
         assert exc.value.status_code == 400
         assert "email" in exc.value.detail.lower()
 
@@ -82,29 +82,29 @@ class TestRegisterUser:
 class TestAuthenticate:
     @pytest.mark.asyncio
     async def test_valid_credentials(self, service: UserService) -> None:
-        await service.register_user("alice", "alice@x.com", "pw1234")
-        user = await service.authenticate_user("alice", "pw1234")
+        await service.register_user("alice", "alice@x.com", "pw123456")
+        user = await service.authenticate_user("alice", "pw123456")
         assert user is not None
         assert user.username == "alice"
 
     @pytest.mark.asyncio
     async def test_wrong_password(self, service: UserService) -> None:
-        await service.register_user("alice", "alice@x.com", "pw1234")
+        await service.register_user("alice", "alice@x.com", "pw123456")
         assert await service.authenticate_user("alice", "wrong") is None
 
     @pytest.mark.asyncio
     async def test_missing_user(self, service: UserService) -> None:
-        assert await service.authenticate_user("nobody", "pw") is None
+        assert await service.authenticate_user("nobody", "pw123456") is None
 
     @pytest.mark.asyncio
     async def test_unapproved_user_raises_403(
         self, service: UserService, uow: FakeUsersUnitOfWork
     ) -> None:
         # First user is auto-approved, so create two: the second is unapproved.
-        await service.register_user("admin", "admin@x.com", "pw")
-        await service.register_user("alice", "alice@x.com", "pw1234")
+        await service.register_user("admin", "admin@x.com", "pw123456")
+        await service.register_user("alice", "alice@x.com", "pw123456")
         with pytest.raises(HTTPException) as exc:
-            await service.authenticate_user("alice", "pw1234")
+            await service.authenticate_user("alice", "pw123456")
         assert exc.value.status_code == 403
 
     @pytest.mark.asyncio
@@ -113,12 +113,12 @@ class TestAuthenticate:
     ) -> None:
         from app.users.domain.entities import UpdateUserCommand
 
-        await service.register_user("admin", "admin@x.com", "pw1234")
+        await service.register_user("admin", "admin@x.com", "pw123456")
         admin = await uow.users.get_by_username("admin")
         assert admin is not None and admin.id is not None
         # Deactivating an otherwise-valid, approved account must block login.
         await uow.users.update(admin.id, UpdateUserCommand(is_active=False))
-        assert await service.authenticate_user("admin", "pw1234") is None
+        assert await service.authenticate_user("admin", "pw123456") is None
 
 
 class TestAdminActions:

@@ -41,6 +41,32 @@ os.environ.setdefault("KEEP_SERVERS_ON_SHUTDOWN", "true")
 # here while keeping the overlay default in place for real app code paths.
 os.environ.setdefault("DATABASE_MAX_RETRIES", "3")
 
+# Drop any stale per-worker DB left behind by a previous session so
+# schema changes (e.g. new columns from a freshly-checked-out branch)
+# are picked up on the first `Base.metadata.create_all`. Without this
+# a `users` table missing the new `password_set_at` column survives
+# across runs and triggers "no such column" errors. See Issue #73.
+for _suffix in ("", "-journal", "-shm", "-wal"):
+    _stale = test_db_path + _suffix
+    if os.path.exists(_stale):
+        try:
+            os.remove(_stale)
+        except OSError:
+            pass
+
+# Issue #73: relax the password policy and disable brute-force lockout
+# by default for the test suite. Individual tests that exercise these
+# features should re-enable them explicitly via `monkeypatch.setenv`
+# or `BruteForceService` direct calls. These overlays must run before
+# `app.core.config.settings` is imported.
+os.environ.setdefault("PASSWORD_MIN_LENGTH", "8")
+os.environ.setdefault("PASSWORD_REQUIRE_COMPLEXITY", "false")
+os.environ.setdefault("PASSWORD_CHECK_COMMON_LIST", "false")
+os.environ.setdefault("PASSWORD_FORBID_USER_INFO", "false")
+os.environ.setdefault("PASSWORD_FORBID_SIMPLE_PATTERNS", "false")
+os.environ.setdefault("BRUTE_FORCE_ENABLED", "false")
+os.environ.setdefault("BRUTE_FORCE_DELAY_MS", "0")
+
 from unittest.mock import Mock  # noqa: E402
 
 import pytest  # noqa: E402
