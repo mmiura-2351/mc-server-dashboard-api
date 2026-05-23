@@ -75,6 +75,12 @@ addopts = [
     "-n", "auto",
     "--dist", "loadscope",
     "--strict-markers",
+    # If an xdist worker dies (e.g. RecursionError during settings boot),
+    # do not silently restart it — surface the failure immediately. Without
+    # this the master scheduler keeps spinning on the orphaned loadscope
+    # bucket and the CI job has been observed to hang for ~8 min before the
+    # GitHub Actions step timeout kicks in. See PR #333 review follow-up.
+    "--max-worker-restart=0",
 ]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"

@@ -1,7 +1,19 @@
 # テスト用のインメモリSQLiteデータベース
 import os
 import shutil
+import sys
 import tempfile
+
+# Raise the recursion limit before any `app.*` import so the pydantic-settings
+# construction path (which materialises many validators per Settings instance
+# and is exercised once per xdist worker boot) has more headroom. Under CI
+# (4 vCPU runners with xdist `loadscope`), a single worker has been observed
+# to hit ``RecursionError: maximum recursion depth exceeded`` during settings
+# construction; the failure is not reproducible locally because thread/heap
+# layout differs. Bumping the limit from the default 1000 to 5000 is cheap
+# and bounded by the call stack we actually generate (~200 frames typical).
+# Tracking: PR #333 review follow-up.
+sys.setrecursionlimit(5000)
 
 
 # Worker固有のデータベースファイルを使用して並列実行時の分離を確保
