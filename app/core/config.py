@@ -1,11 +1,145 @@
-from typing import List, Literal, Optional
+"""Application configuration (Issue #22 Phase 1).
 
-from pydantic import ConfigDict, field_validator, model_validator
-from pydantic_settings import BaseSettings
+Provides environment-specific configuration management on top of
+``pydantic-settings``. Highlights:
+
+* ``Environment`` enum (str-derived) classifies the running environment.
+* ``.env`` files are loaded in a layered, env-aware order so per-environment
+  overrides compose cleanly with the host's environment variables.
+* Per-environment defaults (``_PER_ENV_DEFAULTS``) are injected *before*
+  pydantic validation runs; explicit user values (env vars, ``.env`` entries,
+  kwargs) always win.
+* Hardening validators reject unsafe combinations in ``staging`` /
+  ``production`` (sqlite DB, plaintext CORS, localhost origins).
+
+See ``docs/CONFIGURATION.md`` for the full reference and load order.
+"""
+
+from __future__ import annotations
+
+import os
+from enum import Enum
+from typing import Any, Dict, List, Literal, Optional
+
+from pydantic import field_validator, model_validator
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class Environment(str, Enum):
+    """Runtime environment classifier.
+
+    Subclassing ``str`` keeps backwards-compat with the previous
+    ``ENVIRONMENT: str`` field — string equality (``settings.ENVIRONMENT ==
+    "production"``) continues to work, JSON-serialisation yields the string
+    value, and existing ``.env`` files with ``ENVIRONMENT=production`` still
+    parse correctly.
+    """
+
+    DEVELOPMENT = "development"
+    TESTING = "testing"
+    STAGING = "staging"
+    PRODUCTION = "production"
+
+    @classmethod
+    def _missing_(cls, value: Any) -> "Environment":
+        """Accept case-insensitive values (``"PRODUCTION"`` -> PRODUCTION)."""
+        if isinstance(value, str):
+            normalised = value.strip().lower()
+            for member in cls:
+                if member.value == normalised:
+                    return member
+        raise ValueError(
+            f"Unknown ENVIRONMENT value: {value!r}. "
+            f"Expected one of: {[m.value for m in cls]}"
+        )
+
+
+# Per-environment default overlay.
+#
+# Keys here are *not* applied when the user explicitly supplies a value via
+# env var, ``.env`` file, or kwarg. They only fill in the gap between the
+# class-level default and the host environment. See ``_apply_env_defaults``.
+_PER_ENV_DEFAULTS: Dict[Environment, Dict[str, Any]] = {
+    Environment.DEVELOPMENT: {
+        "LOG_LEVEL": "INFO",
+        "LOG_FORMAT": "text",
+        "KEEP_SERVERS_ON_SHUTDOWN": True,
+        "AUTO_SYNC_ON_STARTUP": True,
+        "DATABASE_MAX_RETRIES": 3,
+    },
+    Environment.TESTING: {
+        "LOG_LEVEL": "WARNING",
+        "LOG_FORMAT": "text",
+        "KEEP_SERVERS_ON_SHUTDOWN": False,
+        "AUTO_SYNC_ON_STARTUP": False,
+        "DATABASE_MAX_RETRIES": 1,
+    },
+    Environment.STAGING: {
+        "LOG_LEVEL": "INFO",
+        "LOG_FORMAT": "json",
+        "KEEP_SERVERS_ON_SHUTDOWN": True,
+        "AUTO_SYNC_ON_STARTUP": True,
+        "DATABASE_MAX_RETRIES": 3,
+    },
+    Environment.PRODUCTION: {
+        "LOG_LEVEL": "INFO",
+        "LOG_FORMAT": "json",
+        "KEEP_SERVERS_ON_SHUTDOWN": True,
+        "AUTO_SYNC_ON_STARTUP": True,
+        "DATABASE_MAX_RETRIES": 5,
+    },
+}
+
+
+def _resolve_active_environment(values: Dict[str, Any]) -> Environment:
+    """Resolve the active environment from kwargs or ``os.environ``.
+
+    ``ENVIRONMENT`` set via constructor kwarg takes priority over the host
+    env var; otherwise we fall back to ``development``.
+    """
+    raw = values.get("ENVIRONMENT")
+    if raw is None:
+        raw = os.getenv("ENVIRONMENT", Environment.DEVELOPMENT.value)
+    if isinstance(raw, Environment):
+        return raw
+    try:
+        return Environment(raw)
+    except ValueError as exc:  # propagate as ValueError so pydantic surfaces it
+        raise ValueError(str(exc)) from exc
+
+
+def _env_files_for(env: Environment) -> tuple[str, ...]:
+    """Return the ordered ``.env`` file tuple for ``env``.
+
+    pydantic-settings treats later entries as *higher* precedence, so the
+    returned tuple is ordered ``base -> per-env -> per-env.local``. ``os.environ``
+    still wins over all of these.
+    """
+    name = env.value
+    return (".env", f".env.{name}", f".env.{name}.local")
 
 
 class Settings(BaseSettings):
-    model_config = ConfigDict(env_file=".env")
+    """Application settings.
+
+    Construction flow:
+
+    1. pydantic-settings reads class defaults.
+    2. ``_apply_env_defaults`` (``mode='before'``) injects per-environment
+       defaults for keys not present in env vars / .env / kwargs.
+    3. ``.env`` files are loaded (base → per-env → per-env.local).
+    4. ``os.environ`` overrides everything above.
+    5. Field & model validators run.
+    """
+
+    # ``env_file`` is filled in dynamically in ``__init__`` based on the
+    # active environment. The placeholder here is overwritten before
+    # validation actually consumes it.
+    model_config = SettingsConfigDict(
+        env_file=(".env",),
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
 
     SECRET_KEY: str
     ALGORITHM: str = "HS256"
@@ -34,35 +168,25 @@ class Settings(BaseSettings):
     DATABASE_BATCH_SIZE: int = 100
 
     # Backup directory housekeeping (Issue #284)
-    # Periodic sweep of `backups_directory/.pending/` and `.failed/`
-    # artifacts left behind by atomic-rename failure paths (#228 PR 2e).
     BACKUPS_PENDING_RETENTION_HOURS: int = 24
     BACKUPS_FAILED_RETENTION_DAYS: int = 30
-    # Interval (seconds) between sweep runs in the scheduler loop.
     BACKUPS_CLEANUP_INTERVAL_SECONDS: int = 3600
 
     # Health check configuration (Issue #21)
-    # Per-component timeout: individual ``HealthCheckPort.check()``
-    # invocations are bounded so one slow adapter cannot block the
-    # whole probe.
     HEALTH_CHECK_PER_COMPONENT_TIMEOUT_SECONDS: float = 2.0
-    # Filesystem probe budget (used by the FilesystemHealthCheck when
-    # ``probe_writability=True``; the default os.access() path is
-    # already nearly free).
     HEALTH_CHECK_FS_TIMEOUT_SECONDS: float = 1.0
-    # Global guardrail: aggregates of the per-component runs are
-    # bounded by this — defends against pathological misconfigurations
-    # where every probe sits at the per-component timeout.
     HEALTH_CHECK_GLOBAL_TIMEOUT_SECONDS: float = 5.0
-    # Short cache so k8s probing at ~1 Hz does not amplify into a
-    # flood of database connections.
     HEALTH_CHECK_CACHE_TTL_SECONDS: float = 2.0
 
     # CORS configuration
     CORS_ORIGINS: str = (
         "http://localhost:3000,http://127.0.0.1:3000,https://127.0.0.1:3000"
     )
-    ENVIRONMENT: str = "development"  # development, production, testing
+
+    # Environment classifier (Issue #22). Defaults to DEVELOPMENT so local
+    # `Settings(SECRET_KEY=..., DATABASE_URL=...)` invocations behave the
+    # same as before when ENVIRONMENT is unset.
+    ENVIRONMENT: Environment = Environment.DEVELOPMENT
 
     # Structured logging (issue #24, Phase 1)
     LOG_LEVEL: str = "INFO"
@@ -70,12 +194,71 @@ class Settings(BaseSettings):
     LOG_FILE: Optional[str] = None
     LOG_FILE_MAX_BYTES: int = 10 * 1024 * 1024  # 10 MiB
     LOG_FILE_BACKUP_COUNT: int = 5
-    # Dedicated level for the ``sqlalchemy.engine`` logger. Kept separate from
-    # ``LOG_LEVEL`` because SQLAlchemy emits prepared-statement bind values at
-    # ``DEBUG``/``INFO``, which can leak passwords / tokens when an operator
-    # raises the global verbosity. Default ``WARNING`` keeps the engine quiet
-    # regardless of ``LOG_LEVEL``.
     SQLALCHEMY_LOG_LEVEL: str = "WARNING"
+
+    def __init__(self, **values: Any) -> None:
+        """Dynamically construct ``env_file`` based on the active environment.
+
+        The active environment is resolved from ``values['ENVIRONMENT']`` (if
+        the caller passed it) or ``os.environ['ENVIRONMENT']``, then the
+        layered ``.env`` tuple is wired up before delegating to
+        pydantic-settings.
+        """
+        try:
+            env = _resolve_active_environment(values)
+        except ValueError:
+            # Surface the same error class downstream so pydantic wraps it.
+            env = Environment.DEVELOPMENT
+            # The bad value will trip the ``ENVIRONMENT`` field validator below.
+        # Override model_config env_file for *this* instance only by passing
+        # _env_file via kwargs (pydantic-settings honours that hook).
+        values.setdefault("_env_file", _env_files_for(env))
+        super().__init__(**values)
+
+    # ------------------------------------------------------------------
+    # Per-environment defaults overlay
+    # ------------------------------------------------------------------
+
+    @model_validator(mode="before")
+    @classmethod
+    def _apply_env_defaults(cls, data: Any) -> Any:
+        """Inject ``_PER_ENV_DEFAULTS`` for keys not explicitly provided.
+
+        Runs at ``mode='before'`` so the overlay supplies values *before*
+        pydantic checks required fields. Explicit values (kwargs, .env,
+        os.environ) always win because we only ``setdefault`` keys that are
+        not already present in ``data``.
+        """
+        if not isinstance(data, dict):
+            return data
+
+        raw_env = data.get("ENVIRONMENT") or os.getenv(
+            "ENVIRONMENT", Environment.DEVELOPMENT.value
+        )
+        try:
+            env = raw_env if isinstance(raw_env, Environment) else Environment(raw_env)
+        except ValueError:
+            # Defer to the field validator which will produce a clean error.
+            return data
+
+        overlay = _PER_ENV_DEFAULTS.get(env, {})
+        for key, value in overlay.items():
+            data.setdefault(key, value)
+        return data
+
+    # ------------------------------------------------------------------
+    # Field validators
+    # ------------------------------------------------------------------
+
+    @field_validator("ENVIRONMENT", mode="before")
+    @classmethod
+    def _coerce_environment(cls, v: Any) -> Environment:
+        """Accept str (case-insensitive) and Environment alike."""
+        if isinstance(v, Environment):
+            return v
+        if v is None:
+            return Environment.DEVELOPMENT
+        return Environment(v)
 
     @field_validator("SECRET_KEY")
     @classmethod
@@ -91,16 +274,6 @@ class Settings(BaseSettings):
                 raise ValueError("SECRET_KEY cannot be a default or weak value")
 
         return v
-
-    @model_validator(mode="after")
-    def validate_cors_for_production(self):
-        """Validate CORS origins for production environment"""
-        if self.ENVIRONMENT.lower() == "production":
-            if "localhost" in self.CORS_ORIGINS or "127.0.0.1" in self.CORS_ORIGINS:
-                raise ValueError(
-                    "CORS_ORIGINS should not include localhost in production"
-                )
-        return self
 
     @field_validator("LOG_LEVEL")
     @classmethod
@@ -139,20 +312,6 @@ class Settings(BaseSettings):
         if v < 0 or v > 100:
             raise ValueError("LOG_FILE_BACKUP_COUNT must be between 0 and 100")
         return v
-
-    @model_validator(mode="after")
-    def validate_log_level_for_production(self):
-        """Reject DEBUG-level logging in production environments.
-
-        Verbose request/response logging at DEBUG level can leak sensitive
-        data in production, so this combination is explicitly disallowed.
-        """
-        if self.ENVIRONMENT.lower() == "production" and self.LOG_LEVEL == "DEBUG":
-            raise ValueError(
-                "LOG_LEVEL=DEBUG is not allowed in production "
-                "(set ENVIRONMENT=development or raise the level)"
-            )
-        return self
 
     @field_validator("SERVER_LOG_QUEUE_SIZE")
     @classmethod
@@ -241,6 +400,87 @@ class Settings(BaseSettings):
             raise ValueError("health check timing settings must be in (0, 60] seconds")
         return v
 
+    # ------------------------------------------------------------------
+    # Cross-field / environment-aware validators
+    # ------------------------------------------------------------------
+
+    @model_validator(mode="after")
+    def validate_cors_for_production(self) -> "Settings":
+        """Reject ``localhost`` / ``127.0.0.1`` in production & staging CORS."""
+        if self.ENVIRONMENT in (Environment.PRODUCTION, Environment.STAGING):
+            if "localhost" in self.CORS_ORIGINS or "127.0.0.1" in self.CORS_ORIGINS:
+                raise ValueError(
+                    "CORS_ORIGINS should not include localhost in production"
+                )
+        return self
+
+    @model_validator(mode="after")
+    def validate_log_level_for_production(self) -> "Settings":
+        """Reject DEBUG-level logging in production environments.
+
+        Verbose request/response logging at DEBUG level can leak sensitive
+        data in production, so this combination is explicitly disallowed.
+        """
+        if self.ENVIRONMENT == Environment.PRODUCTION and self.LOG_LEVEL == "DEBUG":
+            raise ValueError(
+                "LOG_LEVEL=DEBUG is not allowed in production "
+                "(set ENVIRONMENT=development or raise the level)"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def validate_production_hardening(self) -> "Settings":
+        """Hardening rules applied only to ``ENVIRONMENT=production``.
+
+        * SQLite is forbidden as the operational database — it does not support
+          concurrent writes safely under multi-worker deployments.
+        * All ``CORS_ORIGINS`` entries must be ``https://`` (TLS-only).
+
+        Staging picks up a *subset* of these rules in
+        ``validate_staging_hardening`` below.
+        """
+        if self.ENVIRONMENT != Environment.PRODUCTION:
+            return self
+
+        if "sqlite" in self.DATABASE_URL.lower():
+            raise ValueError(
+                "DATABASE_URL with sqlite is not allowed in production "
+                "(use postgresql:// or mysql:// instead)"
+            )
+
+        for origin in self.cors_origins_list:
+            if not origin.lower().startswith("https://"):
+                raise ValueError(
+                    "CORS_ORIGINS in production must use https:// only "
+                    f"(got non-https entry: {origin!r})"
+                )
+
+        return self
+
+    @model_validator(mode="after")
+    def validate_staging_hardening(self) -> "Settings":
+        """Hardening rules applied to ``ENVIRONMENT=staging``.
+
+        Staging mirrors the TLS-only CORS rule from production so that
+        pre-prod environments fail fast on the same misconfigurations,
+        but allows sqlite for ergonomics.
+        """
+        if self.ENVIRONMENT != Environment.STAGING:
+            return self
+
+        for origin in self.cors_origins_list:
+            if not origin.lower().startswith("https://"):
+                raise ValueError(
+                    "CORS_ORIGINS in staging must use https:// only "
+                    f"(got non-https entry: {origin!r})"
+                )
+
+        return self
+
+    # ------------------------------------------------------------------
+    # Properties
+    # ------------------------------------------------------------------
+
     @property
     def cors_origins_list(self) -> List[str]:
         """Parse CORS origins from comma-separated string"""
@@ -253,12 +493,22 @@ class Settings(BaseSettings):
     @property
     def is_development(self) -> bool:
         """Check if running in development environment"""
-        return self.ENVIRONMENT.lower() == "development"
+        return self.ENVIRONMENT == Environment.DEVELOPMENT
 
     @property
     def is_production(self) -> bool:
         """Check if running in production environment"""
-        return self.ENVIRONMENT.lower() == "production"
+        return self.ENVIRONMENT == Environment.PRODUCTION
+
+    @property
+    def is_testing(self) -> bool:
+        """Check if running in testing environment"""
+        return self.ENVIRONMENT == Environment.TESTING
+
+    @property
+    def is_staging(self) -> bool:
+        """Check if running in staging environment"""
+        return self.ENVIRONMENT == Environment.STAGING
 
     @property
     def java_discovery_paths_list(self) -> List[str]:

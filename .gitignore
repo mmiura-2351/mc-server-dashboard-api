@@ -11,8 +11,14 @@ wheels/
 # Virtual environments
 .venv
 
-# Environment variables
+# Environment variables (Issue #22)
+# The base `.env` is always ignored. Per-environment overrides follow the
+# `.env.{environment}` (committable templates live as `.env.{env}.example`)
+# and `.env.{environment}.local` (never committed) pattern.
 .env
+.env.production
+.env.staging
+.env.*.local
 
 # Database files
 *.db

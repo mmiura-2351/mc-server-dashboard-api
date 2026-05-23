@@ -53,7 +53,8 @@ class TestConfigValidation:
     def test_cors_origins_production_validation(self):
         """Test CORS origins validation in production"""
         os.environ["SECRET_KEY"] = "a" * 32
-        os.environ["DATABASE_URL"] = "sqlite:///./test.db"
+        # Issue #22: production no longer accepts sqlite, so use a postgres URL.
+        os.environ["DATABASE_URL"] = "postgresql://user:pw@db/app"
         os.environ["ENVIRONMENT"] = "production"
         os.environ["CORS_ORIGINS"] = "http://localhost:3000,http://example.com"
 
@@ -83,7 +84,8 @@ class TestConfigValidation:
     def test_cors_origins_production_valid(self):
         """Test valid CORS origins in production"""
         os.environ["SECRET_KEY"] = "a" * 32
-        os.environ["DATABASE_URL"] = "sqlite:///./test.db"
+        # Issue #22: production now requires a non-sqlite DATABASE_URL.
+        os.environ["DATABASE_URL"] = "postgresql://user:pw@db/app"
         os.environ["ENVIRONMENT"] = "production"
         os.environ["CORS_ORIGINS"] = "https://example.com,https://app.example.com"
 
