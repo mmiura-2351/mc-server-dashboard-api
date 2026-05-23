@@ -20,9 +20,19 @@ test_db_path = get_worker_db_path()
 os.environ["DATABASE_URL"] = f"sqlite:///{test_db_path}"
 
 # Issue #22 Phase 1: signal the test environment so the per-env defaults
-# overlay applies (KEEP_SERVERS_ON_SHUTDOWN=False, AUTO_SYNC_ON_STARTUP=False).
+# overlay applies (e.g. LOG_FORMAT, DATABASE_MAX_RETRIES fast-fail semantics).
 # ``setdefault`` keeps any explicit caller override.
 os.environ.setdefault("ENVIRONMENT", "testing")
+
+# The testing overlay sets AUTO_SYNC_ON_STARTUP=False and
+# KEEP_SERVERS_ON_SHUTDOWN=False to keep app startup quiet during unit tests.
+# However, several infrastructure tests (e.g.
+# ``tests/infrastructure/servers/test_process_persistence.py``) exercise the
+# real discovery / persistence code paths and expect master-compatible
+# behaviour. Reinstate the master defaults for the suite as a whole; individual
+# tests that need the overlay values can still monkeypatch the settings.
+os.environ.setdefault("AUTO_SYNC_ON_STARTUP", "true")
+os.environ.setdefault("KEEP_SERVERS_ON_SHUTDOWN", "true")
 
 # The testing overlay drops DATABASE_MAX_RETRIES to 1 (fast-fail semantics),
 # but xdist driving the worker-local sqlite file at full parallelism makes a

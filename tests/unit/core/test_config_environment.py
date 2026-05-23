@@ -202,6 +202,52 @@ class TestProductionHardening:
         assert s.is_production
 
     @pytest.mark.parametrize(
+        "url",
+        [
+            # Credentials happen to contain ``sqlite``.
+            "postgresql://user:passsqlite@db/app",
+            # Hostname / database name contains ``sqlite``.
+            "postgresql://user:pw@sqlite-host.internal/app",
+            "postgresql://user:pw@db/mysqlite_app",
+            # MySQL with ``sqlite`` substring elsewhere.
+            "mysql://sqliteadmin:pw@db/app",
+        ],
+    )
+    def test_non_sqlite_url_with_sqlite_substring_accepted(self, url):
+        """Production hardening must only reject genuine sqlite URLs.
+
+        Previously the check did ``"sqlite" in url.lower()`` which spuriously
+        rejected legitimate postgres / mysql URLs whose credentials or host
+        portion happened to contain the literal ``sqlite``.
+        """
+        s = Settings(
+            SECRET_KEY=SECRET,
+            DATABASE_URL=url,
+            ENVIRONMENT="production",
+            CORS_ORIGINS="https://example.com",
+        )
+        assert s.is_production
+
+    @pytest.mark.parametrize(
+        "url",
+        [
+            "sqlite:///./test.db",
+            "SQLite:///./test.db",
+            "sqlite+pysqlite:///./test.db",
+            "sqlite+aiosqlite:///./test.db",
+        ],
+    )
+    def test_all_sqlite_schemes_rejected(self, url):
+        """Both bare ``sqlite:`` and ``sqlite+driver:`` schemes are rejected."""
+        with pytest.raises(ValidationError, match="sqlite"):
+            Settings(
+                SECRET_KEY=SECRET,
+                DATABASE_URL=url,
+                ENVIRONMENT="production",
+                CORS_ORIGINS="https://example.com",
+            )
+
+    @pytest.mark.parametrize(
         "origin",
         [
             "http://example.com",

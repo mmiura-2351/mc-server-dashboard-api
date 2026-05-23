@@ -442,7 +442,12 @@ class Settings(BaseSettings):
         if self.ENVIRONMENT != Environment.PRODUCTION:
             return self
 
-        if "sqlite" in self.DATABASE_URL.lower():
+        # Reject only genuine sqlite URLs by matching the scheme prefix,
+        # rather than a substring search. The previous ``"sqlite" in url``
+        # check spuriously rejected legitimate URLs whose credentials or
+        # host portion happened to contain the literal string ``sqlite``
+        # (for example ``postgresql://user:passsqlite@host/db``).
+        if self.DATABASE_URL.lower().startswith(("sqlite:", "sqlite+")):
             raise ValueError(
                 "DATABASE_URL with sqlite is not allowed in production "
                 "(use postgresql:// or mysql:// instead)"
