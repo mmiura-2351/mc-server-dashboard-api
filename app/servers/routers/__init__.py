@@ -23,6 +23,7 @@ from app.servers.schemas import (
     ServerResponse,
     ServerStatusResponse,
     SupportedVersionsResponse,
+    ValidateServerCreationResponse,
 )
 
 from .control import (
@@ -42,6 +43,7 @@ from .management import (
     list_available_ports,
     list_servers,
     update_server,
+    validate_server_creation,
 )
 from .utilities import (
     cleanup_cache,
@@ -78,6 +80,19 @@ router.add_api_route(
     check_port,
     methods=["GET"],
     response_model=PortAvailabilityResponse,
+)
+
+# Validate endpoint (Issue #338). Must be registered BEFORE the
+# ``/{server_id}`` family — otherwise FastAPI's path matcher would
+# attempt to coerce the literal segment ``validate`` into the
+# integer ``server_id`` path parameter and the endpoint introduced
+# by PR #334 (Issue #33) would return 404.
+router.add_api_route(
+    "/validate",
+    validate_server_creation,
+    methods=["POST"],
+    response_model=ValidateServerCreationResponse,
+    status_code=status.HTTP_200_OK,
 )
 
 router.add_api_route(
