@@ -175,6 +175,13 @@ class Settings(BaseSettings):
     DATABASE_RETRY_BACKOFF: float = 0.1
     DATABASE_BATCH_SIZE: int = 100
 
+    # File upload size cap (Issue #341). Enforced by the file upload
+    # service via a streaming/chunked read so the entire payload never
+    # lands in process memory before the limit is checked. Defaults to
+    # 100 MiB; override via the `FILE_MAX_UPLOAD_BYTES` env var. Set to
+    # 0 to disable enforcement (not recommended for production).
+    FILE_MAX_UPLOAD_BYTES: int = 100 * 1024 * 1024  # 100 MiB
+
     # Backup directory housekeeping (Issue #284)
     BACKUPS_PENDING_RETENTION_HOURS: int = 24
     BACKUPS_FAILED_RETENTION_DAYS: int = 30
@@ -400,6 +407,21 @@ class Settings(BaseSettings):
         """Validate DATABASE_BATCH_SIZE is within reasonable limits"""
         if v < 10 or v > 1000:
             raise ValueError("DATABASE_BATCH_SIZE must be between 10 and 1000")
+        return v
+
+    @field_validator("FILE_MAX_UPLOAD_BYTES")
+    @classmethod
+    def validate_file_max_upload_bytes(cls, v: int) -> int:
+        """Validate FILE_MAX_UPLOAD_BYTES is within reasonable bounds.
+
+        0 disables enforcement. Otherwise must be in [1 KiB, 10 GiB].
+        """
+        if v == 0:
+            return v
+        if v < 1024 or v > 10 * 1024 * 1024 * 1024:
+            raise ValueError(
+                "FILE_MAX_UPLOAD_BYTES must be 0 (disabled) or between 1KiB and 10GiB"
+            )
         return v
 
     @field_validator("BACKUPS_PENDING_RETENTION_HOURS")

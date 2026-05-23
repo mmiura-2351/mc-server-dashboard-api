@@ -1023,3 +1023,131 @@ class TestFileRouterAuditWiring:
             headers=headers,
         )
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+
+
+class TestIssue341FileRouterContract:
+    """Issue #341: enforce upload size, encoding validation, and rename 409s
+    end-to-end through the FastAPI router.
+    """
+
+    @patch("app.files.router.AuditService.log_file_event")
+    def test_write_invalid_encoding_returns_422_envelope(
+        self, mock_audit, client, admin_user
+    ):
+        """Unknown encodings are rejected at validation time (#341).
+
+        Pre-fix the router raised ``LookupError`` from
+        ``str.encode(payload.encoding, ...)`` *before* ``_safe_audit``
+        was wired up, leaking a 500 with no envelope. The
+        ``@field_validator`` on :class:`FileWriteRequest.encoding` turns
+        the same input into a clean 422 with the standard ``details``
+        payload, and the failure audit is skipped because the request
+        never reaches the handler body.
+        """
+        headers = get_auth_headers(admin_user.username)
+        response = client.put(
+            "/api/v1/files/servers/1/files/server.properties",
+            json={
+                "content": "hi",
+                "encoding": "definitely-not-a-codec",
+                "create_backup": False,
+            },
+            headers=headers,
+        )
+
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+        body = response.json()
+        assert body["error"] == "VALIDATION_ERROR"
+        # Validation rejection short-circuits the handler so no audit fires.
+        mock_audit.assert_not_called()
+
+    @patch(
+        "app.servers.application.authorization.AuthorizationService.check_server_access",
+        new_callable=AsyncMock,
+    )
+    @patch("app.servers.application.authorization.AuthorizationService.can_modify_files")
+    @patch("app.files.application.management.file_management_service.upload_file")
+    def test_upload_too_large_returns_413_envelope(
+        self,
+        mock_upload_file,
+        mock_can_modify,
+        mock_check_access,
+        client,
+        admin_user,
+    ):
+        """``FileTooLargeError`` from the service surfaces as a 413
+        with ``FILE_TOO_LARGE`` + size metadata in the envelope.
+        """
+        from app.core.exceptions import FileTooLargeError
+
+        mock_check_access.return_value = None
+        mock_can_modify.return_value = True
+        mock_upload_file.side_effect = FileTooLargeError(
+            "upload",
+            "huge.bin",
+            size_bytes=200_000_000,
+            max_bytes=100 * 1024 * 1024,
+        )
+
+        test_file = BytesIO(b"payload")
+        test_file.name = "huge.bin"
+
+        headers = get_auth_headers(admin_user.username)
+        response = client.post(
+            "/api/v1/files/servers/1/files/upload",
+            files={"file": ("huge.bin", test_file, "application/octet-stream")},
+            data={"destination_path": ""},
+            headers=headers,
+        )
+
+        assert response.status_code == status.HTTP_413_REQUEST_ENTITY_TOO_LARGE
+        body = response.json()
+        assert body["error"] == "FILE_TOO_LARGE"
+        codes = {d["code"]: d["message"] for d in body.get("details") or []}
+        assert codes.get("FILE_SIZE_BYTES") == "200000000"
+        assert codes.get("FILE_MAX_BYTES") == str(100 * 1024 * 1024)
+
+    @patch(
+        "app.servers.application.authorization.AuthorizationService.check_server_access",
+        new_callable=AsyncMock,
+    )
+    @patch("app.servers.application.authorization.AuthorizationService.can_modify_files")
+    @patch("app.files.application.management.file_management_service.rename_file")
+    def test_rename_destination_exists_returns_409_envelope(
+        self,
+        mock_rename_file,
+        mock_can_modify,
+        mock_check_access,
+        client,
+        admin_user,
+    ):
+        """Rename onto an existing path surfaces as ``FILE_ALREADY_EXISTS`` 409."""
+        from app.core.exceptions import FileAlreadyExistsError
+
+        mock_check_access.return_value = None
+        mock_can_modify.return_value = True
+        mock_rename_file.side_effect = FileAlreadyExistsError(
+            "rename",
+            "/srv/src.txt",
+            existing_path="dst.txt",
+        )
+
+        headers = get_auth_headers(admin_user.username)
+        response = client.patch(
+            "/api/v1/files/servers/1/files/src.txt/rename",
+            json={"new_name": "dst.txt"},
+            headers=headers,
+        )
+
+        assert response.status_code == status.HTTP_409_CONFLICT
+        body = response.json()
+        assert body["error"] == "FILE_ALREADY_EXISTS"
+        # The existing path is round-tripped to the client so the UI can
+        # suggest a resolution without an extra round-trip.
+        details = {d["code"]: d["message"] for d in body.get("details") or []}
+        assert details.get("EXISTING_PATH") == "dst.txt"
+        assert any(
+            "different destination" in d["message"]
+            for d in body.get("details") or []
+            if d.get("code") == "SUGGESTED_ACTION"
+        )

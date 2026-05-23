@@ -58,7 +58,9 @@ class TestFileManagementService:
         self, mock_exists, mock_server, mock_db
     ):
         """Test get_server_files when server directory doesn't exist"""
-        mock_db.query.return_value.filter.return_value.one_or_none.return_value = mock_server
+        mock_db.query.return_value.filter.return_value.one_or_none.return_value = (
+            mock_server
+        )
         mock_exists.return_value = False
 
         with pytest.raises(FileOperationException):
@@ -70,7 +72,9 @@ class TestFileManagementService:
         self, mock_exists, mock_server, mock_db
     ):
         """Test get_server_files with path traversal attempt"""
-        mock_db.query.return_value.filter.return_value.one_or_none.return_value = mock_server
+        mock_db.query.return_value.filter.return_value.one_or_none.return_value = (
+            mock_server
+        )
         mock_exists.side_effect = [True, True]  # server_path and target_path exist
 
         with patch("pathlib.Path.resolve") as mock_resolve:
@@ -92,7 +96,9 @@ class TestFileManagementService:
         self, mock_iterdir, mock_is_dir, mock_exists, mock_server, mock_db
     ):
         """Test successful directory listing"""
-        mock_db.query.return_value.filter.return_value.one_or_none.return_value = mock_server
+        mock_db.query.return_value.filter.return_value.one_or_none.return_value = (
+            mock_server
+        )
         mock_exists.return_value = True
         mock_is_dir.return_value = True
 
@@ -133,7 +139,9 @@ class TestFileManagementService:
     @pytest.mark.asyncio
     async def test_read_file_path_traversal(self, mock_server, mock_db):
         """Test read_file with path traversal attempt"""
-        mock_db.query.return_value.filter.return_value.one_or_none.return_value = mock_server
+        mock_db.query.return_value.filter.return_value.one_or_none.return_value = (
+            mock_server
+        )
 
         with patch("pathlib.Path.resolve") as mock_resolve:
             mock_resolve.side_effect = [
@@ -150,7 +158,9 @@ class TestFileManagementService:
     @patch("pathlib.Path.exists")
     async def test_read_file_not_found(self, mock_exists, mock_server, mock_db):
         """Test read_file when file doesn't exist"""
-        mock_db.query.return_value.filter.return_value.one_or_none.return_value = mock_server
+        mock_db.query.return_value.filter.return_value.one_or_none.return_value = (
+            mock_server
+        )
         mock_exists.return_value = False
 
         with pytest.raises(FileOperationException):
@@ -165,7 +175,9 @@ class TestFileManagementService:
         self, mock_is_dir, mock_exists, mock_server, mock_db
     ):
         """Test read_file when target is a directory"""
-        mock_db.query.return_value.filter.return_value.one_or_none.return_value = mock_server
+        mock_db.query.return_value.filter.return_value.one_or_none.return_value = (
+            mock_server
+        )
         mock_exists.return_value = True
         mock_is_dir.return_value = True
 
@@ -188,7 +200,9 @@ class TestFileManagementService:
         self, mock_safe_read, mock_is_dir, mock_exists, mock_server, mock_db
     ):
         """Test successful file read"""
-        mock_db.query.return_value.filter.return_value.one_or_none.return_value = mock_server
+        mock_db.query.return_value.filter.return_value.one_or_none.return_value = (
+            mock_server
+        )
         mock_exists.return_value = True
         mock_is_dir.return_value = False
 
@@ -222,7 +236,9 @@ class TestFileManagementService:
         self, mock_safe_read, mock_is_dir, mock_exists, mock_server, mock_db
     ):
         """Test read_file with unicode decode error"""
-        mock_db.query.return_value.filter.return_value.one_or_none.return_value = mock_server
+        mock_db.query.return_value.filter.return_value.one_or_none.return_value = (
+            mock_server
+        )
         mock_exists.return_value = True
         mock_is_dir.return_value = False
 
@@ -261,7 +277,9 @@ class TestFileManagementService:
         self, mock_resolve, mock_server, mock_user, mock_db
     ):
         """Test write_file with path traversal attempt"""
-        mock_db.query.return_value.filter.return_value.one_or_none.return_value = mock_server
+        mock_db.query.return_value.filter.return_value.one_or_none.return_value = (
+            mock_server
+        )
         mock_resolve.side_effect = [
             Path("/etc/passwd"),  # target_path.resolve()
             Path("/servers/test_server"),  # server_path.resolve()
@@ -279,7 +297,9 @@ class TestFileManagementService:
     @pytest.mark.asyncio
     async def test_write_file_restricted_non_admin(self, mock_server, mock_user, mock_db):
         """Test write_file restricted file by non-admin user"""
-        mock_db.query.return_value.filter.return_value.one_or_none.return_value = mock_server
+        mock_db.query.return_value.filter.return_value.one_or_none.return_value = (
+            mock_server
+        )
 
         with patch("pathlib.Path.resolve") as mock_resolve:
             mock_resolve.side_effect = [
@@ -303,7 +323,9 @@ class TestFileManagementService:
         self, mock_aiofiles_open, mock_exists, mock_server, mock_user, mock_db
     ):
         """Test successful file write"""
-        mock_db.query.return_value.filter.return_value.one_or_none.return_value = mock_server
+        mock_db.query.return_value.filter.return_value.one_or_none.return_value = (
+            mock_server
+        )
         mock_exists.return_value = False
 
         mock_file = AsyncMock()
@@ -354,7 +376,9 @@ class TestFileManagementService:
         self, mock_exists, mock_server, mock_user, mock_db
     ):
         """Test delete_file when file doesn't exist"""
-        mock_db.query.return_value.filter.return_value.one_or_none.return_value = mock_server
+        mock_db.query.return_value.filter.return_value.one_or_none.return_value = (
+            mock_server
+        )
         mock_exists.return_value = False
 
         with pytest.raises(FileOperationException):
@@ -376,7 +400,9 @@ class TestFileManagementService:
         mock_db,
     ):
         """Test successful file deletion"""
-        mock_db.query.return_value.filter.return_value.one_or_none.return_value = mock_server
+        mock_db.query.return_value.filter.return_value.one_or_none.return_value = (
+            mock_server
+        )
         mock_exists.return_value = True
         mock_is_file.return_value = True
 
@@ -406,7 +432,9 @@ class TestFileManagementService:
         self, mock_rmtree, mock_is_dir, mock_exists, mock_server, mock_admin_user, mock_db
     ):
         """Test successful directory deletion"""
-        mock_db.query.return_value.filter.return_value.one_or_none.return_value = mock_server
+        mock_db.query.return_value.filter.return_value.one_or_none.return_value = (
+            mock_server
+        )
         mock_exists.return_value = True
         mock_is_dir.return_value = True
 
@@ -447,11 +475,15 @@ class TestFileManagementService:
         self, mock_aiofiles_open, mock_server, mock_user, mock_db
     ):
         """Test successful file upload"""
-        mock_db.query.return_value.filter.return_value.one_or_none.return_value = mock_server
+        mock_db.query.return_value.filter.return_value.one_or_none.return_value = (
+            mock_server
+        )
 
         mock_file = Mock(spec=UploadFile)
         mock_file.filename = "test.txt"
-        mock_file.read = AsyncMock(return_value=b"file content")
+        # Chunked upload (#341): first read returns the payload, the
+        # next signals EOF so the streaming loop terminates.
+        mock_file.read = AsyncMock(side_effect=[b"file content", b""])
 
         mock_aio_file = AsyncMock()
         mock_aiofiles_open.return_value.__aenter__.return_value = mock_aio_file
@@ -503,7 +535,9 @@ class TestFileManagementService:
         self, mock_is_dir, mock_exists, mock_server, mock_db
     ):
         """Test successful file download"""
-        mock_db.query.return_value.filter.return_value.one_or_none.return_value = mock_server
+        mock_db.query.return_value.filter.return_value.one_or_none.return_value = (
+            mock_server
+        )
         mock_exists.return_value = True
         mock_is_dir.return_value = False
 
@@ -534,7 +568,9 @@ class TestFileManagementService:
     @pytest.mark.asyncio
     async def test_create_directory_success(self, mock_server, mock_db):
         """Test successful directory creation"""
-        mock_db.query.return_value.filter.return_value.one_or_none.return_value = mock_server
+        mock_db.query.return_value.filter.return_value.one_or_none.return_value = (
+            mock_server
+        )
 
         with patch("pathlib.Path.resolve") as mock_resolve:
             mock_resolve.side_effect = [
@@ -571,7 +607,9 @@ class TestFileManagementService:
         self, mock_rglob, mock_exists, mock_server, mock_db
     ):
         """Test successful file search"""
-        mock_db.query.return_value.filter.return_value.one_or_none.return_value = mock_server
+        mock_db.query.return_value.filter.return_value.one_or_none.return_value = (
+            mock_server
+        )
         mock_exists.return_value = True
 
         mock_file = Mock()
@@ -752,3 +790,117 @@ class TestFileManagementService:
             assert not service._is_restricted_file(Path(filename)), (
                 f"Non-restricted file {filename} should not be protected"
             )
+
+
+class TestUploadFileOperation:
+    """Issue #341: upload_file streams the payload and rejects oversize uploads."""
+
+    @pytest.mark.asyncio
+    async def test_upload_file_streams_chunked_reads(self, tmp_path):
+        """upload_file consumes the file with bounded ``read(N)`` calls."""
+        from app.files.application.management import FileOperationService
+
+        service = FileOperationService(backup_service=Mock())
+        target = tmp_path / "uploaded.bin"
+
+        payload = b"abcdef" * 1000  # 6 KiB — fits in a single 64 KiB chunk
+        chunks = [payload, b""]
+        mock_file = Mock(spec=UploadFile)
+        mock_file.read = AsyncMock(side_effect=chunks)
+
+        written = await service.upload_file(mock_file, target)
+
+        assert written == len(payload)
+        assert target.read_bytes() == payload
+        # First call requested at most CHUNK_BYTES; second call drains EOF.
+        assert mock_file.read.call_args_list[0].args[0] == service._UPLOAD_CHUNK_BYTES
+
+    @pytest.mark.asyncio
+    async def test_upload_file_rejects_oversize(self, tmp_path, monkeypatch):
+        """Exceeding ``FILE_MAX_UPLOAD_BYTES`` raises ``FileTooLargeError``."""
+        from app.core.exceptions import FileTooLargeError
+        from app.files.application.management import FileOperationService, settings
+
+        monkeypatch.setattr(settings, "FILE_MAX_UPLOAD_BYTES", 128)
+
+        service = FileOperationService(backup_service=Mock())
+        target = tmp_path / "huge.bin"
+
+        # 64 KiB chunk * 3 => 192 KiB, well over the 128-byte cap.
+        oversize = b"x" * (64 * 1024)
+        mock_file = Mock(spec=UploadFile)
+        mock_file.read = AsyncMock(side_effect=[oversize, oversize, b""])
+
+        with pytest.raises(FileTooLargeError) as excinfo:
+            await service.upload_file(mock_file, target)
+
+        # The error carries the running size + configured cap and the
+        # partial output is cleaned up so storage isn't leaked.
+        assert excinfo.value.size_bytes is not None
+        assert excinfo.value.size_bytes > 128
+        assert excinfo.value.max_bytes == 128
+        assert not target.exists()
+
+    @pytest.mark.asyncio
+    async def test_upload_file_limit_zero_disables_enforcement(
+        self, tmp_path, monkeypatch
+    ):
+        """``FILE_MAX_UPLOAD_BYTES = 0`` allows arbitrarily large uploads."""
+        from app.files.application.management import FileOperationService, settings
+
+        monkeypatch.setattr(settings, "FILE_MAX_UPLOAD_BYTES", 0)
+
+        service = FileOperationService(backup_service=Mock())
+        target = tmp_path / "unbounded.bin"
+        big = b"y" * (64 * 1024)
+        mock_file = Mock(spec=UploadFile)
+        mock_file.read = AsyncMock(side_effect=[big, big, b""])
+
+        written = await service.upload_file(mock_file, target)
+        assert written == 2 * len(big)
+        assert target.stat().st_size == 2 * len(big)
+
+
+class TestRenameFileAlreadyExists:
+    """Issue #341: rename surfaces 409 ``FileAlreadyExistsError`` on conflict."""
+
+    @pytest.mark.asyncio
+    async def test_rename_conflict_raises_file_already_exists(self, tmp_path):
+        from app.core.exceptions import FileAlreadyExistsError
+        from app.files.application.management import file_management_service
+
+        # Stage a real server directory with both the source and the
+        # conflicting destination already present.
+        server_dir = tmp_path / "srv"
+        server_dir.mkdir()
+        (server_dir / "src.txt").write_text("hello")
+        (server_dir / "dst.txt").write_text("collision")
+
+        server = Mock(spec=Server)
+        server.id = 1
+        server.directory_path = str(server_dir)
+
+        mock_db = Mock()
+        user = Mock(spec=User)
+        user.id = 1
+        user.username = "operator"
+        user.role = Role.admin
+
+        with patch.object(
+            file_management_service.validation_service,
+            "validate_server_exists",
+            new=AsyncMock(return_value=server),
+        ):
+            with pytest.raises(FileAlreadyExistsError) as excinfo:
+                await file_management_service.rename_file(
+                    server_id=1,
+                    file_path="src.txt",
+                    new_name="dst.txt",
+                    db=mock_db,
+                    user=user,
+                )
+
+        # The error envelope carries the conflicting path so the UI can
+        # offer "rename to" / "delete first" without an extra round-trip.
+        assert excinfo.value.existing_path == "dst.txt"
+        assert excinfo.value.status_code == 409
