@@ -83,7 +83,7 @@ from unittest.mock import Mock  # noqa: E402
 
 import pytest  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
-from sqlalchemy import create_engine  # noqa: E402
+from sqlalchemy import create_engine, event  # noqa: E402
 from sqlalchemy.orm import sessionmaker  # noqa: E402
 
 from app.core.database import Base, get_db  # noqa: E402
@@ -107,6 +107,33 @@ engine = create_engine(
     pool_pre_ping=True,
     echo=False,
 )
+
+
+# Issue #79 Phase 1: relax SQLite durability settings for the test suite.
+# These PRAGMAs are SAFE TO LOSE because the per-worker DB file is created
+# fresh each session (`pytest_sessionfinish` deletes it) and never holds
+# production data. Together they remove every fsync on COMMIT and keep the
+# rollback journal + temp tables in RAM, which materially cuts wall-clock
+# for write-heavy fixtures (user create, server insert, backup metadata).
+#
+# - journal_mode=MEMORY: rollback journal kept in process memory rather
+#   than written to disk on every transaction. A crash mid-transaction
+#   can corrupt the DB — acceptable for ephemeral test DBs.
+# - synchronous=OFF: skip the fsync that SQLite normally issues after the
+#   journal write. Equivalent risk profile to MEMORY journal.
+# - temp_store=MEMORY: keep CREATE TEMP TABLE / sorter scratch in RAM
+#   instead of `/tmp` — relevant for the few ORDER BY queries in tests.
+@event.listens_for(engine, "connect")
+def _set_sqlite_pragma_for_tests(dbapi_conn, _):  # pragma: no cover - infra
+    cursor = dbapi_conn.cursor()
+    try:
+        cursor.execute("PRAGMA journal_mode=MEMORY")
+        cursor.execute("PRAGMA synchronous=OFF")
+        cursor.execute("PRAGMA temp_store=MEMORY")
+    finally:
+        cursor.close()
+
+
 TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 
@@ -163,10 +190,23 @@ def pytest_collection_modifyitems(config, items):
             item.add_marker(skip_marker)
 
 
-@pytest.fixture(scope="function")
-def db():
-    # テーブルを作成
+@pytest.fixture(scope="session", autouse=True)
+def _create_schema_once():
+    """Materialize the DB schema once per worker session.
+
+    Previously `Base.metadata.create_all` ran inside the function-scoped
+    `db` fixture, paying the metadata reflection + DDL cost on every
+    test. The schema is identical for the whole session (no migrations
+    run between tests), so once per worker is sufficient. Per-test
+    isolation is still provided by the table-DELETE cleanup in the
+    `db` fixture below. Issue #79 Phase 1 / P3.
+    """
     Base.metadata.create_all(bind=engine)
+    yield
+
+
+@pytest.fixture(scope="function")
+def db(_create_schema_once):
     db = TestingSessionLocal()
     try:
         yield db
