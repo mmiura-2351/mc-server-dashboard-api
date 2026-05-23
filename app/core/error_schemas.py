@@ -11,7 +11,7 @@ identifier and treat ``detail`` as deprecated.
 from __future__ import annotations
 
 from datetime import datetime
-from typing import List, Optional
+from typing import Any, Dict, List, Optional, Union
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -51,9 +51,15 @@ class ErrorResponse(BaseModel):
         None, description="Correlation ID for log triangulation"
     )
     timestamp: datetime = Field(..., description="Server time at response generation")
-    detail: Optional[str] = Field(
+    detail: Optional[Union[str, List[Dict[str, Any]]]] = Field(
         None,
-        description="Legacy ``detail`` field, mirrors ``message`` for back-compat",
+        description=(
+            "Legacy ``detail`` field. For most errors this mirrors "
+            "``message`` (string). For 422 ``RequestValidationError`` "
+            "responses this is the legacy FastAPI ``list[dict]`` shape "
+            "so existing clients that iterate over per-field errors "
+            "(e.g. ``response.detail.map(...)``) keep working unchanged."
+        ),
     )
 
     model_config = ConfigDict()

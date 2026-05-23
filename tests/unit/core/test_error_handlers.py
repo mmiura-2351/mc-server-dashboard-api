@@ -208,6 +208,63 @@ class TestValidationErrorHandler:
         for d in details:
             assert d.get("message")
 
+    def test_legacy_detail_remains_list_of_dicts_for_422(self):
+        """422 ``detail`` must stay in FastAPI's legacy ``list[dict]`` shape.
+
+        Existing frontend code iterates over ``response.detail`` (e.g.
+        ``response.detail.map(err => err.msg)``); mirroring ``message``
+        (a string) into ``detail`` like every other status would break
+        those callers. Guard against the regression.
+        """
+        c = _client()
+        r = c.post("/validate", json={"name": "ok", "count": "not-a-number"})
+        assert r.status_code == 422
+        body = r.json()
+
+        # detail is a list of dicts (legacy FastAPI format) — NOT a string.
+        legacy_detail = body.get("detail")
+        assert isinstance(legacy_detail, list), (
+            f"422 detail must be list[dict] for back-compat, got {type(legacy_detail)}"
+        )
+        assert len(legacy_detail) >= 1
+        for entry in legacy_detail:
+            assert isinstance(entry, dict)
+            # Each legacy entry carries the FastAPI default keys.
+            assert "loc" in entry
+            assert "msg" in entry
+            assert "type" in entry
+            # ``loc`` is a list (JSON has no tuples) starting with the scope.
+            assert isinstance(entry["loc"], list)
+
+        # The new structured ``details`` field is populated in parallel.
+        new_details = body.get("details") or []
+        assert len(new_details) >= 1
+        new_fields = {d.get("field") for d in new_details}
+        assert "count" in new_fields
+
+    def test_422_detail_matches_fastapi_default_shape(self):
+        """422 ``detail`` entries should round-trip FastAPI's error dicts.
+
+        Smoke check: confirm the ``loc`` list and ``msg`` value for the
+        offending field match what FastAPI's default handler would have
+        produced (modulo stringification of indices).
+        """
+        c = _client()
+        r = c.post("/validate", json={"name": "ok"})  # ``count`` missing
+        assert r.status_code == 422
+        legacy_detail = r.json()["detail"]
+        assert isinstance(legacy_detail, list)
+        # Locate the missing-``count`` entry.
+        count_entry = next(
+            (e for e in legacy_detail if e.get("loc", [])[-1] == "count"),
+            None,
+        )
+        assert count_entry is not None
+        assert count_entry["loc"][0] == "body"
+        assert "count" in count_entry["loc"]
+        assert isinstance(count_entry["msg"], str) and count_entry["msg"]
+        assert isinstance(count_entry["type"], str)
+
 
 class TestHTTPExceptionFallback:
     def test_unknown_http_exception(self):

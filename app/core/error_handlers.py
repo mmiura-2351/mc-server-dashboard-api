@@ -12,7 +12,11 @@ existing frontend clients.
 Contract: every response built here is a JSON object with at minimum
 ``error`` (machine code), ``message``, ``status_code``, ``timestamp``,
 ``request_id``, and the legacy ``detail`` mirror. ``details`` is
-populated for 422 validation errors.
+populated for 422 validation errors. For 422 responses specifically,
+``detail`` is kept in FastAPI's legacy ``list[dict]`` shape (rather
+than the usual string mirror of ``message``) so frontend code that
+iterates per-field errors (``response.detail.map(...)``) keeps
+working unchanged.
 """
 
 from __future__ import annotations
@@ -22,6 +26,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from fastapi import FastAPI, HTTPException, Request, status
+from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
@@ -475,15 +480,24 @@ def register_exception_handlers(app: FastAPI) -> None:
                     code=str(err.get("type")) if err.get("type") is not None else None,
                 )
             )
+        payload = _build_payload(
+            request=request,
+            error_code="VALIDATION_ERROR",
+            message="Request validation failed",
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            details=details,
+        )
+        # Backward-compat: FastAPI's default 422 handler renders
+        # ``detail`` as a ``list[dict]`` of per-field errors. Existing
+        # frontend code commonly does e.g. ``response.detail.map(...)``
+        # which would break if we mirrored ``message`` (a string) into
+        # ``detail`` like every other status. Preserve the legacy
+        # ``list[dict]`` shape here; the structured per-field errors are
+        # additionally surfaced in the new ``details`` field above.
+        payload["detail"] = jsonable_encoder(exc.errors())
         return JSONResponse(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            content=_build_payload(
-                request=request,
-                error_code="VALIDATION_ERROR",
-                message="Request validation failed",
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                details=details,
-            ),
+            content=payload,
         )
 
     # --- HTTPException fallback -------------------------------------
