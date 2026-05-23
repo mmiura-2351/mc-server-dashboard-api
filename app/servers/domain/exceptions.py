@@ -351,6 +351,51 @@ class ServerDirectoryCreationError(ServerError):
         ]
 
 
+class NoAvailablePortError(ServerError):
+    """Raised when no free port can be located in the search range (Issue #32).
+
+    The auto-assignment path (``ServerCreateRequest.port`` omitted) and the
+    ``GET /api/v1/servers/ports/available`` discovery endpoint both walk
+    the port range starting at a configured ``start_port`` and stop at
+    ``range_end``. When every candidate is held by an active server the
+    application surfaces this exception so the caller receives a
+    structured 409 instead of an opaque 500.
+    """
+
+    error_code: ClassVar[str] = "SERVER_NO_PORT_AVAILABLE"
+
+    def __init__(
+        self,
+        start_port: int,
+        range_end: int = 65535,
+    ) -> None:
+        self.start_port = start_port
+        self.range_end = range_end
+        super().__init__(
+            f"No available port found in range {start_port}-{range_end}. "
+            "All candidate ports are currently in use by active servers."
+        )
+
+    def extra_details(self) -> List[ErrorDetail]:
+        return [
+            ErrorDetail(
+                field="port",
+                message=(
+                    f"No available port in range {self.start_port}-{self.range_end}"
+                ),
+                code="NO_AVAILABLE_PORT",
+            ),
+            ErrorDetail(
+                field=None,
+                message=(
+                    "Stop an existing active server or widen the search range "
+                    "to free up a port."
+                ),
+                code="RESOLUTION_STEP",
+            ),
+        ]
+
+
 class ServerCreationRollbackError(ServerError):
     """Raised when cleanup after a failed server creation itself fails.
 
@@ -401,6 +446,7 @@ __all__ = [
     "ServerJarDownloadError",
     "ServerDirectoryCreationError",
     "ServerCreationRollbackError",
+    "NoAvailablePortError",
     # Legacy re-exports
     "ServerNotFoundException",
     "ServerAccessDeniedException",

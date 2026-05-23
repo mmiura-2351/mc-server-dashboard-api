@@ -103,7 +103,16 @@ class ServerCreateRequest(BaseModel):
     server_type: ServerType = Field(
         ..., description="Server type: vanilla, forge, or paper"
     )
-    port: int = Field(25565, ge=1024, le=65535, description="Server port")
+    port: Optional[int] = Field(
+        None,
+        ge=1024,
+        le=65535,
+        description=(
+            "Server port. Omit to auto-assign the next available port "
+            "starting at 25565 (Issue #32). When provided, must be a "
+            "registered (non well-known) port in the range 1024-65535."
+        ),
+    )
     max_memory: int = Field(1024, ge=512, le=16384, description="Maximum memory in MB")
     max_players: int = Field(20, ge=1, le=100, description="Maximum number of players")
     template_id: Optional[int] = Field(
@@ -409,3 +418,55 @@ class ValidateServerCreationResponse(BaseModel):
 from app.core.error_schemas import ErrorDetail  # noqa: E402
 
 ValidateServerCreationResponse.model_rebuild()
+
+
+class AvailablePortsResponse(BaseModel):
+    """Response payload for ``GET /api/v1/servers/ports/available`` (Issue #32).
+
+    Returns up to ``count`` (clamped to 50) free ports starting from
+    ``start_port``. The walk ignores ports held by servers in a
+    ``stopped`` state — those are considered re-usable because they are
+    not currently bound.
+    """
+
+    ports: List[int] = Field(
+        ...,
+        description=(
+            "Free ports discovered, in ascending order. Empty when every "
+            "port from ``start_port`` to 65535 is currently held."
+        ),
+    )
+    start_port: int = Field(
+        ...,
+        description=(
+            "The starting port the search began at. Mirrors the request "
+            "query parameter so clients can correlate a paginated walk."
+        ),
+    )
+
+
+class PortAvailabilityResponse(BaseModel):
+    """Response payload for ``GET /api/v1/servers/ports/check/{port}`` (Issue #32).
+
+    Returns whether the requested ``port`` is currently held by an
+    active server (``starting`` / ``running``). The ``holder`` field is
+    populated only when ``available`` is False; it carries the same
+    information surfaced by ``ServerPortConflictError`` so the frontend
+    can render a consistent message.
+    """
+
+    port: int = Field(..., description="The port that was queried.")
+    available: bool = Field(
+        ...,
+        description=(
+            "True when no active server currently holds the port. "
+            "Stopped servers do not count as holders."
+        ),
+    )
+    holder: Optional[str] = Field(
+        None,
+        description=(
+            "Name of the active server currently holding the port. "
+            "``None`` when ``available`` is True."
+        ),
+    )

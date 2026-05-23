@@ -17,6 +17,7 @@ from app.servers.application.service import ServerService
 from app.servers.domain.entities import ServerEntity
 from app.servers.domain.exceptions import (
     JavaCompatibilityError,
+    NoAvailablePortError,
     ServerNameConflictError,
     ServerPortConflictError,
     UnsupportedMinecraftVersionError,
@@ -238,3 +239,144 @@ class TestValidateCreationRequest:
         # Suggestions are still computed (allocator returns ports near
         # the requested one).
         assert request_25565.port in result.suggested_ports
+
+
+class _RangedFakeRepo:
+    """Repo stand-in that reports a configurable set of active ports.
+
+    Used to exercise the Issue #32 auto-assign path where the request
+    omits ``port`` and the service must walk the candidate range
+    starting at ``DEFAULT_PORT_START``.
+    """
+
+    def __init__(self, *, active_ports: set[int]) -> None:
+        self._active_ports = set(active_ports)
+
+    async def get_by_name(self, name: str, *, include_deleted: bool = False):
+        return None
+
+    async def list_by_port(
+        self,
+        port,
+        *,
+        statuses=None,
+        exclude_id=None,
+        include_deleted: bool = False,
+    ) -> List[ServerEntity]:
+        if port is None:
+            return [
+                _entity(id_=p, name=f"server-{p}", port=p, status=ServerStatus.running)
+                for p in sorted(self._active_ports)
+            ]
+        if port in self._active_ports:
+            return [
+                _entity(
+                    id_=port,
+                    name=f"server-{port}",
+                    port=port,
+                    status=ServerStatus.running,
+                )
+            ]
+        return []
+
+
+class TestAutoAssignPort:
+    """Issue #32: auto-assign port when ``ServerCreateRequest.port`` is omitted."""
+
+    def _request_without_port(self) -> ServerCreateRequest:
+        return ServerCreateRequest(
+            name="auto-port-server",
+            description=None,
+            minecraft_version="1.21.6",
+            server_type=ServerType.vanilla,
+            # port omitted on purpose — exercises the auto-assign path.
+            max_memory=1024,
+            max_players=20,
+        )
+
+    @pytest.mark.asyncio
+    async def test_port_none_picks_default_start_when_free(self, owner):
+        """When 25565 is free, the auto-assign path picks it."""
+        repo = _RangedFakeRepo(active_ports=set())
+        service = ServerService(server_repo=repo)
+        service._is_version_supported_db = AsyncMock(return_value=True)
+        service._validate_java_compatibility = AsyncMock()
+        # Short-circuit the filesystem + persistence path; we only care
+        # that the pre-flight populated ``request.port`` before the call
+        # would have reached the JAR/persist stages.
+        service._validate_creation_preconditions = (
+            service._validate_creation_preconditions
+        )
+
+        request = self._request_without_port()
+        await service._validate_creation_preconditions(request, db=Mock())
+
+        assert request.port == 25565
+
+    @pytest.mark.asyncio
+    async def test_port_none_hops_to_next_free_when_default_busy(self, owner):
+        """25565 is held by an active server → picks 25566 next."""
+        repo = _RangedFakeRepo(active_ports={25565})
+        service = ServerService(server_repo=repo)
+        service._is_version_supported_db = AsyncMock(return_value=True)
+        service._validate_java_compatibility = AsyncMock()
+
+        request = self._request_without_port()
+        await service._validate_creation_preconditions(request, db=Mock())
+
+        assert request.port == 25566
+
+    @pytest.mark.asyncio
+    async def test_port_none_raises_when_no_port_available(self, owner):
+        """Exhausted range → ``NoAvailablePortError`` (Issue #32)."""
+
+        class _ExhaustedRepo:
+            """Returns 'in-use' for every probe so allocator finds nothing.
+
+            ``find_available_ports`` walks the range starting at the
+            requested port and consults ``list_by_port(port=None)`` once
+            to build the held-port set. Returning an entity for every
+            port in the range simulates total exhaustion.
+            """
+
+            async def get_by_name(self, name, *, include_deleted=False):
+                return None
+
+            async def list_by_port(
+                self,
+                port,
+                *,
+                statuses=None,
+                exclude_id=None,
+                include_deleted=False,
+            ):
+                if port is None:
+                    # Report every port in 25565..65535 as taken by an
+                    # active server so the allocator returns []. Using a
+                    # generator-like ``range`` produces ~40000 entities
+                    # which is fine for an in-memory test.
+                    return [
+                        _entity(
+                            id_=p,
+                            name=f"s-{p}",
+                            port=p,
+                            status=ServerStatus.running,
+                        )
+                        for p in range(25565, 65536)
+                    ]
+                return []
+
+        repo = _ExhaustedRepo()
+        service = ServerService(server_repo=repo)
+        service._is_version_supported_db = AsyncMock(return_value=True)
+        service._validate_java_compatibility = AsyncMock()
+
+        request = self._request_without_port()
+        with pytest.raises(NoAvailablePortError) as exc:
+            await service._validate_creation_preconditions(request, db=Mock())
+
+        assert exc.value.error_code == "SERVER_NO_PORT_AVAILABLE"
+        assert exc.value.start_port == 25565
+        details = exc.value.extra_details()
+        assert any(d.code == "NO_AVAILABLE_PORT" for d in details)
+        assert any(d.code == "RESOLUTION_STEP" for d in details)

@@ -16,6 +16,8 @@ from fastapi import APIRouter, status
 
 # Import route functions directly rather than routers to avoid conflicts
 from app.servers.schemas import (
+    AvailablePortsResponse,
+    PortAvailabilityResponse,
     ServerListResponse,
     ServerLogsResponse,
     ServerResponse,
@@ -33,9 +35,11 @@ from .control import (
 )
 from .import_export import export_server, import_server
 from .management import (
+    check_port,
     create_server,
     delete_server,
     get_server,
+    list_available_ports,
     list_servers,
     update_server,
 )
@@ -58,6 +62,24 @@ router.add_api_route(
     status_code=status.HTTP_201_CREATED,
 )
 router.add_api_route("", list_servers, methods=["GET"], response_model=ServerListResponse)
+
+# Port discovery endpoints (Issue #32). Registered BEFORE the
+# ``/{server_id}`` routes so FastAPI's path matcher does not attempt
+# to coerce the literal segment ``ports`` into the ``server_id``
+# integer path parameter.
+router.add_api_route(
+    "/ports/available",
+    list_available_ports,
+    methods=["GET"],
+    response_model=AvailablePortsResponse,
+)
+router.add_api_route(
+    "/ports/check/{port}",
+    check_port,
+    methods=["GET"],
+    response_model=PortAvailabilityResponse,
+)
+
 router.add_api_route(
     "/{server_id}", get_server, methods=["GET"], response_model=ServerResponse
 )

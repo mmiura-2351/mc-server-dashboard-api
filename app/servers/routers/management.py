@@ -5,6 +5,7 @@ from fastapi import (
     BackgroundTasks,
     Depends,
     HTTPException,
+    Path,
     Query,
     status,
 )
@@ -18,19 +19,31 @@ from app.backups.domain.exceptions import (
 from app.core.database import get_db
 from app.servers.api.dependencies import (
     get_authorization_service,
+    get_server_repository,
     get_server_service,
 )
 from app.servers.application.authorization import AuthorizationService
 from app.servers.application.minecraft_server import minecraft_server_manager
+from app.servers.application.port_allocator import (
+    find_available_ports,
+    port_holder,
+)
 from app.servers.application.service import (
     ServerService,
 )
 from app.servers.application.service import (
     _server_service_legacy as server_service,  # legacy module-level alias (still referenced by older unit tests)
 )
-from app.servers.domain.exceptions import ServerAccessError, ServerNotFoundError
+from app.servers.domain.exceptions import (
+    NoAvailablePortError,
+    ServerAccessError,
+    ServerNotFoundError,
+)
+from app.servers.domain.ports import ServerRepository
 from app.servers.models import ServerStatus
 from app.servers.schemas import (
+    AvailablePortsResponse,
+    PortAvailabilityResponse,
     ServerCreateRequest,
     ServerListResponse,
     ServerResponse,
@@ -114,6 +127,85 @@ async def validate_server_creation(
         raise ServerAccessError("Insufficient permissions to validate server creation")
 
     return await server_service.validate_creation_request(request, db)
+
+
+@router.get(
+    "/ports/available",
+    response_model=AvailablePortsResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def list_available_ports(
+    start: int = Query(
+        25565,
+        ge=1024,
+        le=65535,
+        description="Starting port for the search (inclusive). Default 25565.",
+    ),
+    count: int = Query(
+        1,
+        ge=1,
+        le=50,
+        description=(
+            "Number of free ports to return (clamped to 50 to bound the "
+            "scan and mitigate DoS via large ranges)."
+        ),
+    ),
+    current_user: User = Depends(get_current_user),
+    server_repo: ServerRepository = Depends(get_server_repository),
+):
+    """Discover free ports for server creation (Issue #32).
+
+    Walks the registered-port range from ``start`` upward and returns
+    up to ``count`` ports that are not currently held by an active
+    server (``starting`` / ``running``). Stopped servers do not block
+    re-use, matching the contract enforced by the create-server path.
+
+    Authorization mirrors create — the ``can_create_server`` gate is
+    enforced so unauthenticated/unauthorized callers cannot enumerate
+    the port allocation table. Raises :class:`NoAvailablePortError`
+    (409) when the search finds zero free ports.
+    """
+    if not AuthorizationService.can_create_server(current_user):
+        raise ServerAccessError("Insufficient permissions to discover server ports")
+
+    ports = await find_available_ports(server_repo, start, count=count)
+    if not ports:
+        raise NoAvailablePortError(start_port=start)
+    return AvailablePortsResponse(ports=ports, start_port=start)
+
+
+@router.get(
+    "/ports/check/{port}",
+    response_model=PortAvailabilityResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def check_port(
+    port: int = Path(
+        ...,
+        ge=1024,
+        le=65535,
+        description="The port to query (registered range only, 1024-65535).",
+    ),
+    current_user: User = Depends(get_current_user),
+    server_repo: ServerRepository = Depends(get_server_repository),
+):
+    """Check whether a specific port is currently held (Issue #32).
+
+    Returns the active server holding the port (if any) so frontends
+    can render inline feedback before the user submits the create
+    form. Holder disclosure mirrors the create-server pre-flight
+    behaviour (gated by ``can_create_server``) — non-creator callers
+    cannot enumerate other users' ports.
+    """
+    if not AuthorizationService.can_create_server(current_user):
+        raise ServerAccessError("Insufficient permissions to check server ports")
+
+    holder = await port_holder(server_repo, port)
+    return PortAvailabilityResponse(
+        port=port,
+        available=holder is None,
+        holder=holder,
+    )
 
 
 @router.get("", response_model=ServerListResponse)

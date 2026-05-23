@@ -89,6 +89,7 @@ from app.servers.domain.entities import (
 )
 from app.servers.domain.exceptions import (
     JavaCompatibilityError,
+    NoAvailablePortError,
     ServerCreationRollbackError,
     ServerJarDownloadError,
     ServerNameConflictError,
@@ -129,6 +130,13 @@ __all__ = [
     "ServerDatabaseService",
     "ServerService",
 ]
+
+# Default starting port for the auto-assign path (Issue #32). The
+# Minecraft community convention is 25565; we walk upward from there
+# when ``ServerCreateRequest.port`` is omitted. Hardcoded — see the
+# delivery plan: making this configurable adds knobs without a known
+# caller and complicates the discovery endpoint contract.
+DEFAULT_PORT_START = 25565
 
 
 # ---------------------------------------------------------------------------
@@ -632,6 +640,34 @@ class ServerService:
         ServerSecurityValidator.validate_server_name(request.name)
         ServerSecurityValidator.validate_memory_value(request.max_memory)
 
+        # ---- Auto-assign port (Issue #32) ----
+        # When ``port`` is omitted, walk from ``DEFAULT_PORT_START`` to
+        # find the first free port. Done **before** the conflict check
+        # below so the conflict path always sees a concrete integer.
+        # The discovery only consults the database (active-status
+        # servers) — see ``port_allocator.find_available_ports``.
+        if request.port is None:
+            if self._server_repo is None:
+                # Legacy fallback (no DI). Best-effort: default to the
+                # historical 25565 and let downstream logic surface a
+                # conflict if needed. The repo-less path is exercised
+                # only by unit tests that mock ``database_service``.
+                request.port = DEFAULT_PORT_START
+            else:
+                picks = await find_available_ports(
+                    self._server_repo, DEFAULT_PORT_START, count=1
+                )
+                if not picks:
+                    raise NoAvailablePortError(start_port=DEFAULT_PORT_START)
+                request.port = picks[0]
+                logger.info(
+                    "server_create_port_auto_assigned",
+                    extra={
+                        "server_name": request.name,
+                        "assigned_port": request.port,
+                    },
+                )
+
         # ---- Port pre-flight ----
         logger.info(
             "server_create_step",
@@ -743,11 +779,17 @@ class ServerService:
         # Always provide at least one alternative port suggestion when
         # the repo is wired — useful both for the conflict path and for
         # frontends that want to show "free ports near your choice"
-        # affordances independent of any failure.
+        # affordances independent of any failure. When the request omits
+        # ``port`` entirely (Issue #32 auto-assign), the
+        # ``_validate_creation_preconditions`` call above has already
+        # populated ``request.port`` with the auto-assigned value; fall
+        # back to the default start port if validation aborted before
+        # that step ran.
         suggested_ports: List[int] = []
         if self._server_repo is not None:
+            start = request.port if request.port is not None else DEFAULT_PORT_START
             suggested_ports = await find_available_ports(
-                self._server_repo, start_port=request.port, count=3
+                self._server_repo, start_port=start, count=3
             )
 
         return ValidateServerCreationResponse(
