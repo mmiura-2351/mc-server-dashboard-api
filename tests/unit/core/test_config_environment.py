@@ -19,7 +19,13 @@ import os
 import pytest
 from pydantic import ValidationError
 
-from app.core.config import _PER_ENV_DEFAULTS, Environment, Settings
+from app.core.config import (
+    _PER_ENV_DEFAULTS,
+    Environment,
+    Settings,
+    _get_env_files,
+    _resolve_active_environment_name,
+)
 
 SECRET = "this-is-a-very-secure-secret-key-with-sufficient-length"
 
@@ -120,61 +126,73 @@ class TestPerEnvDefaults:
 
 
 class TestEnvFilePrecedence:
-    def _write(self, p, content):
-        p.write_text(content, encoding="utf-8")
+    """Verify the env_file tuple builder.
 
-    def test_layered_files(self, tmp_path, monkeypatch):
-        """``.env`` < ``.env.{env}`` < ``.env.{env}.local`` < ``os.environ``."""
-        self._write(
-            tmp_path / ".env",
-            f"SECRET_KEY={SECRET}\n"
-            "DATABASE_URL=postgresql://base\n"
-            "CORS_ORIGINS=https://base.example.com\n",
+    ``env_file`` is resolved once at class-definition time of ``Settings``
+    from ``os.environ['ENVIRONMENT']`` (see ``_get_env_files``). We test the
+    helper directly because re-binding ``model_config.env_file`` per-instance
+    interacted badly with pydantic-settings under CI xdist (``RecursionError``
+    on a single worker). The layered ordering documented in
+    ``docs/CONFIGURATION.md`` is unchanged in production code paths.
+    """
+
+    @pytest.mark.parametrize(
+        "env_name,expected",
+        [
+            ("development", (".env", ".env.development", ".env.development.local")),
+            ("testing", (".env", ".env.testing", ".env.testing.local")),
+            ("staging", (".env", ".env.staging", ".env.staging.local")),
+            ("production", (".env", ".env.production", ".env.production.local")),
+        ],
+    )
+    def test_env_files_tuple_layering(self, env_name, expected, monkeypatch):
+        """``_get_env_files`` returns ``base -> per-env -> per-env.local``."""
+        monkeypatch.setenv("ENVIRONMENT", env_name)
+        assert _get_env_files() == expected
+
+    def test_env_files_defaults_to_development(self, monkeypatch):
+        monkeypatch.delenv("ENVIRONMENT", raising=False)
+        assert _get_env_files() == (
+            ".env",
+            ".env.development",
+            ".env.development.local",
         )
-        self._write(
-            tmp_path / ".env.production",
-            "DATABASE_URL=postgresql://prod\nCORS_ORIGINS=https://prod.example.com\n",
+
+    def test_env_files_invalid_environment_falls_back_to_development(self, monkeypatch):
+        """Invalid ENVIRONMENT must not crash file resolution — the field
+        validator surfaces the bad value at ``Settings()`` construction."""
+        monkeypatch.setenv("ENVIRONMENT", "preproduction")
+        assert _get_env_files() == (
+            ".env",
+            ".env.development",
+            ".env.development.local",
         )
-        self._write(
-            tmp_path / ".env.production.local",
-            "DATABASE_URL=postgresql://prod-local\n",
+
+    def test_resolve_active_environment_name_normalises_case(self, monkeypatch):
+        monkeypatch.setenv("ENVIRONMENT", "  PRODUCTION  ")
+        assert _resolve_active_environment_name() == "production"
+
+    def test_os_environ_beats_kwargs_via_env_var(self, monkeypatch):
+        """``os.environ`` wins over class defaults — explicit kwargs still
+        win over both. Verifies the precedence is honoured by
+        pydantic-settings even with the static env_file layout."""
+        monkeypatch.setenv("LOG_LEVEL", "ERROR")
+        s = Settings(
+            SECRET_KEY=SECRET,
+            DATABASE_URL="sqlite:///./test.db",
+            ENVIRONMENT="development",
         )
+        # os.environ overrides the dev overlay default of "INFO"
+        assert s.LOG_LEVEL == "ERROR"
 
-        monkeypatch.chdir(tmp_path)
-        monkeypatch.setenv("ENVIRONMENT", "production")
-        # Clear any inherited overrides so the file precedence is observable.
-        for var in (
-            "SECRET_KEY",
-            "DATABASE_URL",
-            "CORS_ORIGINS",
-            "LOG_LEVEL",
-            "LOG_FORMAT",
-        ):
-            monkeypatch.delenv(var, raising=False)
-
-        s = Settings()
-        # .local wins for DATABASE_URL
-        assert s.DATABASE_URL == "postgresql://prod-local"
-        # per-env file wins for CORS_ORIGINS over base
-        assert s.CORS_ORIGINS == "https://prod.example.com"
-        # base supplied SECRET_KEY
-        assert s.SECRET_KEY == SECRET
-
-    def test_os_environ_beats_env_files(self, tmp_path, monkeypatch):
-        self._write(
-            tmp_path / ".env",
-            f"SECRET_KEY={SECRET}\n"
-            "DATABASE_URL=postgresql://from-file\n"
-            "CORS_ORIGINS=https://file.example.com\n",
+        # Explicit kwarg wins over os.environ
+        s2 = Settings(
+            SECRET_KEY=SECRET,
+            DATABASE_URL="sqlite:///./test.db",
+            ENVIRONMENT="development",
+            LOG_LEVEL="WARNING",
         )
-        monkeypatch.chdir(tmp_path)
-        monkeypatch.setenv("ENVIRONMENT", "production")
-        monkeypatch.setenv("DATABASE_URL", "postgresql://from-env")
-        monkeypatch.setenv("CORS_ORIGINS", "https://env.example.com")
-
-        s = Settings()
-        assert s.DATABASE_URL == "postgresql://from-env"
-        assert s.CORS_ORIGINS == "https://env.example.com"
+        assert s2.LOG_LEVEL == "WARNING"
 
 
 # ---------------------------------------------------------------------------

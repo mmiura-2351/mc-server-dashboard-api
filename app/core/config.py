@@ -91,31 +91,32 @@ _PER_ENV_DEFAULTS: Dict[Environment, Dict[str, Any]] = {
 }
 
 
-def _resolve_active_environment(values: Dict[str, Any]) -> Environment:
-    """Resolve the active environment from kwargs or ``os.environ``.
+def _resolve_active_environment_name() -> str:
+    """Resolve the active environment name from ``os.environ`` at import time.
 
-    ``ENVIRONMENT`` set via constructor kwarg takes priority over the host
-    env var; otherwise we fall back to ``development``.
+    Returns the lower-cased environment value (e.g. ``"production"``). If
+    ``ENVIRONMENT`` is unset or invalid, falls back to ``"development"``.
+    Invalid values are *not* raised here — the field validator on ``Settings``
+    surfaces a clean error message at construction time instead.
     """
-    raw = values.get("ENVIRONMENT")
-    if raw is None:
-        raw = os.getenv("ENVIRONMENT", Environment.DEVELOPMENT.value)
-    if isinstance(raw, Environment):
-        return raw
-    try:
-        return Environment(raw)
-    except ValueError as exc:  # propagate as ValueError so pydantic surfaces it
-        raise ValueError(str(exc)) from exc
+    raw = os.getenv("ENVIRONMENT", Environment.DEVELOPMENT.value)
+    if not isinstance(raw, str):
+        return Environment.DEVELOPMENT.value
+    normalised = raw.strip().lower()
+    if normalised not in {m.value for m in Environment}:
+        return Environment.DEVELOPMENT.value
+    return normalised
 
 
-def _env_files_for(env: Environment) -> tuple[str, ...]:
-    """Return the ordered ``.env`` file tuple for ``env``.
+def _get_env_files() -> tuple[str, ...]:
+    """Return the ordered ``.env`` file tuple for the active environment.
 
+    Resolved once at class-definition time from ``os.environ['ENVIRONMENT']``.
     pydantic-settings treats later entries as *higher* precedence, so the
-    returned tuple is ordered ``base -> per-env -> per-env.local``. ``os.environ``
-    still wins over all of these.
+    returned tuple is ordered ``base -> per-env -> per-env.local``.
+    ``os.environ`` still wins over all of these at instance construction.
     """
-    name = env.value
+    name = _resolve_active_environment_name()
     return (".env", f".env.{name}", f".env.{name}.local")
 
 
@@ -132,11 +133,14 @@ class Settings(BaseSettings):
     5. Field & model validators run.
     """
 
-    # ``env_file`` is filled in dynamically in ``__init__`` based on the
-    # active environment. The placeholder here is overwritten before
-    # validation actually consumes it.
+    # ``env_file`` is resolved once at class-definition time from
+    # ``os.environ['ENVIRONMENT']``. This avoids per-instance ``__init__``
+    # mutation of pydantic-settings internals (which under xdist + CI can
+    # interact with the settings sources pipeline and surface as
+    # ``RecursionError``). The process-lifetime ``ENVIRONMENT`` value is
+    # stable in practice, so a static resolution suffices.
     model_config = SettingsConfigDict(
-        env_file=(".env",),
+        env_file=_get_env_files(),
         env_file_encoding="utf-8",
         extra="ignore",
     )
@@ -195,25 +199,6 @@ class Settings(BaseSettings):
     LOG_FILE_MAX_BYTES: int = 10 * 1024 * 1024  # 10 MiB
     LOG_FILE_BACKUP_COUNT: int = 5
     SQLALCHEMY_LOG_LEVEL: str = "WARNING"
-
-    def __init__(self, **values: Any) -> None:
-        """Dynamically construct ``env_file`` based on the active environment.
-
-        The active environment is resolved from ``values['ENVIRONMENT']`` (if
-        the caller passed it) or ``os.environ['ENVIRONMENT']``, then the
-        layered ``.env`` tuple is wired up before delegating to
-        pydantic-settings.
-        """
-        try:
-            env = _resolve_active_environment(values)
-        except ValueError:
-            # Surface the same error class downstream so pydantic wraps it.
-            env = Environment.DEVELOPMENT
-            # The bad value will trip the ``ENVIRONMENT`` field validator below.
-        # Override model_config env_file for *this* instance only by passing
-        # _env_file via kwargs (pydantic-settings honours that hook).
-        values.setdefault("_env_file", _env_files_for(env))
-        super().__init__(**values)
 
     # ------------------------------------------------------------------
     # Per-environment defaults overlay
