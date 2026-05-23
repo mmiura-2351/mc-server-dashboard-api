@@ -3,16 +3,19 @@ import shutil
 import zipfile
 from datetime import datetime
 from pathlib import Path
-from typing import Annotated, Any, Dict, List, Optional
+from typing import Annotated, Any, ClassVar, Dict, List, Optional
 
 import aiofiles
 from fastapi import UploadFile
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
 from app.core.exceptions import (
     AccessDeniedException,
+    FileAlreadyExistsError,
     FileMissingError,
     FileOperationException,
+    FileTooLargeError,
     InvalidFileTypeError,
     InvalidRequestException,
     ServerNotFoundException,
@@ -475,17 +478,57 @@ class FileOperationService:
             # If file is not within server directory, use the filename
             return file_path.name
 
+    # 64 KiB chunk size matches the default disk page size for most
+    # filesystems and keeps peak per-request memory bounded while
+    # streaming the upload to disk.
+    _UPLOAD_CHUNK_BYTES: ClassVar[int] = 64 * 1024
+
     async def upload_file(self, file: UploadFile, target_path: Path) -> int:
-        """Upload file to target path and return file size"""
+        """Upload file to target path and return file size.
+
+        Reads the upload in fixed-size chunks (#341) so the full payload
+        never materialises in memory. The running total is checked
+        against ``settings.FILE_MAX_UPLOAD_BYTES`` after every chunk and
+        a :class:`FileTooLargeError` is raised the moment the limit is
+        exceeded — any partial output is removed before the exception
+        propagates. ``FILE_MAX_UPLOAD_BYTES = 0`` disables enforcement.
+        """
+        max_bytes = settings.FILE_MAX_UPLOAD_BYTES
+        enforce_limit = max_bytes > 0
         try:
             target_path.parent.mkdir(parents=True, exist_ok=True)
 
-            content = await file.read()
+            total = 0
+            try:
+                async with aiofiles.open(target_path, mode="wb") as f:
+                    while True:
+                        chunk = await file.read(self._UPLOAD_CHUNK_BYTES)
+                        if not chunk:
+                            break
+                        total += len(chunk)
+                        if enforce_limit and total > max_bytes:
+                            raise FileTooLargeError(
+                                "upload",
+                                str(target_path),
+                                size_bytes=total,
+                                max_bytes=max_bytes,
+                            )
+                        await f.write(chunk)
+            except FileTooLargeError:
+                # Best-effort cleanup of any bytes already flushed to
+                # disk so a rejected upload does not leak storage.
+                try:
+                    if target_path.exists():
+                        target_path.unlink()
+                except OSError:
+                    logger.debug(
+                        "Failed to cleanup partial upload at %s",
+                        target_path,
+                        exc_info=True,
+                    )
+                raise
 
-            async with aiofiles.open(target_path, mode="wb") as f:
-                await f.write(content)
-
-            return len(content)
+            return total
 
         except Exception as e:
             handle_file_error("upload", str(target_path), e)
@@ -1144,14 +1187,16 @@ class FileManagementService:
         # Create destination path (same directory, new name)
         destination_path = source_path.parent / new_name
 
-        # Check if destination already exists. Kept as the generic
-        # ``FileOperationException`` (500) for now — adding a dedicated
-        # ``FileAlreadyExistsError`` is tracked under #36 follow-ups.
+        # Check if destination already exists. Routed through the
+        # dedicated :class:`FileAlreadyExistsError` (HTTP 409, #341)
+        # so the client gets a structured envelope with the existing
+        # path and actionable suggestions.
         if destination_path.exists():
-            raise FileOperationException(
+            raise FileAlreadyExistsError(
                 "rename",
                 str(source_path),
                 f"File or directory '{new_name}' already exists",
+                existing_path=str(destination_path.relative_to(server_path)),
             )
 
         # Validate destination path safety

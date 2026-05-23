@@ -474,6 +474,32 @@ class TestFileOperationExceptionTaxonomy:
         assert exc.status_code == status.HTTP_507_INSUFFICIENT_STORAGE
         assert exc.error_code == "DISK_SPACE_INSUFFICIENT"
 
+    def test_file_already_exists_error_status_and_code(self):
+        """Issue #341: dedicated 409 conflict for rename/move collisions."""
+        from app.core.exceptions import FileAlreadyExistsError
+
+        exc = FileAlreadyExistsError(
+            "rename",
+            "/srv/src.txt",
+            existing_path="dst.txt",
+        )
+        assert exc.status_code == status.HTTP_409_CONFLICT
+        assert exc.error_code == "FILE_ALREADY_EXISTS"
+        assert isinstance(exc, FileOperationException)
+        details = {d.code: d.message for d in exc.extra_details()}
+        assert details["EXISTING_PATH"] == "dst.txt"
+        # At least one of the two suggested actions reaches the envelope.
+        suggested = [
+            d.message for d in exc.extra_details() if d.code == "SUGGESTED_ACTION"
+        ]
+        assert any("different destination" in s for s in suggested)
+
+    def test_file_already_exists_error_defaults_existing_path_to_file_path(self):
+        from app.core.exceptions import FileAlreadyExistsError
+
+        exc = FileAlreadyExistsError("upload", "/srv/foo.txt")
+        assert exc.existing_path == "/srv/foo.txt"
+
 
 class TestHandleFileErrorErrnoDispatch:
     """Coverage for the errno-aware dispatch added to ``handle_file_error``

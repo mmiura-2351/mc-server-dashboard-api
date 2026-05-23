@@ -43,6 +43,7 @@ from app.core.exceptions import (
     APIException,
     DiskSpaceError,
     FileAccessDeniedError,
+    FileAlreadyExistsError,
     FileMissingError,
     FileOperationException,
     FileTooLargeError,
@@ -617,6 +618,10 @@ def register_exception_handlers(app: FastAPI) -> None:
 
     @app.exception_handler(DiskSpaceError)
     async def _file_disk_space(request: Request, exc: DiskSpaceError):
+        return _api_exception_response(request, exc)
+
+    @app.exception_handler(FileAlreadyExistsError)
+    async def _file_already_exists(request: Request, exc: FileAlreadyExistsError):
         return _api_exception_response(request, exc)
 
     @app.exception_handler(FileOperationException)

@@ -387,6 +387,52 @@ class InvalidFileTypeError(FileOperationException):
         return details
 
 
+class FileAlreadyExistsError(FileOperationException):
+    """Raised when an operation targets a path that is already occupied.
+
+    Mapped to HTTP 409 (Conflict). Use for rename/move/upload destinations
+    that would clobber an existing file or directory. Carries the
+    conflicting path via :attr:`existing_path` so the frontend can offer
+    an inline resolution (rename, overwrite, delete-then-retry).
+    """
+
+    error_code: ClassVar[str] = "FILE_ALREADY_EXISTS"
+    _http_status: ClassVar[int] = status.HTTP_409_CONFLICT
+    _log_level: ClassVar[str] = "warning"
+
+    def __init__(
+        self,
+        operation: str,
+        file_path: str,
+        reason: str = "Destination already exists",
+        *,
+        existing_path: Optional[str] = None,
+        technical_details: Optional[str] = None,
+    ):
+        self.existing_path = existing_path or file_path
+        super().__init__(
+            operation, file_path, reason, technical_details=technical_details
+        )
+
+    def _suggested_actions(self) -> List[str]:
+        return [
+            "Use a different destination name or path",
+            "Delete the existing file or directory first, then retry",
+        ]
+
+    def extra_details(self) -> List[ErrorDetail]:
+        details = super().extra_details()
+        if self.existing_path:
+            details.append(
+                ErrorDetail(
+                    field="existing_path",
+                    message=self.existing_path,
+                    code="EXISTING_PATH",
+                )
+            )
+        return details
+
+
 class DiskSpaceError(FileOperationException):
     """Raised when a write fails because the device is out of space.
 
@@ -472,9 +518,9 @@ def handle_file_error(operation: str, file_path: str, error: Exception) -> NoRet
 
     Issue #35 introduced :class:`FileMissingError`,
     :class:`FileAccessDeniedError`, :class:`FileTooLargeError`,
-    :class:`InvalidFileTypeError`, and :class:`DiskSpaceError` so the
-    standard error response carries the correct HTTP status and
-    actionable ``suggested_actions``. This helper dispatches on
+    :class:`InvalidFileTypeError`, :class:`DiskSpaceError`, and (under
+    #341) :class:`FileAlreadyExistsError` so the standard error response
+    carries the correct HTTP status and actionable ``suggested_actions``. This helper dispatches on
     ``errno`` and built-in exception type before falling back to the
     generic 500 :class:`FileOperationException`.
 

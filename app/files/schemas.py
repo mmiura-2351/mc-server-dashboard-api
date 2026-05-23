@@ -1,7 +1,8 @@
+import codecs
 from datetime import datetime
 from typing import Dict, List, Optional
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.types import FileType
 
@@ -53,6 +54,24 @@ class FileWriteRequest(BaseModel):
     )
     encoding: str = Field("utf-8", description="File encoding")
     create_backup: bool = Field(True, description="Create backup before writing")
+
+    @field_validator("encoding")
+    @classmethod
+    def _validate_encoding(cls, v: str) -> str:
+        """Reject unknown codecs up-front (#341).
+
+        Without this guard ``router.write_file`` reached
+        ``payload.content.encode(payload.encoding, ...)`` *before* the
+        try/except guarding the audit emission, so an invalid encoding
+        leaked a bare ``LookupError`` (500) and the failure audit was
+        never recorded. Validating here turns the same input into a
+        clean 422 with the standard envelope.
+        """
+        try:
+            codecs.lookup(v)
+        except LookupError as exc:
+            raise ValueError(f"Unknown encoding: {v!r}") from exc
+        return v
 
 
 class FileWriteResponse(BaseModel):
