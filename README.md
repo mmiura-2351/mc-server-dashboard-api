@@ -84,6 +84,8 @@ The API will be available at `http://localhost:8000` with interactive documentat
 ### 📚 Core Documentation
 - **Interactive API docs**: `http://localhost:8000/docs`
 - **[Daemon Process Architecture](docs/DAEMON_PROCESS_ARCHITECTURE.md)** - Process management and persistence system
+- **[Daemon Architecture Migration Guide](docs/DAEMON_MIGRATION.md)** - Upgrading existing deployments from pre-PR-#60 to the daemon architecture (breaking changes, checklist, rollback)
+- **[Configuration Reference](docs/CONFIGURATION.md)** - Full `Settings` reference and per-environment overlays
 - **[RCON Integration](docs/RCON_INTEGRATION.md)** - Real-time command execution system
 - **[Java Compatibility Guide](docs/java-compatibility.md)** - Multi-version Java setup and configuration
 
@@ -145,6 +147,12 @@ Recipes are managed with [`just`](https://github.com/casey/just). Run `just` (no
 | `./scripts/dev-start.sh logs` | View development logs |
 
 ## Production Deployment
+
+> **Upgrading from a pre-PR-#60 deployment?** The daemon architecture
+> introduces breaking changes (PID files on disk, RCON auto-enabled,
+> `KEEP_SERVERS_ON_SHUTDOWN=True` by default, Unix-only). See
+> [docs/DAEMON_MIGRATION.md](docs/DAEMON_MIGRATION.md) **before** pulling
+> the new code on a host that has running Minecraft servers.
 
 ### Quick Deployment
 

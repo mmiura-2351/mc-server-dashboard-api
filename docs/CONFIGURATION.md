@@ -100,6 +100,18 @@ which the per-env overlay may further refine.
 | `JAVA_DISCOVERY_PATHS` | `str` | `""` | comma-separated paths |
 | `JAVA_8_PATH` … `JAVA_21_PATH` | `str` | `""` | direct path to `java` binary |
 
+### Daemon process settings (`DAEMON_*`)
+
+The 23 `DAEMON_*` environment variables live on
+`app.core.daemon_config.DaemonConfig` (not on `Settings`). They are
+loaded once at process start by `DaemonConfig.from_environment()` and
+documented exhaustively — with defaults, validators, and cross-field
+constraints — in
+[`docs/DAEMON_MIGRATION.md`](DAEMON_MIGRATION.md) §3.2 and
+[`docs/DAEMON_PROCESS_ARCHITECTURE.md`](DAEMON_PROCESS_ARCHITECTURE.md#configuration).
+Defaults are appropriate for production; only override when you have a
+specific reason.
+
 ### CORS
 
 | Field | Type | Default | Validation |

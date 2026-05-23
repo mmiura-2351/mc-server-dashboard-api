@@ -13,6 +13,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ([docs/RELEASING.md](docs/RELEASING.md) §4)。バンプ種別は PR ラベル
   (`tagpr:major` / `tagpr:minor`、無ければ patch) で制御。
 
+### Documentation
+- PR #60 (daemon architecture, RCON, process persistence) の breaking changes を
+  遡及的に文書化する [docs/DAEMON_MIGRATION.md](docs/DAEMON_MIGRATION.md) を追加
+  (Resolves #61)。10 章構成 (対象読者 / 比較表 / breaking changes 4 軸 /
+  pre-upgrade checklist / upgrade 手順 / 検証 / rollback / プラットフォーム互換 /
+  troubleshooting / リファレンス) で、`DAEMON_*` 環境変数 23 件と
+  `KEEP_SERVERS_ON_SHUTDOWN` / `AUTO_SYNC_ON_STARTUP` の新デフォルト挙動を網羅。
+- [docs/DAEMON_PROCESS_ARCHITECTURE.md](docs/DAEMON_PROCESS_ARCHITECTURE.md) の
+  Migration 章を新 guide へリンク化し、PID ファイル名を実装に合わせて
+  `server.pid` へ修正、存在しないエンドポイント (`/api/v1/servers/shutdown-all`,
+  `/api/v1/processes/*`, `/api/v1/servers/{id}/process-info`) を実在パスへ差し替え。
+- [docs/CONFIGURATION.md](docs/CONFIGURATION.md) に `DAEMON_*` 設定への参照リンクを追記。
+- [README.md](README.md) に Daemon Migration Guide と Configuration Reference への
+  リンク、ならびに Production Deployment 節へ pre-PR-#60 アップグレード警告を追加。
+
 ## [0.1.0] - 2026-05-16
 
 初回リリース。本リポジトリの 2026-05-16 時点のスナップショットを `v0.1.0` として確定する。
