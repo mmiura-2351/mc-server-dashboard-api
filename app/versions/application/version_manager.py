@@ -9,6 +9,7 @@ import aiohttp
 from packaging import version
 
 from app.servers.models import ServerType
+from app.versions.domain.stability import is_stable_version
 
 logger = logging.getLogger(__name__)
 
@@ -190,7 +191,7 @@ class MinecraftVersionManager:
                         server_type=ServerType.vanilla,
                         download_url=download_url,
                         release_date=release_date,
-                        is_stable=True,
+                        is_stable=is_stable_version(version_id),
                     )
                 return None
         except Exception as e:
@@ -290,7 +291,7 @@ class MinecraftVersionManager:
                     server_type=ServerType.paper,
                     download_url=download_url,
                     release_date=datetime.fromisoformat(latest_build["time"]),
-                    is_stable=True,
+                    is_stable=is_stable_version(version_id),
                     build_number=latest_build["build"],
                 )
             return None
@@ -349,7 +350,7 @@ class MinecraftVersionManager:
                                 server_type=ServerType.forge,
                                 download_url=download_url,
                                 release_date=datetime.now(),
-                                is_stable=True,
+                                is_stable=is_stable_version(mc_version),
                                 build_number=build_number,
                             )
                             versions.append(version_info)

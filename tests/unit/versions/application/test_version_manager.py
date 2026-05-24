@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta
 from unittest.mock import AsyncMock, Mock, patch
 
+import aiohttp
 import pytest
 
 from app.servers.models import ServerType
@@ -495,5 +496,79 @@ class TestMinecraftVersionManagerMissingCoverage:
 
             mock_session.get = Mock(return_value=MockResponse())
 
-            with pytest.raises(RuntimeError, match="Error processing forge versions"):
+            with pytest.raises(
+                RuntimeError, match="HTTP client error fetching forge versions"
+            ):
                 await manager._get_forge_versions()
+
+
+class TestIsStableInDiscovery:
+    """Verify is_stable is set correctly during version discovery."""
+
+    @pytest.fixture
+    def manager(self):
+        return MinecraftVersionManager()
+
+    @pytest.mark.asyncio
+    async def test_paper_stable_version_is_stable(self, manager):
+        version_id = "1.21"
+        builds_response = MockAiohttpResponse(
+            status=200,
+            json_data={"builds": [{"build": 100, "time": "2024-06-01T00:00:00+00:00"}]},
+        )
+        mock_session = MockAiohttpSession(
+            {
+                f"https://api.papermc.io/v2/projects/paper/versions/{version_id}/builds": builds_response
+            }
+        )
+        result = await manager._fetch_paper_version_info(mock_session, version_id)
+        assert result is not None
+        assert result.is_stable is True
+
+    @pytest.mark.asyncio
+    async def test_paper_prerelease_version_is_not_stable(self, manager):
+        version_id = "1.21-pre1"
+        builds_response = MockAiohttpResponse(
+            status=200,
+            json_data={"builds": [{"build": 50, "time": "2024-05-15T00:00:00+00:00"}]},
+        )
+        mock_session = MockAiohttpSession(
+            {
+                f"https://api.papermc.io/v2/projects/paper/versions/{version_id}/builds": builds_response
+            }
+        )
+        result = await manager._fetch_paper_version_info(mock_session, version_id)
+        assert result is not None
+        assert result.is_stable is False
+
+    @pytest.mark.asyncio
+    async def test_paper_rc_version_is_not_stable(self, manager):
+        version_id = "1.21-rc1"
+        builds_response = MockAiohttpResponse(
+            status=200,
+            json_data={"builds": [{"build": 75, "time": "2024-05-20T00:00:00+00:00"}]},
+        )
+        mock_session = MockAiohttpSession(
+            {
+                f"https://api.papermc.io/v2/projects/paper/versions/{version_id}/builds": builds_response
+            }
+        )
+        result = await manager._fetch_paper_version_info(mock_session, version_id)
+        assert result is not None
+        assert result.is_stable is False
+
+    @pytest.mark.asyncio
+    async def test_vanilla_release_is_stable(self, manager):
+        version_data = {
+            "id": "1.21.6",
+            "url": "http://test.url",
+            "releaseTime": "2024-06-01T00:00:00Z",
+        }
+        mock_response = MockAiohttpResponse(
+            status=200,
+            json_data={"downloads": {"server": {"url": "http://example.com/server.jar"}}},
+        )
+        mock_session = MockAiohttpSession({"http://test.url": mock_response})
+        result = await manager._fetch_vanilla_version_info(mock_session, version_data)
+        assert result is not None
+        assert result.is_stable is True

@@ -185,6 +185,15 @@ async def _initialize_database():
 
         migrate_users_token_version(engine)
 
+        # Issue #354: backfill `minecraft_versions.is_stable` by
+        # re-evaluating version strings against pre-release patterns.
+        from app.versions.adapters.migrations import migrate_version_stability
+
+        try:
+            migrate_version_stability(engine)
+        except Exception as exc:
+            logger.warning("Version stability backfill failed: %s", exc)
+
         service_status.database_ready = True
         logger.info("Database tables initialized successfully")
     except Exception as e:
