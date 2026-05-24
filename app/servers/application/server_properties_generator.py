@@ -19,7 +19,7 @@ class ServerPropertiesGenerator:
             "1.13-1.15": {"min": "1.13.0", "max": "1.15.99"},
             "1.16-1.18": {"min": "1.16.0", "max": "1.18.99"},
             "1.19-1.20": {"min": "1.19.0", "max": "1.20.99"},
-            "1.21+": {"min": "1.21.0", "max": "9.99.99"},
+            "1.21+": {"min": "1.21.0", "max": "9999.99.99"},
         }
 
     def generate_properties(
@@ -230,8 +230,7 @@ class ServerPropertiesGenerator:
         except Exception as e:
             logger.warning(f"Failed to parse version {minecraft_version}: {e}")
 
-        # Default to latest group if parsing fails
-        return "1.19-1.20"
+        return "1.21+"
 
     def _normalize_user_properties(
         self, user_properties: Dict[str, Any]
