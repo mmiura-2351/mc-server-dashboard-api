@@ -23,12 +23,6 @@ from app.servers.adapters.uow import SqlAlchemyServersUnitOfWork
 from app.servers.application.authorization import AuthorizationService
 from app.servers.application.service import ServerService
 from app.servers.domain.ports import ServerRepository, ServersUnitOfWork
-from app.templates.api.dependencies import (
-    get_template_repository,
-    get_template_service,
-)
-from app.templates.application.service import TemplateService
-from app.templates.domain.ports import TemplateRepository
 
 
 def get_servers_uow(db: Session = Depends(get_db)) -> ServersUnitOfWork:
@@ -48,7 +42,6 @@ def get_server_repository(db: Session = Depends(get_db)) -> ServerRepository:
 def get_authorization_service(
     server_repo: ServerRepository = Depends(get_server_repository),
     backup_repo: BackupRepository = Depends(get_backup_repository),
-    template_repo: TemplateRepository = Depends(get_template_repository),
 ) -> AuthorizationService:
     """Return a per-request `AuthorizationService` with sibling Ports wired.
 
@@ -56,28 +49,25 @@ def get_authorization_service(
     `authorization_service` singleton (which depended on the caller
     threading `db: Session` through every check).
     """
-    return AuthorizationService(server_repo, backup_repo, template_repo)
+    return AuthorizationService(server_repo, backup_repo)
 
 
 def get_server_service(
     uow: ServersUnitOfWork = Depends(get_servers_uow),
     server_repo: ServerRepository = Depends(get_server_repository),
-    template_service: TemplateService = Depends(get_template_service),
     group_service: GroupService = Depends(get_group_service),
 ) -> ServerService:
     """Return a per-request `ServerService` with all sibling-domain Ports wired.
 
     Introduced in #228 PR 2c when `app/services/server_service.py` and
     `app/servers/service.py` were merged into
-    `app/servers/application/service.py`. The injected `TemplateService`
-    replaces the deleted `ServerTemplateService.apply_template` (#257);
-    the injected `GroupService` is consumed via the correct
-    `attach_group_to_server` call inside `create_server` (#259).
+    `app/servers/application/service.py`. The injected `GroupService` is
+    consumed via the correct `attach_group_to_server` call inside
+    `create_server` (#259).
     """
     return ServerService(
         uow=uow,
         server_repo=server_repo,
-        template_service=template_service,
         group_service=group_service,
     )
 

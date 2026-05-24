@@ -328,7 +328,9 @@ class TestConnectionManagerFixed:
         connection_manager.server_log_tasks[server_id] = Mock()
 
         with (
-            patch("app.websockets.application.service.minecraft_server_manager") as mock_mgr,
+            patch(
+                "app.websockets.application.service.minecraft_server_manager"
+            ) as mock_mgr,
             patch("builtins.open", mock_open(read_data=log_content)) as mock_file,
             patch.object(connection_manager, "send_to_server_connections") as mock_send,
             patch("pathlib.Path.exists", return_value=True),
@@ -494,7 +496,9 @@ class TestWebSocketServiceFixed:
         mock_server_manager.get_status = AsyncMock(return_value=mock_status)
 
         with (
-            patch("app.websockets.application.service.minecraft_server_manager") as mock_mgr,
+            patch(
+                "app.websockets.application.service.minecraft_server_manager"
+            ) as mock_mgr,
             patch.object(
                 ws_service.connection_manager, "send_personal_message"
             ) as mock_send,

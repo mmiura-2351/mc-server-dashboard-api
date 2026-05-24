@@ -179,11 +179,6 @@ AUDITABLE_ENDPOINTS = {
     "DELETE /api/v1/groups/{group_id}/players/{player_id}": "group_player_remove",
     "POST /api/v1/groups/{group_id}/attach/{server_id}": "group_attach_server",
     "DELETE /api/v1/groups/{group_id}/attach/{server_id}": "group_detach_server",
-    # Template management
-    "POST /api/v1/templates": "template_create",
-    "PUT /api/v1/templates/{template_id}": "template_update",
-    "DELETE /api/v1/templates/{template_id}": "template_delete",
-    "POST /api/v1/templates/{template_id}/clone": "template_clone",
     # File management (high-risk operations)
     "PUT /api/v1/files/{server_id}": "file_write",
     "DELETE /api/v1/files/{server_id}": "file_delete",
@@ -390,11 +385,6 @@ class AuditMiddleware(BaseHTTPMiddleware):
         normalized_path = (
             re.sub(r"\{id\}", "{group_id}", normalized_path)
             if "/groups/" in normalized_path
-            else normalized_path
-        )
-        normalized_path = (
-            re.sub(r"\{id\}", "{template_id}", normalized_path)
-            if "/templates/" in normalized_path
             else normalized_path
         )
         normalized_path = (

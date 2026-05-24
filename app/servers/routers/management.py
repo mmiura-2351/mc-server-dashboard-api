@@ -84,7 +84,6 @@ async def create_server(
     - **port**: Server port (must be unique)
     - **max_memory**: Maximum memory allocation in MB
     - **max_players**: Maximum number of players
-    - **template_id**: Optional template to apply
     - **server_properties**: Custom server.properties overrides
     - **attach_groups**: Groups to attach on creation
 

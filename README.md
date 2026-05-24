@@ -25,7 +25,6 @@ A comprehensive FastAPI-based backend system for managing multiple Minecraft ser
 ### 💾 Data Management
 - **Automated Backup System** - Database-persistent scheduling with metadata tracking and restoration
 - **Advanced File Management** - Secure file operations with version history, encoding detection, and rollback
-- **Template System** - Reusable server configurations with cloning capabilities
 - **Database Integration** - Seamless sync between filesystem state and database records
 
 ## Quick Start

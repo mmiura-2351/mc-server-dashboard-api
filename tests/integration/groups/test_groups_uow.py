@@ -1,7 +1,6 @@
 """Integration tests for `SqlAlchemyGroupsUnitOfWork` semantics.
 
-Mirrors `test_template_repository.TestSqlAlchemyTemplatesUnitOfWork`:
-commit-persists, re-entry semantics, forgot-to-commit warning, and
+Covers commit-persists, re-entry semantics, forgot-to-commit warning, and
 the "either db or session_factory" constructor contract.
 """
 

@@ -81,12 +81,6 @@ from app.servers.domain.exceptions import (
     ServerPortConflictError,
     UnsupportedMinecraftVersionError,
 )
-from app.templates.domain.exceptions import (
-    TemplateAccessError,
-    TemplateCreationError,
-    TemplateError,
-    TemplateNotFoundError,
-)
 
 logger = logging.getLogger(__name__)
 
@@ -482,48 +476,6 @@ def register_exception_handlers(app: FastAPI) -> None:
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             default_message="Group operation failed",
             fallback_code="GROUP_ERROR",
-        )
-
-    # --- Templates --------------------------------------------------
-
-    @app.exception_handler(TemplateNotFoundError)
-    async def _template_not_found(request: Request, exc: TemplateNotFoundError):
-        return _domain_response(
-            request,
-            exc,
-            status_code=status.HTTP_404_NOT_FOUND,
-            default_message="Template not found",
-            fallback_code="TEMPLATE_NOT_FOUND",
-        )
-
-    @app.exception_handler(TemplateAccessError)
-    async def _template_access_denied(request: Request, exc: TemplateAccessError):
-        return _domain_response(
-            request,
-            exc,
-            status_code=status.HTTP_403_FORBIDDEN,
-            default_message="Access denied",
-            fallback_code="TEMPLATE_ACCESS_DENIED",
-        )
-
-    @app.exception_handler(TemplateCreationError)
-    async def _template_creation_failed(request: Request, exc: TemplateCreationError):
-        return _domain_response(
-            request,
-            exc,
-            status_code=status.HTTP_400_BAD_REQUEST,
-            default_message="Template creation failed",
-            fallback_code="TEMPLATE_CREATION_FAILED",
-        )
-
-    @app.exception_handler(TemplateError)
-    async def _template_error(request: Request, exc: TemplateError):
-        return _domain_response(
-            request,
-            exc,
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            default_message="Template operation failed",
-            fallback_code="TEMPLATE_ERROR",
         )
 
     # --- Visibility -------------------------------------------------

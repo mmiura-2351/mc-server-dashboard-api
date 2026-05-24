@@ -11,7 +11,7 @@ to/from ORM rows; the api layer converts to/from Pydantic DTOs.
 TBD(#154-8): expanded under #228 (PR 1/3). The original 9-field
 read-only seed introduced for #224 / #225 / #226 is preserved as a
 prefix of the new shape; the additional columns (`status`,
-`created_at`, `updated_at`, `description`, `template_id`,
+`created_at`, `updated_at`, `description`,
 `is_deleted`, `owner_username`) are added with defaults so the
 existing cross-domain construction sites (e.g.
 `app.servers.adapters.read_port.SqlAlchemyServerReadPort`, the
@@ -78,7 +78,6 @@ class ServerEntity:
 
     # ----- Optional columns -----
     description: Optional[str] = None
-    template_id: Optional[int] = None
     is_deleted: bool = False
     owner_username: Optional[str] = None
 
@@ -101,7 +100,6 @@ class CreateServerCommand:
     max_players: int
     owner_id: int
     description: Optional[str] = None
-    template_id: Optional[int] = None
 
 
 @dataclass(frozen=True)
@@ -119,7 +117,6 @@ class UpdateServerCommand:
     port: Optional[int] = None
     max_memory: Optional[int] = None
     max_players: Optional[int] = None
-    template_id: Optional[int] = None
 
     def applied_fields(self) -> Dict[str, Any]:
         """Return only the fields the caller actually set (non-None)."""

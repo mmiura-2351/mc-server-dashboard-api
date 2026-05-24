@@ -32,7 +32,7 @@ def make_server(
     """Create and persist a `Server` row owned by `owner`.
 
     Extra keyword args are forwarded to the `Server` constructor for
-    columns we don't model explicitly (e.g. `template_id`).
+    columns we don't model explicitly.
     """
     server = Server(
         name=name,

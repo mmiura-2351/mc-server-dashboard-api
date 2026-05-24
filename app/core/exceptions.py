@@ -83,15 +83,6 @@ class BackupNotFoundException(ResourceNotFoundException):
         super().__init__("Backup", backup_id)
 
 
-class TemplateNotFoundException(ResourceNotFoundException):
-    """Exception for when a template is not found."""
-
-    error_code: ClassVar[str] = "TEMPLATE_NOT_FOUND"
-
-    def __init__(self, template_id: str):
-        super().__init__("Template", template_id)
-
-
 class AccessDeniedException(APIException):
     """Exception for access denied scenarios."""
 

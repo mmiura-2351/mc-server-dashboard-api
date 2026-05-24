@@ -350,7 +350,6 @@ In reverse order of startup, each adapter releases its resources (connections, s
 | Server | Minecraft server configuration, state, ownership |
 | Group | OP/whitelist player collection with multi-server attachment |
 | Backup | Backup metadata, statistics, restoration info |
-| Template | Reusable server configuration |
 | FileEditHistory | File version tracking with rollback |
 | AuditLog | Activity trail for security/compliance |
 | BackupSchedule | Cron-based schedule with execution history |
@@ -362,7 +361,6 @@ In reverse order of startup, each adapter releases its resources (connections, s
 ```
 User (1:N) ──┬─ Server (1:N) ── Backup
              ├─ Group (N:M) ─── Server (via GroupServerAttachment)
-             ├─ Template
              └─ RefreshToken
 
 Server (1:N) ── FileEditHistory
@@ -399,7 +397,7 @@ The use case asks the Port for what it needs; failure modes (timeout, cache hit)
 - **File operations**: async I/O via aiofiles; the storage adapter encapsulates streaming and encoding detection
 - **Process management**: the `ServerProcessRunner` adapter pools subprocess handles and enforces resource limits
 - **WebSocket**: per-server connection pooling and message queuing inside the WebSocket adapter
-- **Caching**: JAR file caching (`JarCache` Port + filesystem adapter); template configuration caching
+- **Caching**: JAR file caching (`JarCache` Port + filesystem adapter)
 - **Monitoring**: a performance middleware records request duration and slow-request thresholds. Slow-query detection lives inside the persistence adapter
 
 ## 13. Development Standards
@@ -620,7 +618,6 @@ The system implements functionality grouped into the following areas. Each is im
 | Real-time Monitoring | `websockets/`, `servers/` | Stream logs, broadcast status |
 | Backup Management | `backups/` | Create, restore, schedule, list |
 | File Management | `files/` | Read, write, history, rollback, search |
-| Template Management | `templates/` | Create from server, clone, share |
 | User Account | `users/`, `auth/` | Register, approve, change password, manage role |
 | Auditing | `audit/` | Record activity, query logs |
 | Version Management | `versions/` | List supported versions, refresh, download JAR |

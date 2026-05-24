@@ -45,7 +45,6 @@ def _seed_server(
     server_type: ServerType = ServerType.vanilla,
     is_deleted: bool = False,
     description=None,
-    template_id=None,
 ) -> Server:
     row = Server(
         name=name,
@@ -59,7 +58,6 @@ def _seed_server(
         directory_path=f"/servers/{name}",
         status=status,
         is_deleted=is_deleted,
-        template_id=template_id,
     )
     db.add(row)
     db.commit()

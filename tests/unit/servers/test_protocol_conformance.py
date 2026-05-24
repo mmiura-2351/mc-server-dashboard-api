@@ -37,9 +37,8 @@ def test_server_repository_protocol_methods():
 
 def test_server_repository_protocol_excludes_forbidden_methods():
     """D-1 guard: sibling-aggregate accessors must not leak onto the
-    servers Repository surface — callers wire `BackupRepository` /
-    `TemplateRepository` directly.
+    servers Repository surface — callers wire `BackupRepository`
+    directly.
     """
     proto_methods = _protocol_methods(ServerRepository)
     assert "get_backup" not in proto_methods
-    assert "get_template" not in proto_methods

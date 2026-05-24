@@ -23,7 +23,6 @@ from app.core.exceptions import (
     ServerAccessDeniedException,
     ServerNotFoundException,
     ServerStateException,
-    TemplateNotFoundException,
     UserNotApprovedException,
     UserNotFoundException,
     handle_database_error,
@@ -114,13 +113,6 @@ class TestResourceNotFoundExceptions:
 
         assert exception.status_code == status.HTTP_404_NOT_FOUND
         assert "Backup with ID backup-123 not found" in exception.detail
-
-    def test_template_not_found_exception(self):
-        """Test TemplateNotFoundException"""
-        exception = TemplateNotFoundException("template-456")
-
-        assert exception.status_code == status.HTTP_404_NOT_FOUND
-        assert "Template with ID template-456 not found" in exception.detail
 
 
 class TestAccessDeniedExceptions:
@@ -365,7 +357,6 @@ class TestExceptionInheritance:
             UserNotFoundException,
             GroupNotFoundException,
             BackupNotFoundException,
-            TemplateNotFoundException,
             AccessDeniedException,
             ServerAccessDeniedException,
             InvalidRequestException,
@@ -388,7 +379,6 @@ class TestExceptionInheritance:
             UserNotFoundException,
             GroupNotFoundException,
             BackupNotFoundException,
-            TemplateNotFoundException,
         ]
 
         for exception_class in resource_exception_classes:

@@ -41,7 +41,6 @@ from app.servers.domain.exceptions import (
     ServerPortConflictError,
     UnsupportedMinecraftVersionError,
 )
-from app.templates.domain.exceptions import TemplateNotFoundError
 
 
 class _ValidationBody(BaseModel):
@@ -87,10 +86,6 @@ def _build_app() -> FastAPI:
     @app.get("/raise-group-exists")
     def _group_exists():
         raise GroupAlreadyExistsError("dup")
-
-    @app.get("/raise-template-not-found")
-    def _template_nf():
-        raise TemplateNotFoundError("nope")
 
     # ---- Issue #33: server-creation actionable errors ----
     @app.get("/raise-server-name-conflict")
@@ -196,11 +191,6 @@ class TestDomainExceptionHandlers:
         r = _client().get("/raise-group-exists")
         assert r.status_code == 400
         assert r.json()["error"] == "GROUP_ALREADY_EXISTS"
-
-    def test_template_not_found(self):
-        r = _client().get("/raise-template-not-found")
-        assert r.status_code == 404
-        assert r.json()["error"] == "TEMPLATE_NOT_FOUND"
 
 
 class TestServerCreationActionableErrors:

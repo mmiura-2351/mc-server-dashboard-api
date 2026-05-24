@@ -42,8 +42,6 @@ from app.backups.schemas import (
     BackupOperationResponse,
     BackupResponse,
     BackupRestoreRequest,
-    BackupRestoreWithTemplateRequest,
-    BackupRestoreWithTemplateResponse,
     BackupStatisticsResponse,
     BackupUploadResponse,
     ScheduledBackupRequest,
@@ -58,8 +56,6 @@ from app.core.exceptions import (
 from app.servers.api.dependencies import get_authorization_service
 from app.servers.application.authorization import AuthorizationService
 from app.servers.domain.exceptions import ServerAccessError, ServerNotFoundError
-from app.templates.api.dependencies import get_template_service
-from app.templates.application.service import TemplateService
 from app.users.domain.value_objects import Role
 from app.users.models import User
 
@@ -440,98 +436,6 @@ async def restore_backup(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to restore backup: {str(e)}",
-        )
-
-
-@router.post(
-    "/backups/{backup_id}/restore-with-template",
-    response_model=BackupRestoreWithTemplateResponse,
-)
-async def restore_backup_and_create_template(
-    backup_id: int,
-    request: BackupRestoreWithTemplateRequest,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-    backup_service: BackupService = Depends(get_backup_service),
-    template_service: TemplateService = Depends(get_template_service),
-    auth: AuthorizationService = Depends(get_authorization_service),
-):
-    """Restore a backup and create a template from it.
-
-    Composes `BackupService.restore_backup` and
-    `TemplateService.create_template_from_server` directly here
-    (per D-9) so neither service has cross-domain knowledge of the
-    other.
-    """
-    try:
-        backup = await auth.check_backup_access(backup_id, current_user)
-
-        target_server_id = request.target_server_id or backup.server_id
-        await auth.check_server_access(target_server_id, current_user)
-
-        restored = await backup_service.restore_backup(
-            backup_id=backup_id,
-            server_id=target_server_id,
-        )
-        if not restored:
-            raise FileOperationException(
-                "restore", f"backup {backup_id}", "Failed to restore backup"
-            )
-
-        result_template_created = False
-        result_template_id = None
-        result_template_name = None
-
-        if request.template_name:
-            template = await template_service.create_template_from_server(
-                server_id=target_server_id,
-                name=request.template_name,
-                creator_id=current_user.id,
-                description=request.template_description
-                or f"Template created from backup {backup.name}",
-                is_public=request.is_public,
-            )
-            result_template_created = True
-            result_template_id = template.id
-            result_template_name = template.name
-
-        message = f"Backup {backup_id} restored successfully to server {target_server_id}"
-        if result_template_created:
-            message += f" and template '{result_template_name}' created"
-
-        return BackupRestoreWithTemplateResponse(
-            backup_restored=True,
-            template_created=result_template_created,
-            message=message,
-            backup_id=backup_id,
-            template_id=result_template_id,
-            template_name=result_template_name,
-            details={
-                "target_server_id": target_server_id,
-                "template_description": request.template_description,
-                "is_public": request.is_public,
-            },
-        )
-
-    except (
-        HTTPException,
-        ServerNotFoundError,
-        ServerAccessError,
-        BackupNotFoundError,
-        BackupParentServerMissingError,
-    ):
-        # Re-raise domain exceptions so the global handlers in
-        # ``app.core.error_handlers`` can map them to HTTP responses
-        # without being swallowed by the catch-all below (#273).
-        raise
-    except (BackupNotFoundException, ServerNotFoundException):
-        raise
-    except (FileOperationException, DatabaseOperationException):
-        raise
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to restore backup and create template: {str(e)}",
         )
 
 

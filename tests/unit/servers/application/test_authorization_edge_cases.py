@@ -47,9 +47,6 @@ def _make_service(
     return AuthorizationService(
         server_repo=server_repo or FakeServerRepository(),
         backup_repo=backup_repo or FakeBackupRepository(),
-        # `TemplateRepository` is wired for parity (#228) but not used by
-        # any path under test; a bare object is enough.
-        template_repo=object(),
     )
 
 
@@ -150,7 +147,6 @@ class TestPhase1BooleanHelpers:
         assert AuthorizationService.can_create_backup(u)
         assert AuthorizationService.can_restore_backup(u)
         assert AuthorizationService.can_create_group(u)
-        assert AuthorizationService.can_create_template(u)
 
 
 class TestRestrictedRoleHelpers:

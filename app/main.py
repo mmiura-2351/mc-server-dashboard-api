@@ -38,7 +38,6 @@ from app.middleware.performance_monitoring import (  # noqa: E402
     get_performance_metrics,
 )
 from app.servers.routers import router as servers_router  # noqa: E402
-from app.templates.router import router as templates_router  # noqa: E402
 
 # Import all models to ensure they are registered with SQLAlchemy
 from app.users.api.router import router as users_router  # noqa: E402
@@ -154,14 +153,16 @@ async def _initialize_database():
         from app.auth.adapters.migrations import migrate_login_attempt_indexes
         from app.backups.adapters.migrations import migrate_backup_indexes
         from app.groups.adapters.migrations import migrate_group_indexes
-        from app.servers.adapters.migrations import migrate_server_indexes
-        from app.templates.adapters.migrations import migrate_template_indexes
+        from app.servers.adapters.migrations import (
+            migrate_drop_templates,
+            migrate_server_indexes,
+        )
 
         for helper in (
             migrate_server_indexes,
+            migrate_drop_templates,
             migrate_backup_indexes,
             migrate_group_indexes,
-            migrate_template_indexes,
             migrate_audit_indexes,
             migrate_login_attempt_indexes,
             migrate_file_history_indexes,
@@ -549,7 +550,6 @@ app.include_router(
     scheduler_router, prefix="/api/v1/backup-scheduler", tags=["backup-scheduler"]
 )
 app.include_router(backups_router, prefix="/api/v1/backups", tags=["backups"])
-app.include_router(templates_router, prefix="/api/v1/templates", tags=["templates"])
 app.include_router(files_router, prefix="/api/v1/files", tags=["files"])
 app.include_router(versions_router, prefix="/api/v1/versions", tags=["versions"])
 app.include_router(websockets_router, prefix="/api/v1/ws", tags=["websockets"])

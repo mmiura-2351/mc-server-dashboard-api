@@ -55,12 +55,6 @@ class TestPhase1ComplianceBasicOperations:
         assert AuthorizationService.can_create_group(operator_user) is True
         assert AuthorizationService.can_create_group(test_user) is True
 
-    def test_all_users_can_create_templates(self, admin_user, operator_user, test_user):
-        """Test that all users can create templates"""
-        assert AuthorizationService.can_create_template(admin_user) is True
-        assert AuthorizationService.can_create_template(operator_user) is True
-        assert AuthorizationService.can_create_template(test_user) is True
-
 
 class TestPhase1ComplianceAdminOnlyOperations:
     """Test that some operations remain admin-only as appropriate"""
@@ -130,7 +124,6 @@ class TestPhase1ComplianceOperationalRequirements:
             AuthorizationService.can_create_backup,
             AuthorizationService.can_restore_backup,
             AuthorizationService.can_create_group,
-            AuthorizationService.can_create_template,
         ]
 
         for operation in operations:
@@ -323,7 +316,6 @@ class TestPhase1ComplianceWithPhase2Integration:
         assert AuthorizationService.can_create_backup(phase1_user) is True
         assert AuthorizationService.can_restore_backup(phase1_user) is True
         assert AuthorizationService.can_create_group(phase1_user) is True
-        assert AuthorizationService.can_create_template(phase1_user) is True
 
 
 if __name__ == "__main__":
