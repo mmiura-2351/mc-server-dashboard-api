@@ -21,6 +21,7 @@ from app.servers.application.service import (
     ServerSecurityValidator,
     ServerService,
 )
+from app.servers.domain.exceptions import UnsupportedMinecraftVersionError
 from app.servers.models import Server, ServerType
 from app.servers.schemas import ServerCreateRequest, ServerUpdateRequest
 from app.users.domain.value_objects import Role
@@ -537,6 +538,19 @@ class TestServerJarServiceExtended:
                     )
 
                     mock_handle_error.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_get_server_jar_no_download_url(self, jar_service, db):
+        """Test that missing download_url raises UnsupportedMinecraftVersionError"""
+        with patch.object(jar_service, "_is_version_supported_db", return_value=True):
+            with patch.object(jar_service, "_get_download_url_db", return_value=None):
+                with pytest.raises(UnsupportedMinecraftVersionError) as exc_info:
+                    await jar_service.get_server_jar(
+                        ServerType.paper, "1.21.6", Path("/tmp"), db
+                    )
+
+                assert "1.21.6" in str(exc_info.value)
+                assert "paper" in str(exc_info.value)
 
 
 class TestServerFileSystemServiceExtended:

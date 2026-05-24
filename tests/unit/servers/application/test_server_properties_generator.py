@@ -55,13 +55,20 @@ class TestServerPropertiesGenerator:
         assert generator._get_version_group("1.22.0") == "1.21+"
         assert generator._get_version_group("2.0.0") == "1.21+"
 
+    def test_get_version_group_future_versions(self):
+        """Test version group detection for future versioning schemes (e.g. 26.x)"""
+        generator = ServerPropertiesGenerator()
+
+        assert generator._get_version_group("26.1.2") == "1.21+"
+        assert generator._get_version_group("10.0.0") == "1.21+"
+        assert generator._get_version_group("100.0.0") == "1.21+"
+
     def test_get_version_group_invalid(self):
         """Test version group detection for invalid versions"""
         generator = ServerPropertiesGenerator()
 
-        # Should default to 1.19-1.20 for invalid versions
-        assert generator._get_version_group("invalid") == "1.19-1.20"
-        assert generator._get_version_group("1.x.y") == "1.19-1.20"
+        assert generator._get_version_group("invalid") == "1.21+"
+        assert generator._get_version_group("1.x.y") == "1.21+"
 
     def test_get_base_properties(self, admin_user):
         """Test base properties generation"""

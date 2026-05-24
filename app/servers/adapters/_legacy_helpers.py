@@ -36,6 +36,7 @@ from app.core.exceptions import (
 )
 from app.core.security import PathValidator, SecurityError
 from app.servers.application.minecraft_server import minecraft_server_manager
+from app.servers.domain.exceptions import UnsupportedMinecraftVersionError
 from app.servers.models import Server, ServerStatus, ServerType
 from app.servers.schemas import (
     ServerCreateRequest,
@@ -468,6 +469,12 @@ class ServerJarService:
                 db, server_type, minecraft_version
             )
 
+            if not download_url:
+                raise UnsupportedMinecraftVersionError(
+                    version=minecraft_version,
+                    server_type=server_type.value,
+                )
+
             cached_jar_path = await self.cache_manager.get_or_download_jar(
                 server_type, minecraft_version, download_url
             )
@@ -482,6 +489,8 @@ class ServerJarService:
             )
             return server_jar_path
 
+        except UnsupportedMinecraftVersionError:
+            raise
         except Exception as e:
             handle_file_error("get server jar", str(server_dir), e)
 
