@@ -1,7 +1,7 @@
 """Generic pagination primitives shared by API endpoints (Issue #76).
 
 Backwards-compatibility note: existing list endpoints continue to expose
-their legacy keys (``servers``, ``backups``, ``templates`` …) alongside
+their legacy keys (``servers``, ``backups`` …) alongside
 the new ``pagination`` block. New endpoints should adopt
 :class:`PaginatedResponse` directly.
 

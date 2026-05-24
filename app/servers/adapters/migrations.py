@@ -98,6 +98,7 @@ def migrate_drop_templates(engine: Any) -> None:
 
         if "template_id" in col_names:
             try:
+                conn.execute(text("DROP TABLE IF EXISTS servers_new"))
                 keep_cols = [c for c in col_names if c != "template_id"]
                 cols_csv = ", ".join(keep_cols)
 

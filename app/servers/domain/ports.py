@@ -8,24 +8,24 @@ crossing these Protocols are pure domain entities defined in
 Three Ports are defined here:
 
 - `ServerReadPort` (seed): minimal cross-domain read view introduced
-  for #224 (files) and extended for #225 (templates). Other domains
-  depend on it; PR #1 keeps the surface untouched to preserve the
-  invariant. PR #2 will fill in `list_by_owner` and friends.
+  for #224 (files). Other domains depend on it; PR #1 keeps the
+  surface untouched to preserve the invariant. PR #2 will fill in
+  `list_by_owner` and friends.
 - `ServerRepository`: full persistence Port for the `Server`
   aggregate, introduced under #228. Concrete impl:
   `SqlAlchemyServerRepository`; unit-test impl: `FakeServerRepository`.
 - `ServersUnitOfWork`: transactional boundary Port. Application code
   wraps a set of repository calls in `async with uow:` and calls
   `await uow.commit()` to finalise. Symmetric with `BackupsUnitOfWork`
-  / `GroupsUnitOfWork` / `TemplatesUnitOfWork` (#225/#226/#227): the
-  UoW intentionally carries only `commit` / `rollback`, with no
-  retry-aware variant — retry lives inside the repository's status
-  writes via `app.core.database_utils.with_transaction`.
+  / `GroupsUnitOfWork` (#226/#227): the UoW intentionally carries only
+  `commit` / `rollback`, with no retry-aware variant — retry lives
+  inside the repository's status writes via
+  `app.core.database_utils.with_transaction`.
 
 `ServerRepository` deliberately does **not** expose sibling-aggregate
-accessors (D-1 in the #228 plan): callers wire `BackupRepository` /
-`TemplateRepository` directly through DI rather than fan everything
-through the servers Port.
+accessors (D-1 in the #228 plan): callers wire `BackupRepository`
+directly through DI rather than fan everything through the servers
+Port.
 """
 
 from types import TracebackType
@@ -45,20 +45,14 @@ class ServerReadPort(Protocol):
     """Minimal cross-domain read view of Server.
 
     TBD(#154-8): introduced for #224 (files) — the file-history service
-    needs a server's on-disk directory path during a restore. The
-    `get(server_id)` method below was added for #225 (templates) to
-    return a small read-only snapshot used to extract template metadata.
-    Once #228 rebuilds the servers domain into the standard layout, this
-    Port will be replaced with the full `ServerRepository` / final
-    `ServerReadPort` shape. Until then, *only* the methods below are
-    sanctioned.
+    needs a server's on-disk directory path during a restore. Once #228
+    rebuilds the servers domain into the standard layout, this Port will
+    be replaced with the full `ServerRepository` / final `ServerReadPort`
+    shape. Until then, *only* the methods below are sanctioned.
     """
 
     async def get_directory_path(self, server_id: int) -> Optional[str]: ...
 
-    # TBD(#154-8): added for #225 (templates). Returns the minimal
-    # `ServerEntity` view used by `TemplateService.create_template_from_server`.
-    # The full surface lands with the servers domain refactor in #228.
     async def get(self, server_id: int) -> Optional[ServerEntity]: ...
 
 

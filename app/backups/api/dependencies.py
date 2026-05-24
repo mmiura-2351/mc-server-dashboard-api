@@ -8,7 +8,7 @@ It also hosts the `make_backup_service` / `make_backup_scheduler`
 factory helpers that were previously located under
 `app/backups/application/`. They live here (and not in `application/`)
 so the application layer never imports from `adapters/` or
-SQLAlchemy — matching the templates / groups sister domains and
+SQLAlchemy — matching the groups sister domain and
 `docs/ARCHITECTURE.md` §4.2.
 """
 
@@ -80,10 +80,7 @@ def get_backup_scheduler_service() -> BackupSchedulerService:
 def make_backup_service(
     db: Session, backups_directory: Path = Path("backups")
 ) -> BackupService:
-    """Build a `BackupService` for a request-scoped session.
-
-    Mirrors `make_template_service` (templates pilot).
-    """
+    """Build a `BackupService` for a request-scoped session."""
     return BackupService(
         uow=SqlAlchemyBackupsUnitOfWork(db=db),
         server_read=SqlAlchemyServerReadPort(db),
