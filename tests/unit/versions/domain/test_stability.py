@@ -31,6 +31,7 @@ def test_stable_versions(version_string: str) -> None:
         "24w13a",
         "25w02a",
         "23w07a",
+        "1.18_experimental-snapshot-7",
     ],
 )
 def test_prerelease_versions(version_string: str) -> None:

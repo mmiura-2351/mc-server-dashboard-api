@@ -25,34 +25,27 @@ def migrate_version_stability(engine: Any) -> None:
     rows whose stored value disagrees.  Safe to re-run — a no-op when
     all values are already correct.
     """
-    try:
-        with engine.connect() as conn:
-            rows = conn.execute(
-                text("SELECT id, version, is_stable FROM minecraft_versions")
-            ).fetchall()
+    with engine.connect() as conn:
+        rows = conn.execute(
+            text("SELECT id, version, is_stable FROM minecraft_versions")
+        ).fetchall()
 
-            updates: list[tuple[int, bool]] = []
-            for row in rows:
-                row_id, version_str, current_stable = row
-                expected = is_stable_version(version_str)
-                if bool(current_stable) != expected:
-                    updates.append((row_id, expected))
+        updates: list[dict[str, object]] = []
+        for row in rows:
+            row_id, version_str, current_stable = row
+            expected = is_stable_version(version_str)
+            if bool(current_stable) != expected:
+                updates.append({"stable": expected, "id": row_id})
 
-            if updates:
-                for row_id, expected in updates:
-                    conn.execute(
-                        text(
-                            "UPDATE minecraft_versions "
-                            "SET is_stable = :stable WHERE id = :id"
-                        ),
-                        {"stable": expected, "id": row_id},
-                    )
-                conn.commit()
-
-            logger.info(
-                "is_stable backfill: scanned %d versions, updated %d",
-                len(rows),
-                len(updates),
+        if updates:
+            conn.execute(
+                text("UPDATE minecraft_versions SET is_stable = :stable WHERE id = :id"),
+                updates,
             )
-    except Exception as exc:
-        logger.warning("is_stable backfill failed: %s", exc)
+            conn.commit()
+
+        logger.info(
+            "is_stable backfill: scanned %d versions, updated %d",
+            len(rows),
+            len(updates),
+        )
