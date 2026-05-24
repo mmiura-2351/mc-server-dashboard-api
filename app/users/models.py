@@ -38,7 +38,6 @@ class User(Base):
     # Relationships
     servers = relationship("Server", back_populates="owner")
     groups = relationship("Group", back_populates="owner")
-    templates = relationship("Template", back_populates="creator")
     refresh_tokens = relationship(
         "RefreshToken", back_populates="user", cascade="all, delete-orphan"
     )

@@ -114,16 +114,13 @@ class TestPendingApprovalNotLockedOut:
                 data={"username": "unapproved", "password": "unapprovedpassword"},
             )
             assert r.status_code == 403, (
-                f"expected 403 from pending-approval guard, got {r.status_code}: "
-                f"{r.text}"
+                f"expected 403 from pending-approval guard, got {r.status_code}: {r.text}"
             )
 
         # Audit rows ARE present (with failure_reason=authentication_error)
         # but the lockout row must NOT exist.
         audit_rows = (
-            db.query(LoginAttempt)
-            .filter(LoginAttempt.username == "unapproved")
-            .all()
+            db.query(LoginAttempt).filter(LoginAttempt.username == "unapproved").all()
         )
         assert len(audit_rows) == 10
         assert all(a.failure_reason == "authentication_error" for a in audit_rows)

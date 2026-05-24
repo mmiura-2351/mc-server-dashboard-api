@@ -1,6 +1,6 @@
 """Static (mypy) Protocol conformance checks for the groups domain.
 
-Mirrors `tests.unit.templates.test_protocol_conformance`. Lets mypy
+Lets mypy
 verify structural subtyping at type-check time and provides a runtime
 smoke test that catches missing methods or sync/async drift without
 needing mypy in the loop.

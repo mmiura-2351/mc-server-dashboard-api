@@ -1,6 +1,6 @@
 """Integration tests for `SqlAlchemyBackupsUnitOfWork`.
 
-Mirrors the templates/groups UoW tests: re-entry semantics, commit /
+Mirrors the groups UoW tests: re-entry semantics, commit /
 rollback, forgot-to-commit warning, and the disclosed atomicity
 improvement for `create_schedule` (schedule + log committed together).
 """

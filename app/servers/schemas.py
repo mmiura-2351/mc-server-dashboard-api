@@ -115,10 +115,6 @@ class ServerCreateRequest(BaseModel):
     )
     max_memory: int = Field(1024, ge=512, le=16384, description="Maximum memory in MB")
     max_players: int = Field(20, ge=1, le=100, description="Maximum number of players")
-    template_id: Optional[int] = Field(
-        None, description="Template ID to use for server creation"
-    )
-
     # Server-specific configuration overrides
     server_properties: Optional[Dict[str, Any]] = Field(
         None, description="Custom server.properties overrides"
@@ -281,7 +277,6 @@ class ServerResponse(BaseModel):
     max_memory: int
     max_players: int
     owner_id: int
-    template_id: Optional[int]
     created_at: datetime
     updated_at: datetime
 

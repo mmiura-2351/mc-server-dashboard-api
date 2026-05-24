@@ -71,7 +71,6 @@ def _server_to_entity(row: Server) -> ServerEntity:
         created_at=row.created_at,
         updated_at=row.updated_at,
         description=row.description,
-        template_id=row.template_id,
         # Defensive against legacy NULL rows; ORM returns bool today.
         is_deleted=bool(row.is_deleted),
         owner_username=owner_username,
@@ -198,7 +197,6 @@ class SqlAlchemyServerRepository:
             max_memory=command.max_memory,
             max_players=command.max_players,
             owner_id=command.owner_id,
-            template_id=command.template_id,
         )
         self._db.add(row)
         self._db.flush()

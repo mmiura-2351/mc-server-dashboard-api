@@ -1,11 +1,9 @@
 """SQLAlchemy implementation of the groups-domain `GroupsUnitOfWork`.
 
-Mirrors `app.templates.adapters.uow.SqlAlchemyTemplatesUnitOfWork` (see
-that file for the full rationale on construction modes, re-entry
-semantics, and the forgot-to-commit warning). The only differences here
-are the bound repositories (`SqlAlchemyGroupRepository` +
-`SqlAlchemyServerGroupRepository`) and the attribute names
-(`groups`, `server_groups`).
+Handles construction modes, re-entry semantics, and the forgot-to-commit
+warning. The bound repositories are `SqlAlchemyGroupRepository` +
+`SqlAlchemyServerGroupRepository`, exposed as the attribute names
+`groups` and `server_groups`.
 """
 
 import logging

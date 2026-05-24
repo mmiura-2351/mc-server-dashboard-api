@@ -14,6 +14,9 @@ Per `docs/ARCHITECTURE.md` §4.3, domain-specific DDL lives under
 Issue #75 Phase 1: adds performance indexes for the hot query paths
 on ``servers`` (owner-scoped listings, status / type filters,
 soft-delete predicate).
+
+Issue #352: drops the ``templates`` table and the ``servers.template_id``
+FK column (SQLite multi-step rebuild for the column drop).
 """
 
 import logging
@@ -65,4 +68,88 @@ def migrate_server_indexes(engine: Any) -> None:
                     column,
                     exc,
                 )
+        conn.commit()
+
+
+def migrate_drop_templates(engine: Any) -> None:
+    """Idempotent migration: drop the ``templates`` table and
+    ``servers.template_id`` FK column (#352).
+
+    SQLite does not support ``ALTER TABLE ... DROP COLUMN`` on columns
+    that carry a foreign-key constraint, so the column removal uses a
+    4-step table-rebuild (create new → copy → drop old → rename).
+
+    Steps:
+
+    1. Drop ``servers.template_id`` via table rebuild (if column exists).
+    2. Drop ``templates`` table (if it exists).
+
+    Each step is individually idempotent and swallows errors at WARNING
+    so a partial prior run can be completed on the next startup.
+    """
+    with engine.connect() as conn:
+        # Step 1: check whether servers.template_id still exists
+        try:
+            cols = conn.execute(text("PRAGMA table_info(servers)")).fetchall()
+            col_names = [c[1] for c in cols]
+        except Exception as exc:
+            logger.warning("Cannot inspect servers schema: %s", exc)
+            return
+
+        if "template_id" in col_names:
+            try:
+                conn.execute(text("DROP TABLE IF EXISTS servers_new"))
+                keep_cols = [c for c in col_names if c != "template_id"]
+                cols_csv = ", ".join(keep_cols)
+
+                col_defs = []
+                for c in cols:
+                    cname, ctype, notnull, dflt, pk = c[1], c[2], c[3], c[4], c[5]
+                    if cname == "template_id":
+                        continue
+                    parts = [cname, ctype]
+                    if pk:
+                        parts.append("PRIMARY KEY")
+                    if notnull and not pk:
+                        parts.append("NOT NULL")
+                    if dflt is not None:
+                        parts.append(f"DEFAULT {dflt}")
+                    col_defs.append(" ".join(parts))
+
+                # Recreate indexes & FK for owner_id
+                fk_clause = "FOREIGN KEY (owner_id) REFERENCES users(id)"
+                create_sql = (
+                    f"CREATE TABLE servers_new ({', '.join(col_defs)}, {fk_clause})"
+                )
+
+                conn.execute(text(create_sql))
+                conn.execute(
+                    text(
+                        f"INSERT INTO servers_new ({cols_csv}) SELECT {cols_csv} FROM servers"
+                    )
+                )
+                conn.execute(text("DROP TABLE servers"))
+                conn.execute(text("ALTER TABLE servers_new RENAME TO servers"))
+
+                for index_name, column in _SERVER_INDEXES:
+                    try:
+                        conn.execute(
+                            text(
+                                f"CREATE INDEX IF NOT EXISTS {index_name} ON servers ({column})"
+                            )
+                        )
+                    except Exception:
+                        pass
+
+                logger.info("Dropped servers.template_id column")
+            except Exception as exc:
+                logger.warning("Failed to drop servers.template_id: %s", exc)
+
+        # Step 2: drop the templates table
+        try:
+            conn.execute(text("DROP TABLE IF EXISTS templates"))
+            logger.info("Dropped templates table")
+        except Exception as exc:
+            logger.warning("Failed to drop templates table: %s", exc)
+
         conn.commit()

@@ -390,7 +390,6 @@ class TestServerResponse:
             max_memory=1024,
             max_players=20,
             owner_id=1,
-            template_id=None,
             created_at=datetime.now(),
             updated_at=datetime.now(),
             directory_path="/servers/test-server",

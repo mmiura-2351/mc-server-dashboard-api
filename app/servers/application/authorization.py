@@ -61,7 +61,6 @@ from app.servers.domain.entities import ServerEntity
 from app.servers.domain.exceptions import ServerNotFoundError
 from app.servers.domain.ports import ServerRepository
 from app.servers.models import Server
-from app.templates.domain.ports import TemplateRepository
 from app.users.domain.value_objects import Role
 from app.users.models import User
 
@@ -78,14 +77,9 @@ class AuthorizationService:
         self,
         server_repo: ServerRepository,
         backup_repo: BackupRepository,
-        template_repo: TemplateRepository,
     ) -> None:
         self._server_repo = server_repo
         self._backup_repo = backup_repo
-        # ``template_repo`` is injected for parity with the sibling-domain
-        # wiring (#228) so a future ``check_template_access`` can land
-        # without re-touching every router; it is unused today.
-        self._template_repo = template_repo
 
     # ----- Async resource-access checks -----
 
@@ -165,11 +159,6 @@ class AuthorizationService:
     @staticmethod
     def can_create_group(user: User) -> bool:
         """Phase 1: every authenticated user may create groups."""
-        return user.role in [Role.admin, Role.operator, Role.user]
-
-    @staticmethod
-    def can_create_template(user: User) -> bool:
-        """Phase 1: every authenticated user may create templates."""
         return user.role in [Role.admin, Role.operator, Role.user]
 
     @staticmethod

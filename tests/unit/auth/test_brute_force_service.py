@@ -203,9 +203,7 @@ class TestAuthenticationErrorExcludedFromCount:
         # 4 audit-only rows: still under threshold.
         for _ in range(4):
             _run(
-                svc.record_attempt(
-                    "bob", "3.3.3.3", None, False, "authentication_error"
-                )
+                svc.record_attempt("bob", "3.3.3.3", None, False, "authentication_error")
             )
         assert _run(svc.check_lockout("bob", "3.3.3.3")).locked is False
         # 2 real failures: still under threshold of 3.

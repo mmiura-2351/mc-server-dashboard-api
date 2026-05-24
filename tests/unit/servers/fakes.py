@@ -133,7 +133,6 @@ class FakeServerRepository:
             created_at=now,
             updated_at=now,
             description=command.description,
-            template_id=command.template_id,
             is_deleted=False,
             owner_username=None,
         )
@@ -251,7 +250,6 @@ def make_server_entity(
     created_at: Optional[datetime] = None,
     updated_at: Optional[datetime] = None,
     description: Optional[str] = None,
-    template_id: Optional[int] = None,
     is_deleted: bool = False,
     owner_username: Optional[str] = None,
 ) -> ServerEntity:
@@ -276,7 +274,6 @@ def make_server_entity(
         created_at=created_at or now,
         updated_at=updated_at or now,
         description=description,
-        template_id=template_id,
         is_deleted=is_deleted,
         owner_username=owner_username,
     )
@@ -292,7 +289,7 @@ class FakeServerReadPort:
     Stores per-server `directory_path` and (optionally) a full
     `ServerEntity` snapshot consumed by `ServerReadPort.get`. The two
     stores are kept independent so tests that only exercise
-    file-history surfaces stay terse, while groups/templates tests can
+    file-history surfaces stay terse, while groups tests can
     seed a full entity (including `owner_id`, which the groups domain
     reads to apply the "admin-or-server-owner" rule — see
     `app.groups.application.service._can_manage_server_groups`).

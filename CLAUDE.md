@@ -178,7 +178,7 @@ The application follows a layered architecture with tight integration between co
 
 ### Key Architectural Patterns
 
-**Multi-Domain Resource Management**: The system manages interconnected resources (servers, groups, backups, templates) with complex relationships. Always consider cross-domain impacts when making changes.
+**Multi-Domain Resource Management**: The system manages interconnected resources (servers, groups, backups) with complex relationships. Always consider cross-domain impacts when making changes.
 
 **Service Orchestration**:
 - `minecraft_server_manager`: Physical server process management
@@ -207,11 +207,6 @@ The application follows a layered architecture with tight integration between co
 - Automated and manual backup creation with metadata tracking
 - Server restoration with new server creation from backups
 - Scheduler integration for background operations
-
-**Template System** (`app/templates/`):
-- Reusable server configurations created from existing servers
-- Template cloning and customization capabilities
-- Integration with server creation workflow
 
 **File Management** (`app/files/`):
 - Secure file operations within server directories
@@ -297,7 +292,7 @@ async def endpoint(db: Session = Depends(get_db)):
 1. **Domain Analysis**: Map requirements to use cases (UC1-46) and identify affected services
 2. **Service Integration**: Consider impact on minecraft_server_manager, backup_scheduler, and websocket_service
 3. **Security Review**: Validate role-based access and resource ownership
-4. **Cross-Domain Testing**: Test interactions between servers, groups, backups, and templates
+4. **Cross-Domain Testing**: Test interactions between servers, groups, and backups
 5. **Real-time Verification**: Ensure WebSocket events are properly emitted for UI updates
 
 ### Database Schema Evolution
@@ -329,6 +324,5 @@ When modifying the system, pay attention to these critical integration points:
 2. **Group Attachments**: Server and group modifications trigger config file updates
 3. **Backup Operations**: Server state changes affect backup validity and restoration
 4. **WebSocket Events**: Real-time updates require proper event emission
-5. **Template Dependencies**: Server and template modifications must maintain consistency
 
 This architecture enables complex multi-server management while maintaining data consistency and real-time responsiveness across all system components.

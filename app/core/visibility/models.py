@@ -39,7 +39,6 @@ class ResourceType(str, Enum):
     SERVER = "server"
     GROUP = "group"
     # Future extensions:
-    # TEMPLATE = "template"
     # BACKUP = "backup"
 
 

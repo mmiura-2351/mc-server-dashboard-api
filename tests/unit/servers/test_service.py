@@ -190,7 +190,6 @@ class TestServerService:
         request.server_type = ServerType.vanilla
         request.port = 25565
         request.max_players = 20
-        request.template_id = None
         request.attach_groups = None
         return request
 
@@ -617,11 +616,3 @@ class TestServerDatabaseService:
 
         assert mock_server.is_deleted is True
         mock_db.commit.assert_called_once()
-
-
-# `ServerTemplateService` (and its `apply_template` method) was deleted
-# in #228 PR 2c — it dereferenced a non-existent `Template.file_path`
-# column (root cause of issue #257). The previous `TestServerTemplateService`
-# test class is intentionally absent here: production code now delegates
-# template application to `TemplateService.apply_template_to_server` via
-# DI inside `ServerService.create_server`.

@@ -7,19 +7,13 @@ directly.
 
 Three substantive concerns are addressed here over the legacy code:
 
-1. **#257 root cause** — the legacy `ServerTemplateService.apply_template`
-   dereferenced a non-existent `Template.file_path` column and was
-   only safe because every production caller had `request.template_id
-   is None`. The class is removed entirely; `ServerService.create_server`
-   now delegates to the hexagonal `TemplateService.apply_template_to_server`
-   injected through the constructor.
-2. **#259 root cause** — the legacy `create_server` code invoked a
+1. **#259 root cause** — the legacy `create_server` code invoked a
    non-existent method on `GroupService` with reversed kwargs; the
    facade raised `NotImplementedError` to make the bug fail loudly.
    The new call goes through `GroupService.attach_group_to_server` with
    the correct kwargs (`actor_id`, `actor_is_admin`, `server_id`,
    `group_id`, `priority`).
-3. **Repository conversion** — every `db.query(Server)` callsite in the
+2. **Repository conversion** — every `db.query(Server)` callsite in the
    merged file is replaced by `ServerRepository` / `ServersUnitOfWork`
    calls. Status writes still go through the repository's own-transaction
    helpers (`update_status` etc.) but the multi-step flows here (create,
@@ -103,7 +97,6 @@ from app.servers.models import (
     ServerType,
 )
 from app.servers.schemas import ServerCreateRequest, ServerResponse, ServerUpdateRequest
-from app.templates.application.service import TemplateService
 from app.users.domain.value_objects import Role
 from app.users.models import User
 from app.versions.application.java_compatibility import java_compatibility_service
@@ -391,7 +384,7 @@ class ServerService:
     """Main service for orchestrating server operations.
 
     The new DI-based constructor receives `uow`, `server_repo`,
-    `template_service`, and `group_service` Ports. When constructed
+    and `group_service` Ports. When constructed
     without arguments (legacy `ServerService()` call shape used by the
     pre-existing unit tests) the service still works because the legacy
     sub-services (`validation_service`, `database_service`,
@@ -407,12 +400,10 @@ class ServerService:
         self,
         uow: Optional[ServersUnitOfWork] = None,
         server_repo: Optional[ServerRepository] = None,
-        template_service: Optional[TemplateService] = None,
         group_service: Optional[GroupService] = None,
     ) -> None:
         self._uow = uow
         self._server_repo = server_repo
-        self._template_service = template_service
         self._group_service = group_service
 
         # Legacy sub-services retained for backward-compat tests. The
@@ -536,20 +527,6 @@ class ServerService:
             await self.filesystem_service.generate_server_files(
                 server, request, server_dir
             )
-
-            # Template application — #257 fix. Use the injected hexagonal
-            # TemplateService; the legacy ServerTemplateService that
-            # dereferenced a non-existent `Template.file_path` column has
-            # been removed.
-            if request.template_id and self._template_service is not None:
-                success = await self._template_service.apply_template_to_server(
-                    request.template_id, server_dir
-                )
-                if not success:
-                    logger.warning(
-                        f"Template {request.template_id} apply returned False "
-                        "(legacy parity)"
-                    )
 
             # Group attachments — #259 fix. The legacy code invoked a
             # non-existent group-service method (positional shape with
@@ -820,7 +797,6 @@ class ServerService:
             max_memory=request.max_memory,
             max_players=request.max_players,
             owner_id=owner.id,
-            template_id=request.template_id,
         )
         async with self._uow as uow:
             entity = await uow.servers.add(command)
@@ -1109,7 +1085,6 @@ class ServerService:
             "max_memory": entity.max_memory,
             "max_players": entity.max_players,
             "owner_id": entity.owner_id,
-            "template_id": entity.template_id,
             "created_at": entity.created_at,
             "updated_at": entity.updated_at,
         }

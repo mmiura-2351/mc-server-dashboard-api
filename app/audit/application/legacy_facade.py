@@ -204,27 +204,6 @@ class AuditService:
         )
 
     @staticmethod
-    def log_template_event(
-        request: Request,
-        action: str,
-        template_id: int,
-        details: Optional[Dict[str, Any]] = None,
-        user_id: Optional[int] = None,
-    ):
-        user_id = user_id or get_current_user_id()
-        audit_details = {"template_id": template_id, **(details or {})}
-        _writer(request).record(
-            AuditEventCommand(
-                action=f"template_{action}",
-                resource_type="template",
-                resource_id=template_id,
-                user_id=user_id,
-                details=audit_details,
-                ip_address=_extract_ip_address(request),
-            )
-        )
-
-    @staticmethod
     def log_file_event(
         request: Request,
         action: str,
