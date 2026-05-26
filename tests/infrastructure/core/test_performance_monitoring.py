@@ -59,6 +59,15 @@ class TestDatabaseQueryTracker:
 
 
 class TestMemoryTracker:
+    @pytest.fixture(autouse=True)
+    def _reset_cache(self):
+        """Reset MemoryTracker cache before each test."""
+        MemoryTracker._cache = {}
+        MemoryTracker._cache_time = 0.0
+        yield
+        MemoryTracker._cache = {}
+        MemoryTracker._cache_time = 0.0
+
     def test_get_memory_usage(self):
         """Test memory usage tracking"""
         memory_info = MemoryTracker.get_memory_usage()
@@ -74,6 +83,22 @@ class TestMemoryTracker:
         assert memory_info["vms_mb"] >= 0
         assert 0 <= memory_info["percent"] <= 100
         assert memory_info["available_mb"] >= 0
+
+    def test_cache_returns_same_result_within_ttl(self):
+        """Test that repeated calls within TTL return cached result."""
+        first = MemoryTracker.get_memory_usage()
+        second = MemoryTracker.get_memory_usage()
+        # Within 5 s the exact same dict object should be returned
+        assert first is second
+
+    def test_cache_expires_after_ttl(self):
+        """Test that the cache refreshes after TTL expires."""
+        first = MemoryTracker.get_memory_usage()
+        # Manually expire the cache
+        MemoryTracker._cache_time -= MemoryTracker._cache_ttl + 1
+        second = MemoryTracker.get_memory_usage()
+        # New dict object, though values may be similar
+        assert first is not second
 
 
 class TestPerformanceMetrics:

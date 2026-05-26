@@ -12,7 +12,6 @@ logger = logging.getLogger(__name__)
 # Context variables for tracking metrics per request
 request_start_time: ContextVar[float] = ContextVar("request_start_time")
 database_queries: ContextVar[List[Dict]] = ContextVar("database_queries", default=[])
-memory_usage_start: ContextVar[float] = ContextVar("memory_usage_start")
 
 
 class DatabaseQueryTracker:
@@ -52,25 +51,41 @@ class DatabaseQueryTracker:
 
 
 class MemoryTracker:
-    """Helper class to track memory usage"""
+    """Helper class to track memory usage with interval-based caching."""
 
-    @staticmethod
-    def get_memory_usage() -> Dict:
-        """Get current memory usage information"""
+    _cache: Dict = {}
+    _cache_time: float = 0.0
+    _cache_ttl: float = 5.0  # seconds
+
+    @classmethod
+    def get_memory_usage(cls) -> Dict:
+        """Get current memory usage, cached for up to 5 seconds."""
+        now = time.time()
+        if now - cls._cache_time < cls._cache_ttl and cls._cache:
+            return cls._cache
         try:
             process = psutil.Process()
             memory_info = process.memory_info()
             memory_percent = process.memory_percent()
-
-            return {
-                "rss_mb": round(memory_info.rss / 1024 / 1024, 2),  # Resident set size
-                "vms_mb": round(memory_info.vms / 1024 / 1024, 2),  # Virtual memory size
+            cls._cache = {
+                "rss_mb": round(memory_info.rss / 1024 / 1024, 2),
+                "vms_mb": round(memory_info.vms / 1024 / 1024, 2),
                 "percent": round(memory_percent, 2),
-                "available_mb": round(psutil.virtual_memory().available / 1024 / 1024, 2),
+                "available_mb": round(
+                    psutil.virtual_memory().available / 1024 / 1024,
+                    2,
+                ),
             }
+            cls._cache_time = now
+            return cls._cache
         except Exception as e:
             logger.warning(f"Failed to get memory usage: {e}")
-            return {"rss_mb": 0, "vms_mb": 0, "percent": 0, "available_mb": 0}
+            return {
+                "rss_mb": 0,
+                "vms_mb": 0,
+                "percent": 0,
+                "available_mb": 0,
+            }
 
 
 class PerformanceMetrics:
@@ -225,9 +240,6 @@ class PerformanceMonitoringMiddleware(BaseHTTPMiddleware):
 
         db_tracker = DatabaseQueryTracker()
         database_queries.set([])
-
-        memory_start = MemoryTracker.get_memory_usage()
-        memory_usage_start.set(memory_start.get("percent", 0))
 
         # Process the request
         try:
