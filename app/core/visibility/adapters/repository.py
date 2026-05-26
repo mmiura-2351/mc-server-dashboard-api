@@ -19,7 +19,7 @@ application layer to know the legacy column names. See
 
 from typing import Dict, List, Optional
 
-from sqlalchemy import func, select
+from sqlalchemy import and_, func
 from sqlalchemy.orm import Session
 
 from app.core.visibility.domain.entities import (
@@ -188,17 +188,33 @@ class SqlAlchemyVisibilityRepository:
     # ----- Migration helpers (cross-domain reads kept in adapter) -----
 
     async def list_missing_server_ids(self) -> List[int]:
-        existing = select(ResourceVisibility.resource_id).where(
-            ResourceVisibility.resource_type == ResourceType.SERVER
+        rows = (
+            self._db.query(Server.id)
+            .outerjoin(
+                ResourceVisibility,
+                and_(
+                    Server.id == ResourceVisibility.resource_id,
+                    ResourceVisibility.resource_type == ResourceType.SERVER,
+                ),
+            )
+            .filter(ResourceVisibility.id.is_(None))
+            .all()
         )
-        rows = self._db.query(Server.id).filter(~Server.id.in_(existing)).all()
         return [row.id for row in rows]
 
     async def list_missing_group_ids(self) -> List[int]:
-        existing = select(ResourceVisibility.resource_id).where(
-            ResourceVisibility.resource_type == ResourceType.GROUP
+        rows = (
+            self._db.query(Group.id)
+            .outerjoin(
+                ResourceVisibility,
+                and_(
+                    Group.id == ResourceVisibility.resource_id,
+                    ResourceVisibility.resource_type == ResourceType.GROUP,
+                ),
+            )
+            .filter(ResourceVisibility.id.is_(None))
+            .all()
         )
-        rows = self._db.query(Group.id).filter(~Group.id.in_(existing)).all()
         return [row.id for row in rows]
 
     async def add_many_public(
