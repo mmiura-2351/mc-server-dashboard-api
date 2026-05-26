@@ -12,7 +12,7 @@ patched on the class rather than on a mock instance.
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
-from fastapi import BackgroundTasks, HTTPException
+from fastapi import BackgroundTasks, HTTPException, Response
 
 from app.servers.application.authorization import AuthorizationService
 from app.servers.models import ServerType
@@ -97,6 +97,7 @@ class TestServerManagementRouter:
 
         with pytest.raises(HTTPException) as exc_info:
             await list_servers(
+                response=Response(),
                 page=1,
                 size=10,
                 current_user=admin_user,
@@ -169,6 +170,7 @@ class TestServerManagementRouter:
 
         # Test admin access (should see all servers - owner_id=None)
         await list_servers(
+            response=Response(),
             page=1,
             size=10,
             current_user=admin_user,
@@ -186,6 +188,7 @@ class TestServerManagementRouter:
 
         # Test regular user access (should also see all servers - owner_id=None)
         await list_servers(
+            response=Response(),
             page=1,
             size=10,
             current_user=test_user,

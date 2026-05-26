@@ -9,7 +9,7 @@ application layer never imports FastAPI.
 import logging
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 
 from app.auth.dependencies import get_current_user
 from app.groups.api.dependencies import get_group_service
@@ -101,6 +101,7 @@ async def create_group(
 
 @router.get("", response_model=GroupListResponse)
 async def list_groups(
+    response: Response,
     group_type: Optional[GroupType] = Query(None, description="Filter by group type"),
     page: int = Query(1, ge=1, description="Page number"),
     size: int = Query(50, ge=1, le=100, description="Page size"),
@@ -113,6 +114,7 @@ async def list_groups(
     ``total`` reflects the full filtered count so legacy clients keep
     working.
     """
+    response.headers["Cache-Control"] = "private, max-age=60"
     try:
         from app.core.pagination import build_pagination_meta
 
@@ -138,11 +140,13 @@ async def list_groups(
 
 @router.get("/{group_id}", response_model=GroupResponse)
 async def get_group(
+    response: Response,
     group_id: int,
     current_user: User = Depends(get_current_user),
     group_service: _ApplicationGroupService = Depends(get_group_service),
 ):
     """Get group details by id."""
+    response.headers["Cache-Control"] = "private, max-age=60"
     try:
         entity = await group_service.get_group(
             actor_id=current_user.id, group_id=group_id

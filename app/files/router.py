@@ -10,6 +10,7 @@ from fastapi import (
     HTTPException,
     Query,
     Request,
+    Response,
     UploadFile,
 )
 from fastapi.responses import FileResponse
@@ -89,6 +90,7 @@ def _safe_audit(
     "/servers/{server_id}/files/{file_path:path}/read", response_model=FileReadResponse
 )
 async def read_file(
+    response: Response,
     server_id: int,
     file_path: str,
     encoding: str = "utf-8",
@@ -98,6 +100,7 @@ async def read_file(
     auth: AuthorizationService = Depends(get_authorization_service),
 ):
     """Read content of a text file or image"""
+    response.headers["Cache-Control"] = "private, max-age=30"
     # Check server access
     await auth.check_server_access(server_id, current_user)
 
@@ -591,6 +594,7 @@ async def get_server_file_history_stats(
 @router.get("/servers/{server_id}/files", response_model=FileListResponse)
 @router.get("/servers/{server_id}/files/{path:path}", response_model=FileListResponse)
 async def list_server_files(
+    response: Response,
     server_id: int,
     path: str = "",
     file_type: Optional[FileType] = None,
@@ -607,6 +611,7 @@ async def list_server_files(
     file exception has a structured handler that emits the standard
     error envelope.
     """
+    response.headers["Cache-Control"] = "private, max-age=30"
     # Check server access
     await auth.check_server_access(server_id, current_user)
 
