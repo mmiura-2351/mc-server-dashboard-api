@@ -7,7 +7,7 @@ shape for the entire codebase per `docs/ARCHITECTURE.md` §4.4.
 
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 
 from app.auth.dependencies import get_current_user
 from app.servers.models import ServerType
@@ -58,9 +58,11 @@ def _to_response(entity: MinecraftVersionEntity) -> MinecraftVersionResponse:
     summary="Get all supported versions (fast database query)",
 )
 async def get_supported_versions(
+    response: Response,
     server_type: Optional[ServerType] = Query(None, description="Filter by server type"),
     service: VersionUpdateService = Depends(get_version_service),
 ) -> List[MinecraftVersionResponse]:
+    response.headers["Cache-Control"] = "public, max-age=3600"
     try:
         if server_type:
             entities = await service.get_supported_versions(server_type)
@@ -150,8 +152,10 @@ async def get_scheduler_status(
     summary="Get version statistics",
 )
 async def get_version_stats(
+    response: Response,
     service: VersionUpdateService = Depends(get_version_service),
 ) -> VersionStatsResponse:
+    response.headers["Cache-Control"] = "public, max-age=300"
     try:
         stats = await service.get_version_stats()
         return VersionStatsResponse(
@@ -172,9 +176,11 @@ async def get_version_stats(
     summary="Get versions for specific server type",
 )
 async def get_versions_by_server_type(
+    response: Response,
     server_type: ServerType,
     service: VersionUpdateService = Depends(get_version_service),
 ) -> List[MinecraftVersionResponse]:
+    response.headers["Cache-Control"] = "public, max-age=3600"
     try:
         entities = await service.get_supported_versions(server_type)
         return [_to_response(e) for e in entities]
@@ -191,10 +197,12 @@ async def get_versions_by_server_type(
     summary="Get specific version details",
 )
 async def get_specific_version(
+    response: Response,
     server_type: ServerType,
     version: str,
     service: VersionUpdateService = Depends(get_version_service),
 ) -> MinecraftVersionResponse:
+    response.headers["Cache-Control"] = "public, max-age=3600"
     try:
         entity = await service.get_version(server_type, version)
         if entity is None:

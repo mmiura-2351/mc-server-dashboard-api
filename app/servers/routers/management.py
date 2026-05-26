@@ -7,6 +7,7 @@ from fastapi import (
     HTTPException,
     Path,
     Query,
+    Response,
     status,
 )
 from sqlalchemy.orm import Session
@@ -209,6 +210,7 @@ async def check_port(
 
 @router.get("", response_model=ServerListResponse)
 async def list_servers(
+    response: Response,
     page: int = Query(1, ge=1, description="Page number"),
     size: int = Query(50, ge=1, le=100, description="Page size"),
     current_user: User = Depends(get_current_user),
@@ -220,6 +222,7 @@ async def list_servers(
 
     Returns a paginated list of all servers. All authenticated users can see all servers.
     """
+    response.headers["Cache-Control"] = "private, max-age=10"
     try:
         # All users can see all servers
         owner_id = None
