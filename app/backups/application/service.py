@@ -139,6 +139,20 @@ class BackupService:
         `final_path` and unlinking the temp would silently lose the
         only on-disk copy of the user's data.
         """
+        from app.core.concurrency import get_semaphores
+
+        async with get_semaphores().backup:
+            return await self._create_backup_inner(
+                server_id, name, description, backup_type
+            )
+
+    async def _create_backup_inner(
+        self,
+        server_id: int,
+        name: str,
+        description: Optional[str],
+        backup_type: BackupType,
+    ) -> BackupEntity:
         server = await self._get_server_or_raise(server_id)
         self._log_running_server_warning(server_id)
 
@@ -412,6 +426,18 @@ class BackupService:
           post-commit failures preserve the temp file in `.failed/`
           for manual recovery instead of unlinking it.
         """
+        from app.core.concurrency import get_semaphores
+
+        async with get_semaphores().backup:
+            return await self._upload_backup_inner(server_id, file, name, description)
+
+    async def _upload_backup_inner(
+        self,
+        server_id: int,
+        file: "UploadFile",
+        name: Optional[str],
+        description: Optional[str],
+    ) -> BackupEntity:
         await self._get_server_or_raise(server_id)
 
         # Ensure `.pending/` exists on the same filesystem as the

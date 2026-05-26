@@ -493,6 +493,12 @@ class FileOperationService:
         exceeded — any partial output is removed before the exception
         propagates. ``FILE_MAX_UPLOAD_BYTES = 0`` disables enforcement.
         """
+        from app.core.concurrency import get_semaphores
+
+        async with get_semaphores().file_io:
+            return await self._upload_file_inner(file, target_path)
+
+    async def _upload_file_inner(self, file: UploadFile, target_path: Path) -> int:
         max_bytes = settings.FILE_MAX_UPLOAD_BYTES
         enforce_limit = max_bytes > 0
         try:
@@ -515,8 +521,6 @@ class FileOperationService:
                             )
                         await f.write(chunk)
             except FileTooLargeError:
-                # Best-effort cleanup of any bytes already flushed to
-                # disk so a rejected upload does not leak storage.
                 try:
                     if target_path.exists():
                         target_path.unlink()

@@ -64,6 +64,18 @@ account_lockouts_active = Gauge(
     "Active account lockouts (rows where locked_until is in the future).",
 )
 
+semaphore_in_use = Gauge(
+    "mc_semaphore_in_use",
+    "Current number of acquired slots for a concurrency semaphore.",
+    ["semaphore"],
+)
+
+semaphore_limit = Gauge(
+    "mc_semaphore_limit",
+    "Configured upper limit for a concurrency semaphore.",
+    ["semaphore"],
+)
+
 
 class BusinessMetricsCollector:
     """Refresh business-level Prometheus gauges on demand.
@@ -87,6 +99,7 @@ class BusinessMetricsCollector:
         self._collect_server_status_counts()
         self._collect_pending_backups()
         self._collect_active_lockouts()
+        self._collect_semaphore_stats()
 
     # ------------------------------------------------------------------
     # Individual collectors
@@ -146,10 +159,25 @@ class BusinessMetricsCollector:
             # Leave the gauge at its previous value so the metric does
             # not flap to 0 during a transient DB blip.
 
+    def _collect_semaphore_stats(self) -> None:
+        try:
+            from app.core.concurrency import get_semaphores
+
+            registry = get_semaphores()
+            for name in ("backup", "websocket", "file_io"):
+                sema = getattr(registry, name, None)
+                if sema is not None:
+                    semaphore_in_use.labels(semaphore=name).set(sema.in_use)
+                    semaphore_limit.labels(semaphore=name).set(sema.limit)
+        except Exception:  # noqa: BLE001
+            logger.exception("Failed to collect mc_semaphore_* metrics")
+
 
 __all__ = [
     "BusinessMetricsCollector",
     "account_lockouts_active",
     "backups_pending_total",
+    "semaphore_in_use",
+    "semaphore_limit",
     "servers_total",
 ]

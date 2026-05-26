@@ -132,30 +132,35 @@ class BackupFileService:
     async def _create_tar_backup_chunked(
         self, server_dir: Path, backup_path: Path, progress_callback=None
     ) -> None:
-        total_files, total_size = await self._calculate_directory_size_async(server_dir)
-        logger.info(
-            f"Starting backup of {total_files} files "
-            f"({total_size / (1024 * 1024):.1f}MB) from {server_dir}"
-        )
+        from app.core.concurrency import get_semaphores
 
-        if progress_callback:
-            progress_callback(0, total_files, 0, total_size)
+        async with get_semaphores().file_io:
+            total_files, total_size = await self._calculate_directory_size_async(
+                server_dir
+            )
+            logger.info(
+                f"Starting backup of {total_files} files "
+                f"({total_size / (1024 * 1024):.1f}MB) from {server_dir}"
+            )
 
-        loop = asyncio.get_event_loop()
-        await loop.run_in_executor(
-            None,
-            self._create_tar_archive_sync,
-            server_dir,
-            backup_path,
-            total_files,
-            total_size,
-            progress_callback,
-        )
+            if progress_callback:
+                progress_callback(0, total_files, 0, total_size)
 
-        logger.info(
-            f"Backup creation completed for {total_files} files "
-            f"({total_size / (1024 * 1024):.1f}MB)"
-        )
+            loop = asyncio.get_event_loop()
+            await loop.run_in_executor(
+                None,
+                self._create_tar_archive_sync,
+                server_dir,
+                backup_path,
+                total_files,
+                total_size,
+                progress_callback,
+            )
+
+            logger.info(
+                f"Backup creation completed for {total_files} files "
+                f"({total_size / (1024 * 1024):.1f}MB)"
+            )
 
     def _create_tar_archive_sync(
         self,
@@ -222,20 +227,25 @@ class BackupFileService:
             tar.add(file_path, arcname=arcname)
 
     async def restore_backup_file(self, backup: Backup, target_server: Server) -> None:
-        try:
-            backup_path = Path(backup.file_path)
-            if not backup_path.exists():
-                raise FileOperationException(
-                    "restore", str(backup_path), "Backup file not found"
-                )
+        from app.core.concurrency import get_semaphores
 
-            target_dir = Path(target_server.directory_path)
-            self._backup_current_server_state(target_dir)
-            self._extract_backup_to_directory(backup_path, target_dir)
+        async with get_semaphores().file_io:
+            try:
+                backup_path = Path(backup.file_path)
+                if not backup_path.exists():
+                    raise FileOperationException(
+                        "restore",
+                        str(backup_path),
+                        "Backup file not found",
+                    )
 
-            logger.info(f"Extracted backup to: {target_dir}")
-        except Exception as e:
-            handle_file_error("restore backup", str(backup_path), e)
+                target_dir = Path(target_server.directory_path)
+                self._backup_current_server_state(target_dir)
+                self._extract_backup_to_directory(backup_path, target_dir)
+
+                logger.info(f"Extracted backup to: {target_dir}")
+            except Exception as e:
+                handle_file_error("restore backup", str(backup_path), e)
 
     def _backup_current_server_state(self, target_dir: Path) -> None:
         if target_dir.exists():

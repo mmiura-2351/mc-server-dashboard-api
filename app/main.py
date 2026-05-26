@@ -111,6 +111,11 @@ async def _initialize_services():
     # 1. Initialize database (critical - app cannot function without it)
     await _initialize_database()
 
+    # 1b. Initialize concurrency semaphores (Issue #351)
+    from app.core.concurrency import get_semaphores
+
+    get_semaphores()
+
     # 2. Backfill Phase 2 visibility rows for legacy resources (best-effort)
     await _initialize_visibility_migration()
 
