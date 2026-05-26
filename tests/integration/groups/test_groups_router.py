@@ -17,6 +17,7 @@ from app.groups.domain.entities import (
     AttachedGroupView,
     AttachedServerView,
     GroupEntity,
+    GroupListPage,
 )
 from app.groups.domain.exceptions import (
     GroupAccessError,
@@ -87,10 +88,17 @@ class _FakeGroupService:
         self._maybe_raise("create_group")
         return self.entity
 
-    async def list_groups(self, **kwargs) -> List[GroupEntity]:
+    async def list_groups(self, **kwargs) -> GroupListPage:
         self.calls.append(("list_groups", kwargs))
         self._maybe_raise("list_groups")
-        return self.list_entities
+        page = kwargs.get("page", 1)
+        size = kwargs.get("size", 50)
+        return GroupListPage(
+            entities=self.list_entities,
+            total=len(self.list_entities),
+            page=page,
+            size=size,
+        )
 
     async def get_group(self, **kwargs) -> GroupEntity:
         self.calls.append(("get_group", kwargs))

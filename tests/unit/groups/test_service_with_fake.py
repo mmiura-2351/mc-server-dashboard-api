@@ -196,8 +196,9 @@ async def test_list_groups_passthrough_no_filter(
     group_repo.seed(
         make_group_entity(id=2, owner_id=99, name="b", type=GroupType.whitelist)
     )
-    out = await service.list_groups(actor_id=1)
-    assert {e.id for e in out} == {1, 2}
+    page = await service.list_groups(actor_id=1)
+    assert {e.id for e in page.entities} == {1, 2}
+    assert page.total == 2
 
 
 @pytest.mark.asyncio
@@ -208,8 +209,9 @@ async def test_list_groups_filter_by_type(
     group_repo.seed(
         make_group_entity(id=2, owner_id=1, name="b", type=GroupType.whitelist)
     )
-    out = await service.list_groups(actor_id=1, group_type=GroupType.op)
-    assert {e.id for e in out} == {1}
+    page = await service.list_groups(actor_id=1, group_type=GroupType.op)
+    assert {e.id for e in page.entities} == {1}
+    assert page.total == 1
 
 
 @pytest.mark.asyncio

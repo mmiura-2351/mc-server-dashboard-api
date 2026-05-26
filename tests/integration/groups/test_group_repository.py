@@ -80,11 +80,28 @@ class TestGroupRepositoryReads:
         _seed_group(db, admin_user.id, name="o", type=GroupType.op)
         _seed_group(db, admin_user.id, name="w", type=GroupType.whitelist)
 
-        op_only = await repository.list(GroupListSpec(type=GroupType.op))
-        assert [e.name for e in op_only] == ["o"]
+        op_page = await repository.list(GroupListSpec(type=GroupType.op))
+        assert [e.name for e in op_page.entities] == ["o"]
+        assert op_page.total == 1
 
-        all_ = await repository.list(GroupListSpec())
-        assert {e.name for e in all_} == {"o", "w"}
+        all_page = await repository.list(GroupListSpec())
+        assert {e.name for e in all_page.entities} == {"o", "w"}
+        assert all_page.total == 2
+
+    @pytest.mark.asyncio
+    async def test_list_paginates_with_offset_limit(self, repository, db, admin_user):
+        for i in range(5):
+            _seed_group(db, admin_user.id, name=f"g{i}", type=GroupType.op)
+
+        page1 = await repository.list(GroupListSpec(page=1, size=2))
+        assert len(page1.entities) == 2
+        assert page1.total == 5
+        assert page1.page == 1
+        assert page1.size == 2
+
+        page3 = await repository.list(GroupListSpec(page=3, size=2))
+        assert len(page3.entities) == 1
+        assert page3.total == 5
 
 
 # ----- Writes -----

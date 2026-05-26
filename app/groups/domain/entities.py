@@ -77,6 +77,18 @@ class GroupListSpec:
     """
 
     type: Optional[GroupType] = None
+    page: int = 1
+    size: int = 50
+
+
+@dataclass(frozen=True)
+class GroupListPage:
+    """Read result for `GroupRepository.list`."""
+
+    entities: List[GroupEntity]
+    total: int
+    page: int
+    size: int
 
 
 @dataclass(frozen=True)
