@@ -20,7 +20,7 @@ import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any, Callable, Dict, List, Optional, Protocol
 
-from sqlalchemy import func
+from sqlalchemy import case, func
 from sqlalchemy.orm import Session, joinedload
 
 from app.audit.domain.entities import (
@@ -191,10 +191,27 @@ class SqlAlchemyAuditRepository:
         thirty_days_ago = now - timedelta(days=30)
         week_ago = now - timedelta(days=7)
 
-        total_logs = self._db.query(AuditLog).count()
-        recent_logs = (
-            self._db.query(AuditLog).filter(AuditLog.created_at >= yesterday).count()
-        )
+        counts = self._db.query(
+            func.count(AuditLog.id).label("total"),
+            func.count(
+                case(
+                    (AuditLog.created_at >= yesterday, AuditLog.id),
+                )
+            ).label("recent_24h"),
+            func.count(
+                case(
+                    (
+                        (AuditLog.created_at >= week_ago)
+                        & (AuditLog.resource_type == "security"),
+                        AuditLog.id,
+                    ),
+                )
+            ).label("security_7d"),
+        ).one()
+
+        total_logs = counts.total
+        recent_logs = counts.recent_24h
+        security_events = counts.security_7d
 
         active_users_rows = (
             self._db.query(AuditLog.user_id, func.count(AuditLog.id).label("c"))
@@ -219,12 +236,6 @@ class SqlAlchemyAuditRepository:
             .group_by(AuditLog.resource_type)
             .order_by(func.count(AuditLog.id).desc())
             .all()
-        )
-        security_events = (
-            self._db.query(AuditLog)
-            .filter(AuditLog.created_at >= week_ago)
-            .filter(AuditLog.resource_type == "security")
-            .count()
         )
 
         return AuditStatistics(
