@@ -176,6 +176,15 @@ class Settings(BaseSettings):
     DATABASE_RETRY_BACKOFF: float = 0.1
     DATABASE_BATCH_SIZE: int = 100
 
+    # Database connection pool configuration (Issue #369)
+    # These are passed to SQLAlchemy's create_engine(); pool_size and
+    # max_overflow are only applied for non-SQLite backends (SQLite uses
+    # a single-connection pool by default).
+    DB_POOL_SIZE: int = 5
+    DB_MAX_OVERFLOW: int = 10
+    DB_POOL_RECYCLE: int = 3600
+    DB_POOL_PRE_PING: bool = True
+
     # File upload size cap (Issue #341). Enforced by the file upload
     # service via a streaming/chunked read so the entire payload never
     # lands in process memory before the limit is checked. Defaults to
@@ -408,6 +417,30 @@ class Settings(BaseSettings):
         """Validate DATABASE_BATCH_SIZE is within reasonable limits"""
         if v < 10 or v > 1000:
             raise ValueError("DATABASE_BATCH_SIZE must be between 10 and 1000")
+        return v
+
+    @field_validator("DB_POOL_SIZE")
+    @classmethod
+    def validate_db_pool_size(cls, v: int) -> int:
+        """Validate DB_POOL_SIZE is within reasonable limits."""
+        if v < 1 or v > 100:
+            raise ValueError("DB_POOL_SIZE must be between 1 and 100")
+        return v
+
+    @field_validator("DB_MAX_OVERFLOW")
+    @classmethod
+    def validate_db_max_overflow(cls, v: int) -> int:
+        """Validate DB_MAX_OVERFLOW is within reasonable limits."""
+        if v < 0 or v > 100:
+            raise ValueError("DB_MAX_OVERFLOW must be between 0 and 100")
+        return v
+
+    @field_validator("DB_POOL_RECYCLE")
+    @classmethod
+    def validate_db_pool_recycle(cls, v: int) -> int:
+        """Validate DB_POOL_RECYCLE is within reasonable limits."""
+        if v < -1 or v > 86400:
+            raise ValueError("DB_POOL_RECYCLE must be between -1 and 86400 seconds")
         return v
 
     @field_validator("FILE_MAX_UPLOAD_BYTES")
