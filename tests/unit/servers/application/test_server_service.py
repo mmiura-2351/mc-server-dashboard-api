@@ -307,17 +307,41 @@ class TestServerService:
     # Test get_server_statistics
     def test_get_server_statistics_admin(self, service, admin_user, mock_db_session):
         """Test server statistics for admin user"""
-        # Mock query chain
+        # Mock query chain — with_entities().group_by() is called three
+        # times: status, type, and version.  The first two are iterated
+        # directly; the third uses .all().  We use side_effect to return
+        # a fresh iterable mock for each call.
         mock_db_session.count.return_value = 5
         mock_db_session.with_entities.return_value = mock_db_session
-        mock_db_session.group_by.return_value = mock_db_session
-        mock_db_session.all.return_value = [("1.19.0", 3), ("1.18.0", 2)]
+
+        status_result = Mock()
+        status_result.__iter__ = Mock(
+            return_value=iter([(ServerStatus.running, 3), (ServerStatus.stopped, 2)])
+        )
+
+        type_result = Mock()
+        type_result.__iter__ = Mock(
+            return_value=iter([(ServerType.vanilla, 4), (ServerType.paper, 1)])
+        )
+
+        version_result = Mock()
+        version_result.all.return_value = [("1.19.0", 3), ("1.18.0", 2)]
+
+        mock_db_session.group_by.side_effect = [
+            status_result,
+            type_result,
+            version_result,
+        ]
 
         result = service.get_server_statistics(admin_user, db=mock_db_session)
 
         assert result["total_servers"] == 5
         assert "status_distribution" in result
+        assert result["status_distribution"]["running"] == 3
+        assert result["status_distribution"]["stopped"] == 2
         assert "type_distribution" in result
+        assert result["type_distribution"]["vanilla"] == 4
+        assert result["type_distribution"]["paper"] == 1
         assert "version_distribution" in result
         assert result["version_distribution"]["1.19.0"] == 3
         assert "last_updated" in result
@@ -328,8 +352,21 @@ class TestServerService:
         """Test server statistics for regular user with filtering"""
         mock_db_session.count.return_value = 2
         mock_db_session.with_entities.return_value = mock_db_session
-        mock_db_session.group_by.return_value = mock_db_session
-        mock_db_session.all.return_value = [("1.19.0", 2)]
+
+        status_result = Mock()
+        status_result.__iter__ = Mock(return_value=iter([(ServerStatus.running, 2)]))
+
+        type_result = Mock()
+        type_result.__iter__ = Mock(return_value=iter([(ServerType.vanilla, 2)]))
+
+        version_result = Mock()
+        version_result.all.return_value = [("1.19.0", 2)]
+
+        mock_db_session.group_by.side_effect = [
+            status_result,
+            type_result,
+            version_result,
+        ]
 
         result = service.get_server_statistics(regular_user, db=mock_db_session)
 

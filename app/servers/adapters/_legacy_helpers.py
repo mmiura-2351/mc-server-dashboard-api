@@ -352,15 +352,19 @@ def get_server_statistics_legacy(user: User, db: Session) -> Dict[str, Any]:
             query = query.filter(Server.owner_id == user.id)
         total_servers = query.count()
 
-        status_counts: Dict[str, int] = {}
-        for status_value in ServerStatus:
-            count = query.filter(Server.status == status_value).count()
+        status_counts: Dict[str, int] = {s.value: 0 for s in ServerStatus}
+        status_query = query.with_entities(
+            Server.status, func.count(Server.id).label("count")
+        ).group_by(Server.status)
+        for status_value, count in status_query:
             status_counts[status_value.value] = count
 
-        type_counts: Dict[str, int] = {}
-        for server_type_value in ServerType:
-            count = query.filter(Server.server_type == server_type_value).count()
-            type_counts[server_type_value.value] = count
+        type_counts: Dict[str, int] = {t.value: 0 for t in ServerType}
+        type_query = query.with_entities(
+            Server.server_type, func.count(Server.id).label("count")
+        ).group_by(Server.server_type)
+        for type_value, count in type_query:
+            type_counts[type_value.value] = count
 
         version_query = query.with_entities(
             Server.minecraft_version, func.count(Server.id).label("count")
