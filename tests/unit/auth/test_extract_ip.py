@@ -11,7 +11,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 from app.auth.api.router import _extract_ip
-from app.core.config import settings
+from app.core.config import Settings, settings
 
 
 def _make_request(*, client_host: str | None, headers: dict[str, str]):
@@ -31,6 +31,7 @@ class TestProxyTrustDisabledByDefault:
     def test_xff_is_ignored_when_trust_disabled(self, monkeypatch):
         monkeypatch.setattr(settings, "TRUST_PROXY_HEADERS", False)
         monkeypatch.setattr(settings, "TRUSTED_PROXIES", "10.0.0.1")
+        monkeypatch.setattr(settings, "trusted_proxies_list", ["10.0.0.1"])
         req = _make_request(
             client_host="203.0.113.5",
             headers={"X-Forwarded-For": "1.2.3.4, 9.9.9.9"},
@@ -55,6 +56,7 @@ class TestProxyTrustEnabledRequiresTrustedPeer:
     def test_xff_trusted_when_peer_is_trusted_proxy(self, monkeypatch):
         monkeypatch.setattr(settings, "TRUST_PROXY_HEADERS", True)
         monkeypatch.setattr(settings, "TRUSTED_PROXIES", "10.0.0.1,127.0.0.1")
+        monkeypatch.setattr(settings, "trusted_proxies_list", ["10.0.0.1", "127.0.0.1"])
         req = _make_request(
             client_host="10.0.0.1",
             headers={"X-Forwarded-For": "1.2.3.4, 9.9.9.9"},
@@ -65,6 +67,7 @@ class TestProxyTrustEnabledRequiresTrustedPeer:
         """An attacker hitting the API directly cannot spoof IP."""
         monkeypatch.setattr(settings, "TRUST_PROXY_HEADERS", True)
         monkeypatch.setattr(settings, "TRUSTED_PROXIES", "10.0.0.1")
+        monkeypatch.setattr(settings, "trusted_proxies_list", ["10.0.0.1"])
         req = _make_request(
             client_host="203.0.113.5",  # NOT in TRUSTED_PROXIES
             headers={"X-Forwarded-For": "1.2.3.4"},
@@ -75,6 +78,7 @@ class TestProxyTrustEnabledRequiresTrustedPeer:
     def test_real_ip_fallback_when_xff_absent(self, monkeypatch):
         monkeypatch.setattr(settings, "TRUST_PROXY_HEADERS", True)
         monkeypatch.setattr(settings, "TRUSTED_PROXIES", "10.0.0.1")
+        monkeypatch.setattr(settings, "trusted_proxies_list", ["10.0.0.1"])
         req = _make_request(
             client_host="10.0.0.1",
             headers={"X-Real-IP": "1.2.3.4"},
@@ -85,6 +89,7 @@ class TestProxyTrustEnabledRequiresTrustedPeer:
         """Safe-by-default even when TRUST_PROXY_HEADERS=true."""
         monkeypatch.setattr(settings, "TRUST_PROXY_HEADERS", True)
         monkeypatch.setattr(settings, "TRUSTED_PROXIES", "")
+        monkeypatch.setattr(settings, "trusted_proxies_list", [])
         req = _make_request(
             client_host="10.0.0.1",
             headers={"X-Forwarded-For": "1.2.3.4"},
@@ -95,6 +100,7 @@ class TestProxyTrustEnabledRequiresTrustedPeer:
         """Multi-hop XFF returns the original client (leftmost)."""
         monkeypatch.setattr(settings, "TRUST_PROXY_HEADERS", True)
         monkeypatch.setattr(settings, "TRUSTED_PROXIES", "10.0.0.1")
+        monkeypatch.setattr(settings, "trusted_proxies_list", ["10.0.0.1"])
         req = _make_request(
             client_host="10.0.0.1",
             headers={"X-Forwarded-For": "  1.2.3.4 , 5.6.7.8 , 10.0.0.1 "},
@@ -105,10 +111,18 @@ class TestProxyTrustEnabledRequiresTrustedPeer:
 class TestTrustedProxiesListParse:
     """Pure config helper covering whitespace handling."""
 
-    def test_list_strips_whitespace_and_skips_empty(self, monkeypatch):
-        monkeypatch.setattr(settings, "TRUSTED_PROXIES", "  10.0.0.1 ,, 127.0.0.1 ,")
-        assert settings.trusted_proxies_list == ["10.0.0.1", "127.0.0.1"]
+    def test_list_strips_whitespace_and_skips_empty(self):
+        s = Settings(
+            SECRET_KEY="this-is-a-very-secure-secret-key-with-sufficient-length",
+            DATABASE_URL="sqlite:///test.db",
+            TRUSTED_PROXIES="  10.0.0.1 ,, 127.0.0.1 ,",
+        )
+        assert s.trusted_proxies_list == ["10.0.0.1", "127.0.0.1"]
 
-    def test_list_empty_when_unset(self, monkeypatch):
-        monkeypatch.setattr(settings, "TRUSTED_PROXIES", "")
-        assert settings.trusted_proxies_list == []
+    def test_list_empty_when_unset(self):
+        s = Settings(
+            SECRET_KEY="this-is-a-very-secure-secret-key-with-sufficient-length",
+            DATABASE_URL="sqlite:///test.db",
+            TRUSTED_PROXIES="",
+        )
+        assert s.trusted_proxies_list == []
