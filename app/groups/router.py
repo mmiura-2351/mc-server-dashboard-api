@@ -109,26 +109,26 @@ async def list_groups(
 ):
     """List groups visible to the current user (Phase 1 = all groups).
 
-    Issue #76 (Phase 1): adds ``page`` / ``size`` query parameters and
-    the canonical ``pagination`` response block. ``total`` continues to
-    reflect the full filtered count so legacy clients keep working.
-    The slice is computed in-memory — switching to a SQL-side
-    ``LIMIT/OFFSET`` is tracked as part of the broader pagination
-    migration follow-up.
+    Pagination is handled SQL-side via LIMIT/OFFSET (Issue #365).
+    ``total`` reflects the full filtered count so legacy clients keep
+    working.
     """
     try:
         from app.core.pagination import build_pagination_meta
 
-        entities = await group_service.list_groups(
-            actor_id=current_user.id, group_type=group_type
+        result = await group_service.list_groups(
+            actor_id=current_user.id,
+            group_type=group_type,
+            page=page,
+            size=size,
         )
-        total = len(entities)
-        start = (page - 1) * size
-        end = start + size
-        sliced = entities[start:end]
-        responses = [_entity_to_response(e) for e in sliced]
-        pagination = build_pagination_meta(total=total, page=page, size=size)
-        return GroupListResponse(groups=responses, total=total, pagination=pagination)
+        responses = [_entity_to_response(e) for e in result.entities]
+        pagination = build_pagination_meta(
+            total=result.total, page=result.page, size=result.size
+        )
+        return GroupListResponse(
+            groups=responses, total=result.total, pagination=pagination
+        )
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

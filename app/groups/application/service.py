@@ -23,6 +23,7 @@ from app.groups.domain.entities import (
     AttachServerGroupCommand,
     CreateGroupCommand,
     GroupEntity,
+    GroupListPage,
     GroupListSpec,
     UpdateGroupCommand,
 )
@@ -139,9 +140,11 @@ class GroupService:
         self,
         actor_id: int,
         group_type: Optional[GroupType] = None,
-    ) -> List[GroupEntity]:
+        page: int = 1,
+        size: int = 50,
+    ) -> GroupListPage:
         """List groups visible to the viewer (Phase 1 = all groups)."""
-        spec = GroupListSpec(type=group_type)
+        spec = GroupListSpec(type=group_type, page=page, size=size)
         async with self._uow as uow:
             return await uow.groups.list(spec)
 

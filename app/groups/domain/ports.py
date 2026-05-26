@@ -25,6 +25,7 @@ from app.groups.domain.entities import (
     AttachServerGroupCommand,
     CreateGroupCommand,
     GroupEntity,
+    GroupListPage,
     GroupListSpec,
     ServerGroupEntity,
     UpdateGroupCommand,
@@ -57,7 +58,7 @@ class GroupRepository(Protocol):
         self, owner_id: int, name: str
     ) -> Optional[GroupEntity]: ...
 
-    async def list(self, spec: GroupListSpec) -> List[GroupEntity]: ...
+    async def list(self, spec: GroupListSpec) -> GroupListPage: ...
 
     # ----- Writes -----
 

@@ -29,6 +29,7 @@ from app.groups.domain.entities import (
     AttachServerGroupCommand,
     CreateGroupCommand,
     GroupEntity,
+    GroupListPage,
     GroupListSpec,
     ServerGroupEntity,
     UpdateGroupCommand,
@@ -108,12 +109,21 @@ class SqlAlchemyGroupRepository:
         )
         return _group_to_entity(row) if row else None
 
-    async def list(self, spec: GroupListSpec) -> List[GroupEntity]:
+    async def list(self, spec: GroupListSpec) -> GroupListPage:
         # Phase 1 visibility: all authenticated users see all groups.
         query = self.db.query(Group)
         if spec.type is not None:
             query = query.filter(Group.type == spec.type)
-        return [_group_to_entity(r) for r in query.all()]
+
+        total = query.count()
+        rows = query.offset((spec.page - 1) * spec.size).limit(spec.size).all()
+
+        return GroupListPage(
+            entities=[_group_to_entity(r) for r in rows],
+            total=total,
+            page=spec.page,
+            size=spec.size,
+        )
 
     # ===================
     # Writes

@@ -23,6 +23,7 @@ from app.groups.domain.entities import (
     AttachServerGroupCommand,
     CreateGroupCommand,
     GroupEntity,
+    GroupListPage,
     GroupListSpec,
     ServerGroupEntity,
     UpdateGroupCommand,
@@ -55,11 +56,20 @@ class FakeGroupRepository:
                 return entity
         return None
 
-    async def list(self, spec: GroupListSpec) -> List[GroupEntity]:
+    async def list(self, spec: GroupListSpec) -> GroupListPage:
         rows = list(self._records.values())
         if spec.type is not None:
             rows = [r for r in rows if r.type == spec.type]
-        return rows
+        total = len(rows)
+        start = (spec.page - 1) * spec.size
+        end = start + spec.size
+        sliced = rows[start:end]
+        return GroupListPage(
+            entities=sliced,
+            total=total,
+            page=spec.page,
+            size=spec.size,
+        )
 
     # ----- Writes -----
 
