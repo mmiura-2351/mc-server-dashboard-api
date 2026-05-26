@@ -17,6 +17,7 @@ See ``docs/CONFIGURATION.md`` for the full reference and load order.
 
 from __future__ import annotations
 
+import functools
 import os
 from enum import Enum
 from typing import Any, Dict, List, Literal, Optional
@@ -622,7 +623,7 @@ class Settings(BaseSettings):
     # Properties
     # ------------------------------------------------------------------
 
-    @property
+    @functools.cached_property
     def cors_origins_list(self) -> List[str]:
         """Parse CORS origins from comma-separated string"""
         if not self.CORS_ORIGINS:
@@ -631,7 +632,7 @@ class Settings(BaseSettings):
             origin.strip() for origin in self.CORS_ORIGINS.split(",") if origin.strip()
         ]
 
-    @property
+    @functools.cached_property
     def trusted_proxies_list(self) -> List[str]:
         """Parse TRUSTED_PROXIES from a comma-separated string.
 
@@ -664,7 +665,7 @@ class Settings(BaseSettings):
         """Check if running in staging environment"""
         return self.ENVIRONMENT == Environment.STAGING
 
-    @property
+    @functools.cached_property
     def java_discovery_paths_list(self) -> List[str]:
         """Parse Java discovery paths from comma-separated string"""
         if not self.JAVA_DISCOVERY_PATHS:
