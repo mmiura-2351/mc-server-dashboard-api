@@ -95,11 +95,13 @@ class TestSemaphoreRegistry:
         monkeypatch.setenv("MAX_CONCURRENT_WEBSOCKETS", "50")
         monkeypatch.setenv("FILE_IO_SEMAPHORE_LIMIT", "8")
 
-        import importlib
+        # Rebuild the module-level `settings` from the patched env without
+        # reloading the module — `importlib.reload(app.core.config)` would
+        # replace the `Settings` class object too, breaking `isinstance`
+        # checks in tests that imported the original class.
+        from app.core import config as config_module
 
-        import app.core.config
-
-        importlib.reload(app.core.config)
+        monkeypatch.setattr(config_module, "settings", config_module.Settings())
 
         registry = SemaphoreRegistry()
         registry.initialize()
@@ -116,11 +118,9 @@ class TestSemaphoreRegistry:
         monkeypatch.setenv("SECRET_KEY", "a" * 32)
         monkeypatch.setenv("DATABASE_URL", "sqlite:///./test.db")
 
-        import importlib
+        from app.core import config as config_module
 
-        import app.core.config
-
-        importlib.reload(app.core.config)
+        monkeypatch.setattr(config_module, "settings", config_module.Settings())
 
         registry = SemaphoreRegistry()
         registry.initialize()
