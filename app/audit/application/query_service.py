@@ -31,9 +31,9 @@ class AuditQueryService:
     ) -> tuple[List[AuditLogEntity], int]:
         """Return one page of logs alongside the total filtered count."""
         offset = (page - 1) * page_size
-        logs = await self._repo.list_logs(filters, limit=page_size, offset=offset)
-        total = await self._repo.count_logs(filters)
-        return logs, total
+        return await self._repo.list_logs_with_count(
+            filters, limit=page_size, offset=offset
+        )
 
     async def list_security_alerts(
         self, severity: Optional[str], limit: int

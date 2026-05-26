@@ -91,6 +91,21 @@ class FakeAuditRepository:
     async def count_logs(self, filters: LogFilters) -> int:
         return len(self._filtered(filters))
 
+    async def list_logs_with_count(
+        self,
+        filters: LogFilters,
+        *,
+        limit: int,
+        offset: int,
+    ) -> tuple[List[AuditLogEntity], int]:
+        filtered = self._filtered(filters)
+        rows = sorted(
+            filtered,
+            key=lambda r: r.created_at or datetime.min.replace(tzinfo=timezone.utc),
+            reverse=True,
+        )
+        return rows[offset : offset + limit], len(filtered)
+
     async def list_security_alerts(
         self, severity: Optional[str], limit: int
     ) -> List[AuditLogEntity]:

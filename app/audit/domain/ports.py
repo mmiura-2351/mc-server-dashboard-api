@@ -51,6 +51,14 @@ class AuditRepository(Protocol):
 
     async def count_logs(self, filters: LogFilters) -> int: ...
 
+    async def list_logs_with_count(
+        self,
+        filters: LogFilters,
+        *,
+        limit: int,
+        offset: int,
+    ) -> tuple[List[AuditLogEntity], int]: ...
+
     async def list_security_alerts(
         self, severity: Optional[str], limit: int
     ) -> List[AuditLogEntity]: ...
