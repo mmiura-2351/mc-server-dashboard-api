@@ -20,8 +20,26 @@ class ConnectionManager:
         self.user_connections: Dict[WebSocket, User] = {}
         self.server_log_tasks: Dict[int, asyncio.Task] = {}
 
-    async def connect(self, websocket: WebSocket, server_id: int, user: User):
-        await websocket.accept()
+    async def connect(self, websocket: WebSocket, server_id: int, user: User) -> bool:
+        from app.core.concurrency import get_semaphores
+
+        sema = get_semaphores().websocket
+        if sema.in_use >= sema.limit:
+            await websocket.accept()
+            await websocket.close(code=1013, reason="Connection limit reached")
+            logger.warning(
+                "WebSocket connection rejected for server %d (limit=%d reached)",
+                server_id,
+                sema.limit,
+            )
+            return False
+
+        await sema.acquire()
+        try:
+            await websocket.accept()
+        except Exception:
+            sema.release()
+            raise
 
         if server_id not in self.active_connections:
             self.active_connections[server_id] = set()
@@ -39,6 +57,7 @@ class ConnectionManager:
             self.server_log_tasks[server_id] = task
 
         logger.info(f"WebSocket connected for server {server_id} by user {user.username}")
+        return True
 
     def _on_log_task_done(self, task: asyncio.Task) -> None:
         """Surface unexpected exceptions from background log-streaming tasks.
@@ -56,7 +75,9 @@ class ConnectionManager:
 
     async def disconnect(self, websocket: WebSocket, server_id: int):
         task_to_await: Optional[asyncio.Task] = None
+        was_tracked = False
         if server_id in self.active_connections:
+            was_tracked = websocket in self.active_connections[server_id]
             self.active_connections[server_id].discard(websocket)
 
             # Stop log streaming if no more connections for this server
@@ -65,10 +86,10 @@ class ConnectionManager:
                 del self.active_connections[server_id]
 
         if websocket in self.user_connections:
-            user = self.user_connections[websocket]
             del self.user_connections[websocket]
             logger.info(
-                f"WebSocket disconnected for server {server_id} by user {user.username}"
+                "WebSocket disconnected for server %d",
+                server_id,
             )
 
         # Await the cancelled task outside the bookkeeping block so the
@@ -86,6 +107,11 @@ class ConnectionManager:
                 logger.warning(
                     f"Log streaming task for server {server_id} raised on shutdown: {e}"
                 )
+
+        if was_tracked:
+            from app.core.concurrency import get_semaphores
+
+            get_semaphores().websocket.release()
 
     async def send_to_server_connections(self, server_id: int, message: dict):
         if server_id in self.active_connections:
@@ -261,7 +287,9 @@ class WebSocketService:
             await websocket.close(code=1008, reason="Server not found")
             return
 
-        await self.connection_manager.connect(websocket, server_id, user)
+        connected = await self.connection_manager.connect(websocket, server_id, user)
+        if not connected:
+            return
 
         try:
             # Send initial server status

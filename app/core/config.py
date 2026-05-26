@@ -192,6 +192,13 @@ class Settings(BaseSettings):
     # 0 to disable enforcement (not recommended for production).
     FILE_MAX_UPLOAD_BYTES: int = 100 * 1024 * 1024  # 100 MiB
 
+    # Concurrency control (Issue #351). Semaphore limits that cap the
+    # number of concurrent heavy I/O operations to prevent resource
+    # exhaustion on shared hosts.
+    MAX_CONCURRENT_BACKUPS: int = 2
+    MAX_CONCURRENT_WEBSOCKETS: int = 100
+    FILE_IO_SEMAPHORE_LIMIT: int = 10
+
     # Backup directory housekeeping (Issue #284)
     BACKUPS_PENDING_RETENTION_HOURS: int = 24
     BACKUPS_FAILED_RETENTION_DAYS: int = 30
@@ -443,6 +450,27 @@ class Settings(BaseSettings):
             raise ValueError("DB_POOL_RECYCLE must be between -1 and 86400 seconds")
         return v
 
+    @field_validator("MAX_CONCURRENT_BACKUPS")
+    @classmethod
+    def validate_max_concurrent_backups(cls, v: int) -> int:
+        if v < 1 or v > 20:
+            raise ValueError("MAX_CONCURRENT_BACKUPS must be between 1 and 20")
+        return v
+
+    @field_validator("MAX_CONCURRENT_WEBSOCKETS")
+    @classmethod
+    def validate_max_concurrent_websockets(cls, v: int) -> int:
+        if v < 1 or v > 10000:
+            raise ValueError("MAX_CONCURRENT_WEBSOCKETS must be between 1 and 10000")
+        return v
+
+    @field_validator("FILE_IO_SEMAPHORE_LIMIT")
+    @classmethod
+    def validate_file_io_semaphore_limit(cls, v: int) -> int:
+        if v < 1 or v > 100:
+            raise ValueError("FILE_IO_SEMAPHORE_LIMIT must be between 1 and 100")
+        return v
+
     @field_validator("FILE_MAX_UPLOAD_BYTES")
     @classmethod
     def validate_file_max_upload_bytes(cls, v: int) -> int:
@@ -630,6 +658,22 @@ class Settings(BaseSettings):
                     f"(got non-https entry: {origin!r})"
                 )
 
+        return self
+
+    @model_validator(mode="after")
+    def validate_concurrency_limits(self) -> "Settings":
+        """Ensure MAX_CONCURRENT_BACKUPS <= FILE_IO_SEMAPHORE_LIMIT.
+
+        Backup creation is a file-IO-heavy operation that also acquires
+        the file_io semaphore, so the backup concurrency ceiling must
+        not exceed the file-IO pool size.
+        """
+        if self.MAX_CONCURRENT_BACKUPS > self.FILE_IO_SEMAPHORE_LIMIT:
+            raise ValueError(
+                f"MAX_CONCURRENT_BACKUPS ({self.MAX_CONCURRENT_BACKUPS}) "
+                f"must not exceed FILE_IO_SEMAPHORE_LIMIT "
+                f"({self.FILE_IO_SEMAPHORE_LIMIT})"
+            )
         return self
 
     @model_validator(mode="after")
