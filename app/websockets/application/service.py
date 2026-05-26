@@ -75,7 +75,9 @@ class ConnectionManager:
 
     async def disconnect(self, websocket: WebSocket, server_id: int):
         task_to_await: Optional[asyncio.Task] = None
+        was_tracked = False
         if server_id in self.active_connections:
+            was_tracked = websocket in self.active_connections[server_id]
             self.active_connections[server_id].discard(websocket)
 
             # Stop log streaming if no more connections for this server
@@ -84,10 +86,10 @@ class ConnectionManager:
                 del self.active_connections[server_id]
 
         if websocket in self.user_connections:
-            user = self.user_connections[websocket]
             del self.user_connections[websocket]
             logger.info(
-                f"WebSocket disconnected for server {server_id} by user {user.username}"
+                "WebSocket disconnected for server %d",
+                server_id,
             )
 
         # Await the cancelled task outside the bookkeeping block so the
@@ -106,9 +108,10 @@ class ConnectionManager:
                     f"Log streaming task for server {server_id} raised on shutdown: {e}"
                 )
 
-        from app.core.concurrency import get_semaphores
+        if was_tracked:
+            from app.core.concurrency import get_semaphores
 
-        get_semaphores().websocket.release()
+            get_semaphores().websocket.release()
 
     async def send_to_server_connections(self, server_id: int, message: dict):
         if server_id in self.active_connections:

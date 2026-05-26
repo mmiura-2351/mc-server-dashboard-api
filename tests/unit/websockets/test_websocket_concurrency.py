@@ -94,3 +94,23 @@ class TestWebSocketConcurrency:
 
         await mgr.disconnect(ws, 1)
         assert reg.websocket.in_use == 0
+
+    @pytest.mark.asyncio
+    async def test_double_disconnect_does_not_corrupt_semaphore(
+        self, _patch_semaphores
+    ):
+        reg = _patch_semaphores
+        mgr = ConnectionManager()
+        mgr._stream_server_logs = AsyncMock()
+
+        ws = _make_websocket()
+        user = _make_user()
+
+        await mgr.connect(ws, 1, user)
+        assert reg.websocket.in_use == 1
+
+        await mgr.disconnect(ws, 1)
+        assert reg.websocket.in_use == 0
+
+        await mgr.disconnect(ws, 1)
+        assert reg.websocket.in_use == 0

@@ -77,6 +77,14 @@ class TestConcurrencySemaphore:
 
         assert sema.in_use == 0
 
+    @pytest.mark.asyncio
+    async def test_release_without_acquire_is_noop(self):
+        sema = ConcurrencySemaphore("test", limit=2)
+        assert sema.in_use == 0
+
+        sema.release()
+        assert sema.in_use == 0
+
 
 class TestSemaphoreRegistry:
     @pytest.mark.asyncio

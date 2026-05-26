@@ -54,6 +54,13 @@ class ConcurrencySemaphore:
         )
 
     def release(self) -> None:
+        if self._in_use <= 0:
+            logger.warning(
+                "Semaphore %s: release called with in_use=%d; ignoring",
+                self.name,
+                self._in_use,
+            )
+            return
         self._in_use -= 1
         self._semaphore.release()
         logger.debug(
