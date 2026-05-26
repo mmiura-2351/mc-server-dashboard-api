@@ -284,7 +284,7 @@ Cross-cutting concerns are not embedded in the domain core. They are exposed as 
 |---|---|---|---|
 | Persistence | `<Entity>Repository` | SQLAlchemy adapter | One Port per aggregate root |
 | Transactions / UoW | `UnitOfWork` | SQLAlchemy-backed | Spans multiple repositories within a use case |
-| Event publication | `EventPublisher` | WebSocket-backed publisher | Used for real-time updates |
+| Event publication | `RealTimeServerCommands` collaborator (no abstract Port yet — see §7.2) | WebSocket-backed publisher | Used for real-time updates |
 | External APIs | `<Service>Client` (e.g., `MinecraftApiClient`) | aiohttp-backed | Retry / fallback handled at the adapter |
 | Permission checks | `PermissionChecker` | Role-based adapter | Decoupled so it can later switch to per-operation user grants without touching use cases |
 | Time | `Clock` | `SystemClock` | Test code injects `FixedClock` |
@@ -292,6 +292,30 @@ Cross-cutting concerns are not embedded in the domain core. They are exposed as 
 | Process management | `ServerProcessRunner` | Subprocess adapter | Isolates use cases from `asyncio.subprocess` details |
 
 > **On authorization**: It is one Port among many. The current default is role-based; the architecture does not assume that. Use cases call `checker.can(user, "<operation>")` and remain unaware of how the answer is computed.
+
+### 7.1 Audit Logging Pattern
+
+Audit logging is a cross-cutting concern that every domain emits but no domain owns. The target shape consists of a Port, a request-scoped middleware that batches writes, and a fire-after-commit rule on the caller side.
+
+- **Port** — `AuditWriter` in `app/audit/domain/ports.py` exposes a single `record(command: AuditEventCommand) -> None` method. The method is **sync** by design (see §4.1's discussion of sync Ports), and the Port's docstring states the **"must not raise"** contract: an audit failure must never block the calling business operation; errors are logged and swallowed inside the adapter.
+- **Request-scoped batching** — `app/middleware/audit_middleware.py` installs an `AuditTracker` on `request.state` for every auditable request. Calls to `AuditWriter.record(...)` are buffered into that tracker and flushed to the database once, at the end of the request lifecycle (`AuditTracker.flush_events`). This keeps audit writes off the hot path of the business transaction and means audit failures cannot poison the business commit.
+- **DI wiring** — Use cases receive the writer through their constructor. `app/groups/api/dependencies.py::get_audit_writer` is the reference factory: it pulls the request's `AuditTracker` and returns a `SqlAlchemyAuditWriter` bound to it, falling back to a direct-write path when no tracker is present (e.g. background tasks).
+- **Fire-after-commit** — Use cases must record the audit event **after** the domain transaction has committed, never inside the unit-of-work block. See `app/groups/application/service.py::GroupService.create_group` (around line 126) for the canonical shape: `await uow.commit()` first, then `self._audit.record(...)` outside the `async with` block. This guarantees we never log an event for a transaction that was rolled back.
+
+New domains adopting this pattern should: (a) inject `AuditWriter` via the domain's `api/dependencies.py`, (b) call `record` only after commit, and (c) rely on the Port's "must not raise" contract — wrapping each call in `try/except` at the use-case level is redundant.
+
+Migration of the remaining legacy `AuditService.log_*` static-facade callsites (in `app/auth/`, `app/users/`, `app/files/`) is tracked separately; new code must not introduce new callsites of that facade.
+
+### 7.2 Real-time Event Emission Pattern
+
+WebSocket-driven side effects (running-server commands, log broadcast) are not yet expressed as an abstract Port. Today they follow a collaborator-injection pattern that keeps domain code free of direct `websocket_service` imports.
+
+- **Collaborator, not Port** — `app/servers/application/real_time_server_commands.py` exposes a `RealTimeServerCommandService` (singleton: `real_time_server_commands`) that owns the in-process channel to running Minecraft servers. Domains that need to fire a real-time effect receive this collaborator as a constructor argument rather than importing it at module top.
+- **Injection with a lazy default** — `app/groups/application/file_syncer.py::GroupFileSyncer.__init__` accepts `real_time_commands: Any = None` and, when no override is supplied, lazy-imports the production singleton inside the constructor body. The lazy import is deliberate: it lets unit tests construct `GroupFileSyncer` with an in-memory fake without ever loading the websocket-service chain.
+- **Public wrapper, not attribute access** — Callers go through `GroupFileSyncer.broadcast_group_change(...)`, which forwards to `_real_time_commands.handle_group_change_commands(...)`. Reaching into the private `_real_time_commands` attribute from outside the syncer is a violation (see Issue #262 in the rationale comment).
+- **Restricted direct-import surface** — Direct imports of `app.websockets.application.service.websocket_service` are confined to: `app/main.py` (lifecycle / startup / shutdown), `app/websockets/router.py` (the WS router), and `app/health/adapters/websocket_check.py` (the health adapter). No `application/` or `domain/` module imports `websocket_service` directly.
+
+When a future Port is introduced (`EventPublisher` or equivalent), it will replace the collaborator type at the use-case constructor; the call-site shape (`await collaborator.broadcast_*(...)`) is already correct and will not need to change.
 
 ## 8. Application Lifecycle
 
