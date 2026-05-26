@@ -18,7 +18,7 @@ jobs:
         uses: astral-sh/setup-uv@v5
         with:
           enable-cache: true
-          python-version: "3.13.3"
+          python-version: "3.13.12"
 
       - name: Set up just
         uses: extractions/setup-just@v2
@@ -41,7 +41,7 @@ jobs:
         uses: astral-sh/setup-uv@v5
         with:
           enable-cache: true
-          python-version: "3.13.3"
+          python-version: "3.13.12"
 
       - name: Set up just
         uses: extractions/setup-just@v2
@@ -64,7 +64,7 @@ jobs:
         uses: astral-sh/setup-uv@v5
         with:
           enable-cache: true
-          python-version: "3.13.3"
+          python-version: "3.13.12"
 
       - name: Set up Java
         uses: actions/setup-java@v4
