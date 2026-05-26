@@ -373,7 +373,22 @@ async def get_file_edit_history(
     return FileHistoryListResponse(
         file_path=file_path,
         total_versions=len(history),
-        history=[FileHistoryRecord.model_validate(entity) for entity in history],
+        history=[
+            FileHistoryRecord.model_construct(
+                id=entity.id,
+                server_id=entity.server_id,
+                file_path=entity.file_path,
+                version_number=entity.version_number,
+                backup_file_path=entity.backup_file_path,
+                file_size=entity.file_size,
+                content_hash=entity.content_hash,
+                editor_user_id=entity.editor_user_id,
+                editor_username=entity.editor_username,
+                created_at=entity.created_at,
+                description=entity.description,
+            )
+            for entity in history
+        ],
     )
 
 

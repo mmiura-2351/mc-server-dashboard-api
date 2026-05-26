@@ -56,15 +56,13 @@ def _to_entity(user: User) -> UserEntity:
 
 def _to_schema(entity: UserEntity) -> schemas.User:
     """Adapt a `UserEntity` to the Pydantic response schema."""
-    return schemas.User.model_validate(
-        {
-            "id": entity.id,
-            "username": entity.username,
-            "email": entity.email,
-            "role": entity.role,
-            "is_active": entity.is_active,
-            "is_approved": entity.is_approved,
-        }
+    return schemas.User.model_construct(
+        id=entity.id,
+        username=entity.username,
+        email=entity.email,
+        role=entity.role,
+        is_active=entity.is_active,
+        is_approved=entity.is_approved,
     )
 
 
