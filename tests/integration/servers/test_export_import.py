@@ -275,8 +275,8 @@ class TestServerExportImport:
         response = client.post(
             "/api/v1/servers/import", headers=admin_headers, files=files, data=data
         )
-        # Pydantic validation errors are caught and returned as 500 in current implementation
-        assert response.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
+        # FastAPI returns 422 for empty Form values (validated upstream of the handler)
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
 
     def test_import_server_file_too_large(self, client: TestClient, admin_headers):
         """Test import with file exceeding size limit"""
