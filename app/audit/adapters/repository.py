@@ -128,6 +128,24 @@ class SqlAlchemyAuditRepository:
     async def count_logs(self, filters: LogFilters) -> int:
         return _apply_filters(self._db.query(AuditLog), filters).count()
 
+    async def list_logs_with_count(
+        self,
+        filters: LogFilters,
+        *,
+        limit: int,
+        offset: int,
+    ) -> tuple[List[AuditLogEntity], int]:
+        base_query = _apply_filters(self._db.query(AuditLog), filters)
+        total = base_query.count()
+        rows = (
+            base_query.options(joinedload(AuditLog.user))
+            .order_by(AuditLog.created_at.desc())
+            .offset(offset)
+            .limit(limit)
+            .all()
+        )
+        return [_log_to_entity(r) for r in rows], total
+
     async def list_security_alerts(
         self, severity: Optional[str], limit: int
     ) -> List[AuditLogEntity]:
