@@ -22,6 +22,9 @@ from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
 
+from app.audit.api.dependencies import get_audit_writer
+from app.audit.domain.entities import AuditEventCommand
+from app.audit.domain.ports import AuditWriter
 from app.auth.auth import decode_token
 from app.core.database import get_db
 from app.users import models
@@ -40,6 +43,7 @@ _CREDENTIALS_EXCEPTION = HTTPException(
 
 def _emit_token_revoked_audit(
     *,
+    audit: Optional[AuditWriter],
     request: Optional[Request],
     user: models.User,
     presented_tv: int,
@@ -50,25 +54,35 @@ def _emit_token_revoked_audit(
     (which do not have a ``Request``) silently skip the emit. We also
     swallow any unexpected exception — failing the request because the
     audit sink hiccupped would be worse than the missing log entry.
+
+    Action string, ``resource_type``, ``details`` shape, and IP
+    extraction match the legacy ``AuditService.log_security_event``
+    facade byte-identically (Issue #386 migration).
     """
-    if request is None:
+    if request is None or audit is None:
         return
     try:
-        # Local import to avoid a circular dependency:
-        # `app.audit.application.legacy_facade` imports from
-        # `app.users.adapters` which transitively pulls auth helpers.
-        from app.audit.service import AuditService
+        # Local import to avoid a circular dependency: the legacy
+        # facade transitively pulls auth helpers via its writer wiring.
+        from app.audit.application.legacy_facade import _extract_ip_address
 
-        AuditService.log_security_event(
-            request=request,
-            event_type="token_revoked_post_deactivation",
-            severity="warning",
-            user_id=user.id,
-            details={
-                "username": user.username,
-                "presented_token_version": presented_tv,
-                "current_token_version": user.token_version,
-            },
+        audit_details = {
+            "event_type": "token_revoked_post_deactivation",
+            "severity": "warning",
+            "request_path": str(request.url.path),
+            "user_agent": request.headers.get("User-Agent", "Unknown"),
+            "username": user.username,
+            "presented_token_version": presented_tv,
+            "current_token_version": user.token_version,
+        }
+        audit.record(
+            AuditEventCommand(
+                action="security_token_revoked_post_deactivation",
+                resource_type="security",
+                user_id=user.id,
+                details=audit_details,
+                ip_address=_extract_ip_address(request),
+            )
         )
     except Exception:  # pragma: no cover - audit must never break auth
         logger.exception("Failed to emit token_revoked audit event")
@@ -79,6 +93,7 @@ def _authenticate(
     db: Session,
     *,
     request: Optional[Request] = None,
+    audit: Optional[AuditWriter] = None,
 ) -> models.User:
     """Resolve *token* to a live, non-revoked ``User`` row.
 
@@ -123,7 +138,9 @@ def _authenticate(
 
     current_tv = user.token_version or 0
     if presented_tv != current_tv:
-        _emit_token_revoked_audit(request=request, user=user, presented_tv=presented_tv)
+        _emit_token_revoked_audit(
+            audit=audit, request=request, user=user, presented_tv=presented_tv
+        )
         raise _CREDENTIALS_EXCEPTION
 
     return user
@@ -133,9 +150,10 @@ def get_current_user(
     request: Request,
     token: Annotated[str, Depends(oauth2_scheme)],
     db: Annotated[Session, Depends(get_db)],
+    audit: Annotated[AuditWriter, Depends(get_audit_writer)],
 ) -> models.User:
     """HTTP dependency: resolve the bearer token to a live ``User``."""
-    return _authenticate(token, db, request=request)
+    return _authenticate(token, db, request=request, audit=audit)
 
 
 async def get_current_user_ws(token: str, db: Session) -> models.User:
@@ -146,4 +164,4 @@ async def get_current_user_ws(token: str, db: Session) -> models.User:
     skipped — matching the legacy behaviour of this code path which
     has never written to the audit log.
     """
-    return _authenticate(token, db, request=None)
+    return _authenticate(token, db, request=None, audit=None)

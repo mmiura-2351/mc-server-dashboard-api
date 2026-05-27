@@ -12,7 +12,10 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.security import OAuth2PasswordRequestForm
 from pydantic import BaseModel
 
-from app.audit.service import AuditService
+from app.audit.api.dependencies import get_audit_writer
+from app.audit.application.legacy_facade import _extract_ip_address
+from app.audit.domain.entities import AuditEventCommand
+from app.audit.domain.ports import AuditWriter
 from app.auth.api.dependencies import get_auth_service, get_brute_force_service
 from app.auth.application.brute_force_service import BruteForceService, LockoutStatus
 from app.auth.application.service import AuthService
@@ -24,6 +27,77 @@ from app.users.application.password_policy import get_password_policy
 from app.users.application.service import UserService
 
 router = APIRouter()
+
+
+def _record_authentication_event(
+    audit: AuditWriter,
+    request: Request,
+    *,
+    action: str,
+    user_id: Optional[int] = None,
+    details: Optional[dict] = None,
+    success: bool = True,
+) -> None:
+    """Mirror :class:`AuditService.log_authentication_event` byte-identically.
+
+    Preserves the action-string format
+    ``f"auth_{action}_{'success' if success else 'failure'}"``, the
+    ``user_agent``/``success`` details prefix, ``resource_type``, and
+    the IP-extraction helper used by the legacy facade.
+    """
+    audit_details = {
+        "user_agent": request.headers.get("User-Agent", "Unknown"),
+        "success": success,
+        **(details or {}),
+    }
+    audit.record(
+        AuditEventCommand(
+            action=f"auth_{action}_{'success' if success else 'failure'}",
+            resource_type="authentication",
+            user_id=user_id,
+            details=audit_details,
+            ip_address=_extract_ip_address(request),
+        )
+    )
+
+
+def _record_security_event(
+    audit: AuditWriter,
+    request: Request,
+    *,
+    event_type: str,
+    severity: str,
+    details: Optional[dict] = None,
+    user_id: Optional[int] = None,
+) -> None:
+    """Mirror :class:`AuditService.log_security_event` byte-identically.
+
+    Preserves the ``f"security_{event_type}"`` action, the
+    ``resource_type="security"`` field, and the standard details
+    payload (``event_type``, ``severity``, ``request_path``,
+    ``user_agent``). Falls back to the request-scoped
+    ``user_id_context`` (via ``get_current_user_id``) when ``user_id``
+    is not supplied, matching the legacy facade.
+    """
+    from app.middleware.audit_middleware import get_current_user_id
+
+    effective_user_id = user_id if user_id is not None else get_current_user_id()
+    audit_details = {
+        "event_type": event_type,
+        "severity": severity,
+        "request_path": str(request.url.path),
+        "user_agent": request.headers.get("User-Agent", "Unknown"),
+        **(details or {}),
+    }
+    audit.record(
+        AuditEventCommand(
+            action=f"security_{event_type}",
+            resource_type="security",
+            user_id=effective_user_id,
+            details=audit_details,
+            ip_address=_extract_ip_address(request),
+        )
+    )
 
 
 class RefreshTokenRequest(BaseModel):
@@ -130,6 +204,7 @@ async def login(
     user_service: UserService = Depends(get_user_service),
     auth_service: AuthService = Depends(get_auth_service),
     brute_force: BruteForceService = Depends(get_brute_force_service),
+    audit: AuditWriter = Depends(get_audit_writer),
 ):
     ip_address = _extract_ip(request)
     user_agent = request.headers.get("User-Agent")
@@ -139,8 +214,9 @@ async def login(
     lockout = await brute_force.check_lockout(username, ip_address)
     if lockout.locked:
         await _artificial_delay()
-        AuditService.log_authentication_event(
-            request=request,
+        _record_authentication_event(
+            audit,
+            request,
             action="login",
             details={
                 "username": username,
@@ -174,9 +250,10 @@ async def login(
             )
             db.commit()
             await _artificial_delay()
-            _audit_lockout_trigger(request, username, triggered)
-            AuditService.log_authentication_event(
-                request=request,
+            _audit_lockout_trigger(audit, request, username, triggered)
+            _record_authentication_event(
+                audit,
+                request,
                 action="login",
                 details={
                     "username": username,
@@ -206,8 +283,9 @@ async def login(
         if warning:
             response.headers["X-Password-Policy-Warning"] = warning
 
-        AuditService.log_authentication_event(
-            request=request,
+        _record_authentication_event(
+            audit,
+            request,
             action="login",
             user_id=user_entity.id,
             details={
@@ -236,9 +314,10 @@ async def login(
                 failure_reason="authentication_error",
             )
             db.commit()
-            _audit_lockout_trigger(request, username, triggered)
-            AuditService.log_authentication_event(
-                request=request,
+            _audit_lockout_trigger(audit, request, username, triggered)
+            _record_authentication_event(
+                audit,
+                request,
                 action="login",
                 details={
                     "username": username,
@@ -251,6 +330,7 @@ async def login(
 
 
 def _audit_lockout_trigger(
+    audit: AuditWriter,
     request: Request,
     username: str,
     triggered: Optional[LockoutStatus],
@@ -258,8 +338,9 @@ def _audit_lockout_trigger(
     if triggered is None:
         return
     if triggered.reason == "account_locked":
-        AuditService.log_security_event(
-            request=request,
+        _record_security_event(
+            audit,
+            request,
             event_type="account_locked",
             severity="warning",
             details={
@@ -268,8 +349,9 @@ def _audit_lockout_trigger(
             },
         )
     elif triggered.reason == "ip_locked":
-        AuditService.log_security_event(
-            request=request,
+        _record_security_event(
+            audit,
+            request,
             event_type="brute_force_ip_blocked",
             severity="warning",
             details={
@@ -285,11 +367,13 @@ async def refresh_access_token(
     request: Request,
     user_service: UserService = Depends(get_user_service),
     auth_service: AuthService = Depends(get_auth_service),
+    audit: AuditWriter = Depends(get_audit_writer),
 ):
     user_id = await auth_service.verify_refresh_token(token_request.refresh_token)
     if not user_id:
-        AuditService.log_authentication_event(
-            request=request,
+        _record_authentication_event(
+            audit,
+            request,
             action="token_refresh",
             details={"reason": "invalid_refresh_token"},
             success=False,
@@ -301,8 +385,9 @@ async def refresh_access_token(
 
     user = await user_service.get_user_by_id(user_id)
     if user is None or not user.is_active:
-        AuditService.log_authentication_event(
-            request=request,
+        _record_authentication_event(
+            audit,
+            request,
             action="token_refresh",
             user_id=user_id,
             details={"reason": "user_inactive_or_not_found"},
@@ -318,8 +403,9 @@ async def refresh_access_token(
     )
     new_refresh_token = await auth_service.create_refresh_token(user.id)
 
-    AuditService.log_authentication_event(
-        request=request,
+    _record_authentication_event(
+        audit,
+        request,
         action="token_refresh",
         user_id=user.id,
         details={"username": user.username},
@@ -335,12 +421,14 @@ async def logout(
     db: DatabaseSession,
     request: Request,
     auth_service: AuthService = Depends(get_auth_service),
+    audit: AuditWriter = Depends(get_audit_writer),
 ):
     user_id = await auth_service.verify_refresh_token(token_request.refresh_token)
     success = await auth_service.revoke_refresh_token(token_request.refresh_token)
     if not success:
-        AuditService.log_authentication_event(
-            request=request,
+        _record_authentication_event(
+            audit,
+            request,
             action="logout",
             user_id=user_id,
             details={"reason": "invalid_refresh_token"},
@@ -350,8 +438,9 @@ async def logout(
             status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid refresh token"
         )
 
-    AuditService.log_authentication_event(
-        request=request,
+    _record_authentication_event(
+        audit,
+        request,
         action="logout",
         user_id=user_id,
         details={"logout_method": "refresh_token_revocation"},

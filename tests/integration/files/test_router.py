@@ -1,14 +1,30 @@
 from datetime import datetime
 from io import BytesIO
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
 from fastapi import HTTPException, status
 
+from app.audit.api.dependencies import get_audit_writer
 from app.core.exceptions import (
     FileOperationException,
 )
+from app.main import app
 from app.types import FileType
 from tests.helpers.auth import auth_headers_for as get_auth_headers
+
+
+@pytest.fixture
+def mock_audit_writer():
+    """Override ``get_audit_writer`` so tests can introspect the
+    :class:`AuditEventCommand` instances passed to ``writer.record``
+    instead of patching the legacy ``AuditService`` static facade
+    (Issue #386 migration).
+    """
+    writer = MagicMock()
+    app.dependency_overrides[get_audit_writer] = lambda: writer
+    yield writer
+    app.dependency_overrides.pop(get_audit_writer, None)
 
 
 class TestFileRouter:
@@ -881,13 +897,18 @@ class TestFileRenameRouter:
 
 
 class TestFileRouterAuditWiring:
-    """Verify ``AuditService.log_file_event`` is invoked from the router
-    for both success and failure paths on the mutating endpoints (#36
-    Phase 1), and that file-domain exceptions surface through the global
-    error handlers with the standard envelope (#35).
+    """Verify the file router emits audit events for both success and
+    failure paths on the mutating endpoints (#36 Phase 1), and that
+    file-domain exceptions surface through the global error handlers
+    with the standard envelope (#35).
+
+    Issue #386: the router now records events via an injected
+    :class:`~app.audit.domain.ports.AuditWriter` rather than calling
+    the static ``AuditService`` facade. Tests override
+    ``get_audit_writer`` with a ``MagicMock`` and assert against the
+    :class:`AuditEventCommand` instance passed to ``writer.record``.
     """
 
-    @patch("app.files.router.AuditService.log_file_event")
     @patch(
         "app.servers.application.authorization.AuthorizationService.check_server_access",
         new_callable=AsyncMock,
@@ -899,7 +920,7 @@ class TestFileRouterAuditWiring:
         mock_write_file,
         mock_can_modify,
         mock_check_access,
-        mock_audit,
+        mock_audit_writer,
         client,
         admin_user,
     ):
@@ -927,17 +948,18 @@ class TestFileRouterAuditWiring:
         )
 
         assert response.status_code == status.HTTP_200_OK
-        mock_audit.assert_called_once()
-        kwargs = mock_audit.call_args.kwargs
-        assert kwargs["action"] == "write"
-        assert kwargs["server_id"] == 1
-        assert kwargs["file_path"] == "server.properties"
-        assert kwargs["details"]["encoding"] == "utf-8"
-        assert kwargs["details"]["backup_created"] is True
-        assert kwargs["details"]["bytes"] == 5
-        assert "duration_ms" in kwargs["details"]
+        mock_audit_writer.record.assert_called_once()
+        command = mock_audit_writer.record.call_args.args[0]
+        assert command.action == "file_write"
+        assert command.resource_type == "file"
+        assert command.resource_id == 1
+        assert command.details["server_id"] == 1
+        assert command.details["file_path"] == "server.properties"
+        assert command.details["encoding"] == "utf-8"
+        assert command.details["backup_created"] is True
+        assert command.details["bytes"] == 5
+        assert "duration_ms" in command.details
 
-    @patch("app.files.router.AuditService.log_file_event")
     @patch(
         "app.servers.application.authorization.AuthorizationService.check_server_access",
         new_callable=AsyncMock,
@@ -949,7 +971,7 @@ class TestFileRouterAuditWiring:
         mock_write_file,
         mock_can_modify,
         mock_check_access,
-        mock_audit,
+        mock_audit_writer,
         client,
         admin_user,
     ):
@@ -978,19 +1000,18 @@ class TestFileRouterAuditWiring:
         assert "SUGGESTED_ACTION" in codes
 
         # Failure audit event was emitted with error_type
-        mock_audit.assert_called_once()
-        kwargs = mock_audit.call_args.kwargs
-        assert kwargs["action"] == "write_failure"
-        assert kwargs["details"]["error_type"] == "FileMissingError"
+        mock_audit_writer.record.assert_called_once()
+        command = mock_audit_writer.record.call_args.args[0]
+        assert command.action == "file_write_failure"
+        assert command.details["error_type"] == "FileMissingError"
 
-    @patch("app.files.router.AuditService.log_file_event")
     @patch("app.servers.application.authorization.AuthorizationService.can_modify_files")
     @patch("app.files.application.management.file_management_service.delete_file")
     def test_delete_file_emits_audit_event_on_success(
         self,
         mock_delete_file,
         mock_can_modify,
-        mock_audit,
+        mock_audit_writer,
         client,
         admin_user,
     ):
@@ -1004,8 +1025,9 @@ class TestFileRouterAuditWiring:
         )
 
         assert response.status_code == status.HTTP_200_OK
-        mock_audit.assert_called_once()
-        assert mock_audit.call_args.kwargs["action"] == "delete"
+        mock_audit_writer.record.assert_called_once()
+        command = mock_audit_writer.record.call_args.args[0]
+        assert command.action == "file_delete"
 
     def test_write_request_size_limit_returns_422(self, client, admin_user):
         """``FileWriteRequest.content`` carries a 50 MiB cap (Issue #35).
@@ -1030,9 +1052,8 @@ class TestIssue341FileRouterContract:
     end-to-end through the FastAPI router.
     """
 
-    @patch("app.files.router.AuditService.log_file_event")
     def test_write_invalid_encoding_returns_422_envelope(
-        self, mock_audit, client, admin_user
+        self, mock_audit_writer, client, admin_user
     ):
         """Unknown encodings are rejected at validation time (#341).
 
@@ -1059,7 +1080,7 @@ class TestIssue341FileRouterContract:
         body = response.json()
         assert body["error"] == "VALIDATION_ERROR"
         # Validation rejection short-circuits the handler so no audit fires.
-        mock_audit.assert_not_called()
+        mock_audit_writer.record.assert_not_called()
 
     @patch(
         "app.servers.application.authorization.AuthorizationService.check_server_access",
