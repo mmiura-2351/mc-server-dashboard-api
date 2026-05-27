@@ -308,11 +308,20 @@ class FileManagementService:
 
         self.validation_service.validate_path_safety(server_path, target_dir)
 
+        # ``UploadFile.filename`` is ``Optional[str]``; reject missing/empty
+        # names explicitly so ``Path(None)`` doesn't surface as a TypeError.
+        # ``Path("..").name`` and ``Path(".").name`` both resolve to ``""``,
+        # so the empty check below also covers bare-traversal inputs.
+        if not file.filename:
+            raise InvalidRequestException("Filename is required for file upload")
+
         # Strip any directory components from the attacker-controlled
         # ``Content-Disposition`` filename, then re-validate the resolved
         # path so traversal sequences (e.g. ``../../other-server/ops.json``)
         # cannot escape ``server_path``.
         safe_name = Path(file.filename).name
+        if not safe_name:
+            raise InvalidRequestException("Invalid filename for file upload")
         target_file = target_dir / safe_name
         self.validation_service.validate_path_safety(server_path, target_file)
 

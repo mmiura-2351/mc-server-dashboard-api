@@ -7,6 +7,7 @@ from fastapi import UploadFile
 from app.core.exceptions import (
     AccessDeniedException,
     FileOperationException,
+    InvalidRequestException,
     ServerNotFoundException,
 )
 from app.files.application.management import file_management_service
@@ -519,6 +520,29 @@ class TestFileManagementService:
             assert result["file"]["name"] == "test.txt"
             assert result["extracted_files"] == []
             mock_aio_file.write.assert_called_once_with(b"file content")
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("bad_name", [None, "", "."])
+    async def test_upload_file_rejects_missing_or_empty_filename(
+        self, mock_server, mock_db, tmp_path, bad_name
+    ):
+        """``UploadFile.filename`` is ``Optional[str]``; reject missing or
+        directory-only inputs (``Path(".").name == ""``) before they reach
+        ``Path(None)`` (TypeError) or land on ``target_dir`` itself."""
+        server_dir = tmp_path / "test_server"
+        server_dir.mkdir()
+        mock_server.directory_path = str(server_dir)
+        mock_db.query.return_value.filter.return_value.one_or_none.return_value = (
+            mock_server
+        )
+
+        mock_file = Mock(spec=UploadFile)
+        mock_file.filename = bad_name
+
+        with pytest.raises(InvalidRequestException):
+            await file_management_service.upload_file(
+                server_id=1, file=mock_file, db=mock_db
+            )
 
     @pytest.mark.asyncio
     async def test_upload_file_strips_traversal_in_filename(
