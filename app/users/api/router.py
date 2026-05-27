@@ -15,7 +15,10 @@ from typing import Optional, Union
 
 from fastapi import APIRouter, Depends, Query, Request
 
-from app.audit.service import AuditService
+from app.audit.api.dependencies import get_audit_writer
+from app.audit.application.legacy_facade import _extract_ip_address
+from app.audit.domain.entities import AuditEventCommand
+from app.audit.domain.ports import AuditWriter
 from app.auth.api.dependencies import get_auth_service
 from app.auth.application.service import AuthService
 from app.auth.dependencies import get_current_user
@@ -70,6 +73,44 @@ def _to_user_with_token_schema(result: UserWithToken) -> schemas.UserWithToken:
     return schemas.UserWithToken(
         user=_to_schema(result.user),
         access_token=result.access_token,
+    )
+
+
+def _record_user_management_event(
+    audit: AuditWriter,
+    request: Request,
+    *,
+    action: str,
+    target_user_id: int,
+    current_user_id: Optional[int] = None,
+    details: Optional[dict] = None,
+) -> None:
+    """Mirror :class:`AuditService.log_user_management_event` byte-identically.
+
+    Preserves the ``f"user_{action}"`` action, ``resource_type="user"``,
+    ``resource_id=target_user_id``, and the
+    ``target_user_id``/``performed_by`` details prefix. Falls back to
+    the request-scoped ``user_id_context`` (via ``get_current_user_id``)
+    when ``current_user_id`` is not supplied, matching the legacy
+    facade.
+    """
+    from app.middleware.audit_middleware import get_current_user_id
+
+    effective_current_user_id = current_user_id or get_current_user_id()
+    audit_details = {
+        "target_user_id": target_user_id,
+        "performed_by": effective_current_user_id,
+        **(details or {}),
+    }
+    audit.record(
+        AuditEventCommand(
+            action=f"user_{action}",
+            resource_type="user",
+            resource_id=target_user_id,
+            user_id=effective_current_user_id,
+            details=audit_details,
+            ip_address=_extract_ip_address(request),
+        )
     )
 
 
@@ -216,6 +257,7 @@ async def deactivate_user(
     current_user: User = Depends(get_current_user),
     service: UserService = Depends(get_user_service),
     auth_service: AuthService = Depends(get_auth_service),
+    audit: AuditWriter = Depends(get_audit_writer),
 ):
     """Admin-only: deactivate *user_id* and revoke all their refresh tokens.
 
@@ -228,8 +270,9 @@ async def deactivate_user(
     """
     updated = await service.deactivate_user(_to_entity(current_user), user_id)
     revoked_count = await auth_service.revoke_all_refresh_tokens_for(user_id)
-    AuditService.log_user_management_event(
-        request=request,
+    _record_user_management_event(
+        audit,
+        request,
         action="deactivated",
         target_user_id=user_id,
         current_user_id=current_user.id,
@@ -247,6 +290,7 @@ async def reactivate_user(
     request: Request,
     current_user: User = Depends(get_current_user),
     service: UserService = Depends(get_user_service),
+    audit: AuditWriter = Depends(get_audit_writer),
 ):
     """Admin-only: restore ``is_active=True`` for a previously deactivated user.
 
@@ -254,8 +298,9 @@ async def reactivate_user(
     access tokens stay rejected and the user must log in afresh.
     """
     updated = await service.reactivate_user(_to_entity(current_user), user_id)
-    AuditService.log_user_management_event(
-        request=request,
+    _record_user_management_event(
+        audit,
+        request,
         action="reactivated",
         target_user_id=user_id,
         current_user_id=current_user.id,

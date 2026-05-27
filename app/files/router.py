@@ -16,7 +16,10 @@ from fastapi import (
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
-from app.audit.application.legacy_facade import AuditService
+from app.audit.api.dependencies import get_audit_writer
+from app.audit.application.legacy_facade import _extract_ip_address
+from app.audit.domain.entities import AuditEventCommand
+from app.audit.domain.ports import AuditWriter
 from app.auth.dependencies import get_current_user
 from app.core.database import get_db
 from app.files.api.dependencies import get_file_history_service
@@ -60,26 +63,44 @@ def _duration_ms(start: float) -> int:
 
 
 def _safe_audit(
+    audit: AuditWriter,
     request: Request,
     action: str,
     server_id: int,
     file_path: str,
     details: Optional[Dict[str, Any]] = None,
 ) -> None:
-    """Wrap :class:`AuditService.log_file_event` so a logging failure
-    can never mask the underlying business outcome (Issue #36 Phase 1).
+    """Emit a file-domain audit event so a logging failure can never
+    mask the underlying business outcome (Issue #36 Phase 1).
+
+    Mirrors the legacy ``AuditService.log_file_event`` facade
+    byte-identically (Issue #386): the ``f"file_{action}"`` action
+    string, ``resource_type="file"``, ``resource_id=server_id``, and
+    the standard ``server_id`` / ``file_path`` / ``file_name`` details
+    prefix are all preserved.
 
     Audit emission goes through the request-scoped tracker which is
     flushed by the middleware; raising here would convert a successful
     write into a 500.
     """
     try:
-        AuditService.log_file_event(
-            request=request,
-            action=action,
-            server_id=server_id,
-            file_path=file_path,
-            details=details or {},
+        from app.middleware.audit_middleware import get_current_user_id
+
+        audit_details = {
+            "server_id": server_id,
+            "file_path": file_path,
+            "file_name": file_path.split("/")[-1] if "/" in file_path else file_path,
+            **(details or {}),
+        }
+        audit.record(
+            AuditEventCommand(
+                action=f"file_{action}",
+                resource_type="file",
+                resource_id=server_id,
+                user_id=get_current_user_id(),
+                details=audit_details,
+                ip_address=_extract_ip_address(request),
+            )
         )
     except Exception:  # pragma: no cover - defensive
         logger.exception("audit_log_failed", extra={"action": action})
@@ -186,6 +207,7 @@ async def upload_file(
     extract_if_archive: bool = Form(False),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
+    audit: AuditWriter = Depends(get_audit_writer),
 ):
     """Upload a file to server directory"""
     if not AuthorizationService.can_modify_files(current_user):
@@ -208,6 +230,7 @@ async def upload_file(
         )
     except Exception as exc:
         _safe_audit(
+            audit,
             request,
             "upload_failure",
             server_id,
@@ -221,6 +244,7 @@ async def upload_file(
         raise
 
     _safe_audit(
+        audit,
         request,
         "upload",
         server_id,
@@ -311,6 +335,7 @@ async def create_directory(
     request: Request,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
+    audit: AuditWriter = Depends(get_audit_writer),
 ):
     """Create a new directory in server"""
     if not AuthorizationService.can_modify_files(current_user):
@@ -327,6 +352,7 @@ async def create_directory(
         )
     except Exception as exc:
         _safe_audit(
+            audit,
             request,
             "create_directory_failure",
             server_id,
@@ -339,6 +365,7 @@ async def create_directory(
         raise
 
     _safe_audit(
+        audit,
         request,
         "create_directory",
         server_id,
@@ -442,6 +469,7 @@ async def restore_from_version(
     db: Session = Depends(get_db),
     file_history_service: FileHistoryService = Depends(get_file_history_service),
     auth: AuthorizationService = Depends(get_authorization_service),
+    audit: AuditWriter = Depends(get_audit_writer),
 ):
     """Restore file from specific version"""
     # Check permissions (Phase 1: all users can restore files)
@@ -464,6 +492,7 @@ async def restore_from_version(
         )
     except Exception as exc:
         _safe_audit(
+            audit,
             request,
             "restore_version_failure",
             server_id,
@@ -483,6 +512,7 @@ async def restore_from_version(
     file_info = FileInfoResponse(**files[0]) if files else None
 
     _safe_audit(
+        audit,
         request,
         "restore_version",
         server_id,
@@ -515,6 +545,7 @@ async def delete_file_version(
     db: Session = Depends(get_db),
     file_history_service: FileHistoryService = Depends(get_file_history_service),
     auth: AuthorizationService = Depends(get_authorization_service),
+    audit: AuditWriter = Depends(get_audit_writer),
 ):
     """Delete specific version (admin only)"""
     # Check admin permissions
@@ -532,6 +563,7 @@ async def delete_file_version(
         )
     except Exception as exc:
         _safe_audit(
+            audit,
             request,
             "delete_version_failure",
             server_id,
@@ -545,6 +577,7 @@ async def delete_file_version(
         raise
 
     _safe_audit(
+        audit,
         request,
         "delete_version",
         server_id,
@@ -646,6 +679,7 @@ async def write_file(
     request: Request,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
+    audit: AuditWriter = Depends(get_audit_writer),
 ):
     """Write content to a file"""
     if not AuthorizationService.can_modify_files(current_user):
@@ -665,6 +699,7 @@ async def write_file(
         )
     except Exception as exc:
         _safe_audit(
+            audit,
             request,
             "write_failure",
             server_id,
@@ -679,6 +714,7 @@ async def write_file(
         raise
 
     _safe_audit(
+        audit,
         request,
         "write",
         server_id,
@@ -703,6 +739,7 @@ async def delete_file(
     request: Request,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
+    audit: AuditWriter = Depends(get_audit_writer),
 ):
     """Delete a file or directory from server"""
     if not AuthorizationService.can_modify_files(current_user):
@@ -718,6 +755,7 @@ async def delete_file(
         )
     except Exception as exc:
         _safe_audit(
+            audit,
             request,
             "delete_failure",
             server_id,
@@ -730,6 +768,7 @@ async def delete_file(
         raise
 
     _safe_audit(
+        audit,
         request,
         "delete",
         server_id,
@@ -751,6 +790,7 @@ async def rename_file(
     request: Request,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
+    audit: AuditWriter = Depends(get_audit_writer),
 ):
     """Rename a file or directory"""
     if not AuthorizationService.can_modify_files(current_user):
@@ -767,6 +807,7 @@ async def rename_file(
         )
     except Exception as exc:
         _safe_audit(
+            audit,
             request,
             "rename_failure",
             server_id,
@@ -780,6 +821,7 @@ async def rename_file(
         raise
 
     _safe_audit(
+        audit,
         request,
         "rename",
         server_id,

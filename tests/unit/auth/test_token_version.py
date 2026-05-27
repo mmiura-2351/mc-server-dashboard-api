@@ -7,7 +7,7 @@ HTTP flow lives in ``tests/integration/auth/test_router.py``.
 """
 
 from datetime import timedelta
-from unittest.mock import patch
+from unittest.mock import MagicMock
 
 import pytest
 from fastapi import HTTPException
@@ -52,37 +52,44 @@ class TestTokenVersionAuthentication:
         assert excinfo.value.status_code == 401
 
     def test_tv_mismatch_emits_audit_event(self, db, test_user):
-        """The ``tv`` mismatch path emits a security audit event."""
+        """The ``tv`` mismatch path emits a security audit event.
+
+        Issue #386: ``_authenticate`` now takes an explicit
+        ``AuditWriter`` rather than reaching for the static
+        ``AuditService`` facade. The mock writer captures the
+        ``AuditEventCommand`` and we assert against the same fields the
+        legacy patch checked.
+        """
         token = create_access_token(
             data={"sub": test_user.username, "tv": test_user.token_version}
         )
         test_user.token_version = (test_user.token_version or 0) + 1
         db.commit()
 
-        with patch(
-            "app.audit.application.legacy_facade.AuditService.log_security_event"
-        ) as mock_log:
-            from starlette.requests import Request
+        mock_writer = MagicMock()
+        from starlette.requests import Request
 
-            scope = {
-                "type": "http",
-                "method": "GET",
-                "path": "/api/v1/users/me",
-                "headers": [(b"user-agent", b"pytest")],
-                "query_string": b"",
-                "client": ("127.0.0.1", 0),
-                "server": ("testserver", 80),
-                "scheme": "http",
-                "root_path": "",
-            }
-            request = Request(scope)
-            with pytest.raises(HTTPException):
-                _authenticate(token, db, request=request)
+        scope = {
+            "type": "http",
+            "method": "GET",
+            "path": "/api/v1/users/me",
+            "headers": [(b"user-agent", b"pytest")],
+            "query_string": b"",
+            "client": ("127.0.0.1", 0),
+            "server": ("testserver", 80),
+            "scheme": "http",
+            "root_path": "",
+        }
+        request = Request(scope)
+        with pytest.raises(HTTPException):
+            _authenticate(token, db, request=request, audit=mock_writer)
 
-        assert mock_log.called
-        call_kwargs = mock_log.call_args.kwargs
-        assert call_kwargs["event_type"] == "token_revoked_post_deactivation"
-        assert call_kwargs["severity"] == "warning"
+        assert mock_writer.record.called
+        command = mock_writer.record.call_args.args[0]
+        assert command.action == "security_token_revoked_post_deactivation"
+        assert command.resource_type == "security"
+        assert command.details["event_type"] == "token_revoked_post_deactivation"
+        assert command.details["severity"] == "warning"
 
     def test_inactive_user_rejected_even_with_matching_tv(self, db, test_user):
         """Defense-in-depth: ``is_active=False`` blocks auth regardless of tv."""
