@@ -310,8 +310,8 @@ class FileManagementService:
 
         # ``UploadFile.filename`` is ``Optional[str]``; reject missing/empty
         # names explicitly so ``Path(None)`` doesn't surface as a TypeError.
-        # ``Path("..").name`` and ``Path(".").name`` both resolve to ``""``,
-        # so the empty check below also covers bare-traversal inputs.
+        # ``Path(".").name`` resolves to ``""``; ``Path("..").name`` resolves
+        # to ``".."`` which is caught by the downstream ``validate_path_safety``.
         if not file.filename:
             raise InvalidRequestException("Filename is required for file upload")
 

@@ -522,13 +522,22 @@ class TestFileManagementService:
             mock_aio_file.write.assert_called_once_with(b"file content")
 
     @pytest.mark.asyncio
-    @pytest.mark.parametrize("bad_name", [None, "", "."])
+    @pytest.mark.parametrize(
+        ("bad_name", "expected_exc"),
+        [
+            (None, InvalidRequestException),
+            ("", InvalidRequestException),
+            (".", InvalidRequestException),
+            ("..", AccessDeniedException),
+        ],
+    )
     async def test_upload_file_rejects_missing_or_empty_filename(
-        self, mock_server, mock_db, tmp_path, bad_name
+        self, mock_server, mock_db, tmp_path, bad_name, expected_exc
     ):
         """``UploadFile.filename`` is ``Optional[str]``; reject missing or
         directory-only inputs (``Path(".").name == ""``) before they reach
-        ``Path(None)`` (TypeError) or land on ``target_dir`` itself."""
+        ``Path(None)`` (TypeError) or land on ``target_dir`` itself.
+        ``".."`` passes the empty check but is caught by ``validate_path_safety``."""
         server_dir = tmp_path / "test_server"
         server_dir.mkdir()
         mock_server.directory_path = str(server_dir)
@@ -539,7 +548,7 @@ class TestFileManagementService:
         mock_file = Mock(spec=UploadFile)
         mock_file.filename = bad_name
 
-        with pytest.raises(InvalidRequestException):
+        with pytest.raises(expected_exc):
             await file_management_service.upload_file(
                 server_id=1, file=mock_file, db=mock_db
             )
