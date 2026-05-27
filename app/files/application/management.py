@@ -308,15 +308,21 @@ class FileManagementService:
 
         self.validation_service.validate_path_safety(server_path, target_dir)
 
-        # Upload file
-        target_file = target_dir / file.filename
+        # Strip any directory components from the attacker-controlled
+        # ``Content-Disposition`` filename, then re-validate the resolved
+        # path so traversal sequences (e.g. ``../../other-server/ops.json``)
+        # cannot escape ``server_path``.
+        safe_name = Path(file.filename).name
+        target_file = target_dir / safe_name
+        self.validation_service.validate_path_safety(server_path, target_file)
+
         await self.operation_service.upload_file(file, target_file)
 
         # Get file info for response
         file_info = await self.info_service.get_file_info(target_file, server_path)
 
         result = {
-            "message": f"File '{file.filename}' uploaded successfully",
+            "message": f"File '{safe_name}' uploaded successfully",
             "file": file_info,
             "extracted_files": [],
         }
@@ -333,7 +339,7 @@ class FileManagementService:
 
             # Update message to reflect extraction
             result["message"] = (
-                f"Archive '{file.filename}' uploaded and extracted successfully"
+                f"Archive '{safe_name}' uploaded and extracted successfully"
             )
 
         return result
