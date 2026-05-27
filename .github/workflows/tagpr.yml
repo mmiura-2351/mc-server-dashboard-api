@@ -24,7 +24,11 @@ jobs:
       - name: Set up uv
         uses: astral-sh/setup-uv@v5
         with:
-          enable-cache: true
+          # Cache disabled: tagpr only runs `uv lock` (via .tagpr's
+          # postVersionCommand) when opening/refreshing the release PR.
+          # On the release-tagging push no uv command runs, leaving the
+          # cache dir empty and breaking the post-step cache save.
+          enable-cache: false
           python-version: "3.13.12"
 
       - name: Run tagpr
