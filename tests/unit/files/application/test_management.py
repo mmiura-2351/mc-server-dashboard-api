@@ -7,6 +7,7 @@ from fastapi import UploadFile
 from app.core.exceptions import (
     AccessDeniedException,
     FileOperationException,
+    InvalidRequestException,
     ServerNotFoundException,
 )
 from app.files.application.management import file_management_service
@@ -492,10 +493,12 @@ class TestFileManagementService:
             mock_resolve.side_effect = [
                 Path("/servers/test_server"),  # target_dir.resolve()
                 Path("/servers/test_server"),  # server_path.resolve()
+                Path("/servers/test_server/test.txt"),  # target_file.resolve()
+                Path("/servers/test_server"),  # server_path.resolve() (2nd check)
             ]
 
             # Mock all file system operations
-            with patch("pathlib.Path.mkdir") as mock_mkdir:
+            with patch("pathlib.Path.mkdir"):
                 with patch("pathlib.Path.stat") as mock_stat:
                     mock_stat.return_value.st_size = 12  # len(b"file content")
                     mock_stat.return_value.st_mtime = 1640995200
@@ -517,6 +520,78 @@ class TestFileManagementService:
             assert result["file"]["name"] == "test.txt"
             assert result["extracted_files"] == []
             mock_aio_file.write.assert_called_once_with(b"file content")
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("bad_name", "expected_exc"),
+        [
+            (None, InvalidRequestException),
+            ("", InvalidRequestException),
+            (".", InvalidRequestException),
+            ("..", AccessDeniedException),
+        ],
+    )
+    async def test_upload_file_rejects_missing_or_empty_filename(
+        self, mock_server, mock_db, tmp_path, bad_name, expected_exc
+    ):
+        """``UploadFile.filename`` is ``Optional[str]``; reject missing or
+        directory-only inputs (``Path(".").name == ""``) before they reach
+        ``Path(None)`` (TypeError) or land on ``target_dir`` itself.
+        ``".."`` passes the empty check but is caught by ``validate_path_safety``."""
+        server_dir = tmp_path / "test_server"
+        server_dir.mkdir()
+        mock_server.directory_path = str(server_dir)
+        mock_db.query.return_value.filter.return_value.one_or_none.return_value = (
+            mock_server
+        )
+
+        mock_file = Mock(spec=UploadFile)
+        mock_file.filename = bad_name
+
+        with pytest.raises(expected_exc):
+            await file_management_service.upload_file(
+                server_id=1, file=mock_file, db=mock_db
+            )
+
+    @pytest.mark.asyncio
+    async def test_upload_file_strips_traversal_in_filename(
+        self, mock_server, mock_db, tmp_path
+    ):
+        """Regression for #400: traversal sequences in ``file.filename`` must
+        not escape the server directory."""
+        server_dir = tmp_path / "test_server"
+        server_dir.mkdir()
+        mock_server.directory_path = str(server_dir)
+        mock_db.query.return_value.filter.return_value.one_or_none.return_value = (
+            mock_server
+        )
+
+        mock_file = Mock(spec=UploadFile)
+        mock_file.filename = "../../evil.txt"
+
+        captured: dict = {}
+
+        async def _capture_upload(upload, target_path):
+            captured["target"] = target_path
+            target_path.parent.mkdir(parents=True, exist_ok=True)
+            target_path.write_bytes(b"x")
+            return 1
+
+        with patch.object(
+            file_management_service.operation_service,
+            "upload_file",
+            side_effect=_capture_upload,
+        ):
+            result = await file_management_service.upload_file(
+                server_id=1, file=mock_file, db=mock_db
+            )
+
+        # File was written inside server_dir (basename only), not outside.
+        assert captured["target"].parent.resolve() == server_dir.resolve()
+        assert captured["target"].name == "evil.txt"
+        assert not (tmp_path / "evil.txt").exists()
+        assert result["file"]["name"] == "evil.txt"
+        assert "evil.txt" in result["message"]
 
     @pytest.mark.asyncio
     async def test_download_file_server_not_found(self, mock_db):
