@@ -89,9 +89,6 @@ closing comment must include a one-line summary and the PR/commit ref.
 - **PR title**: short imperative ("Fix Y", not "Fixed Y" or "Y fix").
 - **PR body**: includes `Resolves #N` (or `Fixes` / `Refs`) on its own line
   when a related issue exists; omit when there is none.
-- **VCS tool**: per the global guideline, use `bit` instead of `git`. Inside
-  a `git worktree`, fall back to `git` directly (bit 0.39.0 ignores
-  commondir and corrupts commit/push).
 
 ### Rule 9 — PR review hygiene
 

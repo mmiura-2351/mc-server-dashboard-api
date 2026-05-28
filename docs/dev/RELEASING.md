@@ -1,163 +1,186 @@
-# リリース運用ガイド
+# Release Operations Guide
 
-本ドキュメントは `mc-server-dashboard-api` のバージョニング規約とリリース手順を定める。
-親 Issue: #183 / ロードマップ: #188 (Phase 3)
+This document defines the versioning conventions and release procedure for
+`mc-server-dashboard-api`.
+Parent issue: #183 / roadmap: #188 (Phase 3).
 
-## 1. バージョニング規約 (SemVer)
+## 1. Versioning convention (SemVer)
 
-バージョンは [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.html) に準拠し、
-`MAJOR.MINOR.PATCH` の三要素で表記する。
+Versions follow [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.html)
+and are written as `MAJOR.MINOR.PATCH`.
 
-| 区分 | 意味 | 例 |
+| Part | Meaning | Example |
 |---|---|---|
-| MAJOR | 後方互換を破壊する変更 | `1.0.0` → `2.0.0` |
-| MINOR | 後方互換のある機能追加 | `1.2.0` → `1.3.0` |
-| PATCH | 後方互換のあるバグ修正 | `1.2.3` → `1.2.4` |
+| MAJOR | Backwards-incompatible changes | `1.0.0` → `2.0.0` |
+| MINOR | Backwards-compatible new functionality | `1.2.0` → `1.3.0` |
+| PATCH | Backwards-compatible bug fixes | `1.2.3` → `1.2.4` |
 
-### 1.1 `0.x.y` 期間の扱い
+### 1.1 Conventions during `0.x.y`
 
-SemVer 仕様どおり `0.x.y` 期間は公開 API が不安定として扱う。本プロジェクトでは以下の運用とする。
+Per the SemVer spec, the public API is considered unstable while the version
+is `0.x.y`. This project operates as follows during that window:
 
-- **後方互換を破壊する変更**: MINOR を上げる (`0.1.0` → `0.2.0`)
-- **機能追加・互換のあるバグ修正**: PATCH を上げる (`0.1.0` → `0.1.1`)
-- `1.0.0` 到達のタイミングは別途決定する (API が安定し本番運用に耐えると判断したとき)
+- **Backwards-incompatible changes**: bump MINOR (`0.1.0` → `0.2.0`).
+- **New functionality and compatible bug fixes**: bump PATCH (`0.1.0` → `0.1.1`).
+- The timing of reaching `1.0.0` is decided separately (when the API is judged
+  stable enough for production use).
 
 ### 1.2 Pre-release
 
-リリース候補は `vX.Y.Z-rc.N` の形式で発行する (例: `v0.2.0-rc.1`)。
-その他の suffix (`-alpha.N`, `-beta.N`) は原則使用しない。
+Release candidates are tagged as `vX.Y.Z-rc.N` (e.g. `v0.2.0-rc.1`).
+Other suffixes (`-alpha.N`, `-beta.N`) are not used by default.
 
-### 1.3 タグ命名規約
+### 1.3 Tag naming convention
 
-- リリースタグは `vX.Y.Z` (先頭 `v` を必須とする)
-- pre-release: `vX.Y.Z-rc.N`
-- ローカル検証用タグなど、公式リリース以外には `v` プレフィックスを付けない
+- Release tags use `vX.Y.Z` (the leading `v` is required).
+- Pre-releases: `vX.Y.Z-rc.N`.
+- Anything other than an official release (local verification tags, etc.) must
+  not carry the `v` prefix.
 
-## 2. バージョンの単一真実源
+## 2. Single source of truth for the version
 
-`pyproject.toml` の `[project].version` を単一の真実源とする。
+`pyproject.toml`'s `[project].version` is the single source of truth.
 
-- Python コードからの参照は `app.__version__` (内部で
-  `importlib.metadata.version("mc-server-dashboard-api")` を呼び出す) を経由する
-- FastAPI アプリは `FastAPI(version=__version__)` を渡し、OpenAPI スキーマに反映する
-- README やドキュメント中にバージョン番号をハードコードしない
+- Python code references `app.__version__` (which internally calls
+  `importlib.metadata.version("mc-server-dashboard-api")`).
+- The FastAPI app passes `FastAPI(version=__version__)` so the version is
+  reflected in the OpenAPI schema.
+- Do not hard-code the version number in `README.md` or any other doc.
 
-## 3. CHANGELOG 運用
+## 3. CHANGELOG operation
 
-形式は [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) に従う。
+Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
-### 3.1 PR 作成時
+### 3.1 At PR-creation time
 
-- 機能追加・バグ修正・破壊的変更・依存更新など利用者影響のある変更は
-  `CHANGELOG.md` の `[Unreleased]` セクションへ追記する
-- 該当しない変更 (内部リファクタ、CI 設定、開発体験向上のみなど) は省略可
+- User-visible changes — new features, bug fixes, breaking changes, dependency
+  updates — are added to the `[Unreleased]` section of `CHANGELOG.md`.
+- Changes that do not affect users (internal refactors, CI configuration,
+  developer-experience-only changes) may be omitted.
 
-### 3.2 リリース時
+### 3.2 At release time
 
-- `[Unreleased]` を `[X.Y.Z] - YYYY-MM-DD` に rename し、新しい空の `[Unreleased]` を直上に追加
-- 日付は UTC 基準でリリース PR をマージした日とする
+- Rename `[Unreleased]` to `[X.Y.Z] - YYYY-MM-DD` and add a new empty
+  `[Unreleased]` directly above it.
+- The date is the day the release PR is merged, in UTC.
 
-## 4. リリース手順 (tagpr による自動化)
+## 4. Release procedure (automated via tagpr)
 
-本リポジトリは [tagpr](https://github.com/Songmu/tagpr) によりバージョン bump・タグ付与・
-GitHub Release 発行を自動化している (`.github/workflows/tagpr.yml` / `.tagpr`)。
+The repository automates version bumps, tag creation, and GitHub Release
+publication using [tagpr](https://github.com/Songmu/tagpr)
+(`.github/workflows/tagpr.yml` / `.tagpr`).
 
-### 4.1 通常リリースの流れ
+### 4.1 Standard release flow
 
-1. **PR をマージする** (通常の開発フロー)
-   - 利用者影響のある変更は `CHANGELOG.md` の `[Unreleased]` に追記しておく
-   - 破壊的変更 / 機能追加の場合は PR にラベルを付与
-     - `tagpr:major` — MAJOR bump
-     - `tagpr:minor` — MINOR bump
-     - ラベル無し — PATCH bump (既定)
-2. **master への push を tagpr が検知** し、リリース PR (タイトル例: `Release for vX.Y.Z`) を自動作成・更新する
-   - `pyproject.toml` の `version` を次バージョンに書き換え
-   - `uv lock` を実行して lockfile を同期 (`.tagpr` の `command` 設定)
-3. **リリース PR で CHANGELOG を整える** (メンテナ手動)
-   - `[Unreleased]` を `[X.Y.Z] - YYYY-MM-DD` に rename し、新しい `[Unreleased]` を直上に追加
-   - リリース PR ブランチに直接コミットして push
-4. **リリース PR の内容を確認**
-   - `pyproject.toml` の `version` 行のみが書き換わっていること
-   - `uv.lock` が同期更新されていること
-   - 上記以外の意図しない変更が混入していないこと
-5. **リリース PR をマージ** (squash merge)
-   - マージ後 tagpr が自動で `vX.Y.Z` タグ作成・push と GitHub Release 発行を行う
+1. **Merge a PR** (the normal development flow).
+   - Add user-visible changes to `CHANGELOG.md`'s `[Unreleased]` section.
+   - For breaking changes or new functionality, apply a PR label:
+     - `tagpr:major` — MAJOR bump.
+     - `tagpr:minor` — MINOR bump.
+     - No label — PATCH bump (default).
+2. **tagpr detects the push to `master`** and automatically creates or updates
+   a release PR (example title: `Release for vX.Y.Z`).
+   - It rewrites `pyproject.toml`'s `version` to the next version.
+   - It runs `uv lock` to sync the lockfile (configured under `.tagpr`'s
+     `command` setting).
+3. **Tidy the CHANGELOG inside the release PR** (manual, by a maintainer).
+   - Rename `[Unreleased]` to `[X.Y.Z] - YYYY-MM-DD` and add a new
+     `[Unreleased]` above it.
+   - Commit directly to the release-PR branch and push.
+4. **Review the release PR**.
+   - Only the `version` line in `pyproject.toml` should be changed.
+   - `uv.lock` should be synced.
+   - No unrelated changes should be mixed in.
+5. **Merge the release PR** (squash merge).
+   - After the merge, tagpr automatically creates and pushes the `vX.Y.Z` tag
+     and publishes the GitHub Release.
 
-### 4.2 認証トークン (Fine-grained PAT)
+### 4.2 Authentication token (Fine-grained PAT)
 
-tagpr が作成するリリース PR でも `ci.yaml` (lint / format / test) が走るよう、
-標準の `GITHUB_TOKEN` ではなく **Fine-grained PAT を `TAGPR_PAT` シークレット** として利用している。
+So that `ci.yaml` (lint / format / test) runs on the release PRs that tagpr
+creates, the workflow uses a **Fine-grained PAT stored as the `TAGPR_PAT`
+secret** rather than the default `GITHUB_TOKEN`.
 
-> GitHub の仕様上、`GITHUB_TOKEN` で作成された PR は他の workflow をトリガしない。
-> PAT で作成された PR はトリガする。
+> GitHub's policy is that PRs created with `GITHUB_TOKEN` do not trigger
+> other workflows. PRs created with a PAT do.
 
-#### セットアップ (一度きり)
+#### Setup (one-time)
 
-1. https://github.com/settings/personal-access-tokens/new で Fine-grained PAT を作成:
-   - **Repository access**: "Only select repositories" → 本リポジトリのみ
+1. Create a Fine-grained PAT at
+   https://github.com/settings/personal-access-tokens/new:
+   - **Repository access**: "Only select repositories" → this repository only.
    - **Repository permissions**:
-     - **Contents**: Read and write (commit / tag 作成のため)
-     - **Pull requests**: Read and write (リリース PR 作成・更新のため)
-     - **Metadata**: Read-only (自動付与)
-2. リポジトリ Settings → Secrets and variables → Actions → New repository secret:
-   - **Name**: `TAGPR_PAT`
-   - **Secret**: 生成された PAT
+     - **Contents**: Read and write (to create commits and tags).
+     - **Pull requests**: Read and write (to create and update release PRs).
+     - **Metadata**: Read-only (granted automatically).
+2. In repository Settings → Secrets and variables → Actions → New repository
+   secret:
+   - **Name**: `TAGPR_PAT`.
+   - **Secret**: the generated PAT.
 
-#### 運用上の注意
+#### Operational notes
 
-- PAT は作成したユーザーの所有物となる。そのユーザーが組織を離れる / PAT を revoke すると tagpr が停止する
-- PAT に有効期限を設定した場合、期限切れ前に rotation すること
-- 将来 GitHub App ベースの認証に移行することで属人性を排除可能 (別 Issue で扱う)
+- The PAT is owned by the user who created it. If that user leaves the
+  organization or revokes the PAT, tagpr stops working.
+- If the PAT has an expiry date, rotate it before it expires.
+- Migrating to GitHub App-based authentication in the future would remove
+  this single-owner dependency (tracked in a separate issue).
 
-### 4.3 リポジトリ設定 (一度きり)
+### 4.3 Repository settings (one-time)
 
-tagpr が PR を作成できるよう、以下の設定を確認する。
+For tagpr to be allowed to create PRs, confirm the following setting:
 
 - Settings → Actions → General → Workflow permissions:
-  - **Allow GitHub Actions to create and approve pull requests** を ON
+  - **Allow GitHub Actions to create and approve pull requests** is enabled.
 
-### 4.4 Dependabot PR の扱い
+### 4.4 Handling Dependabot PRs
 
-tagpr は Dependabot 作成 PR をデフォルトでバージョン bump 対象から除外する。
-依存更新のみが master に積まれている期間はリリース PR が作られない (= 依存更新だけでは
-新しいバージョンを切らない方針)。依存更新もリリースに含めたい場合は、利用者影響のある
-通常 PR を 1 件マージするか、Dependabot PR マージ後に master へ意味のあるコミットを
-別途積む運用とする (なお tagpr の patch bump はラベル無しが既定動作であり、明示ラベルは不要)。
+tagpr excludes Dependabot-created PRs from version-bump consideration by
+default. While only dependency updates have landed on `master`, no release PR
+is created — meaning dependency updates alone do not cut a new version. To
+include dependency updates in a release, either merge one regular
+user-visible PR, or land a meaningful commit on `master` after the Dependabot
+merges. (Note that tagpr's default behaviour is a patch bump with no label,
+so no explicit label is required for the regular case.)
 
-## 5. 手動リリース手順 (フォールバック)
+## 5. Manual release procedure (fallback)
 
-tagpr の停止時・初回リリース・例外対応時には以下の手動手順を用いる。
+When tagpr is unavailable, for the first release, or in exceptional cases,
+use this manual procedure.
 
-1. ブランチ `release/vX.Y.Z` を作成
-2. `pyproject.toml` の `version` を更新、`uv lock` を再実行
-3. `CHANGELOG.md`: `[Unreleased]` を `[X.Y.Z] - YYYY-MM-DD` に rename、新しい `[Unreleased]` を追加
-4. PR を作成 (タイトル: `release: vX.Y.Z`)、レビュー後 squash merge
-5. タグ作成・push:
+1. Create a branch `release/vX.Y.Z`.
+2. Update `pyproject.toml`'s `version` and re-run `uv lock`.
+3. `CHANGELOG.md`: rename `[Unreleased]` to `[X.Y.Z] - YYYY-MM-DD` and add a
+   new `[Unreleased]`.
+4. Open a PR (title: `release: vX.Y.Z`); after review, squash merge.
+5. Create and push the tag:
    ```bash
    git checkout master && git pull
    git tag -a vX.Y.Z -m "Release vX.Y.Z"
    git push origin vX.Y.Z
    ```
-6. GitHub Release 発行:
+6. Publish the GitHub Release:
    ```bash
    gh release create vX.Y.Z --title "vX.Y.Z" \
        --notes-file <(awk '/^## \[X\.Y\.Z\]/{flag=1;next} /^## \[/{flag=0} flag' CHANGELOG.md)
    ```
 
-## 6. ホットフィックス
+## 6. Hotfix
 
-本番に出ているリリースの致命的バグに対しては、master からの通常フローではなく
-タグから分岐したホットフィックス運用も可能。
+For a critical bug in a released version, a hotfix branched from the tag is
+also acceptable as an alternative to the normal flow from `master`.
 
 ```bash
 git checkout -b hotfix/vX.Y.Z+1 vX.Y.Z
-# 修正をコミット
-# 上記 Section 5 の手動手順に沿ってリリース (tagpr の自動化はホットフィックス用途を想定していない)
+# Commit the fix.
+# Release via the manual procedure in Section 5 (tagpr's automation does not
+# target hotfix workflows).
 git checkout master
 git merge --no-ff hotfix/vX.Y.Z+1
 ```
 
-## 7. スコープ外 (将来 Issue で扱う)
+## 7. Out of scope (tracked in future issues)
 
-- `/version` エンドポイントの追加
-- CHANGELOG 自動生成 (tagpr の `changelog = true` 機能の利用、または PR ラベルからの生成)
+- Adding a `/version` endpoint.
+- Automatic CHANGELOG generation (using tagpr's `changelog = true` feature, or
+  generation from PR labels).
