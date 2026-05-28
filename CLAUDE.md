@@ -65,7 +65,7 @@ When addressing GitHub Issues, follow this standard procedure:
 6. **Verify and Create PR**: Confirm the issue has been properly addressed and create a pull request
 
 ### Rule 6: Test Execution Guidelines
-**Be mindful of test execution performance and timeouts. Tests are split into a layered execution strategy — see [`docs/TESTING.md`](docs/TESTING.md) for the canonical policy.**
+**Be mindful of test execution performance and timeouts. Tests are split into a layered execution strategy — see [`docs/dev/TESTING.md`](docs/dev/TESTING.md) for the canonical policy.**
 
 | Stage | Scope | Command | Typical time |
 |---|---|---|---|
@@ -78,7 +78,7 @@ Operational notes:
 1. **Install both hook stages once**: `uv run pre-commit install --hook-type pre-commit --hook-type pre-push`. The pre-push stage will not run automatically without `--hook-type pre-push`.
 2. **Manual full-suite run**: prefer `just test` over invoking `pytest` directly; it inherits the project's standard options.
 3. **Extend timeout for full suite**: when running the complete suite manually under tooling that imposes a timeout, explicitly extend it (e.g. `--timeout=300000`).
-4. **Mark new slow tests**: any test that takes ≥ 1 s or spawns a subprocess must carry `@pytest.mark.slow` (or `pytestmark = pytest.mark.slow` at file level). See `docs/TESTING.md` §3.
+4. **Mark new slow tests**: any test that takes ≥ 1 s or spawns a subprocess must carry `@pytest.mark.slow` (or `pytestmark = pytest.mark.slow` at file level). See `docs/dev/TESTING.md` Section 3.
 5. **Pre-push fails without a JRE on `PATH`**: the integration smoke set includes server-creation API tests that invoke Java discovery. Until [#209](https://github.com/mmiura-2351/mc-server-dashboard-api/issues/209) annotates them with `@pytest.mark.requires_java`, push from a machine with Java installed, or bypass with `git push --no-verify` if you understand the risk.
 
 ### Rule 7: Issue Resolution Completion Process
@@ -154,6 +154,10 @@ This applies to every Markdown file under the repo (README.md, CLAUDE.md, CHANGE
 
 This is a comprehensive FastAPI-based backend API for managing multiple Minecraft servers. The system provides user authentication, role-based access control, real-time monitoring, backup management, and complete server lifecycle management covering 46 specific use cases.
 
+### Documentation entry point
+
+The full doc index — and a "where do I look for X?" lookup table — is at [`docs/README.md`](docs/README.md). Long-form docs are split into [`docs/app/`](docs/app/) (application specification) and [`docs/dev/`](docs/dev/) (development process). Start there when you need more than what this file covers.
+
 ## Development Commands
 
 Tasks are run with [`just`](https://github.com/casey/just). Run `just` (no args) to list all recipes.
@@ -175,7 +179,7 @@ If `just` is not installed, see the project README for installation instructions
 
 ## System Architecture
 
-> **The canonical architecture document is [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)**: the target hexagonal (Ports & Adapters) layering, the four-layer per-domain structure (`domain/` / `application/` / `adapters/` / `api/`), and the rules new code must follow. See §17.4 for the current per-domain migration snapshot. The notes below summarize the runtime wiring that supplements the architecture doc.
+> **The canonical architecture document is [`docs/app/ARCHITECTURE.md`](docs/app/ARCHITECTURE.md)**: the target hexagonal (Ports & Adapters) layering, the four-layer per-domain structure (`domain/` / `application/` / `adapters/` / `api/`), and the rules new code must follow. See Section 17.4 for the current per-domain migration snapshot. The notes below summarize the runtime wiring that supplements the architecture doc.
 
 ### Core Service Integration
 
@@ -197,7 +201,7 @@ If `just` is not installed, see the project README for installation instructions
 
 ### Domain Structure
 
-Every domain has the full hexagonal layering today; the only differences are at the HTTP boundary (some still use a flat `router.py`, see ARCHITECTURE.md §17.4).
+Every domain has the full hexagonal layering today; the only differences are at the HTTP boundary (some still use a flat `router.py`, see ARCHITECTURE.md Section 17.4).
 
 - **`app/servers/`** — Minecraft server lifecycle. The process manager was split into mixins (`DaemonProcessMixin`, `PidFileMixin`, `PreflightMixin`, `MonitoringMixin`, PR #389). HTTP routes are split across `app/servers/routers/{control,management,utilities,import_export}.py`.
 - **`app/groups/`** — Dynamic OP/whitelist groups, with UUID tracking and real-time application via RCON.
@@ -243,7 +247,7 @@ SECRET_KEY=your-secret-key   # ≥ 32 chars, no weak prefixes
 DATABASE_URL=sqlite:///./app.db
 ```
 
-All other settings (auth, DB pool, file uploads, concurrency limits, password policy, brute-force protection, daemon settings, etc.) are documented in [`docs/CONFIGURATION.md`](docs/CONFIGURATION.md) along with per-environment defaults.
+All other settings (auth, DB pool, file uploads, concurrency limits, password policy, brute-force protection, daemon settings, etc.) are documented in [`docs/app/CONFIGURATION.md`](docs/app/CONFIGURATION.md) along with per-environment defaults.
 
 ### Pre-commit Hooks
 
@@ -271,7 +275,7 @@ async def endpoint(db: Session = Depends(get_db)):
 
 ## Testing Strategy
 
-> **Where does a new test go?** See [`docs/TESTING.md`](docs/TESTING.md) for the canonical test hierarchy policy (unit / integration / infrastructure), classification rules, and pytest marker usage. The notes below cover only project-specific fixtures and conventions.
+> **Where does a new test go?** See [`docs/dev/TESTING.md`](docs/dev/TESTING.md) for the canonical test hierarchy policy (unit / integration / infrastructure), classification rules, and pytest marker usage. The notes below cover only project-specific fixtures and conventions.
 
 ### Unit Tests (`uv run pytest`)
 - Comprehensive fixtures in `conftest.py` with different user roles

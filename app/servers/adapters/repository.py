@@ -17,7 +17,7 @@ backoff/retry semantics the legacy code relied on are preserved (M-8
 Cross-domain JOIN against `User` (for `owner_username`) is
 intentionally kept inside this adapter rather than dispatched through
 a `UserReadPort`: the alternative would issue one query per server row
-(legacy N+1). See `docs/ARCHITECTURE.md` §4.3 — the adapter layer is
+(legacy N+1). See `docs/app/ARCHITECTURE.md` Section 4.3 — the adapter layer is
 allowed to touch the ORM directly; only the **application** layer is
 forbidden.
 """

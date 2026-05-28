@@ -6,7 +6,7 @@ to perform idempotent schema upgrades that SQLAlchemy's ``create_all``
 cannot express on its own (notably retro-fitting NOT NULL columns onto
 pre-existing tables).
 
-Per `docs/ARCHITECTURE.md` §4.3, domain-specific DDL lives under
+Per `docs/app/ARCHITECTURE.md` Section 4.3, domain-specific DDL lives under
 ``app/<domain>/adapters/migrations.py`` rather than the cross-cutting
 ``app/core/`` package.
 """

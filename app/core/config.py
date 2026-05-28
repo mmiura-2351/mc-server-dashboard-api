@@ -12,7 +12,7 @@ Provides environment-specific configuration management on top of
 * Hardening validators reject unsafe combinations in ``staging`` /
   ``production`` (sqlite DB, plaintext CORS, localhost origins).
 
-See ``docs/CONFIGURATION.md`` for the full reference and load order.
+See ``docs/app/CONFIGURATION.md`` for the full reference and load order.
 """
 
 from __future__ import annotations
@@ -273,7 +273,7 @@ class Settings(BaseSettings):
             return Environment.DEVELOPMENT
         return Environment(v)
 
-    # Password policy (Issue #73 — see docs/SECURITY.md). Production
+    # Password policy (Issue #73 — see docs/app/SECURITY.md). Production
     # defaults follow OWASP ASVS L1 + NIST 800-63B guidance. The
     # `PASSWORD_*` overrides are honoured by
     # `app.users.application.password_policy.get_password_policy()`.
@@ -318,7 +318,7 @@ class Settings(BaseSettings):
     # itself; anything >15 takes seconds per call and is impractical.
     PASSWORD_BCRYPT_ROUNDS: int = 12
 
-    # Reverse-proxy trust (Issue #73 review). See docs/SECURITY.md.
+    # Reverse-proxy trust (Issue #73 review). See docs/app/SECURITY.md.
     # When False (default) X-Forwarded-For / X-Real-IP are *ignored*
     # entirely; the brute-force tracker uses `request.client.host`
     # only. When True, XFF / X-Real-IP are honoured ONLY if the

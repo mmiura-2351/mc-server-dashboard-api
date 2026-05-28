@@ -5,7 +5,7 @@ Invoked from `app.main` during startup after
 ``Base.metadata.create_all`` to retro-fit indexes onto pre-existing
 tables.
 
-Per `docs/ARCHITECTURE.md` §4.3, domain-specific DDL lives under
+Per `docs/app/ARCHITECTURE.md` Section 4.3, domain-specific DDL lives under
 ``app/<domain>/adapters/migrations.py``.
 
 Issue #75 Phase 1: adds performance indexes for the audit log's hot

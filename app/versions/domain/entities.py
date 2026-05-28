@@ -7,8 +7,8 @@ framework-free).
 
 The application service receives and returns these types. Adapters convert
 to/from ORM rows; the api layer converts to/from Pydantic DTOs. This
-isolation is what gives `domain/` swappability per `docs/ARCHITECTURE.md`
-§4.1.
+isolation is what gives `domain/` swappability per `docs/app/ARCHITECTURE.md`
+Section 4.1.
 """
 
 from dataclasses import dataclass, field

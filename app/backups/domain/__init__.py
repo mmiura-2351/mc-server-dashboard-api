@@ -11,5 +11,5 @@ ORM class lives at `app.backups.models.Backup` (relocated from
 `app.servers.models` in Issue #263); adapters import it from that
 module.
 
-See `docs/ARCHITECTURE.md` §4.1.
+See `docs/app/ARCHITECTURE.md` Section 4.1.
 """

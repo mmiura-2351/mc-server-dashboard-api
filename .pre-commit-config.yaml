@@ -29,7 +29,7 @@ repos:
       - id: ruff-format
         types_or: [python, pyi]
 
-  # Test execution — see docs/TESTING.md §4 for the layered strategy.
+  # Test execution — see docs/dev/TESTING.md Section 4 for the layered strategy.
   # pre-commit: unit smoke (excludes slow) — fast feedback before each commit
   # pre-push:   unit + integration smoke (excludes slow) — full sanity before pushing
   # CI:         full suite including slow markers (see .github/workflows/)

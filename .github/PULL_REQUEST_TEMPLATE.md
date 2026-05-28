@@ -1,22 +1,22 @@
-## 概要
+## Summary
 
-<!-- 変更の目的・背景を簡潔に -->
+<!-- What this change does and why, in a sentence or two. -->
 
-## 変更内容
+## Changes
 
-<!-- 主な変更点を箇条書きで -->
+<!-- The main changes as a bulleted list. -->
 
-## 関連 Issue
+## Related issues
 
-<!-- Resolves #X / Fixes #X / Refs #X など -->
+<!-- Resolves #X / Fixes #X / Refs #X -->
 
-## テスト方針
+## Test plan
 
-<!-- 動作確認・追加テストの方針 -->
+<!-- How the change was validated (manual steps, new/updated tests, etc.). -->
 
-## チェックリスト
+## Checklist
 
-- [ ] ローカルで `just test` / `just lint` / `just format` を実行し green
-- [ ] 利用者影響のある変更を `CHANGELOG.md` の `[Unreleased]` に追記した (内部リファクタ・CI 等のみの場合は不要)
-- [ ] 破壊的変更がある場合、`docs/RELEASING.md` の SemVer ルールに沿ったバンプ種別を PR 説明に明記した
-- [ ] 関連ドキュメント (README / docs/) を更新した、または更新不要であることを確認した
+- [ ] Ran `just test` / `just lint` / `just format` locally and they pass
+- [ ] User-visible changes are noted in `CHANGELOG.md` under `[Unreleased]` (skip if internal refactor / CI only)
+- [ ] For breaking changes, the bump kind required by the SemVer rules in `docs/dev/RELEASING.md` is called out in the PR description
+- [ ] Relevant documentation (README / `docs/`) is updated, or confirmed not needed

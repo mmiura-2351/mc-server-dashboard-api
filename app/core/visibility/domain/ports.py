@@ -1,6 +1,6 @@
 """Port (Protocol) definitions for the visibility domain.
 
-Per `docs/ARCHITECTURE.md` §4.1, this module **must not import** from
+Per `docs/app/ARCHITECTURE.md` Section 4.1, this module **must not import** from
 SQLAlchemy, Pydantic, FastAPI, or any other framework. All types
 crossing these Protocols are pure domain entities defined in
 `entities.py`.
@@ -19,7 +19,7 @@ Cross-domain reads against `Server` and `Group` for the migration
 helpers are intentionally kept inside this Port rather than dispatched
 through a `ServerReadPort` / `GroupReadPort`: the alternative would
 issue per-row lookups to detect what is *not* in the visibility table.
-See `docs/ARCHITECTURE.md` §4.3 — the adapter layer is allowed to touch
+See `docs/app/ARCHITECTURE.md` Section 4.3 — the adapter layer is allowed to touch
 the ORM directly; only the **application** layer is forbidden.
 """
 

@@ -124,7 +124,7 @@ def _extract_ip(request: Request) -> Optional[str]:
 
     In all other cases the immediate peer address wins. Operators
     running behind a reverse proxy must opt in via the config knob;
-    see ``docs/SECURITY.md``.
+    see ``docs/app/SECURITY.md``.
     """
     peer = request.client.host if request.client else None
 
@@ -134,7 +134,7 @@ def _extract_ip(request: Request) -> Optional[str]:
             forwarded_for = request.headers.get("X-Forwarded-For")
             if forwarded_for:
                 # Use the left-most entry — the original client per
-                # RFC 7239 §5.2 convention.
+                # RFC 7239 Section 5.2 convention.
                 first = forwarded_for.split(",")[0].strip()
                 if first:
                     return first

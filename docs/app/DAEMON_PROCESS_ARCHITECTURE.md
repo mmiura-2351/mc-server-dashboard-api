@@ -119,7 +119,7 @@ class RealTimeServerCommands:
 
 The full inventory of 23 `DAEMON_*` environment variables — with defaults,
 validators, and cross-field constraints — is documented in
-[`docs/CONFIGURATION.md` § "Daemon process settings"](CONFIGURATION.md#daemon-process-settings-daemon_).
+[`docs/app/CONFIGURATION.md` section "Daemon process settings"](CONFIGURATION.md#daemon-process-settings-daemon_).
 That section is the single source of truth; this document only covers the
 behavioural / architectural context for those knobs.
 
@@ -248,7 +248,7 @@ grep "RCON" logs/app.log
 
 If you are **upgrading an existing deployment** from a pre-PR-#60 commit,
 follow the dedicated guide:
-[`docs/DAEMON_MIGRATION.md`](DAEMON_MIGRATION.md). It covers the full
+[`docs/dev/DAEMON_MIGRATION.md`](../dev/DAEMON_MIGRATION.md). It covers the full
 pre-upgrade checklist (stop every server first — old `asyncio`-tracked
 processes cannot be adopted), the step-by-step upgrade, post-upgrade
 verification, and rollback procedure.
@@ -295,7 +295,7 @@ GET    /api/v1/servers/{server_id}/status   # ServerStatusResponse; reflects pos
 There are **no dedicated `/api/v1/processes/…` endpoints** and **no
 bulk `shutdown-all` endpoint** at this time. Bulk shutdown happens
 implicitly when the API exits **and** `KEEP_SERVERS_ON_SHUTDOWN=False`
-(see [`docs/DAEMON_MIGRATION.md`](DAEMON_MIGRATION.md) §3.1). For
+(see [`docs/dev/DAEMON_MIGRATION.md`](../dev/DAEMON_MIGRATION.md) Section 3.1). For
 introspecting individual daemons from outside the API, read the
 `server.pid` JSON directly or use `ps -eo pid,ppid,args`.
 

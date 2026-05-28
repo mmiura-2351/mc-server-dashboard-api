@@ -5,5 +5,5 @@ Contains pure domain entities (`entities.py`), value objects
 domain exceptions (`exceptions.py`). Must not import any framework,
 database driver, or HTTP client.
 
-See `docs/ARCHITECTURE.md` §4.1.
+See `docs/app/ARCHITECTURE.md` Section 4.1.
 """

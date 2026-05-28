@@ -122,9 +122,9 @@ once at process start by `DaemonConfig.from_environment()`. Defaults are
 appropriate for production; only override when you have a specific reason.
 
 Cross-references: process-level context is in
-[`docs/DAEMON_PROCESS_ARCHITECTURE.md`](DAEMON_PROCESS_ARCHITECTURE.md);
+[`docs/app/DAEMON_PROCESS_ARCHITECTURE.md`](DAEMON_PROCESS_ARCHITECTURE.md);
 the upgrade guide (with rollback) is in
-[`docs/DAEMON_MIGRATION.md`](DAEMON_MIGRATION.md). Both documents now
+[`docs/dev/DAEMON_MIGRATION.md`](../dev/DAEMON_MIGRATION.md). Both documents now
 defer to this section for the env var inventory.
 
 #### Process creation
@@ -231,7 +231,7 @@ Defaults follow OWASP ASVS L1 + NIST 800-63B.
 
 Sliding-window counts of failed logins live in `login_attempts`; lockouts in
 `account_lockouts`. Lockout duration grows exponentially up to
-`BRUTE_FORCE_LOCKOUT_MAX_SECONDS`. See [`docs/SECURITY.md`](SECURITY.md).
+`BRUTE_FORCE_LOCKOUT_MAX_SECONDS`. See [`docs/app/SECURITY.md`](SECURITY.md).
 
 | Field | Type | Default | Validation |
 |---|---|---|---|
@@ -345,4 +345,4 @@ Recommended migration steps for production deployments:
 * [ ] `.env.production.local` exists only on the host (never committed) and
       contains any host-specific overrides.
 * [ ] Application boots cleanly — startup-time `ValidationError`s indicate
-      a hardening rule was violated; see §5.
+      a hardening rule was violated; see Section 5.

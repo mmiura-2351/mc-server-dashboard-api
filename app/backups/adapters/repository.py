@@ -15,7 +15,7 @@ intentionally kept inside this adapter rather than dispatched through
 a `UserReadPort`: the alternative would issue one query per log row
 (legacy N+1). The `Backup.server` join is similarly eager-loaded so
 the wire response can fill in `server_name` / `minecraft_version`
-without a per-row lazy SELECT. See `docs/ARCHITECTURE.md` §4.3.
+without a per-row lazy SELECT. See `docs/app/ARCHITECTURE.md` Section 4.3.
 """
 
 from datetime import datetime

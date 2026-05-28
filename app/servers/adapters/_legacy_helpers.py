@@ -1,7 +1,7 @@
 """Legacy ORM-direct helpers for ServerService, retained for migration parity.
 
 These helpers contain direct `db.query(Server)` access — they live here in
-adapters/ (per ARCHITECTURE §4.3, adapter layer may use SQLAlchemy) rather
+adapters/ (per ARCHITECTURE Section 4.3, adapter layer may use SQLAlchemy) rather
 than in application/ to preserve the layering invariant established in #225-#228.
 
 The legacy entry points (`ServerValidationService`, `ServerDatabaseService`, etc.)
@@ -74,7 +74,7 @@ async def is_version_supported_db_legacy(
 
     Moved here from ``app.servers.application.service`` in #285 so the
     application layer no longer constructs ``SqlAlchemyVersionRepository``
-    by hand (ARCHITECTURE §4.2). Behaviour matches the original
+    by hand (ARCHITECTURE Section 4.2). Behaviour matches the original
     ``ServerService._is_version_supported_db``: DB-first lookup, fall
     back to the external version-manager API on miss / DB failure.
     """
@@ -411,7 +411,7 @@ def update_server_status_legacy(
 #
 # These classes call SQLAlchemy methods on a ``Session`` at runtime
 # (``db.add``, ``db.query``, ``db.commit``...), so they belong in
-# adapters/ per ARCHITECTURE §4.2/§4.3. The application service module
+# adapters/ per ARCHITECTURE Section 4.2/Section 4.3. The application service module
 # re-exports them for backward compatibility with the legacy tests that
 # import them via ``app.servers.application.service``.
 # ---------------------------------------------------------------------------
@@ -422,7 +422,7 @@ class ServerJarService:
 
     Pre-existing legacy class that consumes a ``Session`` at runtime to
     look up versions through the version repository. Kept here in
-    adapters/ rather than application/ to preserve the §4.2 invariant.
+    adapters/ rather than application/ to preserve the Section 4.2 invariant.
     """
 
     def __init__(self) -> None:

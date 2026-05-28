@@ -2,7 +2,7 @@
 
 > **Note**: This document defines the **target architecture and the standards that all new code must follow**, established under Issue #149 (refactor) / #153 (A-1).
 >
-> For the description of the system's pre-refactor implementation, see [`docs/ARCHITECTURE_LEGACY.md`](ARCHITECTURE_LEGACY.md). That document is preserved as historical context only.
+> For the description of the system's pre-refactor implementation, see [`docs/app/ARCHITECTURE_LEGACY.md`](ARCHITECTURE_LEGACY.md). That document is preserved as historical context only.
 
 This document provides the architectural blueprint for the Minecraft Server Dashboard API. It defines the layering rules, dependency directions, and standard structure that every domain must adhere to. The goal is an architecture where any external technology (persistence, authorization, real-time transport, external APIs, etc.) can be replaced without touching business logic.
 
@@ -211,7 +211,7 @@ The patterns below are violations regardless of the rationale offered. CI toolin
 - `adapters/` importing from `application/` or `api/`
 - `api/router.py` or `api/schemas.py` importing from `adapters/`. Only `api/dependencies.py` may bridge those two
 - `api/router.py` running business logic, opening a database session, or branching on user roles
-- One domain's `application/` directly importing another domain's `adapters/` (use a Port — see §5.3)
+- One domain's `application/` directly importing another domain's `adapters/` (use a Port — see Section 5.3)
 - One domain's `adapters/` reaching into another domain's `domain/` internals to bypass its Ports
 
 ### 5.3 Cross-domain use cases
@@ -267,14 +267,14 @@ Code that is genuinely shared across domains lives in `app/core/`:
 
 ### 6.3 Boundary enforcement
 
-The rules in §4 and §5 are mechanically checkable. As the migration under Issue #149 progresses, the project should add import-direction contracts (e.g., [import-linter](https://import-linter.readthedocs.io/)) to CI so the following are flagged automatically:
+The rules in Section 4 and Section 5 are mechanically checkable. As the migration under Issue #149 progresses, the project should add import-direction contracts (e.g., [import-linter](https://import-linter.readthedocs.io/)) to CI so the following are flagged automatically:
 
 - `app/<domain>/domain/` may not import from `app/<domain>/application/`, `app/<domain>/adapters/`, or `app/<domain>/api/`, nor from any third-party framework
 - `app/<domain>/application/` may not import from `app/<domain>/adapters/` or `app/<domain>/api/`
 - `app/<domain>/adapters/` may not import from `app/<domain>/application/` or `app/<domain>/api/`
 - Inside `app/<domain>/api/`, only `dependencies.py` may import from `app/<domain>/adapters/`
 
-Until those contracts are in place, reviewers are responsible for enforcing the boundaries listed in §5.2.
+Until those contracts are in place, reviewers are responsible for enforcing the boundaries listed in Section 5.2.
 
 ## 7. Cross-cutting Concerns via Ports
 
@@ -284,7 +284,7 @@ Cross-cutting concerns are not embedded in the domain core. They are exposed as 
 |---|---|---|---|
 | Persistence | `<Entity>Repository` | SQLAlchemy adapter | One Port per aggregate root |
 | Transactions / UoW | `UnitOfWork` | SQLAlchemy-backed | Spans multiple repositories within a use case |
-| Event publication | `RealTimeServerCommands` collaborator (no abstract Port yet — see §7.2) | WebSocket-backed publisher | Used for real-time updates |
+| Event publication | `RealTimeServerCommands` collaborator (no abstract Port yet — see Section 7.2) | WebSocket-backed publisher | Used for real-time updates |
 | External APIs | `<Service>Client` (e.g., `MinecraftApiClient`) | aiohttp-backed | Retry / fallback handled at the adapter |
 | Permission checks | `PermissionChecker` | Role-based adapter | Decoupled so it can later switch to per-operation user grants without touching use cases |
 | Time | `Clock` | `SystemClock` | Test code injects `FixedClock` |
@@ -297,7 +297,7 @@ Cross-cutting concerns are not embedded in the domain core. They are exposed as 
 
 Audit logging is a cross-cutting concern that every domain emits but no domain owns. The target shape consists of a Port, a request-scoped middleware that batches writes, and a fire-after-commit rule on the caller side.
 
-- **Port** — `AuditWriter` in `app/audit/domain/ports.py` exposes a single `record(command: AuditEventCommand) -> None` method. The method is **sync** by design (see §4.1's discussion of sync Ports), and the Port's docstring states the **"must not raise"** contract: an audit failure must never block the calling business operation; errors are logged and swallowed inside the adapter.
+- **Port** — `AuditWriter` in `app/audit/domain/ports.py` exposes a single `record(command: AuditEventCommand) -> None` method. The method is **sync** by design (see Section 4.1's discussion of sync Ports), and the Port's docstring states the **"must not raise"** contract: an audit failure must never block the calling business operation; errors are logged and swallowed inside the adapter.
 - **Request-scoped batching** — `app/middleware/audit_middleware.py` installs an `AuditTracker` on `request.state` for every auditable request. Calls to `AuditWriter.record(...)` are buffered into that tracker and flushed to the database once, at the end of the request lifecycle (`AuditTracker.flush_events`). This keeps audit writes off the hot path of the business transaction and means audit failures cannot poison the business commit.
 - **DI wiring** — Use cases receive the writer through their constructor. `app/groups/api/dependencies.py::get_audit_writer` is the reference factory: it pulls the request's `AuditTracker` and returns a `SqlAlchemyAuditWriter` bound to it, falling back to a direct-write path when no tracker is present (e.g. background tasks).
 - **Fire-after-commit** — Use cases must record the audit event **after** the domain transaction has committed, never inside the unit-of-work block. See `app/groups/application/service.py::GroupService.create_group` (around line 126) for the canonical shape: `await uow.commit()` first, then `self._audit.record(...)` outside the `async with` block. This guarantees we never log an event for a transaction that was rolled back.
@@ -449,7 +449,7 @@ The use case asks the Port for what it needs; failure modes (timeout, cache hit)
 
 ### 13.3 Testing
 
-Testing follows the layered structure. The full policy — classification rules, marker usage, and sample tests — is in [`docs/TESTING.md`](./TESTING.md), which is the canonical source. The summary below exists only so this document is readable standalone.
+Testing follows the layered structure. The full policy — classification rules, marker usage, and sample tests — is in [`docs/dev/TESTING.md`](../dev/TESTING.md), which is the canonical source. The summary below exists only so this document is readable standalone.
 
 - **Unit tests** (`tests/unit/`) target `domain/` and `application/`, with all Ports replaced by in-memory Fakes or stubs
 - **Integration tests** (`tests/integration/`) exercise `adapters/` and the `api/` boundary with a real (worker-scoped SQLite) database
@@ -471,8 +471,8 @@ When introducing a new domain, follow these steps in order. Skipping any step is
 8. Implement the FastAPI router in `api/router.py`, using `Depends` to inject use cases
 9. Register the router in `app/main.py` under `/api/v1/<domain>`
 10. Add tests for each layer (unit for `domain/` and `application/`, integration for `adapters/` and `api/`)
-11. Update `docs/ARCHITECTURE.md` Section 16 (Use Case Coverage) with the new use cases
-12. Verify dependency direction against §5.2: `domain/` imports nothing from this project; `application/` imports only from `domain/`; `api/router.py` and `api/schemas.py` do not import from `adapters/`
+11. Update `docs/app/ARCHITECTURE.md` Section 16 (Use Case Coverage) with the new use cases
+12. Verify dependency direction against Section 5.2: `domain/` imports nothing from this project; `application/` imports only from `domain/`; `api/router.py` and `api/schemas.py` do not import from `adapters/`
 
 ## 15. Sample Domain: `notes/`
 
@@ -680,18 +680,18 @@ layout** still varies because the routers are migrated one PR at a time.
 |---|---|---|
 | `audit`, `auth`, `health`, `users`, `versions` | `app/<domain>/api/router.py` | Fully migrated to the standard layout. `app/audit/router.py` is a one-line backward-compat shim. |
 | `backups`, `files`, `groups` | `app/<domain>/router.py` (flat) | Routers still live at the legacy location; their `api/dependencies.py` already exists and wires use cases, so the move to `api/router.py` is mechanical. |
-| `servers` | `app/servers/routers/` (split package) | Justified deviation: the router exceeded the §6.1 split threshold (>10 endpoints), so it is split into `control.py`, `management.py`, `utilities.py`, `import_export.py`, aggregated via `app/servers/routers/__init__.py`. Treated as the §6.1 "split into `api/routers/`" pattern with a shorter path. |
+| `servers` | `app/servers/routers/` (split package) | Justified deviation: the router exceeded the Section 6.1 split threshold (>10 endpoints), so it is split into `control.py`, `management.py`, `utilities.py`, `import_export.py`, aggregated via `app/servers/routers/__init__.py`. Treated as the Section 6.1 "split into `api/routers/`" pattern with a shorter path. |
 
 The flat `router.py` files in the second row are explicitly transitional —
 when touching them, prefer moving them under `api/router.py` (or `api/routers/`
-when they exceed the §6.1 thresholds) rather than continuing to grow them
+when they exceed the Section 6.1 thresholds) rather than continuing to grow them
 in place.
 
 ---
 
 ## References
 
-- Historical implementation: [`docs/ARCHITECTURE_LEGACY.md`](ARCHITECTURE_LEGACY.md)
-- Dependency management policy: [`docs/DEPENDENCIES.md`](DEPENDENCIES.md)
+- Historical implementation: [`docs/app/ARCHITECTURE_LEGACY.md`](ARCHITECTURE_LEGACY.md)
+- Dependency management policy: [`docs/dev/DEPENDENCIES.md`](../dev/DEPENDENCIES.md)
 - Refactor parent issue: [#149](https://github.com/mmiura-2351/mc-server-dashboard-api/issues/149)
 - This document's authoring issue: [#153](https://github.com/mmiura-2351/mc-server-dashboard-api/issues/153)

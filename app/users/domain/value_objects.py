@@ -1,6 +1,6 @@
 """Domain-pure value objects for the users module.
 
-Per `docs/ARCHITECTURE.md` §4.1, this module must not import from any
+Per `docs/app/ARCHITECTURE.md` Section 4.1, this module must not import from any
 framework, database driver, or HTTP client. Only the Python standard
 library is allowed.
 """
@@ -61,7 +61,7 @@ class PasswordPolicy:
     tested in isolation and overridden per environment (production vs
     testing) without touching application code.
 
-    Defaults match the production posture documented in `docs/SECURITY.md`:
+    Defaults match the production posture documented in `docs/app/SECURITY.md`:
 
     * length:           12 – 128 characters
     * complexity:       at least 3 of {upper, lower, digit, symbol},

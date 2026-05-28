@@ -133,7 +133,7 @@ class TestEnvFilePrecedence:
     helper directly because re-binding ``model_config.env_file`` per-instance
     interacted badly with pydantic-settings under CI xdist (``RecursionError``
     on a single worker). The layered ordering documented in
-    ``docs/CONFIGURATION.md`` is unchanged in production code paths.
+    ``docs/app/CONFIGURATION.md`` is unchanged in production code paths.
     """
 
     @pytest.mark.parametrize(

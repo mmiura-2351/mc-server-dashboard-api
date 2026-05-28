@@ -29,7 +29,7 @@ work, and new observability / security surface.
 - Release automation via [tagpr](https://github.com/Songmu/tagpr): every merge to `master`
   updates a release PR; merging it tags `vX.Y.Z` and publishes a GitHub Release.
   Bump kind is controlled by the `tagpr:major` / `tagpr:minor` PR labels (defaults to patch).
-  See [docs/RELEASING.md](docs/RELEASING.md) §4 (#201, #202, #204).
+  See [docs/dev/RELEASING.md](docs/dev/RELEASING.md) Section 4 (#201, #202, #204).
 - `is_stable` is populated correctly for pre-release versions (#356).
 
 ### Changed
@@ -89,22 +89,22 @@ work, and new observability / security surface.
 - Enforce upload size limit, encoding validator, and rename conflict 409 (#345).
 
 ### Documentation
-- Added [docs/DAEMON_MIGRATION.md](docs/DAEMON_MIGRATION.md) — a 10-chapter migration
+- Added [docs/dev/DAEMON_MIGRATION.md](docs/dev/DAEMON_MIGRATION.md) — a 10-chapter migration
   guide retroactively covering the breaking changes in PR #60 (daemon architecture,
   RCON, process persistence). Documents 23 `DAEMON_*` env vars and the new defaults
   for `KEEP_SERVERS_ON_SHUTDOWN` / `AUTO_SYNC_ON_STARTUP` (#342).
-- Updated [docs/DAEMON_PROCESS_ARCHITECTURE.md](docs/DAEMON_PROCESS_ARCHITECTURE.md):
+- Updated [docs/app/DAEMON_PROCESS_ARCHITECTURE.md](docs/app/DAEMON_PROCESS_ARCHITECTURE.md):
   linked the Migration chapter to the new guide, corrected the PID filename to
   `server.pid`, and replaced non-existent endpoints
   (`/api/v1/servers/shutdown-all`, `/api/v1/processes/*`,
   `/api/v1/servers/{id}/process-info`) with the real paths.
-- [docs/CONFIGURATION.md](docs/CONFIGURATION.md): added cross-references to the
+- [docs/app/CONFIGURATION.md](docs/app/CONFIGURATION.md): added cross-references to the
   `DAEMON_*` configuration.
 - [README.md](README.md): added links to the Daemon Migration Guide and the
   Configuration Reference, plus a pre-PR-#60 upgrade warning in the Production
   Deployment section.
 - Documented the test hierarchy (unit / integration / infrastructure) policy in
-  [docs/TESTING.md](docs/TESTING.md) (#205).
+  [docs/dev/TESTING.md](docs/dev/TESTING.md) (#205).
 - Documented audit and real-time event emission patterns in ARCHITECTURE.md (#387).
 
 ### Infrastructure
@@ -127,7 +127,7 @@ work, and new observability / security surface.
 
 Initial release. This release pins the 2026-05-16 snapshot of the repository as
 `v0.1.0`. Subsequent releases follow the procedure in
-[docs/RELEASING.md](docs/RELEASING.md).
+[docs/dev/RELEASING.md](docs/dev/RELEASING.md).
 
 ### Added
 - **Java version compatibility management** — multi-version Java support for
@@ -136,7 +136,7 @@ Initial release. This release pins the 2026-05-16 snapshot of the repository as
   (`JAVA_8_PATH`, `JAVA_16_PATH`, `JAVA_17_PATH`, `JAVA_21_PATH`), OpenJDK discovery
   in common installation paths with vendor detection, custom discovery paths via
   `JAVA_DISCOVERY_PATHS`, and detailed compatibility error messages during server
-  creation and startup. See [Java Compatibility Guide](docs/java-compatibility.md).
+  creation and startup. See [Java Compatibility Guide](docs/app/JAVA_COMPATIBILITY.md).
 
 ### Changed
 - Server creation now runs a pre-flight Java compatibility check.
@@ -153,7 +153,7 @@ Initial release. This release pins the 2026-05-16 snapshot of the repository as
   timeout handling code; all 31 version-manager unit tests pass.
 
 ### Documentation
-- Added the [Java Compatibility Guide](docs/java-compatibility.md).
+- Added the [Java Compatibility Guide](docs/app/JAVA_COMPATIBILITY.md).
 - Updated README.md with Java configuration examples.
 - Extended the API reference with Java compatibility information.
 - Updated architecture docs to include `JavaCompatibilityService`.

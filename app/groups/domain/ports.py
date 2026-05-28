@@ -1,6 +1,6 @@
 """Port (Protocol) definitions for the groups domain.
 
-Per `docs/ARCHITECTURE.md` §4.1, this module **must not import** from
+Per `docs/app/ARCHITECTURE.md` Section 4.1, this module **must not import** from
 SQLAlchemy, Pydantic, FastAPI, or any other framework. All types crossing
 these Protocols are pure domain entities defined in `entities.py`.
 

@@ -126,7 +126,7 @@ The current `.github/dependabot.yml` settings codified as policy.
 | Open PR cap | 2 |
 | Commit convention | `chore(deps): ...` (scoped) |
 | Auto-applied labels | `dependencies`, `python` |
-| Cooldown | `default-days: 7` / `semver-major-days: 14` (see §5.1) |
+| Cooldown | `default-days: 7` / `semver-major-days: 14` (see Section 5.1) |
 
 ### Merge policy
 
