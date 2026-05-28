@@ -31,10 +31,10 @@ def _insert_inactive_user(db: Session) -> User:
 
 
 class TestRefreshTokenAPI:
-    """リフレッシュトークンAPI のテスト"""
+    """Tests for the refresh-token API."""
 
     def test_login_returns_refresh_token(self, client: TestClient, test_user: User):
-        """ログイン時にリフレッシュトークンが返されることを確認"""
+        """The login response includes a refresh token."""
         response = client.post(
             "/api/v1/auth/token",
             data={"username": test_user.username, "password": "testpassword"},
@@ -50,7 +50,7 @@ class TestRefreshTokenAPI:
     async def test_refresh_token_success(
         self, client: TestClient, test_user: User, db: Session
     ):
-        """リフレッシュトークンによるアクセストークン更新の成功"""
+        """A valid refresh token mints a new access token."""
         refresh_token = await _make_auth_service(db).create_refresh_token(test_user.id)
 
         response = client.post(
@@ -64,7 +64,7 @@ class TestRefreshTokenAPI:
         assert data["token_type"] == "bearer"
 
     def test_refresh_token_invalid(self, client: TestClient):
-        """無効なリフレッシュトークンでの更新失敗"""
+        """Refresh fails for an invalid refresh token."""
         response = client.post(
             "/api/v1/auth/refresh", json={"refresh_token": "invalid_token"}
         )
@@ -74,7 +74,7 @@ class TestRefreshTokenAPI:
 
     @pytest.mark.asyncio
     async def test_logout_success(self, client: TestClient, test_user: User, db: Session):
-        """ログアウト成功"""
+        """Logout succeeds with a valid refresh token."""
         refresh_token = await _make_auth_service(db).create_refresh_token(test_user.id)
 
         response = client.post(
@@ -85,7 +85,7 @@ class TestRefreshTokenAPI:
         assert response.json()["message"] == "Successfully logged out"
 
     def test_logout_invalid_token(self, client: TestClient):
-        """無効なリフレッシュトークンでのログアウト失敗"""
+        """Logout fails for an invalid refresh token."""
         response = client.post(
             "/api/v1/auth/logout", json={"refresh_token": "invalid_token"}
         )
@@ -97,7 +97,7 @@ class TestRefreshTokenAPI:
     async def test_refresh_token_revoked_after_logout(
         self, client: TestClient, test_user: User, db: Session
     ):
-        """ログアウト後にリフレッシュトークンが無効化される"""
+        """The refresh token is revoked after logout."""
         refresh_token = await _make_auth_service(db).create_refresh_token(test_user.id)
 
         client.post("/api/v1/auth/logout", json={"refresh_token": refresh_token})
@@ -110,7 +110,7 @@ class TestRefreshTokenAPI:
 
     @pytest.mark.asyncio
     async def test_refresh_token_inactive_user(self, client: TestClient, db: Session):
-        """非アクティブユーザーのリフレッシュトークン使用失敗"""
+        """Refresh fails for an inactive user's token."""
         inactive_user = _insert_inactive_user(db)
         refresh_token = await _make_auth_service(db).create_refresh_token(
             inactive_user.id
@@ -125,11 +125,11 @@ class TestRefreshTokenAPI:
 
 
 class TestRefreshTokenLogic:
-    """リフレッシュトークンのロジックのテスト"""
+    """Tests for the refresh-token internal logic."""
 
     @pytest.mark.asyncio
     async def test_create_refresh_token(self, test_user: User, db: Session):
-        """リフレッシュトークン生成のテスト"""
+        """Refresh-token creation works."""
         token = await _make_auth_service(db).create_refresh_token(test_user.id)
 
         assert token is not None
@@ -142,7 +142,7 @@ class TestRefreshTokenLogic:
 
     @pytest.mark.asyncio
     async def test_verify_refresh_token_valid(self, test_user: User, db: Session):
-        """有効なリフレッシュトークンの検証"""
+        """A valid refresh token verifies."""
         svc = _make_auth_service(db)
         token = await svc.create_refresh_token(test_user.id)
         user_id = await svc.verify_refresh_token(token)
@@ -151,13 +151,13 @@ class TestRefreshTokenLogic:
 
     @pytest.mark.asyncio
     async def test_verify_refresh_token_invalid(self, db: Session):
-        """無効なリフレッシュトークンの検証"""
+        """An invalid refresh token does not verify."""
         user_id = await _make_auth_service(db).verify_refresh_token("invalid_token")
         assert user_id is None
 
     @pytest.mark.asyncio
     async def test_revoke_refresh_token(self, test_user: User, db: Session):
-        """リフレッシュトークンの無効化"""
+        """Revocation invalidates the refresh token."""
         svc = _make_auth_service(db)
         token = await svc.create_refresh_token(test_user.id)
 
@@ -169,7 +169,7 @@ class TestRefreshTokenLogic:
 
     @pytest.mark.asyncio
     async def test_refresh_token_expiration(self, test_user: User, db: Session):
-        """リフレッシュトークンの有効期限テスト"""
+        """An expired refresh token does not verify."""
         svc = _make_auth_service(db)
         token = await svc.create_refresh_token(test_user.id)
 
@@ -184,7 +184,7 @@ class TestRefreshTokenLogic:
     async def test_create_refresh_token_revokes_existing(
         self, test_user: User, db: Session
     ):
-        """新しいリフレッシュトークン生成時に既存のトークンが無効化される"""
+        """Creating a new refresh token revokes the existing one."""
         svc = _make_auth_service(db)
         first_token = await svc.create_refresh_token(test_user.id)
         second_token = await svc.create_refresh_token(test_user.id)
@@ -194,7 +194,7 @@ class TestRefreshTokenLogic:
 
     @pytest.mark.asyncio
     async def test_refresh_token_model_is_valid(self, test_user: User, db: Session):
-        """RefreshTokenモデルのis_validメソッドのテスト"""
+        """`RefreshToken.is_valid` behaves correctly."""
         token = await _make_auth_service(db).create_refresh_token(test_user.id)
         refresh_token = db.query(RefreshToken).filter(RefreshToken.token == token).first()
 
@@ -209,7 +209,7 @@ class TestRefreshTokenLogic:
 
     @pytest.mark.asyncio
     async def test_refresh_token_model_is_expired(self, test_user: User, db: Session):
-        """RefreshTokenモデルのis_expiredメソッドのテスト"""
+        """`RefreshToken.is_expired` behaves correctly."""
         token = await _make_auth_service(db).create_refresh_token(test_user.id)
         refresh_token = db.query(RefreshToken).filter(RefreshToken.token == token).first()
 

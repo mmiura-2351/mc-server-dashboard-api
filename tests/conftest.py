@@ -1,4 +1,4 @@
-# テスト用のインメモリSQLiteデータベース
+# In-memory SQLite database for the test suite.
 import os
 import shutil
 import sys
@@ -16,7 +16,7 @@ import tempfile
 sys.setrecursionlimit(5000)
 
 
-# Worker固有のデータベースファイルを使用して並列実行時の分離を確保
+# Use a worker-specific database file to isolate parallel execution.
 def get_worker_db_path():
     """Get worker-specific database path for parallel execution isolation."""
     worker_id = os.environ.get("PYTEST_XDIST_WORKER", "master")
@@ -149,9 +149,9 @@ app.dependency_overrides[get_db] = override_get_db
 
 
 def pytest_sessionfinish(session, exitstatus):
-    """
-    テストセッション終了時にworker固有のテストデータベースファイルを削除
-    Race conditionを避けるため、各workerが自分のファイルのみを削除
+    """Remove the worker-specific test database file at session end.
+
+    Each worker only deletes its own file to avoid race conditions.
     """
     # Dispose the shared SQLAlchemy engine so its pooled sqlite connections are
     # closed deterministically rather than reaped by GC (which emits
@@ -169,7 +169,7 @@ def pytest_sessionfinish(session, exitstatus):
         if os.path.exists(current_worker_db):
             os.remove(current_worker_db)
     except Exception as e:
-        # エラーをログに記録するが、テスト結果には影響させない
+        # Log the failure but do not fail the test session because of it.
         import warnings
 
         warnings.warn(f"Failed to cleanup test database {current_worker_db}: {e}")
@@ -211,9 +211,9 @@ def db(_create_schema_once):
     try:
         yield db
     finally:
-        # セッションをクローズ
+        # Close the session.
         db.close()
-        # 全テーブルをクリア（より軽量）
+        # Clear all tables (lighter than dropping and recreating).
         with engine.connect() as conn:
             for table in reversed(Base.metadata.sorted_tables):
                 conn.execute(table.delete())
@@ -232,7 +232,7 @@ def client(db):
 
 @pytest.fixture
 def test_user(db):
-    """テスト用ユーザーを作成"""
+    """Create a test user."""
     return make_user(
         db,
         username="testuser",
@@ -245,7 +245,7 @@ def test_user(db):
 
 @pytest.fixture
 def admin_user(db):
-    """テスト用管理者ユーザーを作成"""
+    """Create a test admin user."""
     return make_user(
         db,
         username="admin",
@@ -258,7 +258,7 @@ def admin_user(db):
 
 @pytest.fixture
 def unapproved_user(db):
-    """未承認のテスト用ユーザーを作成"""
+    """Create an unapproved test user."""
     return make_user(
         db,
         username="unapproved",
@@ -271,7 +271,7 @@ def unapproved_user(db):
 
 @pytest.fixture
 def operator_user(db):
-    """テスト用オペレーターユーザーを作成"""
+    """Create a test operator user."""
     return make_user(
         db,
         username="operator",
@@ -284,37 +284,37 @@ def operator_user(db):
 
 @pytest.fixture
 def user_service(db):
-    """UserServiceのインスタンスを提供"""
+    """Provide a UserService instance."""
     return UserService(uow=SqlAlchemyUsersUnitOfWork(db=db))
 
 
 @pytest.fixture
 def admin_headers(admin_user):
-    """管理者用認証ヘッダーを生成 (JWT 直接生成、login 経由しない)"""
+    """Generate admin auth headers (JWT issued directly, not via login)."""
     return auth_headers_for(admin_user.username)
 
 
 @pytest.fixture
 def user_headers(test_user):
-    """一般ユーザー用認証ヘッダーを生成 (JWT 直接生成、login 経由しない)"""
+    """Generate regular-user auth headers (JWT issued directly, not via login)."""
     return auth_headers_for(test_user.username)
 
 
 @pytest.fixture
 def operator_headers(operator_user):
-    """オペレーター用認証ヘッダーを生成 (JWT 直接生成、login 経由しない)"""
+    """Generate operator auth headers (JWT issued directly, not via login)."""
     return auth_headers_for(operator_user.username)
 
 
 @pytest.fixture
 def unapproved_headers(unapproved_user):
-    """未承認ユーザー用認証ヘッダーを生成 (JWT 直接生成、login 経由しない)"""
+    """Generate unapproved-user auth headers (JWT issued directly, not via login)."""
     return auth_headers_for(unapproved_user.username)
 
 
 @pytest.fixture
 def sample_server(db, admin_user):
-    """テスト用サーバーを作成"""
+    """Create a test server."""
     return make_server(db, admin_user)
 
 

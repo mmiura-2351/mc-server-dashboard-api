@@ -9,12 +9,12 @@ from app.users.models import User
 
 
 class TestBackupScheduleModel:
-    """BackupSchedule モデルのテスト"""
+    """Tests for the `BackupSchedule` model."""
 
     @pytest.mark.slow
     def test_create_backup_schedule_success(self, db: Session):
-        """正常なBackupSchedule作成テスト"""
-        # テスト用ユーザーとサーバーを作成
+        """`BackupSchedule` can be created with valid inputs."""
+        # Create a test user and a server.
         user = User(
             username="testuser",
             email="test@example.com",
@@ -40,7 +40,7 @@ class TestBackupScheduleModel:
         db.add(server)
         db.flush()
 
-        # BackupSchedule作成
+        # Create the BackupSchedule.
         schedule = BackupSchedule(
             server_id=server.id,
             interval_hours=12,
@@ -51,7 +51,7 @@ class TestBackupScheduleModel:
         db.add(schedule)
         db.commit()
 
-        # 検証
+        # Verify.
         assert schedule.id is not None
         assert schedule.server_id == server.id
         assert schedule.interval_hours == 12
@@ -64,7 +64,7 @@ class TestBackupScheduleModel:
         assert schedule.updated_at is not None
 
     def test_backup_schedule_validation_constraints(self, db: Session):
-        """BackupScheduleのバリデーション制約テスト"""
+        """`BackupSchedule` validation constraints reject invalid values."""
         user = User(
             username="testuser2",
             email="test2@example.com",
@@ -90,11 +90,11 @@ class TestBackupScheduleModel:
         db.add(server)
         db.flush()
 
-        # interval_hours の範囲外テスト（0時間）
-        with pytest.raises(Exception):  # CHECK制約エラー
+        # interval_hours out of range (0 hours).
+        with pytest.raises(Exception):  # CHECK constraint violation
             schedule = BackupSchedule(
                 server_id=server.id,
-                interval_hours=0,  # 無効値
+                interval_hours=0,  # invalid
                 max_backups=10,
             )
             db.add(schedule)
@@ -102,11 +102,11 @@ class TestBackupScheduleModel:
 
         db.rollback()
 
-        # interval_hours の範囲外テスト（169時間）
-        with pytest.raises(Exception):  # CHECK制約エラー
+        # interval_hours out of range (169 hours).
+        with pytest.raises(Exception):  # CHECK constraint violation
             schedule = BackupSchedule(
                 server_id=server.id,
-                interval_hours=169,  # 無効値
+                interval_hours=169,  # invalid
                 max_backups=10,
             )
             db.add(schedule)
@@ -114,30 +114,30 @@ class TestBackupScheduleModel:
 
         db.rollback()
 
-        # max_backups の範囲外テスト（0個）
-        with pytest.raises(Exception):  # CHECK制約エラー
+        # max_backups out of range (0).
+        with pytest.raises(Exception):  # CHECK constraint violation
             schedule = BackupSchedule(
                 server_id=server.id,
                 interval_hours=12,
-                max_backups=0,  # 無効値
+                max_backups=0,  # invalid
             )
             db.add(schedule)
             db.commit()
 
         db.rollback()
 
-        # max_backups の範囲外テスト（31個）
-        with pytest.raises(Exception):  # CHECK制約エラー
+        # max_backups out of range (31).
+        with pytest.raises(Exception):  # CHECK constraint violation
             schedule = BackupSchedule(
                 server_id=server.id,
                 interval_hours=12,
-                max_backups=31,  # 無効値
+                max_backups=31,  # invalid
             )
             db.add(schedule)
             db.commit()
 
     def test_backup_schedule_unique_server_constraint(self, db: Session):
-        """1サーバー1スケジュールの制約テスト"""
+        """A server can have at most one schedule."""
         user = User(
             username="testuser3",
             email="test3@example.com",
@@ -163,13 +163,13 @@ class TestBackupScheduleModel:
         db.add(server)
         db.flush()
 
-        # 最初のスケジュール作成
+        # Create the first schedule.
         schedule1 = BackupSchedule(server_id=server.id, interval_hours=12, max_backups=10)
         db.add(schedule1)
         db.commit()
 
-        # 同じサーバーに2つ目のスケジュール作成（失敗するはず）
-        with pytest.raises(IntegrityError):  # UNIQUE制約エラー
+        # Creating a second schedule for the same server must fail.
+        with pytest.raises(IntegrityError):  # UNIQUE constraint violation
             schedule2 = BackupSchedule(
                 server_id=server.id, interval_hours=24, max_backups=5
             )
@@ -177,7 +177,7 @@ class TestBackupScheduleModel:
             db.commit()
 
     def test_backup_schedule_server_relationship(self, db: Session):
-        """サーバーとの関係性テスト"""
+        """The schedule <-> server relationship works."""
         user = User(
             username="testuser4",
             email="test4@example.com",
@@ -207,12 +207,12 @@ class TestBackupScheduleModel:
         db.add(schedule)
         db.commit()
 
-        # リレーションシップの確認
+        # Verify the bidirectional relationship.
         assert schedule.server == server
         assert server.backup_schedule == schedule
 
     def test_backup_schedule_cascade_delete(self, db: Session):
-        """サーバー削除時のカスケード削除テスト"""
+        """Deleting a server cascades to its schedule."""
         user = User(
             username="testuser5",
             email="test5@example.com",
@@ -244,18 +244,18 @@ class TestBackupScheduleModel:
 
         schedule_id = schedule.id
 
-        # サーバー削除
+        # Delete the server.
         db.delete(server)
         db.commit()
 
-        # スケジュールも削除されているか確認
+        # The schedule must be gone too.
         deleted_schedule = (
             db.query(BackupSchedule).filter(BackupSchedule.id == schedule_id).first()
         )
         assert deleted_schedule is None
 
     def test_backup_schedule_default_values(self, db: Session):
-        """デフォルト値のテスト"""
+        """Default values are applied when fields are omitted."""
         user = User(
             username="testuser6",
             email="test6@example.com",
@@ -281,12 +281,12 @@ class TestBackupScheduleModel:
         db.add(server)
         db.flush()
 
-        # 最小限のフィールドでスケジュール作成
+        # Create the schedule with only the required fields.
         schedule = BackupSchedule(server_id=server.id, interval_hours=12, max_backups=10)
         db.add(schedule)
         db.commit()
 
-        # デフォルト値の確認
+        # Verify defaults.
         assert schedule.enabled is True
         assert schedule.only_when_running is True
         assert schedule.last_backup_at is None
@@ -294,10 +294,10 @@ class TestBackupScheduleModel:
 
 
 class TestBackupScheduleLogModel:
-    """BackupScheduleLog モデルのテスト"""
+    """Tests for the `BackupScheduleLog` model."""
 
     def test_create_backup_schedule_log_success(self, db: Session):
-        """正常なBackupScheduleLog作成テスト"""
+        """`BackupScheduleLog` can be created with valid inputs."""
         user = User(
             username="loguser1",
             email="loguser1@example.com",
@@ -323,7 +323,7 @@ class TestBackupScheduleLogModel:
         db.add(server)
         db.flush()
 
-        # BackupScheduleLog作成
+        # Create the BackupScheduleLog.
         log = BackupScheduleLog(
             server_id=server.id,
             action=ScheduleAction.created,
@@ -334,7 +334,7 @@ class TestBackupScheduleLogModel:
         db.add(log)
         db.commit()
 
-        # 検証
+        # Verify.
         assert log.id is not None
         assert log.server_id == server.id
         assert log.action == ScheduleAction.created
@@ -345,7 +345,7 @@ class TestBackupScheduleLogModel:
         assert log.created_at is not None
 
     def test_backup_schedule_log_relationships(self, db: Session):
-        """BackupScheduleLogのリレーションシップテスト"""
+        """`BackupScheduleLog` relationships resolve correctly."""
         user = User(
             username="loguser2",
             email="loguser2@example.com",
@@ -379,12 +379,12 @@ class TestBackupScheduleLogModel:
         db.add(log)
         db.commit()
 
-        # リレーションシップの確認
+        # Verify the relationships.
         assert log.server == server
         assert log.executed_by == user
 
     def test_backup_schedule_log_all_actions(self, db: Session):
-        """全てのScheduleActionのテスト"""
+        """Every `ScheduleAction` value can be stored."""
         user = User(
             username="loguser3",
             email="loguser3@example.com",
@@ -410,7 +410,7 @@ class TestBackupScheduleLogModel:
         db.add(server)
         db.flush()
 
-        # 全てのアクションタイプをテスト
+        # Exercise every action type.
         actions = [
             ScheduleAction.created,
             ScheduleAction.updated,
@@ -430,7 +430,7 @@ class TestBackupScheduleLogModel:
 
         db.commit()
 
-        # 作成されたログの確認
+        # Verify all logs were inserted.
         logs = (
             db.query(BackupScheduleLog)
             .filter(BackupScheduleLog.server_id == server.id)
@@ -443,7 +443,7 @@ class TestBackupScheduleLogModel:
             assert action in log_actions
 
     def test_backup_schedule_log_optional_fields(self, db: Session):
-        """BackupScheduleLogのオプションフィールドテスト"""
+        """Optional fields on `BackupScheduleLog` are nullable."""
         user = User(
             username="loguser4",
             email="loguser4@example.com",
@@ -469,7 +469,7 @@ class TestBackupScheduleLogModel:
         db.add(server)
         db.flush()
 
-        # executed_by_user_id なしのログ（システム実行）
+        # A log written by the system has no `executed_by_user_id`.
         log = BackupScheduleLog(
             server_id=server.id,
             action=ScheduleAction.executed,
