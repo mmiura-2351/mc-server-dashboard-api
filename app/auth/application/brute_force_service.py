@@ -3,7 +3,7 @@
 Tracks failed authentication attempts in a sliding window and locks
 the *username* or the *source IP* once a configurable threshold is
 exceeded. Lockout durations grow exponentially up to a configurable
-cap (NIST 800-63B §5.2.2 recommends exponential back-off rather than
+cap (NIST 800-63B Section 5.2.2 recommends exponential back-off rather than
 a hard cap).
 
 Persistence lives in ``app.auth.models`` (``login_attempts`` and

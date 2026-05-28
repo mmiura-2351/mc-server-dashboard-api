@@ -11,9 +11,9 @@ that was provisioned before PR #60 was merged**. It enumerates every
 breaking change, the order to apply them, and the verification + rollback
 steps. For the architectural background (why daemons, how double-fork
 works, monitoring loops, etc.) read
-[`docs/DAEMON_PROCESS_ARCHITECTURE.md`](DAEMON_PROCESS_ARCHITECTURE.md).
+[`docs/app/DAEMON_PROCESS_ARCHITECTURE.md`](../app/DAEMON_PROCESS_ARCHITECTURE.md).
 For configuration field reference see
-[`docs/CONFIGURATION.md`](CONFIGURATION.md).
+[`docs/app/CONFIGURATION.md`](../app/CONFIGURATION.md).
 
 ---
 
@@ -31,7 +31,7 @@ You must follow this guide if **any** of the following is true:
 
 You can skip this guide if you are deploying a clean install from
 `master` at or after `81585f0` — in that case the defaults documented in
-[`docs/CONFIGURATION.md`](CONFIGURATION.md) §3 apply automatically and
+[`docs/app/CONFIGURATION.md`](../app/CONFIGURATION.md) Section 3 apply automatically and
 no migration work is required.
 
 ---
@@ -49,8 +49,8 @@ no migration work is required.
 | `server.properties`          | Operator-managed only                              | API rewrites `enable-rcon`, `rcon.port`, `rcon.password`      |
 | Default shutdown semantics   | All servers terminated                             | `KEEP_SERVERS_ON_SHUTDOWN=True` keeps them running            |
 | Default startup semantics    | No scan                                            | `AUTO_SYNC_ON_STARTUP=True` rehydrates from PID files          |
-| New config surface           | 0 `DAEMON_*` env vars                              | 23 `DAEMON_*` env vars (see §3.2)                              |
-| Platform                     | Worked on Linux + macOS + WSL (best-effort Win.)   | **Unix-only** (uses `os.fork`, `os.setsid`, see §8)            |
+| New config surface           | 0 `DAEMON_*` env vars                              | 23 `DAEMON_*` env vars (see Section 3.2)                              |
+| Platform                     | Worked on Linux + macOS + WSL (best-effort Win.)   | **Unix-only** (uses `os.fork`, `os.setsid`, see Section 8)            |
 
 ---
 
@@ -72,7 +72,7 @@ running and are re-attached on next startup.
   _"`systemctl stop mc-dashboard` ⇒ servers stop"_ will now leave the
   servers running. To restore the legacy behaviour set
   `KEEP_SERVERS_ON_SHUTDOWN=False` explicitly in `.env`.
-- Per-environment overlay (see [`CONFIGURATION.md`](CONFIGURATION.md) §3):
+- Per-environment overlay (see [`CONFIGURATION.md`](../app/CONFIGURATION.md) Section 3):
   development / staging / production default to `True`; only `testing`
   defaults to `False`.
 
@@ -107,45 +107,14 @@ compatible with old `asyncio`-tracked processes from pre-#60.
 
 #### New `DAEMON_*` environment variables
 
-The following table is generated from `app/core/daemon_config.py`
-(`DaemonConfig.from_environment` `env_mapping` + `resource_env_mapping`,
-plus the `field_validator` constraints on `DaemonConfig`).
+23 new `DAEMON_*` variables now exist on
+`app.core.daemon_config.DaemonConfig`, grouped into process creation,
+monitoring, resource limits (`DaemonProcessLimits`), logging, security,
+RCON, and recovery. The full table — env var name, `DaemonConfig` field,
+default, validator, and cross-field constraints — lives in
+[`CONFIGURATION.md` section "Daemon process settings"](../app/CONFIGURATION.md#daemon-process-settings-daemon_).
 
-**Core daemon (`DaemonConfig` fields):**
-
-| Env var                         | Maps to                            | Default          | Validation                          |
-|---------------------------------|------------------------------------|------------------|-------------------------------------|
-| `DAEMON_MODE`                   | `daemon_mode`                      | `double_fork`    | `double_fork` \| `subprocess_daemon` \| `process_group` |
-| `DAEMON_ENABLE_PERSISTENCE`     | `enable_process_persistence`       | `true`           | bool                                |
-| `DAEMON_PID_DIRECTORY`          | `pid_file_directory`               | _server dir_     | writable dir; auto-`mkdir -p`       |
-| `DAEMON_ENABLE_MONITORING`      | `enable_process_monitoring`        | `true`           | bool                                |
-| `DAEMON_MONITORING_INTERVAL`    | `monitoring_interval_seconds`      | `5`              | 1 ≤ n ≤ 60                          |
-| `DAEMON_STARTUP_TIMEOUT`        | `process_startup_timeout_seconds`  | `30`             | 5 ≤ n ≤ 300                         |
-| `DAEMON_LOG_LEVEL`              | `log_level`                        | `info`           | debug/info/warning/error/critical   |
-| `DAEMON_ENABLE_LOGS`            | `enable_daemon_logs`               | `true`           | bool                                |
-| `DAEMON_LOG_ROTATION_SIZE`      | `log_rotation_size_mb`             | `100`            | 1 ≤ n ≤ 1000                        |
-| `DAEMON_ENABLE_ISOLATION`       | `enable_process_isolation`         | `true`           | bool                                |
-| `DAEMON_VERIFY_DETACHMENT`      | `verify_detachment`                | `true`           | bool                                |
-| `DAEMON_SECURE_ENVIRONMENT`     | `secure_environment`               | `true`           | bool                                |
-| `DAEMON_ENABLE_RCON`            | `enable_rcon_integration`          | `true`           | bool                                |
-| `DAEMON_RCON_TIMEOUT`           | `rcon_timeout_seconds`             | `10`             | 1 ≤ n ≤ 60                          |
-| `DAEMON_RCON_RETRY_ATTEMPTS`    | `rcon_retry_attempts`              | `3`              | 1 ≤ n ≤ 10                          |
-| `DAEMON_ENABLE_AUTO_RECOVERY`   | `enable_auto_recovery`             | `true`           | bool                                |
-| `DAEMON_RECOVERY_TIMEOUT`       | `recovery_timeout_seconds`         | `60`             | 10 ≤ n ≤ 600                        |
-| `DAEMON_MAX_RECOVERY_ATTEMPTS`  | `max_recovery_attempts`            | `3`              | 1 ≤ n ≤ 10                          |
-
-**Resource limits (`DaemonProcessLimits` fields):**
-
-| Env var                  | Maps to            | Default | Validation              |
-|--------------------------|--------------------|---------|-------------------------|
-| `DAEMON_MAX_MEMORY_MB`   | `max_memory_mb`    | `2048`  | 1 ≤ n ≤ 32768           |
-| `DAEMON_MAX_CPU_PERCENT` | `max_cpu_percent`  | `80.0`  | 0 < x ≤ 100             |
-| `DAEMON_MAX_OPEN_FILES`  | `max_open_files`   | `1024`  | 64 ≤ n ≤ 65536          |
-| `DAEMON_MAX_PROCESSES`   | `max_processes`    | `10`    | int                     |
-| `DAEMON_TIMEOUT_SECONDS` | `timeout_seconds`  | `300`   | int (≥ startup timeout) |
-
-Cross-field validators (raise at startup if violated, see
-`DaemonConfig.validate_configuration`):
+The most consequential cross-field rules to know during upgrade:
 
 - `enable_auto_recovery=true` requires `enable_process_persistence=true`
   **and** `enable_process_monitoring=true`.
@@ -161,7 +130,7 @@ These live on `app.core.config.Settings` rather than `DaemonConfig`:
 | `KEEP_SERVERS_ON_SHUTDOWN`  | `True`                     | `False`            |
 | `AUTO_SYNC_ON_STARTUP`      | `True`                     | `False`            |
 
-See [`CONFIGURATION.md`](CONFIGURATION.md) §3 for the full per-env overlay.
+See [`CONFIGURATION.md`](../app/CONFIGURATION.md) Section 3 for the full per-env overlay.
 
 ### 3.3 Filesystem
 
@@ -249,7 +218,7 @@ code. Skipping any step risks orphaned processes or lost state.
   - SQLite: `cp app.db app.db.bak.$(date +%Y%m%d)`.
   - PostgreSQL/MySQL: `pg_dump` / `mysqldump`.
 - [ ] Record the **current deployed git SHA** (e.g. `git rev-parse HEAD`)
-  somewhere durable — you will need it for §7 rollback.
+  somewhere durable — you will need it for Section 7 rollback.
 - [ ] Note the current `.env` file: in particular any custom `JAVA_*_PATH`
   or `CORS_ORIGINS` you intend to preserve.
 - [ ] Verify the host has Java on `PATH` and the API user has permission
@@ -264,7 +233,7 @@ code. Skipping any step risks orphaned processes or lost state.
    sudo systemctl stop mc-dashboard      # or: just service-stop
    ```
 2. **Confirm no Java/Minecraft processes survive.** (They should not —
-   you stopped them in §4. If any remain, kill them now or the new code
+   you stopped them in Section 4. If any remain, kill them now or the new code
    will report port conflicts when starting fresh daemons.)
    ```bash
    pgrep -fa 'java .*server\.jar' || echo "clean"
@@ -275,7 +244,7 @@ code. Skipping any step risks orphaned processes or lost state.
    git checkout master      # or your release tag at/after 81585f0
    uv sync
    ```
-4. **Review and edit `.env`** for the new variables documented in §3.2.
+4. **Review and edit `.env`** for the new variables documented in Section 3.2.
    At minimum, decide explicitly whether you want
    `KEEP_SERVERS_ON_SHUTDOWN=True` (new default) or `False` (legacy
    behaviour). For production keep the defaults unless you have a
@@ -353,8 +322,8 @@ If the upgrade misbehaves and you need to revert:
    ```bash
    rm -f servers/*/server.pid servers/*/server_error.log
    ```
-4. **Restore the DB and `servers/` snapshots** from §4 if needed.
-5. **Check out the pre-upgrade SHA** you recorded in §4.
+4. **Restore the DB and `servers/` snapshots** from Section 4 if needed.
+5. **Check out the pre-upgrade SHA** you recorded in Section 4.
    ```bash
    git checkout <pre-upgrade-sha>
    uv sync
@@ -426,10 +395,10 @@ The API process user does not own `servers/<id>/`. Fix ownership:
 ## 10. References
 
 - Source of truth for daemon internals:
-  [`docs/DAEMON_PROCESS_ARCHITECTURE.md`](DAEMON_PROCESS_ARCHITECTURE.md).
+  [`docs/app/DAEMON_PROCESS_ARCHITECTURE.md`](../app/DAEMON_PROCESS_ARCHITECTURE.md).
 - Configuration field reference and per-env overlay:
-  [`docs/CONFIGURATION.md`](CONFIGURATION.md).
-- RCON details: [`docs/RCON_INTEGRATION.md`](RCON_INTEGRATION.md).
+  [`docs/app/CONFIGURATION.md`](../app/CONFIGURATION.md).
+- RCON details: [`docs/app/RCON_INTEGRATION.md`](../app/RCON_INTEGRATION.md).
 - Code entry points:
   - `app/core/daemon_config.py` (env mapping + validators).
   - `app/servers/application/minecraft_server.py` (`_create_daemon_process`,

@@ -2,7 +2,7 @@ name: Nightly
 
 # Runs the full test suite (including @pytest.mark.slow) plus coverage.
 # Catches environmental drift and flakiness that PR CI may miss because slow
-# tests are excluded from pre-commit/pre-push smoke runs. See docs/TESTING.md §4.
+# tests are excluded from pre-commit/pre-push smoke runs. See docs/dev/TESTING.md Section 4.
 
 on:
   schedule:

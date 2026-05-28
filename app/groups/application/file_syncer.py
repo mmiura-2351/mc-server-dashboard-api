@@ -5,7 +5,7 @@ server, optionally followed by a best-effort real-time command broadcast
 (reload-whitelist, sync-op). Lifted out of the legacy `GroupFileService`
 so the application service stays focused on use-case orchestration.
 
-Per `docs/ARCHITECTURE.md` §4.2, this module is part of the application
+Per `docs/app/ARCHITECTURE.md` Section 4.2, this module is part of the application
 layer and may **not** touch SQLAlchemy. All persistence access goes
 through `ServerReadPort` (for the directory path) and
 `ServerGroupRepository` (for the attached-group set / attached-server

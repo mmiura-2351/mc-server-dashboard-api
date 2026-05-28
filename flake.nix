@@ -17,15 +17,15 @@
           name = "mc-server-dashboard-api";
 
           packages = with pkgs; [
-            python          # Python 3.13 interpreter (uv が venv 生成時に参照)
-            uv              # 主要 package manager
+            python          # Python 3.13 interpreter (used by uv when creating the venv)
+            uv              # primary package manager
             jdk             # Minecraft server / Java-required tests
-            pre-commit      # CLAUDE.md Rule 2/6 で必須
+            pre-commit      # required by CLAUDE.md Rule 2/6
             just            # task runner
-            git             # bit / pre-commit が依存
+            git             # required by bit / pre-commit
           ];
 
-          # uv が Nix 管理外の Python を取りに行かないよう抑止
+          # Prevent uv from fetching a Python outside of Nix.
           env = {
             UV_PYTHON_DOWNLOADS  = "never";
             UV_PYTHON            = "${python}/bin/python3.13";
@@ -33,7 +33,7 @@
           };
 
           shellHook = ''
-            # Minecraft 起動用 Java パスを Java discovery 機能へ橋渡し
+            # Expose the Minecraft-launch Java path to the Java discovery feature.
             export JAVA_21_PATH="${jdk}/bin/java"
 
             echo "mc-server-dashboard-api devShell"

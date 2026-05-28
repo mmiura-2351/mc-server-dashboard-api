@@ -1,6 +1,6 @@
 """Port (Protocol) definitions for the auth domain.
 
-Per `docs/ARCHITECTURE.md` §4.1 this module must not import from any
+Per `docs/app/ARCHITECTURE.md` Section 4.1 this module must not import from any
 framework. All types crossing these Protocols are pure domain entities.
 """
 

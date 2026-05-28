@@ -2,7 +2,7 @@
 
 Provides liveness and readiness probes plus a detailed admin-only
 component report. Layered after the hexagonal layout (ARCHITECTURE
-§4.2): the ``application`` layer is framework-agnostic, ``adapters``
+Section 4.2): the ``application`` layer is framework-agnostic, ``adapters``
 talk to the rest of the codebase via Ports, and the ``api`` layer is
 the FastAPI surface.
 

@@ -13,7 +13,7 @@ stage changes on the session and rely on the surrounding
 Cross-domain JOINs against `Server` are intentionally kept inside this
 adapter rather than dispatched through `ServerReadPort.list_for_ids`:
 the alternative would issue one query per attached server (N+1) for
-the attachment-list endpoints. See `docs/ARCHITECTURE.md` §4.3 — the
+the attachment-list endpoints. See `docs/app/ARCHITECTURE.md` Section 4.3 — the
 adapter layer is allowed to touch the ORM directly; only the
 **application** layer is forbidden from doing so.
 """

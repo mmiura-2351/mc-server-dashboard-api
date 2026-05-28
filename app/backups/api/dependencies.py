@@ -9,7 +9,7 @@ factory helpers that were previously located under
 `app/backups/application/`. They live here (and not in `application/`)
 so the application layer never imports from `adapters/` or
 SQLAlchemy — matching the groups sister domain and
-`docs/ARCHITECTURE.md` §4.2.
+`docs/app/ARCHITECTURE.md` Section 4.2.
 """
 
 from pathlib import Path
@@ -71,7 +71,7 @@ def get_backup_scheduler_service() -> BackupSchedulerService:
 # These functions wire concrete SQLAlchemy adapters into the application
 # services. They are intentionally located in the `api/` layer because
 # `application/` is forbidden from importing `adapters/` (ARCHITECTURE.md
-# §4.2). Both the FastAPI DI graph and the legacy shim
+# Section 4.2). Both the FastAPI DI graph and the legacy shim
 # (`app.services.backup_service`) call into these helpers, so the shim
 # does not need to import from `adapters/` either.
 # ---------------------------------------------------------------------------

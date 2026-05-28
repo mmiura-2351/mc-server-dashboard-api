@@ -1,6 +1,6 @@
 """Port (Protocol) definitions for the backups domain.
 
-Per `docs/ARCHITECTURE.md` §4.1, this module **must not import** from
+Per `docs/app/ARCHITECTURE.md` Section 4.1, this module **must not import** from
 SQLAlchemy, Pydantic, FastAPI, or any other framework. All types crossing
 these Protocols are pure domain entities defined in `entities.py`.
 
@@ -86,7 +86,7 @@ class BackupScheduleRepository(Protocol):
     Cross-domain JOIN against `User` (for `executed_by_username`) is
     intentionally kept here rather than dispatched through a
     `UserReadPort`: the alternative would issue one query per log row
-    (legacy N+1). See `docs/ARCHITECTURE.md` §4.3 — the adapter layer
+    (legacy N+1). See `docs/app/ARCHITECTURE.md` Section 4.3 — the adapter layer
     is allowed to touch the ORM directly; only the **application**
     layer is forbidden.
     """

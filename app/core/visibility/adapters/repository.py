@@ -14,7 +14,7 @@ Cross-domain reads against `Server` and `Group` (the
 single anti-join is markedly cheaper than two list-and-diff passes
 through dedicated Read Ports, and the alternative would force the
 application layer to know the legacy column names. See
-`docs/ARCHITECTURE.md` §4.3.
+`docs/app/ARCHITECTURE.md` Section 4.3.
 """
 
 from typing import Dict, List, Optional

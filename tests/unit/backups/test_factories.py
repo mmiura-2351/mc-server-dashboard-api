@@ -2,7 +2,7 @@
 
 The helpers live in `app.backups.api.dependencies` (not under
 `application/`) so the application layer never imports from
-`adapters/` or SQLAlchemy. See `docs/ARCHITECTURE.md` §4.2.
+`adapters/` or SQLAlchemy. See `docs/app/ARCHITECTURE.md` Section 4.2.
 """
 
 from app.backups.api.dependencies import (

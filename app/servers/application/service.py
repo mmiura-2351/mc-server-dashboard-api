@@ -51,7 +51,7 @@ from app.groups.application.service import GroupService
 
 # `ServerJarService` / `ServerDatabaseService` originally lived in this
 # module but consume a `Session` at runtime, so they were moved to the
-# adapter layer in #285 (ARCHITECTURE §4.2 — application/ must not
+# adapter layer in #285 (ARCHITECTURE Section 4.2 — application/ must not
 # depend on a framework). They are re-imported here purely so the
 # pre-existing public API
 # (`from app.servers.application.service import ServerJarService`)
@@ -106,7 +106,7 @@ from app.versions.application.java_compatibility import java_compatibility_servi
 # adapters/). With ``from __future__ import annotations`` enabled the
 # names are strings at runtime, so we keep the import under
 # ``TYPE_CHECKING`` to keep the application module framework-free at
-# runtime (ARCHITECTURE §4.2, #285).
+# runtime (ARCHITECTURE Section 4.2, #285).
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
 
@@ -425,7 +425,7 @@ class ServerService:
         The implementation was moved to
         ``app.servers.adapters._legacy_helpers.is_version_supported_db_legacy``
         in #285 so this module no longer constructs adapter classes
-        directly (ARCHITECTURE §4.2).
+        directly (ARCHITECTURE Section 4.2).
         """
         return await is_version_supported_db_legacy(db, server_type, version)
 
@@ -944,7 +944,7 @@ class ServerService:
         (no DI) does not exercise ``start_server`` / ``stop_server`` /
         ``restart_server`` so we raise when the Port is not wired
         rather than reach into ``adapters/`` from the application
-        layer (ARCHITECTURE §4.2). The ``db`` argument is accepted
+        layer (ARCHITECTURE Section 4.2). The ``db`` argument is accepted
         purely so the calling methods can still expose a
         ``db: Session`` annotation under TYPE_CHECKING for legacy
         signature parity.

@@ -6,7 +6,7 @@ Invoked from `app.main` during startup after
 tables (``create_all`` only emits indexes when it creates the parent
 table).
 
-Per `docs/ARCHITECTURE.md` §4.3, domain-specific DDL lives under
+Per `docs/app/ARCHITECTURE.md` Section 4.3, domain-specific DDL lives under
 ``app/<domain>/adapters/migrations.py``.
 
 Issue #75 Phase 1: adds performance indexes for the hot query paths

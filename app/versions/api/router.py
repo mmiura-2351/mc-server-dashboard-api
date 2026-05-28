@@ -2,7 +2,7 @@
 
 All endpoints depend on `VersionUpdateService` via DI — they never see
 SQLAlchemy or `VersionRepository` directly. This is the canonical wiring
-shape for the entire codebase per `docs/ARCHITECTURE.md` §4.4.
+shape for the entire codebase per `docs/app/ARCHITECTURE.md` Section 4.4.
 """
 
 from typing import List, Optional

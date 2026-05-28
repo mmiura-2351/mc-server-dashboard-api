@@ -1,10 +1,18 @@
 # System Architecture (Historical / Pre-refactor)
 
-> **Note**: This document describes the **past implementation** of the system prior to the architectural refactor tracked under Issue #149.
+> ⚠️ **Archived snapshot.** This document captures the pre-Issue-#149
+> implementation as it stood before the hexagonal refactor began. It is
+> retained for historical context only and is **not** updated against the
+> current codebase.
 >
-> For the **target architecture and standards that new code must follow**, see [`docs/ARCHITECTURE.md`](ARCHITECTURE.md).
->
-> This document is preserved as historical context. It is not updated to reflect ongoing changes.
+> The aggregated services described below (`FileManagementService`,
+> `GroupService`, `TemplateService`, `AuthorizationService` as a monolith,
+> etc.) have since been decomposed into per-domain `domain/`,
+> `application/`, `adapters/`, `api/` layers — the `templates` domain has
+> been removed entirely (Group `is_template` flag replaces it). For the
+> live architecture and the rules new code must follow see
+> [`docs/app/ARCHITECTURE.md`](ARCHITECTURE.md); for the current per-domain
+> migration status see [`docs/app/ARCHITECTURE.md`](ARCHITECTURE.md) Section 17.4.
 
 This document provides a comprehensive overview of the Minecraft Server Dashboard API architecture, design patterns, and system requirements.
 

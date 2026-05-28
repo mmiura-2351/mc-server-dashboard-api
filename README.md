@@ -20,7 +20,7 @@ A comprehensive FastAPI-based backend system for managing multiple Minecraft ser
 - **RCON Integration** - Real-time command execution via Remote Console protocol
 - **Live Monitoring** - WebSocket-based live server status, log streaming, and console interaction
 - **Group Operations** - Dynamic OP/whitelist groups with real-time player management via RCON
-- **Performance Monitoring** - Request tracking, metrics collection, and service health monitoring
+- **Observability** - Structured logs with correlation IDs, Prometheus metrics (`/metrics`), Kubernetes liveness/readiness probes (`/healthz`, `/readyz`)
 
 ### 💾 Data Management
 - **Automated Backup System** - Database-persistent scheduling with metadata tracking and restoration
@@ -50,9 +50,11 @@ A comprehensive FastAPI-based backend system for managing multiple Minecraft ser
 3. Create a `.env` file:
    ```env
    # Required Settings
-   SECRET_KEY=your-secret-key
+   SECRET_KEY=your-secret-key           # ≥ 32 chars, no weak prefixes
    DATABASE_URL=sqlite:///./app.db
-   CORS_ORIGINS=["http://localhost:3000"]
+
+   # CORS_ORIGINS is a comma-separated list (NOT a JSON array)
+   CORS_ORIGINS=http://localhost:3000,http://127.0.0.1:3000
 
    # Java Configuration (Optional - for specific Java paths)
    JAVA_8_PATH=/usr/lib/jvm/java-8-openjdk/bin/java
@@ -61,15 +63,9 @@ A comprehensive FastAPI-based backend system for managing multiple Minecraft ser
    JAVA_21_PATH=/usr/lib/jvm/java-21-openjdk/bin/java
    JAVA_DISCOVERY_PATHS=/opt/java,/usr/local/java
 
-   # Daemon Process Configuration (Optional - defaults provided)
-   DAEMON_MODE=double_fork                    # Process creation method
-   DAEMON_ENABLE_PERSISTENCE=true            # Enable process persistence
-   DAEMON_ENABLE_MONITORING=true             # Enable process monitoring
-   DAEMON_MONITORING_INTERVAL=5              # Monitor every 5 seconds
-   DAEMON_ENABLE_RCON=true                   # Enable real-time commands
-   DAEMON_ENABLE_AUTO_RECOVERY=true          # Enable auto-recovery
-
-   # See full configuration options in docs/DAEMON_PROCESS_ARCHITECTURE.md
+   # All other knobs (DAEMON_*, DB_POOL_*, PASSWORD_*, BRUTE_FORCE_*,
+   # MAX_CONCURRENT_*, FILE_MAX_UPLOAD_BYTES, …) have safe defaults.
+   # Full reference: docs/app/CONFIGURATION.md
    ```
 4. Start the application:
    ```bash
@@ -118,27 +114,34 @@ so you can adopt or drop Nix without touching `pyproject.toml` /
 
 ## Documentation
 
+The full documentation index — including a "where do I look for X?" lookup
+table — is at **[`docs/README.md`](docs/README.md)**. Docs are split into
+[`docs/app/`](docs/app/) (application specification) and
+[`docs/dev/`](docs/dev/) (development process).
+
 ### 📚 Core Documentation
 - **Interactive API docs**: `http://localhost:8000/docs`
-- **[Daemon Process Architecture](docs/DAEMON_PROCESS_ARCHITECTURE.md)** - Process management and persistence system
-- **[Daemon Architecture Migration Guide](docs/DAEMON_MIGRATION.md)** - Upgrading existing deployments from pre-PR-#60 to the daemon architecture (breaking changes, checklist, rollback)
-- **[Configuration Reference](docs/CONFIGURATION.md)** - Full `Settings` reference and per-environment overlays
-- **[RCON Integration](docs/RCON_INTEGRATION.md)** - Real-time command execution system
-- **[Java Compatibility Guide](docs/java-compatibility.md)** - Multi-version Java setup and configuration
+- **[Daemon Process Architecture](docs/app/DAEMON_PROCESS_ARCHITECTURE.md)** - Process management and persistence system
+- **[Daemon Architecture Migration Guide](docs/dev/DAEMON_MIGRATION.md)** - Upgrading existing deployments from pre-PR-#60 to the daemon architecture (breaking changes, checklist, rollback)
+- **[Configuration Reference](docs/app/CONFIGURATION.md)** - Full `Settings` reference and per-environment overlays
+- **[RCON Integration](docs/app/RCON_INTEGRATION.md)** - Real-time command execution system
+- **[Java Compatibility Guide](docs/app/JAVA_COMPATIBILITY.md)** - Multi-version Java setup and configuration
 
 ### 🏗️ System Architecture  
-- **[Architecture](docs/ARCHITECTURE.md)** - Target architecture and standards for new code
-- **[Architecture (Historical)](docs/ARCHITECTURE_LEGACY.md)** - Pre-refactor system design (kept for context)
-- **[Database Schema](docs/database.md)** - Database models and relationships
-- **[API Reference](docs/api-reference.md)** - Complete endpoint documentation
-- **[Development Guide](docs/development.md)** - Testing, coding standards, and deployment
+- **[Architecture](docs/app/ARCHITECTURE.md)** - Target hexagonal architecture and the standards new code must follow (see Section 17.4 for the current per-domain migration status)
+- **[Architecture (Historical)](docs/app/ARCHITECTURE_LEGACY.md)** - Pre-refactor snapshot, archived for context
+- **[Database Schema](docs/app/DATABASE.md)** - Database models and relationships
+- **[API Reference](docs/app/API_REFERENCE.md)** - Complete endpoint documentation
+- **[Development Guide](docs/dev/DEVELOPMENT.md)** - Testing, coding standards, and deployment
+- **[Testing Policy](docs/dev/TESTING.md)** - Test hierarchy (unit / integration / infrastructure), markers, and CI scopes
+- **[Dependency Policy](docs/dev/DEPENDENCIES.md)** - Pinning style, lockfile, supply-chain cooldown
 
 ### 🔧 Configuration
-All configuration options are documented in the respective architecture guides:
-- **Daemon Process Settings** - See [DAEMON_PROCESS_ARCHITECTURE.md](docs/DAEMON_PROCESS_ARCHITECTURE.md#configuration)
-- **RCON Configuration** - See [RCON_INTEGRATION.md](docs/RCON_INTEGRATION.md#configuration)
-- **Security Settings** - Environment variables for security hardening
-- **Performance Tuning** - Resource limits and monitoring intervals
+The canonical configuration reference is [`docs/app/CONFIGURATION.md`](docs/app/CONFIGURATION.md): every env var, default, validator, and per-environment overlay. Topic-specific cross-references:
+- **Daemon process settings** — see [DAEMON_PROCESS_ARCHITECTURE.md](docs/app/DAEMON_PROCESS_ARCHITECTURE.md) for the architectural context (env vars themselves are in [CONFIGURATION.md — Daemon process settings](docs/app/CONFIGURATION.md#daemon-process-settings-daemon_))
+- **RCON behaviour** — see [RCON_INTEGRATION.md](docs/app/RCON_INTEGRATION.md)
+- **Security policy** (passwords, brute-force protection, proxy trust) — see [SECURITY.md](docs/app/SECURITY.md)
+- **Logging** (structured JSON, correlation IDs, masking) — see [LOGGING.md](docs/app/LOGGING.md)
 
 ## Development
 
@@ -188,7 +191,7 @@ Recipes are managed with [`just`](https://github.com/casey/just). Run `just` (no
 > **Upgrading from a pre-PR-#60 deployment?** The daemon architecture
 > introduces breaking changes (PID files on disk, RCON auto-enabled,
 > `KEEP_SERVERS_ON_SHUTDOWN=True` by default, Unix-only). See
-> [docs/DAEMON_MIGRATION.md](docs/DAEMON_MIGRATION.md) **before** pulling
+> [docs/dev/DAEMON_MIGRATION.md](docs/dev/DAEMON_MIGRATION.md) **before** pulling
 > the new code on a host that has running Minecraft servers.
 
 ### Quick Deployment

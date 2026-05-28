@@ -2,7 +2,7 @@
 
 This document defines the **test hierarchy** for the Minecraft Server Dashboard API: where each test belongs, how to classify a new test, which pytest markers to use, and how to keep the suite fast and meaningful.
 
-It is the canonical reference superseding the brief sketch in [`ARCHITECTURE.md` §13.3](./ARCHITECTURE.md). When the two disagree, this document wins.
+It is the canonical reference superseding the brief sketch in [`ARCHITECTURE.md` Section 13.3](../app/ARCHITECTURE.md). When the two disagree, this document wins.
 
 > **Scope.** This document is about the *layering* of tests, not about coverage targets or code-review rules. Coverage policy lives in CI and `CLAUDE.md` (Rule 3 — Test Code Development Process).
 
@@ -212,7 +212,7 @@ async def test_launch_server_writes_pid_file(tmp_path):
 
 When adding a test, verify in order:
 
-- [ ] Decided the layer with §2 (the first matching rule wins)
+- [ ] Decided the layer with Section 2 (the first matching rule wins)
 - [ ] Placed the file at `tests/<layer>/<domain>/test_<thing>.py`
 - [ ] Replaced every Port with a Fake (unit) **or** is honest about touching real I/O (integration / infrastructure)
 - [ ] Applied `@pytest.mark.slow` if the test takes ≥ 1 s or spawns a subprocess

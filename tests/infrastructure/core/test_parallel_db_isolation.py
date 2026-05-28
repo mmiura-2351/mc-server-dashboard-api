@@ -1,6 +1,4 @@
-"""
-並列実行時のテスト分離を検証するテスト
-"""
+"""Tests that verify test isolation under parallel execution."""
 
 import os
 import tempfile
@@ -9,37 +7,37 @@ from tests.conftest import get_worker_db_path
 
 
 def test_worker_db_isolation():
-    """Worker固有のデータベースパスが正しく分離されていることを確認"""
+    """The worker-specific database path is properly isolated."""
     db_path = get_worker_db_path()
 
-    # パスがworker固有であることを確認
+    # The path must be worker-specific.
     assert "test_mc_server_" in db_path
     assert db_path.endswith(".db")
 
-    # 一時ディレクトリ内にあることを確認
+    # The path must live under the system temporary directory.
     temp_dir = tempfile.gettempdir()
     assert db_path.startswith(temp_dir)
 
 
 def test_database_file_creation(db):
-    """データベースファイルが適切に作成されることを確認"""
+    """The database file is created correctly."""
     db_path = get_worker_db_path()
 
-    # データベースファイルが存在することを確認
+    # The database file must exist.
     assert os.path.exists(db_path)
 
-    # データベースに接続できることを確認
+    # The database connection must be usable.
     assert db is not None
     assert hasattr(db, "execute")
 
 
 def test_test_isolation_simple_data(db):
-    """テスト間でのデータ分離を確認（シンプルテスト1）"""
+    """Data is isolated between tests (simple test 1)."""
     from app.users.domain.value_objects import Role
     from app.users.models import User
     from tests.helpers.users import make_user
 
-    # テストユーザーを作成
+    # Create a test user.
     make_user(
         db,
         username="isolation_test_1",
@@ -49,19 +47,19 @@ def test_test_isolation_simple_data(db):
         is_approved=True,
     )
 
-    # ユーザーが存在することを確認
+    # The user must exist.
     found_user = db.query(User).filter(User.username == "isolation_test_1").first()
     assert found_user is not None
     assert found_user.email == "test1@isolation.com"
 
 
 def test_test_isolation_different_data(db):
-    """テスト間でのデータ分離を確認（シンプルテスト2）"""
+    """Data is isolated between tests (simple test 2)."""
     from app.users.domain.value_objects import Role
     from app.users.models import User
     from tests.helpers.users import make_user
 
-    # 異なるテストユーザーを作成
+    # Create a different test user.
     make_user(
         db,
         username="isolation_test_2",
@@ -71,11 +69,11 @@ def test_test_isolation_different_data(db):
         is_approved=True,
     )
 
-    # 前のテストのユーザーが存在しないことを確認（分離されている）
+    # The previous test's user must not exist (isolation in effect).
     previous_user = db.query(User).filter(User.username == "isolation_test_1").first()
     assert previous_user is None
 
-    # 現在のユーザーが存在することを確認
+    # The current user must exist.
     current_user = db.query(User).filter(User.username == "isolation_test_2").first()
     assert current_user is not None
     assert current_user.role == Role.admin
