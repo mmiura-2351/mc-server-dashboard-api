@@ -83,16 +83,29 @@ closing comment must include a one-line summary and the PR/commit ref.
 ### Rule 8 — Git/GitHub conventions
 
 - **Branches**: `fix/issue-{N}-{slug}` for bugs, `feature/issue-{N}-{slug}`
-  for everything else. One issue per branch.
+  for everything else. One issue per branch. If no GitHub issue exists for
+  the work, omit the `issue-{N}-` segment and use `fix/{slug}` or
+  `feature/{slug}` directly.
 - **PR title**: short imperative ("Fix Y", not "Fixed Y" or "Y fix").
-- **PR body**: includes `Resolves #N` (or `Fixes` / `Refs`) on its own line.
+- **PR body**: includes `Resolves #N` (or `Fixes` / `Refs`) on its own line
+  when a related issue exists; omit when there is none.
 - **VCS tool**: per the global guideline, use `bit` instead of `git`. Inside
   a `git worktree`, fall back to `git` directly (bit 0.39.0 ignores
   commondir and corrupts commit/push).
 
 ### Rule 9 — PR review hygiene
 
-Use `gh pr view` + `gh pr review` for reviews. Group findings by severity:
+To inspect a PR thoroughly:
+
+- `gh pr view <N>` — description and metadata (does **not** show the diff
+  or inline review comments).
+- `gh pr diff <N>` — the actual code changes.
+- `gh api repos/{owner}/{repo}/pulls/<N>/comments` — inline review
+  comments; `gh pr view --comments` only surfaces the top-level thread, so
+  do not rely on it alone.
+- `gh pr checkout <N>` when you need to run the branch locally.
+
+Submit reviews with `gh pr review`. Group findings by severity:
 `bug` / `improvement` / `question` / `nit`. Each finding links a file:line.
 Approve only after every `bug`-severity item is resolved.
 
@@ -102,10 +115,18 @@ Approve only after every `bug`-severity item is resolved.
 the PR title; the body is one or two short paragraphs. Avoid rebase- or
 merge-commit modes unless the user explicitly asks.
 
-### Rule 11 — Documentation in English
+### Rule 11 — English everywhere
 
-Every Markdown file in this repo — `README.md`, `CLAUDE.md`, `CHANGELOG.md`,
-`docs/**/*.md`, `deployment/**/*.md`, `.github/**/*.md` — is English. So
-are PR descriptions, issue templates, and inline doc comments. When editing
-a file that still contains Japanese, translate the touched section as part
-of the change. Commit messages and code identifiers are out of scope.
+Everything text-bearing in this repo is English:
+
+- Every Markdown file (`README.md`, `CLAUDE.md`, `CHANGELOG.md`,
+  `docs/**/*.md`, `deployment/**/*.md`, `.github/**/*.md`, etc.).
+- PR descriptions and issue templates.
+- **Commit messages** (subject + body).
+- **Code comments** — `#` comments and docstrings in `.py`, comments in
+  `.yml` / `.toml` / `.sh` / `.nix`, etc.
+
+When editing a file that still contains Japanese, translate the touched
+section as part of the change rather than leaving mixed languages behind.
+Code identifiers (variable, function, class names) follow the existing
+language convention of the source — for Python that already means English.
