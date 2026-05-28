@@ -107,45 +107,14 @@ compatible with old `asyncio`-tracked processes from pre-#60.
 
 #### New `DAEMON_*` environment variables
 
-The following table is generated from `app/core/daemon_config.py`
-(`DaemonConfig.from_environment` `env_mapping` + `resource_env_mapping`,
-plus the `field_validator` constraints on `DaemonConfig`).
+23 new `DAEMON_*` variables now exist on
+`app.core.daemon_config.DaemonConfig`, grouped into process creation,
+monitoring, resource limits (`DaemonProcessLimits`), logging, security,
+RCON, and recovery. The full table — env var name, `DaemonConfig` field,
+default, validator, and cross-field constraints — lives in
+[`CONFIGURATION.md` § "Daemon process settings"](CONFIGURATION.md#daemon-process-settings-daemon_).
 
-**Core daemon (`DaemonConfig` fields):**
-
-| Env var                         | Maps to                            | Default          | Validation                          |
-|---------------------------------|------------------------------------|------------------|-------------------------------------|
-| `DAEMON_MODE`                   | `daemon_mode`                      | `double_fork`    | `double_fork` \| `subprocess_daemon` \| `process_group` |
-| `DAEMON_ENABLE_PERSISTENCE`     | `enable_process_persistence`       | `true`           | bool                                |
-| `DAEMON_PID_DIRECTORY`          | `pid_file_directory`               | _server dir_     | writable dir; auto-`mkdir -p`       |
-| `DAEMON_ENABLE_MONITORING`      | `enable_process_monitoring`        | `true`           | bool                                |
-| `DAEMON_MONITORING_INTERVAL`    | `monitoring_interval_seconds`      | `5`              | 1 ≤ n ≤ 60                          |
-| `DAEMON_STARTUP_TIMEOUT`        | `process_startup_timeout_seconds`  | `30`             | 5 ≤ n ≤ 300                         |
-| `DAEMON_LOG_LEVEL`              | `log_level`                        | `info`           | debug/info/warning/error/critical   |
-| `DAEMON_ENABLE_LOGS`            | `enable_daemon_logs`               | `true`           | bool                                |
-| `DAEMON_LOG_ROTATION_SIZE`      | `log_rotation_size_mb`             | `100`            | 1 ≤ n ≤ 1000                        |
-| `DAEMON_ENABLE_ISOLATION`       | `enable_process_isolation`         | `true`           | bool                                |
-| `DAEMON_VERIFY_DETACHMENT`      | `verify_detachment`                | `true`           | bool                                |
-| `DAEMON_SECURE_ENVIRONMENT`     | `secure_environment`               | `true`           | bool                                |
-| `DAEMON_ENABLE_RCON`            | `enable_rcon_integration`          | `true`           | bool                                |
-| `DAEMON_RCON_TIMEOUT`           | `rcon_timeout_seconds`             | `10`             | 1 ≤ n ≤ 60                          |
-| `DAEMON_RCON_RETRY_ATTEMPTS`    | `rcon_retry_attempts`              | `3`              | 1 ≤ n ≤ 10                          |
-| `DAEMON_ENABLE_AUTO_RECOVERY`   | `enable_auto_recovery`             | `true`           | bool                                |
-| `DAEMON_RECOVERY_TIMEOUT`       | `recovery_timeout_seconds`         | `60`             | 10 ≤ n ≤ 600                        |
-| `DAEMON_MAX_RECOVERY_ATTEMPTS`  | `max_recovery_attempts`            | `3`              | 1 ≤ n ≤ 10                          |
-
-**Resource limits (`DaemonProcessLimits` fields):**
-
-| Env var                  | Maps to            | Default | Validation              |
-|--------------------------|--------------------|---------|-------------------------|
-| `DAEMON_MAX_MEMORY_MB`   | `max_memory_mb`    | `2048`  | 1 ≤ n ≤ 32768           |
-| `DAEMON_MAX_CPU_PERCENT` | `max_cpu_percent`  | `80.0`  | 0 < x ≤ 100             |
-| `DAEMON_MAX_OPEN_FILES`  | `max_open_files`   | `1024`  | 64 ≤ n ≤ 65536          |
-| `DAEMON_MAX_PROCESSES`   | `max_processes`    | `10`    | int                     |
-| `DAEMON_TIMEOUT_SECONDS` | `timeout_seconds`  | `300`   | int (≥ startup timeout) |
-
-Cross-field validators (raise at startup if violated, see
-`DaemonConfig.validate_configuration`):
+The most consequential cross-field rules to know during upgrade:
 
 - `enable_auto_recovery=true` requires `enable_process_persistence=true`
   **and** `enable_process_monitoring=true`.

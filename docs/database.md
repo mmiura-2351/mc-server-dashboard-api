@@ -20,7 +20,6 @@ The system uses SQLAlchemy ORM with SQLite as the default database, designed for
 Users (1:N) ────┐
                 ├─ Servers (1:N) ── Backups
                 ├─ Groups (N:M) ──── Servers (via server_groups)
-                ├─ Templates
                 ├─ RefreshTokens
                 └─ AuditLogs (audit trail)
 
@@ -89,9 +88,8 @@ BackupSchedules (1:N) ── BackupScheduleLogs
 | port | Integer | NOT NULL | 25565 | Server port number |
 | max_memory | Integer | NOT NULL | 1024 | Max memory in MB |
 | max_players | Integer | NOT NULL | 20 | Max player count |
-| owner_id | Integer | NOT NULL, FOREIGN KEY (users.id) | - | Server owner |
-| template_id | Integer | NULLABLE, FOREIGN KEY (templates.id) | - | Source template |
-| is_deleted | Boolean | NOT NULL | False | Soft delete flag |
+| owner_id | Integer | NOT NULL, FOREIGN KEY (users.id), INDEXED | - | Server owner |
+| is_deleted | Boolean | NOT NULL, INDEXED | False | Soft delete flag |
 | created_at | DateTime(timezone=True) | NOT NULL | func.now() | Creation time |
 | updated_at | DateTime(timezone=True) | NOT NULL | func.now() | Last update time |
 
@@ -125,9 +123,10 @@ BackupSchedules (1:N) ── BackupScheduleLogs
 | id | Integer | PRIMARY KEY, AUTO_INCREMENT | - | Group identifier |
 | name | String(100) | NOT NULL | - | Group display name |
 | description | Text | NULLABLE | - | Group description |
-| group_type | Enum(GroupType) | NOT NULL | - | Group type (op/whitelist) |
+| type | Enum(GroupType) | NOT NULL | - | Group type (op/whitelist) |
 | players | JSON | NOT NULL | [] | Array of player objects |
-| owner_id | Integer | NOT NULL, FOREIGN KEY (users.id) | - | Group owner |
+| owner_id | Integer | NOT NULL, FOREIGN KEY (users.id), INDEXED | - | Group owner |
+| is_template | Boolean | NULLABLE | False | Whether this group is a reusable template |
 | created_at | DateTime(timezone=True) | NOT NULL | func.now() | Creation time |
 | updated_at | DateTime(timezone=True) | NOT NULL | func.now() | Last update time |
 
@@ -149,9 +148,9 @@ BackupSchedules (1:N) ── BackupScheduleLogs
 |--------|------|-------------|---------|-------------|
 | id | Integer | PRIMARY KEY, AUTO_INCREMENT | - | Relationship identifier |
 | server_id | Integer | NOT NULL, FOREIGN KEY (servers.id) CASCADE DELETE | - | Associated server |
-| group_id | Integer | NOT NULL, FOREIGN KEY (groups.id) CASCADE DELETE | - | Associated group |
+| group_id | Integer | NOT NULL, FOREIGN KEY (groups.id) CASCADE DELETE, INDEXED | - | Associated group |
 | priority | Integer | NOT NULL | 0 | Group priority order |
-| created_at | DateTime(timezone=True) | NOT NULL | func.now() | Attachment time |
+| attached_at | DateTime(timezone=True) | NOT NULL | func.now() | Attachment time |
 
 **Constraints**:
 - UNIQUE (server_id, group_id) - Each group can be attached to a server only once
@@ -209,37 +208,7 @@ BackupSchedules (1:N) ── BackupScheduleLogs
 | result | String(500) | NULLABLE | - | Action result |
 | timestamp | DateTime(timezone=True) | NOT NULL | func.now() | Action timestamp |
 
-### 10. Templates (`templates`)
-
-**Purpose**: Reusable server configuration templates
-
-| Column | Type | Constraints | Default | Description |
-|--------|------|-------------|---------|-------------|
-| id | Integer | PRIMARY KEY, AUTO_INCREMENT | - | Template identifier |
-| name | String(100) | NOT NULL | - | Template name |
-| description | Text | NULLABLE | - | Template description |
-| minecraft_version | String(20) | NOT NULL | - | Target Minecraft version |
-| server_type | Enum(ServerType) | NOT NULL | - | Server type |
-| configuration | JSON | NOT NULL | {} | Server configuration |
-| default_groups | JSON | NULLABLE | - | Default group attachments |
-| is_public | Boolean | NOT NULL | False | Public template flag |
-| created_by_id | Integer | NOT NULL, FOREIGN KEY (users.id) | - | Template creator |
-| created_at | DateTime(timezone=True) | NOT NULL | func.now() | Creation time |
-| updated_at | DateTime(timezone=True) | NOT NULL | func.now() | Last update time |
-
-**JSON Structure (configuration)**:
-```json
-{
-  "max_memory": 2048,
-  "max_players": 20,
-  "server_properties": {
-    "difficulty": "normal",
-    "gamemode": "survival"
-  }
-}
-```
-
-### 11. File Edit History (`file_edit_history`)
+### 10. File Edit History (`file_edit_history`)
 
 **Purpose**: Version control for server file edits
 
@@ -260,7 +229,7 @@ BackupSchedules (1:N) ── BackupScheduleLogs
 - Each edit creates a new version entry
 - Backup files are stored separately from the main server files
 
-### 12. Audit Logs (`audit_logs`)
+### 11. Audit Logs (`audit_logs`)
 
 **Purpose**: System-wide audit logging for security and compliance
 

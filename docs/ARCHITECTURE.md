@@ -670,6 +670,23 @@ This architecture is the **target state**. The codebase is migrating toward it u
 
 Migration progress is tracked under Issue #149 and its sub-issues (#153–#160). Refer to those issues for the current scope and assigned owners.
 
+### 17.4 Current per-domain status (snapshot)
+
+As of v0.1.1 every domain has the full hexagonal layering (`domain/`,
+`application/`, `adapters/`, `api/dependencies.py`), but the **HTTP boundary
+layout** still varies because the routers are migrated one PR at a time.
+
+| Domain | HTTP entry point | Notes |
+|---|---|---|
+| `audit`, `auth`, `health`, `users`, `versions` | `app/<domain>/api/router.py` | Fully migrated to the standard layout. `app/audit/router.py` is a one-line backward-compat shim. |
+| `backups`, `files`, `groups` | `app/<domain>/router.py` (flat) | Routers still live at the legacy location; their `api/dependencies.py` already exists and wires use cases, so the move to `api/router.py` is mechanical. |
+| `servers` | `app/servers/routers/` (split package) | Justified deviation: the router exceeded the §6.1 split threshold (>10 endpoints), so it is split into `control.py`, `management.py`, `utilities.py`, `import_export.py`, aggregated via `app/servers/routers/__init__.py`. Treated as the §6.1 "split into `api/routers/`" pattern with a shorter path. |
+
+The flat `router.py` files in the second row are explicitly transitional —
+when touching them, prefer moving them under `api/router.py` (or `api/routers/`
+when they exceed the §6.1 thresholds) rather than continuing to grow them
+in place.
+
 ---
 
 ## References

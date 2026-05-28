@@ -11,27 +11,55 @@ The RCON integration enables real-time command execution on Minecraft servers wi
 ### Components
 
 ```
-API Request → RCON Service → Minecraft Server (RCON Protocol)
-     ↓              ↓              ↓
-Group Management → Command Queue → Server Response
+API Request → MinecraftServerManager.send_command()
+                ├─ (primary)  RCONClient  → Minecraft server (RCON protocol)
+                └─ (fallback) stdin pipe   → server process
+
+Group / file changes → RealTimeServerCommandService (helper)
+                       → MinecraftServerManager.send_command()
 ```
 
 ### Key Classes
 
-#### 1. RealTimeServerCommands
-Main service for RCON command execution:
+The primary entry point for command dispatch is
+`MinecraftServerManager.send_command()` in
+`app/servers/application/minecraft/manager.py`. It tries RCON first via
+`RCONClient` (`app/servers/application/minecraft/rcon_client.py`) and falls
+back to writing to the server process's stdin if RCON is unavailable.
+
+#### 1. `MinecraftServerManager.send_command()` — primary command path
+
+The single function every caller (HTTP endpoint, real-time helper, or
+internal service) goes through to talk to a running server. Handles RCON
+connection lifecycle, retries, and the stdin fallback.
+
+#### 2. `RCONClient` — protocol implementation
+
+Wire-level RCON client: packet types `3` (LOGIN), `2` (COMMAND), packet
+framing (`size` + `request_id` + `type` + payload). Owned by the manager;
+not called directly by routers or use cases.
+
+#### 3. `RealTimeServerCommandService` — domain helper
+
+Translates group-membership and file changes (whitelist edits, OP diffs,
+group attachments) into RCON commands. Methods such as
+`reload_whitelist_if_running()`, `apply_op_diff_if_running()`, and
+`handle_group_change_commands()` build the commands and then delegate to
+`MinecraftServerManager.send_command()` — they do not open RCON sockets
+themselves.
 
 ```python
-class RealTimeServerCommands:
-    async def execute_command(server_id: int, command: str) -> bool
-    async def handle_group_change_commands(...)
-    async def reload_whitelist(server_id: int) -> bool
-    async def op_player(server_id: int, player: dict) -> bool
-    async def deop_player(server_id: int, player: dict) -> bool
+class RealTimeServerCommandService:
+    async def reload_whitelist_if_running(self, server_id: int) -> bool: ...
+    async def apply_op_diff_if_running(
+        self, server_id: int, ops_before, ops_after
+    ) -> bool: ...
+    async def handle_group_change_commands(self, ...) -> None: ...
 ```
 
-#### 2. RCON Configuration Management
-Automatic RCON setup and password management:
+#### 4. RCON configuration management
+
+Automatic RCON setup and password management (server-creation time):
 
 ```python
 async def _ensure_rcon_configured(server_dir: Path, server_id: int):

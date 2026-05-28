@@ -117,52 +117,26 @@ class RealTimeServerCommands:
 
 ### Environment Variables
 
-```bash
-# Daemon Process Settings
-DAEMON_MODE=double_fork                    # Creation method
-DAEMON_ENABLE_PERSISTENCE=true            # PID file creation
-DAEMON_PID_DIRECTORY=/path/to/pids        # Custom PID directory
+The full inventory of 23 `DAEMON_*` environment variables — with defaults,
+validators, and cross-field constraints — is documented in
+[`docs/CONFIGURATION.md` § "Daemon process settings"](CONFIGURATION.md#daemon-process-settings-daemon_).
+That section is the single source of truth; this document only covers the
+behavioural / architectural context for those knobs.
 
-# Monitoring Settings
-DAEMON_ENABLE_MONITORING=true             # Process monitoring
-DAEMON_MONITORING_INTERVAL=5              # Check interval (seconds)
-DAEMON_STARTUP_TIMEOUT=30                 # Startup verification timeout
-
-# Resource Limits
-DAEMON_MAX_MEMORY_MB=2048                 # Maximum memory per process
-DAEMON_MAX_CPU_PERCENT=80.0               # CPU usage limit
-DAEMON_MAX_OPEN_FILES=1024                # File descriptor limit
-
-# Logging
-DAEMON_LOG_LEVEL=info                     # Log verbosity
-DAEMON_ENABLE_LOGS=true                   # Daemon operation logging
-DAEMON_LOG_ROTATION_SIZE=100              # Log rotation size (MB)
-
-# Security
-DAEMON_ENABLE_ISOLATION=true              # Process isolation verification
-DAEMON_VERIFY_DETACHMENT=true             # Detachment verification
-DAEMON_SECURE_ENVIRONMENT=true            # Secure environment variables
-
-# RCON Settings
-DAEMON_ENABLE_RCON=true                   # RCON integration
-DAEMON_RCON_TIMEOUT=10                    # Connection timeout
-DAEMON_RCON_RETRY_ATTEMPTS=3              # Retry attempts
-
-# Recovery Settings
-DAEMON_ENABLE_AUTO_RECOVERY=true          # Auto-recovery on startup
-DAEMON_RECOVERY_TIMEOUT=60                # Recovery operation timeout
-DAEMON_MAX_RECOVERY_ATTEMPTS=3            # Maximum recovery attempts
-```
+Quick reference: groupings are *process creation*, *monitoring*,
+*resource limits* (`DaemonProcessLimits`), *logging*, *security*, *RCON*,
+and *recovery*. The defaults are appropriate for production — only override
+when there is a concrete operational reason.
 
 ### Configuration Class
 
 ```python
-from app.core.daemon_config import DaemonConfig
+from app.core.daemon_config import DaemonConfig, DaemonMode
 
 config = DaemonConfig(
     daemon_mode=DaemonMode.DOUBLE_FORK,
     enable_process_persistence=True,
-    monitoring_interval_seconds=5
+    monitoring_interval_seconds=5,
 )
 ```
 

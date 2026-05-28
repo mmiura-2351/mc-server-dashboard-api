@@ -1,140 +1,163 @@
 # Dependency Management Policy
 
-このドキュメントは `mc-server-dashboard-api` の依存ライブラリ管理ポリシーを定める。Issue #150 (親) / #161 (B-1) で策定。
+The dependency management policy for `mc-server-dashboard-api`. Drafted under
+Issue #150 (parent) / #161 (B-1).
 
-## 1. バージョン指定スタイル
+## 1. Version specification style
 
-`pyproject.toml` に直接記述する依存は、種別に応じて以下のスタイルで統一する。
+Direct dependencies in `pyproject.toml` are pinned using one of the following
+styles, depending on the kind of package:
 
-| 種別 | 指定形式 | 例 |
+| Kind | Form | Example |
 |---|---|---|
-| **直接依存 (アプリ実行時)** | `"name>=X.Y.Z,<NEXT_MAJOR"` | `"fastapi>=0.115.12,<1.0.0"`, `"sqlalchemy>=2.0.41,<3.0.0"` |
-| **直接依存 (0.x.y のライブラリ)** | `"name>=X.Y.Z,<X.NEXT_MINOR"` | `"starlette>=0.47.2,<0.48.0"` |
-| **開発依存 (lint/test/型/フック)** | `"name>=X.Y.Z"` | `"pytest>=8.4.1"`, `"ruff>=0.11.12"` |
-| **間接依存 (推移的)** | `pyproject.toml` に書かない | `uv.lock` に固定される |
+| **Runtime direct dependency** | `"name>=X.Y.Z,<NEXT_MAJOR"` | `"fastapi[standard]>=0.136,<1.0.0"`, `"SQLAlchemy>=2.0.49,<3.0.0"` |
+| **Runtime direct dependency on a `0.x.y` library** | `"name>=X.Y.Z,<X.NEXT_MINOR"` (or wider if upstream commits to no breaks) | `"starlette>=0.47.3,<1.1.0"` |
+| **Dev dependency** (lint/test/type/hooks) | `"name>=X.Y.Z"` | `"pytest>=8.4.1"`, `"ruff>=0.11.12"` |
+| **Transitive dependency** | not written in `pyproject.toml` | pinned in `uv.lock` |
 
-### 設計意図
+### Design intent
 
-- **直接依存はメジャー上限を付ける**: SemVer 前提でマイナー・パッチ更新を許容しつつ、互換破壊のあるメジャー更新は明示的な PR で扱う
-- **0.x.y は破壊的変更がマイナー単位で来る**: SemVer 慣習に従い、`<X.NEXT_MINOR` で上限を切る
-- **開発依存に上限は付けない**: 実行時挙動に影響せず、最新のツール改善 (高速化・新機能) を取り込みやすくする
-- **間接依存は書かない**: `uv.lock` が真実源、`pyproject.toml` に重複して書くと二重管理になる
+- **Direct deps cap the next major**: under SemVer this admits minor/patch
+  updates while keeping major (breaking) bumps explicit and PR-reviewed.
+- **`0.x.y` libraries break on minor bumps**: per SemVer convention, cap at
+  `<X.NEXT_MINOR`. Some libraries (e.g. starlette) make stronger guarantees
+  inside `0.x` and allow a wider cap — keep the rationale in the diff if so.
+- **No upper bound on dev deps**: they do not affect runtime behaviour, and
+  staying current with tooling improvements (speed, new features) is cheap.
+- **No transitive deps in `pyproject.toml`**: `uv.lock` is the source of
+  truth; duplicating in `pyproject.toml` creates dual maintenance.
 
-## 2. 例外: 完全固定 (`==`) を許容する条件
+## 2. Exception: exact pinning (`==`)
 
-以下のいずれかに該当する場合のみ `==` での完全固定を許容する。
+Exact pinning (`==`) is permitted only when one of the following applies:
 
-- セキュリティ要件で正確なバージョン固定が必須 (暗号系ライブラリ等)
-- 既知の互換性問題で特定バージョン以外で動作不能
-- 上流ライブラリの SemVer 違反でパッチ更新でも破壊が起こる実績がある
+- A security requirement mandates an exact version (cryptographic libraries).
+- A known compatibility issue prevents any version other than a specific one.
+- The upstream has a documented history of SemVer violations causing breakage
+  on patch bumps.
 
-固定する場合は、`pyproject.toml` 内の該当行直前にコメントで理由と参照 (Issue/PR/Advisory) を記載する。
+When pinning exactly, add a comment immediately above the line in
+`pyproject.toml` explaining the reason and linking the issue/PR/advisory.
 
 ```toml
 # Pinned: CVE-XXXX-YYYY mitigation requires exact version (Refs: #NNN)
 "some-lib==1.2.3",
 ```
 
-## 3. 依存配置の分類
+## 3. Dependency grouping
 
-| グループ | 配置 | 対象 |
+| Group | Location | Contents |
 |---|---|---|
-| `[project].dependencies` | アプリ実行時依存のみ | fastapi, pydantic, sqlalchemy, uvicorn, passlib, python-jose, aiohttp, aiofiles, psutil 等 |
-| `[dependency-groups].dev` | 開発・テスト・lint・型・フック | pytest, pytest-asyncio, pytest-xdist, httpx (TestClient用), ruff, mypy, pre-commit, coverage |
+| `[project].dependencies` | runtime only | fastapi, pydantic, sqlalchemy, uvicorn, passlib, python-jose, aiohttp, aiofiles, psutil, … |
+| `[dependency-groups].dev` | dev / test / lint / type / hooks | pytest, pytest-asyncio, pytest-xdist, httpx (TestClient), ruff, mypy, pre-commit, coverage |
 
-### 判定基準
+### Classification rule
 
-- 「`uv sync` (本番想定) で抜けてもアプリが起動・動作するか」を基準にする
-  - 抜けて困る → `dependencies`
-  - 抜けても OK → `dev` group
-- テストフレームワーク、lint、型チェッカ、TestClient (`httpx`)、フォーマッタは原則 dev group
+- Ask: "if this dependency disappears under `uv sync` (production-like
+  install), does the app still start and serve requests?"
+  - If no → `dependencies`.
+  - If yes → `dev` group.
+- Test frameworks, linters, type checkers, the TestClient (`httpx`), and
+  formatters all belong in the `dev` group.
 
-## 4. ロックファイル (`uv.lock`) の運用
+## 4. Lockfile (`uv.lock`) operations
 
-- **唯一の真実源**: 再現性の起点として `uv.lock` を扱う
-- master ブランチへのコミット必須
-- セットアップ:
-  - 本番想定: `uv sync`
-  - 開発: `uv sync --group dev`
-- 更新方法:
-  - パッチ・マイナー一括: `uv lock --upgrade`
-  - 個別: `uv lock --upgrade-package <name>`
+- **Single source of truth**: `uv.lock` is the entry point for reproducibility.
+- Must be committed to `master`.
+- Setup:
+  - Production-like: `uv sync`
+  - Development: `uv sync --group dev`
+- Updates:
+  - All patch + minor in one go: `uv lock --upgrade`
+  - Single package: `uv lock --upgrade-package <name>`
 
-## 5. セキュリティ更新
+## 5. Security updates
 
-| 種別 | 対応方針 |
+| Kind | Response policy |
 |---|---|
-| GitHub Security Advisory アラート | 受領後 **1 週間以内**にパッチ適用 PR を作成 |
-| Dependabot security update PR | **1 営業日以内**にレビューしマージ判断 |
-| 既知 CVE のある古いライブラリ | 段階的に置換候補を検討 (Issue #164 B-4 で扱う) |
-| 緊急性が高い脆弱性 (RCE 等) | 通常リリースサイクルを待たず hotfix リリースを実施 |
+| GitHub Security Advisory alert | Open a patch PR within **1 week** of receipt |
+| Dependabot security update PR | Triage within **1 business day** |
+| Known CVE on a legacy library | Plan staged replacement (tracked under Issue #164 B-4) |
+| High-severity vulnerability (RCE, etc.) | Hotfix release outside the normal cadence |
 
-セキュリティ対応は **`dependencies` ラベル + `security` ラベル**を付与する。
+Security work carries the **`dependencies` + `security`** labels.
 
-### 5.1 サプライチェーン cooldown ポリシー
+### 5.1 Supply-chain cooldown policy
 
-リリース直後にメンテナアカウント乗っ取り・typosquatting・compromised release が発覚するケースに備え、**リリースから 7 日以内のバージョンは取り込まない**。発覚から修正・撤回までに数日かかるため、7 日のリスク窓を回避することで影響を最小化する。
+To mitigate maintainer-account takeover, typosquatting, and compromised
+releases — which can take several days to detect and retract — **do not
+adopt any release published within the last 7 days**. Holding a 7-day risk
+window absorbs most public-incident timelines.
 
-| ツール | 設定箇所 | 挙動 |
+| Tool | Where it's configured | Behaviour |
 |---|---|---|
-| `uv` | `pyproject.toml` の `[tool.uv].exclude-newer = "7 days"` | `uv lock` / `uv lock --upgrade` / `uv add` の解決時に 7 日以内のリリースを除外 (`uv sync` はロック通りに動くため影響なし) |
-| Dependabot | `.github/dependabot.yml` の `cooldown` | リリースから `default-days` (= 7)、メジャー更新は `semver-major-days` (= 14) 経過するまで PR を作成しない |
+| `uv` | `pyproject.toml` → `[tool.uv].exclude-newer = "7 days"` | Excludes releases under 7 days old during `uv lock` / `uv lock --upgrade` / `uv add` resolution (`uv sync` honours the lock so it is unaffected) |
+| Dependabot | `.github/dependabot.yml` → `cooldown` | Holds new PRs until `default-days` (= 7) have passed; major bumps wait `semver-major-days` (= 14) |
 
-#### Override 手順 (緊急 CVE 対応時)
+#### Override procedure (urgent CVE response)
 
-cooldown を bypass する必要がある場合は以下のいずれかで対応する。Override の理由 (CVE 番号・Advisory リンク) を PR 本文に明記すること。
+If a cooldown bypass is required, use one of the following. Always document
+the reason (CVE number, advisory link) in the PR body.
 
-- **uv (ローカル)**: 特定パッケージのみ cooldown を外して更新する。`--exclude-newer-package` は `PACKAGE=DATE` または `PACKAGE=false` の形式 (`=` 区切り) で指定する。
+- **uv (local)**: bypass cooldown for a single package.
+  `--exclude-newer-package` accepts `PACKAGE=DATE` or `PACKAGE=false`.
 
   ```bash
-  # cooldown を完全に無効化して最新版を取り込む
+  # Disable cooldown entirely and adopt the latest release
   uv lock --upgrade-package <pkg> --exclude-newer-package <pkg>=false
 
-  # あるいは特定日 (例: CVE Advisory 公開日) を上限に指定する
+  # Or cap at a specific date (e.g. the CVE advisory publication date)
   uv lock --upgrade-package <pkg> --exclude-newer-package <pkg>=2026-05-15
   ```
 
-- **Dependabot**: GitHub Security Advisory に紐づく **security update** は cooldown を自動で bypass するため、追加設定は不要。手動で取り込みたい場合はローカルで上記 `uv` コマンドを実行して PR を起票する。
+- **Dependabot**: security-update PRs that map to a GitHub Security
+  Advisory bypass cooldown automatically; no extra config needed. To pull
+  one in manually, run the `uv` command above and open the PR yourself.
 
-## 6. Dependabot 運用
+## 6. Dependabot policy
 
-現状の `.github/dependabot.yml` 設定をポリシーとして明文化する。
+The current `.github/dependabot.yml` settings codified as policy.
 
-| 項目 | 設定 |
+| Item | Setting |
 |---|---|
-| パッケージエコシステム | `pip` |
-| スケジュール | weekly, Monday 21:00 UTC (Tokyo 月曜 06:00) |
-| グルーピング | `production-dependencies` / `dev-dependencies` の 2 群 |
-| 同時 open PR 上限 | 2 |
-| コミット規約 | `chore(deps): ...` (scope 付き) |
-| 自動付与ラベル | `dependencies`, `python` |
-| cooldown | `default-days: 7` / `semver-major-days: 14` (§5.1 参照) |
+| Package ecosystem | `pip` |
+| Schedule | weekly, Monday 21:00 UTC (Tokyo Monday 06:00) |
+| Grouping | `production-dependencies` / `dev-dependencies` (two groups) |
+| Open PR cap | 2 |
+| Commit convention | `chore(deps): ...` (scoped) |
+| Auto-applied labels | `dependencies`, `python` |
+| Cooldown | `default-days: 7` / `semver-major-days: 14` (see §5.1) |
 
-### マージ方針
+### Merge policy
 
-| 更新種別 | 対応 |
+| Update kind | Action |
 |---|---|
-| パッチ更新 | 通常レビュー後 squash merge |
-| マイナー更新 | 通常レビュー後 squash merge (CI グリーン必須) |
-| メジャー更新 | Dependabot がグループから外して個別 PR を起こす想定。Issue #164 B-4 のフローで個別評価 |
+| Patch | Standard review → squash merge |
+| Minor | Standard review → squash merge (CI must be green) |
+| Major | Dependabot excludes these from the group and opens individual PRs. Review per Issue #164 B-4 |
 
-## 7. メジャーバージョン更新
+## 7. Major version updates
 
-メジャー更新は破壊的変更を含む可能性が高いため、以下のルールで扱う。
+Major updates are likely to carry breaking changes; handle them as follows:
 
-1. **必ず単独 PR**: Dependabot のグループ更新には含めない
-2. **migration guide を確認**: 上流のリリースノート・移行ガイドを PR 本文に引用
-3. **破壊的変更がある場合**: 本プロジェクトの破壊的変更も伴う可能性があるため、Issue #176 (バージョン管理) のメジャー bump と歩調を合わせる
-4. **検証**: 単体テスト・統合テストに加え、影響範囲のスモークテストを実施
+1. **Always a standalone PR**: never bundled into a Dependabot group update.
+2. **Cite the upstream migration guide**: quote relevant excerpts in the PR body.
+3. **If breaking**: coordinate with our project's own breaking-change cadence
+   (see Issue #176 — versioning) so the major bumps line up.
+4. **Validate**: unit + integration tests plus a smoke test of the affected
+   feature area.
 
-## 8. 例外的な運用と参照
+## 8. Exceptions and references
 
-- **間接依存に脆弱性が出た場合**: 推移的依存は `uv.lock` でのみ管理しているため、必要に応じて `pyproject.toml` に一時的に直接依存として追加して上書きする (修正されたら削除)
-- **本ポリシーで判断できない事例**: Issue を起票して議論し、結論を本ドキュメントに追記する
+- **Vulnerability in a transitive dep**: transitive deps live only in
+  `uv.lock`. Pin a temporary direct dependency in `pyproject.toml` to
+  override, and remove it once upstream ships a fix.
+- **Cases not covered here**: open an issue, discuss, and append the
+  conclusion to this document.
 
-## 参照
+## References
 
-- 親 Issue: [#150](https://github.com/mmiura-2351/mc-server-dashboard-api/issues/150) (ライブラリアップデート方針の整備と一括更新)
-- 本ドキュメント策定 Issue: [#161](https://github.com/mmiura-2351/mc-server-dashboard-api/issues/161) (B-1)
-- 関連: [#162](https://github.com/mmiura-2351/mc-server-dashboard-api/issues/162) (B-2: 指定スタイル統一)、[#164](https://github.com/mmiura-2351/mc-server-dashboard-api/issues/164) (B-4: メジャー更新の個別検証)
-- 関連: [#194](https://github.com/mmiura-2351/mc-server-dashboard-api/issues/194) (cooldown ポリシーの強制)
+- Parent issue: [#150](https://github.com/mmiura-2351/mc-server-dashboard-api/issues/150) — library update policy and bulk update.
+- Drafting issue: [#161](https://github.com/mmiura-2351/mc-server-dashboard-api/issues/161) (B-1).
+- Related: [#162](https://github.com/mmiura-2351/mc-server-dashboard-api/issues/162) (B-2, unify version specification style); [#164](https://github.com/mmiura-2351/mc-server-dashboard-api/issues/164) (B-4, individual major-update review).
+- Related: [#194](https://github.com/mmiura-2351/mc-server-dashboard-api/issues/194) (enforce cooldown policy).

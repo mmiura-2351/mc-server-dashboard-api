@@ -4,7 +4,9 @@ Complete API documentation for the Minecraft Server Dashboard API.
 
 ## Base Information
 
-**Base URL**: `/api/v1/`  
+**Base URL**: `/api/v1/` (endpoints below are listed relative to this prefix;
+liveness/readiness probes and Prometheus metrics live at the root, not under
+`/api/v1/`).  
 **Authentication**: JWT Bearer token (except where noted)  
 **Content Type**: `application/json`
 
@@ -62,12 +64,27 @@ WebSocket endpoints use token as query parameter:
 
 ### System Monitoring
 
+#### Liveness Probe
+```http
+GET /healthz
+```
+**Authentication**: None  
+**Description**: Kubernetes liveness probe. Returns 200 if the process is up.
+
+#### Readiness Probe
+```http
+GET /readyz
+```
+**Authentication**: None  
+**Description**: Kubernetes readiness probe. Returns 200 when the app is ready
+to serve traffic, 503 otherwise. `GET /ready` is an alias.
+
 #### Health Check
 ```http
 GET /api/v1/health
 ```
 **Authentication**: None  
-**Description**: Get system health status with service information
+**Description**: Get system health status with service information.
 
 **Response**:
 ```json
@@ -85,12 +102,19 @@ GET /api/v1/health
 }
 ```
 
-#### Performance Metrics
+#### Detailed Health Report (Admin Only)
+```http
+GET /api/v1/health/detail
+```
+**Authentication**: Admin role required
+
+#### Prometheus Metrics
 ```http
 GET /metrics
 ```
 **Authentication**: None  
-**Description**: Get performance metrics and statistics
+**Description**: Prometheus-format metrics for health gauges and business
+metrics. `GET /api/v1/metrics` is an alias.
 
 ---
 
@@ -571,25 +595,20 @@ POST /backups/backups/{backup_id}/restore
 **Request Body**:
 ```json
 {
-  "server_name": "Restored Server",
-  "description": "Server restored from backup"
+  "target_server_id": 5,
+  "confirm": true
 }
 ```
+- `target_server_id` (int, optional): Target server to restore into. Defaults to
+  the original server when omitted.
+- `confirm` (bool, required): Must be `true` to proceed.
 
-#### Restore Backup with Template
+#### Download Backup
 ```http
-POST /backups/backups/{backup_id}/restore-with-template
+GET /backups/backups/{backup_id}/download
 ```
-**Authentication**: Operator+ role required
-
-**Request Body**:
-```json
-{
-  "server_name": "Restored Server",
-  "template_name": "Backup Template",
-  "template_description": "Template from backup"
-}
-```
+**Authentication**: Owner/Admin access required  
+**Response**: Backup archive download.
 
 #### Delete Backup
 ```http
@@ -664,94 +683,6 @@ GET /backup-scheduler/scheduler/status
 GET /backup-scheduler/scheduler/schedules
 ```
 **Authentication**: Admin role required
-
----
-
-### Template Management
-
-#### Create Template from Server
-```http
-POST /templates/from-server/{server_id}
-```
-**Authentication**: Operator+ role required
-
-**Request Body**:
-```json
-{
-  "name": "My Template",
-  "description": "Template created from server",
-  "is_public": false
-}
-```
-
-#### Create Custom Template
-```http
-POST /templates/
-```
-**Authentication**: Operator+ role required
-
-**Request Body**:
-```json
-{
-  "name": "Custom Template",
-  "description": "Custom server template",
-  "version": "1.20.1",
-  "server_type": "vanilla",
-  "configuration": {
-    "max_memory": 2048,
-    "server_properties": {...}
-  },
-  "is_public": false
-}
-```
-
-#### List Templates
-```http
-GET /templates/
-```
-**Authentication**: Required  
-**Query Parameters**:
-- `page` (int): Page number
-- `size` (int): Page size
-- `public_only` (bool): Show only public templates
-
-#### Get Template Details
-```http
-GET /templates/{template_id}
-```
-**Authentication**: Required (public templates or owned templates)
-
-#### Update Template
-```http
-PUT /templates/{template_id}
-```
-**Authentication**: Owner/Admin access required
-
-#### Delete Template
-```http
-DELETE /templates/{template_id}
-```
-**Authentication**: Owner/Admin access required
-
-#### Clone Template
-```http
-POST /templates/{template_id}/clone
-```
-**Authentication**: Operator+ role required
-
-**Request Body**:
-```json
-{
-  "server_name": "Cloned Server",
-  "description": "Server from template"
-}
-```
-
-#### Get Template Statistics
-```http
-GET /templates/statistics
-```
-**Authentication**: Required
 
 ---
 
@@ -884,7 +815,7 @@ GET /files/servers/{server_id}/files/history/statistics
 
 #### Server Logs and Status
 ```
-WS /ws/servers/{server_id}/logs?token=<access_token>
+WS /api/v1/ws/servers/{server_id}/logs?token=<access_token>
 ```
 **Authentication**: Owner/Admin access required
 
@@ -909,13 +840,13 @@ WS /ws/servers/{server_id}/logs?token=<access_token>
 
 #### Server Status Only
 ```
-WS /ws/servers/{server_id}/status?token=<access_token>
+WS /api/v1/ws/servers/{server_id}/status?token=<access_token>
 ```
 **Authentication**: Owner/Admin access required
 
 #### System Notifications
 ```
-WS /ws/notifications?token=<access_token>
+WS /api/v1/ws/notifications?token=<access_token>
 ```
 **Authentication**: Required
 
@@ -968,11 +899,11 @@ GET /audit/statistics
 
 ### User Roles
 - **User**: View own resources, basic file read access
-- **Operator**: Create/manage servers, groups, templates, backups; full file operations  
+- **Operator**: Create/manage servers, groups, backups; full file operations  
 - **Admin**: Full system access including user management and system operations
 
 ### Access Patterns
-- **Public**: Health checks, supported versions, user registration
+- **Public**: Health/readiness probes, Prometheus metrics, supported versions, user registration
 - **Authenticated**: Own resource access, basic operations
 - **Owner/Admin**: Resource-specific operations (owners for their resources, admins for all)
 - **Operator+**: Resource creation, file modifications, backup operations

@@ -140,6 +140,16 @@ Benefits of squash merge:
 - Makes it easier to revert changes if needed
 - Keeps the main branch history readable
 
+### Rule 11: Documentation Language Policy
+**All documentation in this project must be written in English.**
+
+This applies to every Markdown file under the repo (README.md, CLAUDE.md, CHANGELOG.md, `docs/**/*.md`, `deployment/**/*.md`, `.github/**/*.md`, etc.) and to PR descriptions, issue templates, and inline doc comments.
+
+1. **New content**: Always write new documentation in English.
+2. **Touching existing docs**: When editing a doc that still contains Japanese sections, translate those sections to English as part of the change rather than mixing languages.
+3. **CHANGELOG entries**: Concise English bullets that still cover everything notable in the release — do not summarize substantive changes away, but keep each entry short.
+4. **Code identifiers and commit messages**: Out of scope for this rule (covered by existing project conventions).
+
 ## Project Overview
 
 This is a comprehensive FastAPI-based backend API for managing multiple Minecraft servers. The system provides user authentication, role-based access control, real-time monitoring, backup management, and complete server lifecycle management covering 46 specific use cases.
@@ -153,7 +163,7 @@ Tasks are run with [`just`](https://github.com/casey/just). Run `just` (no args)
 | Start application | `just dev` (or `uv run fastapi dev`) |
 | Lint code         | `just lint`                   |
 | Format code       | `just format`                 |
-| Type checking     | `uv run mypy app/` (currently disabled in pre-commit) |
+| Type checking     | `uv run mypy app/` (enabled in pre-commit with a relaxed config per Issue #86) |
 | Run tests         | `just test`                   |
 | Run single test   | `uv run pytest tests/test_filename.py::test_function_name` |
 | Check code coverage | `just coverage`             |
@@ -165,53 +175,36 @@ If `just` is not installed, see the project README for installation instructions
 
 ## System Architecture
 
-> **For the target architecture and rules new code must follow**, see [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md). The section below describes the current (pre-refactor) implementation as it exists today; the codebase is migrating toward the target under Issue #149.
+> **The canonical architecture document is [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)**: the target hexagonal (Ports & Adapters) layering, the four-layer per-domain structure (`domain/` / `application/` / `adapters/` / `api/`), and the rules new code must follow. See §17.4 for the current per-domain migration snapshot. The notes below summarize the runtime wiring that supplements the architecture doc.
 
 ### Core Service Integration
-The application follows a layered architecture with tight integration between components:
 
-- **Startup Lifecycle**: `app/main.py` coordinates initialization of database, backup scheduler, WebSocket monitoring, and server synchronization
-- **Service Layer**: `app/services/` contains business logic that orchestrates between different domains
-- **Database Integration**: Automatic server state synchronization between filesystem and database on startup
-- **Real-time Features**: WebSocket service provides live server monitoring and log streaming
-- **Background Processing**: Backup scheduler runs automated backup operations
+- **Startup Lifecycle**: `app/main.py` coordinates initialization of the database, backup scheduler, WebSocket monitoring, and server synchronization.
+- **Hexagonal Domains**: Business logic lives in per-domain `application/` use cases that depend on Ports defined in `domain/ports.py`. Concrete adapters in `adapters/` are wired through `api/dependencies.py`. Earlier monolithic services under `app/services/` have been decomposed into domain layers (Issue #154).
+- **Cross-cutting Ports**: `app/core/ports.py` exposes shared Ports (`Clock`, `PermissionChecker`, etc.); `app/audit/domain/ports.py` exposes `AuditWriter`, injected via per-domain `api/dependencies.py` (AuditWriter DI migration, PR #401).
+- **Database Integration**: Filesystem ↔ database server state sync runs on startup (`AUTO_SYNC_ON_STARTUP`).
+- **Real-time**: WebSocket service streams live server status and logs; real-time RCON commands are dispatched through `RealTimeServerCommandService` (helper) → `MinecraftServerManager.send_command()` (primary).
+- **Background**: Backup scheduler runs automated backups and periodic cleanup of `.pending/` / `.failed/` directories.
 
 ### Key Architectural Patterns
 
-**Multi-Domain Resource Management**: The system manages interconnected resources (servers, groups, backups) with complex relationships. Always consider cross-domain impacts when making changes.
-
-**Service Orchestration**:
-- `minecraft_server_manager`: Physical server process management
-- `database_integration_service`: Sync between filesystem and database state
-- `backup_scheduler`: Automated backup operations
-- `websocket_service`: Real-time communication and monitoring
+**Multi-Domain Resource Management**: Servers, groups, and backups have non-trivial cross-domain relationships. When changing one, check impacts on the others (especially Group attachments → server config file regeneration and Backup ↔ Server restore flow).
 
 **Role-Based Security Model**:
-- Users have `is_active` (can authenticate) and `is_approved` (admin-approved) flags
-- Three roles: admin, operator, user with hierarchical permissions
-- First registered user automatically becomes admin with approval
+- Users have `is_active` (can authenticate) and `is_approved` (admin-approved) flags.
+- Three roles: admin, operator, user with hierarchical permissions.
+- First registered user automatically becomes admin with approval.
 
 ### Domain Structure
 
-**Server Management** (`app/servers/`):
-- Manages physical Minecraft server processes and configurations
-- Handles JAR downloads, version management, and server lifecycle
-- Integrates with file system for server directories in `./servers/`
+Every domain has the full hexagonal layering today; the only differences are at the HTTP boundary (some still use a flat `router.py`, see ARCHITECTURE.md §17.4).
 
-**Group Management** (`app/groups/`):
-- Dynamic OP/whitelist groups that can attach to multiple servers
-- Player management with UUID tracking and Minecraft API integration
-- Server attachments with priority levels
-
-**Backup System** (`app/backups/`):
-- Automated and manual backup creation with metadata tracking
-- Server restoration with new server creation from backups
-- Scheduler integration for background operations
-
-**File Management** (`app/files/`):
-- Secure file operations within server directories
-- Path validation to prevent directory traversal attacks
-- Real-time file reflection for configuration changes
+- **`app/servers/`** — Minecraft server lifecycle. The process manager was split into mixins (`DaemonProcessMixin`, `PidFileMixin`, `PreflightMixin`, `MonitoringMixin`, PR #389). HTTP routes are split across `app/servers/routers/{control,management,utilities,import_export}.py`.
+- **`app/groups/`** — Dynamic OP/whitelist groups, with UUID tracking and real-time application via RCON.
+- **`app/backups/`** — Backup creation/restore/scheduling.
+- **`app/files/`** — Secure server-file operations; the former `file_management_service` was split into focused modules under `app/files/application/management/` (PR #388).
+- **`app/audit/`** — Cross-cutting audit logging via the `AuditWriter` Port (PR #401).
+- **`app/auth/`, `app/users/`, `app/versions/`, `app/health/`, `app/websockets/`** — Self-explanatory; all on the standard layout.
 
 ## Environment Setup
 
@@ -222,9 +215,9 @@ The application follows a layered architecture with tight integration between co
    uv sync --group dev
    ```
 
-2. **Install pre-commit hooks:**
+2. **Install pre-commit hooks (both stages):**
    ```bash
-   uv run pre-commit install
+   uv run pre-commit install --hook-type pre-commit --hook-type pre-push
    ```
 
 3. **Create `.env` file:**
@@ -232,19 +225,25 @@ The application follows a layered architecture with tight integration between co
    cp .env.example .env  # Edit with your values
    ```
 
+#### Optional: Nix devShell
+
+A minimal [`flake.nix`](flake.nix) provides a reproducible system toolchain (Python 3.13, `uv`, JDK 21, `just`, `pre-commit`, `git`). It is strictly opt-in — the `uv sync` workflow above continues to work without Nix. With direnv + nix-direnv:
+
+```bash
+direnv allow   # auto-loads the devShell from .envrc → `use flake`
+```
+
+See README.md for the full Nix walkthrough.
+
 ### Required Environment Variables
 
 Required `.env` variables:
 ```
-SECRET_KEY=your-secret-key
+SECRET_KEY=your-secret-key   # ≥ 32 chars, no weak prefixes
 DATABASE_URL=sqlite:///./app.db
 ```
 
-Optional configuration:
-```
-ALGORITHM=HS256
-ACCESS_TOKEN_EXPIRE_MINUTES=30
-```
+All other settings (auth, DB pool, file uploads, concurrency limits, password policy, brute-force protection, daemon settings, etc.) are documented in [`docs/CONFIGURATION.md`](docs/CONFIGURATION.md) along with per-environment defaults.
 
 ### Pre-commit Hooks
 
