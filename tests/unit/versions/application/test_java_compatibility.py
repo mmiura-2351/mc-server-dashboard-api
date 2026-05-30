@@ -54,6 +54,14 @@ class TestJavaVersionInfo:
         assert java17.is_compatible_with_java_21 is False
         assert java21.is_compatible_with_java_21 is True
 
+    def test_java_25_compatibility(self):
+        """Test Java 25+ compatibility checks"""
+        java21 = JavaVersionInfo(major_version=21, minor_version=0, patch_version=1)
+        java25 = JavaVersionInfo(major_version=25, minor_version=0, patch_version=1)
+
+        assert java21.is_compatible_with_java_25 is False
+        assert java25.is_compatible_with_java_25 is True
+
 
 class TestJavaCompatibilityService:
     """Test JavaCompatibilityService"""
@@ -79,15 +87,28 @@ class TestJavaCompatibilityService:
         assert service.get_required_java_version("1.19.4") == 17
         assert service.get_required_java_version("1.20.0") == 17
 
-        # Test Java 21 requirements (Minecraft 1.21+)
+        # Test Java 21 requirements (Minecraft 1.21 up to the 26.x line)
         assert service.get_required_java_version("1.21.0") == 21
         assert service.get_required_java_version("1.22.0") == 21
+        assert service.get_required_java_version("25.0.0") == 21
+
+        # Test Java 25 requirements (Minecraft 26.x and newer)
+        assert service.get_required_java_version("26.0.0") == 25
+        assert service.get_required_java_version("26.1.2") == 25
 
     def test_get_required_java_version_invalid(self, service):
         """Test getting required Java version for invalid Minecraft versions"""
-        # Should default to Java 21 for unknown versions
-        assert service.get_required_java_version("invalid") == 21
+        # Unparseable versions fall back to the newest known JRE (Java 25)
+        assert service.get_required_java_version("invalid") == 25
+        # 2.0.0 still falls inside the 1.21 .. 25.x band and maps to Java 21
         assert service.get_required_java_version("2.0.0") == 21
+
+    def test_get_required_java_version_below_oldest_band(self, service):
+        """Versions below the oldest known band fall back to the oldest JRE"""
+        # A pre-1.8 build should not be over-shot to the newest JRE; it maps to
+        # the oldest known requirement (Java 8) instead.
+        assert service.get_required_java_version("1.5.0") == 8
+        assert service.get_required_java_version("1.7.10") == 8
 
     def test_validate_java_compatibility_java_8(self, service):
         """Test Java compatibility validation for Java 8 scenarios"""
@@ -135,11 +156,31 @@ class TestJavaCompatibilityService:
         """Test Java compatibility validation for Java 21 scenarios"""
         java21 = JavaVersionInfo(major_version=21, minor_version=0, patch_version=1)
 
-        # Java 21 should be compatible with Minecraft 1.21+
+        # Java 21 should be compatible with Minecraft 1.21 up to the 26.x line
         compatible, message = service.validate_java_compatibility("1.21.0", java21)
         assert compatible is True
 
         compatible, message = service.validate_java_compatibility("1.22.0", java21)
+        assert compatible is True
+
+        # Java 21 should NOT be compatible with Minecraft 26.x (requires Java 25)
+        compatible, message = service.validate_java_compatibility("26.1.2", java21)
+        assert compatible is False
+        assert "Java 25 or higher" in message
+
+    def test_validate_java_compatibility_java_25(self, service):
+        """Test Java compatibility validation for Java 25 scenarios"""
+        java25 = JavaVersionInfo(major_version=25, minor_version=0, patch_version=1)
+
+        # Java 25 should be compatible with Minecraft 26.x and newer
+        compatible, message = service.validate_java_compatibility("26.0.0", java25)
+        assert compatible is True
+
+        compatible, message = service.validate_java_compatibility("26.1.2", java25)
+        assert compatible is True
+
+        # Java 25 remains compatible with older lines that need an older JRE
+        compatible, message = service.validate_java_compatibility("1.21.0", java25)
         assert compatible is True
 
     def test_parse_java_version_modern_format(self, service):
@@ -198,12 +239,14 @@ class TestJavaCompatibilityService:
         assert 16 in java_versions
         assert 17 in java_versions
         assert 21 in java_versions
+        assert 25 in java_versions
 
     def test_get_supported_minecraft_versions(self, service):
         """Test getting supported Minecraft versions for Java version"""
         java8 = JavaVersionInfo(major_version=8, minor_version=0, patch_version=292)
         java17 = JavaVersionInfo(major_version=17, minor_version=0, patch_version=1)
         java21 = JavaVersionInfo(major_version=21, minor_version=0, patch_version=1)
+        java25 = JavaVersionInfo(major_version=25, minor_version=0, patch_version=1)
 
         # Java 8 should only support older Minecraft versions
         supported_8 = service.get_supported_minecraft_versions(java8)
@@ -213,9 +256,14 @@ class TestJavaCompatibilityService:
         supported_17 = service.get_supported_minecraft_versions(java17)
         assert len(supported_17) >= 2  # At least 1.17-1.17.1 and 1.18-1.20 ranges
 
-        # Java 21 should support all ranges
+        # Java 21 should support every range except the 26.x+ (Java 25) band
         supported_21 = service.get_supported_minecraft_versions(java21)
-        assert len(supported_21) >= 4  # All version ranges
+        assert len(supported_21) == 4
+
+        # Java 25 should support all ranges, including the 26.x+ band
+        supported_25 = service.get_supported_minecraft_versions(java25)
+        assert len(supported_25) == 5
+        assert any(entry.startswith("26") for entry in supported_25)
 
     @pytest.mark.asyncio
     async def test_detect_java_version_success(self, service):
@@ -412,7 +460,7 @@ class TestJavaCompatibilityServiceIntegration:
 
         # Should have entries for all major Java version requirements
         java_versions = set(matrix.values())
-        expected_versions = {8, 16, 17, 21}
+        expected_versions = {8, 16, 17, 21, 25}
 
         assert expected_versions.issubset(java_versions), (
             f"Missing Java versions: {expected_versions - java_versions}"
@@ -702,7 +750,7 @@ class TestJavaCompatibilityServiceMissingCoverage:
         with patch("packaging.version.Version", side_effect=Exception("Invalid version")):
             result = service.get_required_java_version("invalid-version-format")
 
-            assert result == 21  # Should fallback to Java 21
+            assert result == 25  # Should fall back to the newest known JRE
 
     def test_validate_java_compatibility_exception_handling(self, service):
         """Test exception handling in validate_java_compatibility (lines 352-354)"""
@@ -782,4 +830,11 @@ class TestJavaCompatibilityServiceMissingCoverage:
         assert (
             "Download Java 21: https://adoptium.net/temurin/releases/?version=21"
             in message21
+        )
+
+        # Test Java 25 download link (current is Java 8, required is 25)
+        message25 = service._generate_compatibility_error_message("26.1.2", 25, java8)
+        assert (
+            "Download Java 25: https://adoptium.net/temurin/releases/?version=25"
+            in message25
         )

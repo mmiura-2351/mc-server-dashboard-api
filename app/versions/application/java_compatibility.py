@@ -49,6 +49,11 @@ class JavaVersionInfo:
         """Check if this version is compatible with Java 21 requirements"""
         return self.major_version >= 21
 
+    @property
+    def is_compatible_with_java_25(self) -> bool:
+        """Check if this version is compatible with Java 25 requirements"""
+        return self.major_version >= 25
+
 
 class JavaCompatibilityService:
     """Service for Java version detection and Minecraft compatibility validation"""
@@ -63,8 +68,15 @@ class JavaCompatibilityService:
             (version.Version("1.17.0"), version.Version("1.17.1")): 16,
             # Minecraft 1.18 - 1.20: Java 17
             (version.Version("1.18.0"), version.Version("1.20.9")): 17,
-            # Minecraft 1.21+: Java 21
-            (version.Version("1.21.0"), version.Version("9999.99.99")): 21,
+            # Minecraft 1.21 up to (but excluding) the 26.x line: Java 21.
+            # The upper bound is closed deliberately so newer major lines that
+            # ship a JRE-25 (or later) server.jar are not silently absorbed
+            # here and launched with too old a Java runtime.
+            (version.Version("1.21.0"), version.Version("25.99.99")): 21,
+            # Minecraft 26.x and newer: Java 25. The 26.x vanilla server.jar is
+            # compiled for class file version 69.0 (Java 25) and aborts at JVM
+            # class-load time under Java 21.
+            (version.Version("26.0.0"), version.Version("9999.99.99")): 25,
         }
 
     async def discover_java_installations(self) -> Dict[int, JavaVersionInfo]:
@@ -72,7 +84,7 @@ class JavaCompatibilityService:
         java_installations = {}
 
         # Check configured paths first
-        for major_version in [8, 16, 17, 21]:
+        for major_version in [8, 16, 17, 21, 25]:
             configured_path = settings.get_java_path(major_version)
             if configured_path:
                 java_info = await self._detect_java_at_path(configured_path)
@@ -308,17 +320,36 @@ class JavaCompatibilityService:
                 if min_mc <= mc_version <= max_mc:
                     return required_java
 
-            # Default fallback for unknown versions
-            logger.warning(
-                f"Unknown Minecraft version {minecraft_version}, defaulting to Java 21"
+            # No band matched. Pick the fallback by where the version sits
+            # relative to the known bands: below the oldest band → the oldest
+            # JRE; otherwise (a future line above the newest band, or a gap) →
+            # the newest known JRE. This avoids launching a brand-new line with
+            # a runtime that is too old, while not over-shooting a pre-1.8 build
+            # to a JRE that is far too new.
+            bands = sorted(
+                self._compatibility_matrix.items(), key=lambda item: item[0][0]
             )
-            return 21
+            oldest_min, _ = bands[0][0]
+            if mc_version < oldest_min:
+                oldest_java = bands[0][1]
+                logger.warning(
+                    f"Minecraft version {minecraft_version} predates the known "
+                    f"compatibility bands, defaulting to Java {oldest_java}"
+                )
+                return oldest_java
+
+            newest_java = max(self._compatibility_matrix.values())
+            logger.warning(
+                f"Unknown Minecraft version {minecraft_version}, "
+                f"defaulting to Java {newest_java}"
+            )
+            return newest_java
 
         except Exception as e:
             logger.error(
                 f"Error determining required Java version for {minecraft_version}: {e}"
             )
-            return 21
+            return max(self._compatibility_matrix.values())
 
     def validate_java_compatibility(
         self, minecraft_version: str, java_version: JavaVersionInfo
@@ -336,6 +367,8 @@ class JavaCompatibilityService:
                 compatible = java_version.is_compatible_with_java_17
             elif required_java == 21:
                 compatible = java_version.is_compatible_with_java_21
+            elif required_java == 25:
+                compatible = java_version.is_compatible_with_java_25
             else:
                 compatible = False
 
@@ -380,6 +413,8 @@ class JavaCompatibilityService:
                 message += "\n\nDownload Java 17: https://adoptium.net/temurin/releases/?version=17"
             elif required_java == 21:
                 message += "\n\nDownload Java 21: https://adoptium.net/temurin/releases/?version=21"
+            elif required_java == 25:
+                message += "\n\nDownload Java 25: https://adoptium.net/temurin/releases/?version=25"
 
         return message
 

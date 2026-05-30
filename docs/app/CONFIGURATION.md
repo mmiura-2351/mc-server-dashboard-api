@@ -112,7 +112,7 @@ by default).
 | `KEEP_SERVERS_ON_SHUTDOWN` | `bool` | `True` (overlay-aware) | — |
 | `AUTO_SYNC_ON_STARTUP` | `bool` | `True` (overlay-aware) | — |
 | `JAVA_DISCOVERY_PATHS` | `str` | `""` | comma-separated paths |
-| `JAVA_8_PATH` … `JAVA_21_PATH` | `str` | `""` | direct path to `java` binary |
+| `JAVA_8_PATH` … `JAVA_25_PATH` | `str` | `""` | direct path to `java` binary |
 
 ### Daemon process settings (`DAEMON_*`)
 

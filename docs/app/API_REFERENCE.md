@@ -291,7 +291,8 @@ POST /servers/
 - Minecraft 1.8-1.16.5 requires Java 8
 - Minecraft 1.17 requires Java 16
 - Minecraft 1.18-1.20.x requires Java 17
-- Minecraft 1.21+ requires Java 21
+- Minecraft 1.21 - 25.x requires Java 21
+- Minecraft 26.x and newer requires Java 25
 
 **Error Response** (Java compatibility issues):
 ```json

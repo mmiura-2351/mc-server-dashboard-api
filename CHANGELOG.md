@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- Java compatibility matrix now maps Minecraft 26.x and newer to Java 25
+  instead of silently selecting Java 21, and the unknown-version fallback
+  defaults to the newest known JRE rather than Java 21 (#415).
+
 ## [0.1.1] - 2026-05-28
 
 Aggregates 106 commits since v0.1.0. Centered on the staged migration to a

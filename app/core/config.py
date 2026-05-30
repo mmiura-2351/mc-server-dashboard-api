@@ -170,6 +170,7 @@ class Settings(BaseSettings):
     JAVA_16_PATH: str = ""  # Direct path to Java 16 executable
     JAVA_17_PATH: str = ""  # Direct path to Java 17 executable
     JAVA_21_PATH: str = ""  # Direct path to Java 21 executable
+    JAVA_25_PATH: str = ""  # Direct path to Java 25 executable
 
     # Database configuration
     DATABASE_MAX_RETRIES: int = 3
@@ -758,6 +759,7 @@ class Settings(BaseSettings):
             16: self.JAVA_16_PATH,
             17: self.JAVA_17_PATH,
             21: self.JAVA_21_PATH,
+            25: self.JAVA_25_PATH,
         }
         path = java_paths.get(major_version, "")
         return path if path else None
