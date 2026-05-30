@@ -269,7 +269,7 @@ class FileOperationService:
         """Extract archive and return list of extracted files.
 
         ZIP members are validated for path traversal, symlinks, and zip-bomb
-        size/ratio caps via ``ZipExtractor.safe_extract_zip`` before anything is
+        size caps via ``ZipExtractor.safe_extract_zip`` before anything is
         written to disk. A rejected archive is the uploader's fault, so the
         ``SecurityError`` is mapped to a 400 ``InvalidRequestException`` rather
         than a generic 500 file error.

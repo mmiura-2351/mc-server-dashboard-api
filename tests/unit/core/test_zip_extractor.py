@@ -121,27 +121,37 @@ class TestZipExtractorArchiveSafety:
                 with pytest.raises(SecurityError, match="File too large"):
                     ZipExtractor.validate_archive_safety(zip_path)
 
-    def test_zip_bomb_compression_ratio_rejected(self):
+    def test_highly_compressible_member_accepted(self):
+        """A high compression ratio alone must not be rejected (PR #408).
+
+        Sparse, well-compressing content (e.g. Minecraft ``.mca`` region files
+        reaching ~999:1) is legitimate. The ZIP path bounds bomb damage via the
+        absolute size caps, not a per-member ratio cap, so a tiny-compressed /
+        large-uncompressed member within those caps passes validation.
+        """
         with tempfile.TemporaryDirectory() as temp_dir:
-            zip_path = Path(temp_dir) / "bomb.zip"
-            # Highly compressible payload -> large uncompressed / tiny compressed.
-            _make_zip(zip_path, {"bomb.txt": b"0" * (1024 * 1024)})
-            with pytest.raises(SecurityError, match="compression ratio"):
-                ZipExtractor.validate_archive_safety(zip_path)
+            zip_path = Path(temp_dir) / "sparse.zip"
+            payload = b"0" * (1024 * 1024)  # 1 MB of zeros -> ~1000:1 ratio
+            _make_zip(zip_path, {"region.mca": payload})
+
+            with zipfile.ZipFile(zip_path) as zf:
+                info = zf.getinfo("region.mca")
+                # Guard the premise: this really is a high-ratio member.
+                assert info.file_size / max(1, info.compress_size) > 100
+
+            # Should not raise — within MAX_MEMBER_SIZE / MAX_EXTRACTED_SIZE.
+            ZipExtractor.validate_archive_safety(zip_path)
 
     def test_total_extracted_size_rejected(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             zip_path = Path(temp_dir) / "total.zip"
-            # Incompressible members keep per-member ratio low so the total-size
-            # cap is what trips, not the ratio guard.
             members = {f"f_{i}.bin": bytes(range(256)) * 4 for i in range(3)}
             _make_zip(zip_path, members)
             with patch.object(ZipExtractor, "MAX_EXTRACTED_SIZE", 2048):
-                with patch.object(ZipExtractor, "MAX_COMPRESSION_RATIO", 10_000):
-                    with pytest.raises(
-                        SecurityError, match="Total extracted size too large"
-                    ):
-                        ZipExtractor.validate_archive_safety(zip_path)
+                with pytest.raises(
+                    SecurityError, match="Total extracted size too large"
+                ):
+                    ZipExtractor.validate_archive_safety(zip_path)
 
     def test_corrupted_archive_rejected(self):
         with tempfile.TemporaryDirectory() as temp_dir:

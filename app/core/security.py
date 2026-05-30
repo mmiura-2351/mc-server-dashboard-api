@@ -376,18 +376,26 @@ class ZipExtractor:
     """Secure zip file extraction utility.
 
     Mirrors ``TarExtractor`` for ZIP archives. Python's ``zipfile`` sanitises
-    member names on extraction, but it does not enforce size/ratio caps and
-    silently drops unsafe components rather than rejecting the archive, so the
-    same per-member and archive-level validation is applied here before
-    extracting anything. Limits are shared with ``TarExtractor`` so both
-    archive paths stay in lock-step.
+    member names on extraction, but it does not enforce size caps and silently
+    drops unsafe components rather than rejecting the archive, so the same
+    per-member and archive-level validation is applied here before extracting
+    anything. Limits are shared with ``TarExtractor`` so both archive paths
+    stay in lock-step.
+
+    Note on zip bombs: unlike ``TarExtractor``, this path deliberately does not
+    apply a per-member compression-ratio cap. ZIP records the exact compressed
+    size per member, but a single deflate stream tops out near the format's
+    ~1032:1 theoretical limit, so a ratio cap cannot distinguish a bomb from
+    legitimately compressible content (e.g. sparse Minecraft ``.mca`` region
+    files reach ~999:1). Real expansion damage is bounded instead by the
+    absolute ``MAX_MEMBER_SIZE`` and ``MAX_EXTRACTED_SIZE`` caps, which cap the
+    decompressed output directly. See PR #408 review for the analysis.
     """
 
     # Reuse the tar limits so both archive paths share one source of truth.
     MAX_ARCHIVE_SIZE = TarExtractor.MAX_ARCHIVE_SIZE
     MAX_EXTRACTED_SIZE = TarExtractor.MAX_EXTRACTED_SIZE
     MAX_MEMBER_COUNT = TarExtractor.MAX_MEMBER_COUNT
-    MAX_COMPRESSION_RATIO = TarExtractor.MAX_COMPRESSION_RATIO
     MAX_MEMBER_SIZE = TarExtractor.MAX_MEMBER_SIZE
 
     @staticmethod
@@ -500,19 +508,9 @@ class ZipExtractor:
 
                     total_extracted_size += info.file_size
 
-                    # Check per-member compression ratio to catch zip bombs. ZIP
-                    # records the true compressed size per member, so this is an
-                    # exact ratio rather than the tar heuristic.
-                    if info.file_size > 0:
-                        compressed_size = max(1, info.compress_size)
-                        compression_ratio = info.file_size / compressed_size
-                        if compression_ratio > ZipExtractor.MAX_COMPRESSION_RATIO:
-                            raise SecurityError(
-                                f"Suspicious compression ratio for "
-                                f"{info.filename}: {compression_ratio:.1f}"
-                            )
-
-                # Check total extracted size
+                # Check total extracted size. Together with the per-member size
+                # cap above, this bounds decompression output and is the actual
+                # zip-bomb guard for the ZIP path (no ratio cap; see class docs).
                 if total_extracted_size > ZipExtractor.MAX_EXTRACTED_SIZE:
                     raise SecurityError(
                         f"Total extracted size too large: {total_extracted_size} bytes"
@@ -539,7 +537,7 @@ class ZipExtractor:
         if not zip_path.exists():
             raise FileNotFoundError(f"Zip file not found: {zip_path}")
 
-        # First, validate archive safety (size, member count, compression ratio).
+        # First, validate archive safety (size, member count, total size).
         ZipExtractor.validate_archive_safety(zip_path)
 
         # Ensure target directory exists
