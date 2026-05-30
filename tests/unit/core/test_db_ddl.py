@@ -87,6 +87,17 @@ def test_composite_columns_from_iterable(conn):
     assert "ix_groups_created_owner" in _index_names(conn, "groups")
 
 
+def test_whitespace_around_identifiers_is_stripped(conn):
+    """Leading/trailing whitespace is stripped, not treated as invalid."""
+    create_index_if_not_exists(
+        conn,
+        index_name="  ix_groups_owner_ws  ",
+        table=" groups ",
+        columns=" owner_id , created_at ",
+    )
+    assert "ix_groups_owner_ws" in _index_names(conn, "groups")
+
+
 def test_reserved_word_table_is_quoted(conn):
     """A reserved-word table name (`groups`) must not raise — it is quoted."""
     create_index_if_not_exists(

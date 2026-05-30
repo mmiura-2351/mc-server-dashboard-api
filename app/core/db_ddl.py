@@ -49,11 +49,13 @@ def create_index_if_not_exists(
         conn: An open SQLAlchemy :class:`~sqlalchemy.engine.Connection`.
         index_name: Name of the index to create.
         table: Table to index.
-        columns: A single column, a comma-separated string of columns (for a
-            composite index), or an iterable of column names.
+        columns: The index columns. A ``str`` is split on commas (so a single
+            column and a comma-separated composite are both accepted); any other
+            iterable is taken as an already-split list of column names.
 
-    Every identifier must match ``^[A-Za-z_][A-Za-z0-9_]*$`` or a
-    :class:`ValueError` is raised before any SQL is executed.
+    Every identifier (index, table, and each column) must be a plain SQL
+    identifier per :data:`_IDENTIFIER_RE`, or a :class:`ValueError` is raised
+    before any SQL is executed.
     """
     if isinstance(columns, str):
         column_list = columns.split(",")
