@@ -8,11 +8,13 @@ Per the UnitOfWork pattern, most repository methods **do not commit**.
 They stage changes on the session and rely on the surrounding
 `SqlAlchemyServersUnitOfWork` (or the caller) to commit.
 
-The two status writes (`update_status`, `batch_update_statuses`) are
-the documented exception: they own their transaction via
-`app.core.database_utils.with_transaction` so the existing
-backoff/retry semantics the legacy code relied on are preserved (M-8
-/ D-5 in the #228 plan).
+The three own-transaction writes (`update_status`, `update_port`,
+`batch_update_statuses`) are the documented exception: they own their
+transaction via `app.core.database_utils.with_transaction` so the
+existing backoff/retry semantics the legacy code relied on are
+preserved (M-8 / D-5 in the #228 plan). Because `with_transaction` is
+synchronous and its retry path blocks, those callsites offload it with
+`asyncio.to_thread` so the backoff never stalls the event loop.
 
 Cross-domain JOIN against `User` (for `owner_username`) is
 intentionally kept inside this adapter rather than dispatched through
@@ -22,6 +24,7 @@ allowed to touch the ORM directly; only the **application** layer is
 forbidden.
 """
 
+import asyncio
 from typing import List, Mapping, Optional
 
 from sqlalchemy.orm import Session, joinedload
@@ -260,7 +263,10 @@ class SqlAlchemyServerRepository:
             session.flush()
             return _server_to_entity(row)
 
-        return with_transaction(self._db, _do)
+        # `with_transaction` is synchronous and its retry path calls
+        # `time.sleep`; offload to a worker thread so the backoff never blocks
+        # the event loop (mirrors `health/adapters/database_check.py`).
+        return await asyncio.to_thread(with_transaction, self._db, _do)
 
     async def update_port(self, server_id: int, port: int) -> Optional[ServerEntity]:
         """Set a single server's port atomically (with retry).
@@ -285,7 +291,9 @@ class SqlAlchemyServerRepository:
             session.flush()
             return _server_to_entity(row)
 
-        return with_transaction(self._db, _do)
+        # Offload the blocking retry/commit off the event loop (see
+        # `update_status`).
+        return await asyncio.to_thread(with_transaction, self._db, _do)
 
     async def batch_update_statuses(
         self, updates: Mapping[int, ServerStatus]
@@ -329,4 +337,6 @@ class SqlAlchemyServerRepository:
                 for sid in updates.keys()
             }
 
-        return with_transaction(self._db, _do)
+        # Offload the blocking retry/commit off the event loop (see
+        # `update_status`).
+        return await asyncio.to_thread(with_transaction, self._db, _do)

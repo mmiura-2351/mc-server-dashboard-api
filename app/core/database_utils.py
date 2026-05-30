@@ -47,6 +47,12 @@ def with_transaction(
     """
     Execute a function within a database transaction with retry logic.
 
+    This function is **synchronous and blocking**: its retry path calls
+    ``time.sleep`` for backoff. Do not call it directly from a coroutine on the
+    event loop — wrap it in ``asyncio.to_thread`` (see
+    ``app/servers/adapters/repository.py``) so the backoff does not stall the
+    loop.
+
     Args:
         session: SQLAlchemy session
         func: Function to execute within transaction
