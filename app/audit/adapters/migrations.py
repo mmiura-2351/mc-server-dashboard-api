@@ -23,7 +23,7 @@ scope for Phase 1 and tracked as a follow-up.
 import logging
 from typing import Any
 
-from sqlalchemy import text
+from app.core.db_ddl import create_index_if_not_exists
 
 logger = logging.getLogger(__name__)
 
@@ -58,11 +58,8 @@ def migrate_audit_indexes(engine: Any) -> None:
     with engine.connect() as conn:
         for index_name, column in _AUDIT_SINGLE_INDEXES:
             try:
-                conn.execute(
-                    text(
-                        f"CREATE INDEX IF NOT EXISTS {index_name} "
-                        f"ON audit_logs ({column})"
-                    )
+                create_index_if_not_exists(
+                    conn, index_name=index_name, table="audit_logs", columns=column
                 )
             except Exception as exc:  # pragma: no cover - defensive
                 logger.warning(
@@ -73,11 +70,8 @@ def migrate_audit_indexes(engine: Any) -> None:
                 )
         for index_name, columns in _AUDIT_COMPOSITE_INDEXES:
             try:
-                conn.execute(
-                    text(
-                        f"CREATE INDEX IF NOT EXISTS {index_name} "
-                        f"ON audit_logs ({columns})"
-                    )
+                create_index_if_not_exists(
+                    conn, index_name=index_name, table="audit_logs", columns=columns
                 )
             except Exception as exc:  # pragma: no cover - defensive
                 logger.warning(
