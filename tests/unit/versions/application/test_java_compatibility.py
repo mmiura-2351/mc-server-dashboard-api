@@ -72,116 +72,164 @@ class TestJavaCompatibilityService:
         return JavaCompatibilityService(java_check_timeout=5)
 
     def test_get_required_java_version(self, service):
-        """Test getting required Java version for Minecraft versions"""
-        # Test Java 8 requirements (Minecraft 1.8 - 1.16.5)
-        assert service.get_required_java_version("1.8.0") == 8
+        """Test getting the primary required Java version for Minecraft versions"""
+        # Java 7 (Minecraft <= 1.7.9)
+        assert service.get_required_java_version("1.5.0") == 7
+        assert service.get_required_java_version("1.7.9") == 7
+
+        # Java 8 (Minecraft 1.7.10 - 1.16.5); primary of the (8, 11) band
+        assert service.get_required_java_version("1.7.10") == 8
         assert service.get_required_java_version("1.12.2") == 8
         assert service.get_required_java_version("1.16.5") == 8
 
-        # Test Java 16 requirements (Minecraft 1.17 - 1.17.1)
+        # Java 16 (Minecraft 1.17 - 1.17.1)
         assert service.get_required_java_version("1.17.0") == 16
         assert service.get_required_java_version("1.17.1") == 16
 
-        # Test Java 17 requirements (Minecraft 1.18 - 1.20)
+        # Java 17 (Minecraft 1.18 - 1.20.4)
         assert service.get_required_java_version("1.18.0") == 17
         assert service.get_required_java_version("1.19.4") == 17
-        assert service.get_required_java_version("1.20.0") == 17
+        assert service.get_required_java_version("1.20.4") == 17
 
-        # Test Java 21 requirements (Minecraft 1.21 up to the 26.x line)
+        # Java 21 (Minecraft 1.20.5 - 1.21.11)
+        assert service.get_required_java_version("1.20.5") == 21
         assert service.get_required_java_version("1.21.0") == 21
-        assert service.get_required_java_version("1.22.0") == 21
-        assert service.get_required_java_version("25.0.0") == 21
+        assert service.get_required_java_version("1.21.11") == 21
 
-        # Test Java 25 requirements (Minecraft 26.x and newer)
+        # Java 25 (Minecraft 26.x and newer; the cut is 26.0.0 so no 26.0.x
+        # release can regress to the Java 21 band and crash — see #415/#419)
         assert service.get_required_java_version("26.0.0") == 25
         assert service.get_required_java_version("26.1.2") == 25
+        assert service.get_required_java_version("27.0.0") == 25
+
+    def test_get_compatible_java_versions(self, service):
+        """The legacy band exposes its Java 11 fallback; others are single."""
+        assert service.get_compatible_java_versions("1.16.5") == (8, 11)
+        assert service.get_compatible_java_versions("1.5.0") == (7,)
+        assert service.get_compatible_java_versions("1.18.0") == (17,)
+        assert service.get_compatible_java_versions("26.1.2") == (25,)
 
     def test_get_required_java_version_invalid(self, service):
         """Test getting required Java version for invalid Minecraft versions"""
-        # Unparseable versions fall back to the newest known JRE (Java 25)
+        # Unparseable versions fall back to the newest known band (Java 25)
         assert service.get_required_java_version("invalid") == 25
-        # 2.0.0 still falls inside the 1.21 .. 25.x band and maps to Java 21
+        # 2.0.0 resolves (nearest-lower) to the 1.20.5 - 1.21.11 band → Java 21
         assert service.get_required_java_version("2.0.0") == 21
 
-    def test_get_required_java_version_below_oldest_band(self, service):
-        """Versions below the oldest known band fall back to the oldest JRE"""
-        # A pre-1.8 build should not be over-shot to the newest JRE; it maps to
-        # the oldest known requirement (Java 8) instead.
-        assert service.get_required_java_version("1.5.0") == 8
-        assert service.get_required_java_version("1.7.10") == 8
+    def test_get_required_java_version_gap_resolves_to_nearest_lower(self, service):
+        """A version in a gap between bands resolves to the band just below."""
+        # 1.16.8 does not exist but, if seen, must not jump to a newer JRE;
+        # nearest-lower keeps it on the 1.7.10 - 1.16.5 (Java 8) band.
+        assert service.get_required_java_version("1.16.8") == 8
+        # The speculative 1.22.0 - 25.x window stays on the Java 21 band...
+        assert service.get_required_java_version("1.22.0") == 21
+        assert service.get_required_java_version("25.0.0") == 21
+        # ...but the entire 26.x line (incl. 26.0.x) routes to Java 25, so a
+        # class-file-69 server.jar is never launched on Java 21 (#415/#419).
+        assert service.get_required_java_version("26.0.5") == 25
 
     def test_validate_java_compatibility_java_8(self, service):
         """Test Java compatibility validation for Java 8 scenarios"""
         java8 = JavaVersionInfo(major_version=8, minor_version=0, patch_version=292)
 
-        # Java 8 should be compatible with Minecraft 1.8-1.16.5
-        compatible, message = service.validate_java_compatibility("1.8.0", java8)
+        # Java 8 is accepted for Minecraft 1.7.10 - 1.16.5
+        compatible, message = service.validate_java_compatibility("1.7.10", java8)
         assert compatible is True
         assert "compatible" in message.lower()
 
         compatible, message = service.validate_java_compatibility("1.16.5", java8)
         assert compatible is True
 
-        # Java 8 should NOT be compatible with Minecraft 1.17+
+        # Java 8 is NOT accepted for Minecraft 1.17+ (requires Java 16)
         compatible, message = service.validate_java_compatibility("1.17.0", java8)
         assert compatible is False
         assert "incompatibility" in message.lower()
-        assert "Java 16 or higher" in message
+        assert "requires Java 16" in message
+
+    def test_validate_java_compatibility_java_11_fallback(self, service):
+        """Java 11 is the accepted fallback for the legacy 1.7.10 - 1.16.5 band."""
+        java11 = JavaVersionInfo(major_version=11, minor_version=0, patch_version=2)
+
+        compatible, _ = service.validate_java_compatibility("1.12.2", java11)
+        assert compatible is True
+
+        compatible, _ = service.validate_java_compatibility("1.16.5", java11)
+        assert compatible is True
+
+        # Java 11 is not accepted outside the legacy band.
+        compatible, message = service.validate_java_compatibility("1.18.0", java11)
+        assert compatible is False
+        assert "requires Java 17" in message
 
     def test_validate_java_compatibility_java_17(self, service):
-        """Test Java compatibility validation for Java 17 scenarios"""
+        """Test Java compatibility validation for Java 17 scenarios (exact match)"""
         java17 = JavaVersionInfo(
             major_version=17, minor_version=0, patch_version=1, vendor="OpenJDK"
         )
 
-        # Java 17 should be compatible with Minecraft 1.17+ (not 1.8-1.16.5 due to newer version)
-        compatible, message = service.validate_java_compatibility("1.8.0", java17)
-        assert compatible is False  # Java 17 is too new for Minecraft 1.8
+        # Too new for the old bands → rejected (blocks).
+        compatible, _ = service.validate_java_compatibility("1.16.5", java17)
+        assert compatible is False
 
+        # Java 17 is exactly the requirement for 1.18 - 1.20.4.
+        compatible, _ = service.validate_java_compatibility("1.18.0", java17)
+        assert compatible is True
+
+        compatible, _ = service.validate_java_compatibility("1.20.4", java17)
+        assert compatible is True
+
+        # Exact match means 1.17 (Java 16 only) rejects Java 17.
         compatible, message = service.validate_java_compatibility("1.17.0", java17)
-        assert compatible is True
+        assert compatible is False
+        assert "requires Java 16" in message
 
-        compatible, message = service.validate_java_compatibility("1.18.0", java17)
-        assert compatible is True
-
-        compatible, message = service.validate_java_compatibility("1.20.0", java17)
-        assert compatible is True
-
-        # Java 17 should NOT be compatible with Minecraft 1.21+ (requires Java 21)
+        # And 1.21 (Java 21 only) rejects Java 17.
         compatible, message = service.validate_java_compatibility("1.21.0", java17)
         assert compatible is False
-        assert "Java 21 or higher" in message
+        assert "requires Java 21" in message
 
     def test_validate_java_compatibility_java_21(self, service):
         """Test Java compatibility validation for Java 21 scenarios"""
         java21 = JavaVersionInfo(major_version=21, minor_version=0, patch_version=1)
 
-        # Java 21 should be compatible with Minecraft 1.21 up to the 26.x line
-        compatible, message = service.validate_java_compatibility("1.21.0", java21)
+        # Java 21 is accepted for Minecraft 1.20.5 - 1.21.11
+        compatible, _ = service.validate_java_compatibility("1.20.5", java21)
         assert compatible is True
 
-        compatible, message = service.validate_java_compatibility("1.22.0", java21)
+        compatible, _ = service.validate_java_compatibility("1.21.0", java21)
         assert compatible is True
 
-        # Java 21 should NOT be compatible with Minecraft 26.x (requires Java 25)
+        # Java 21 is NOT accepted for Minecraft 26.1+ (requires Java 25)
         compatible, message = service.validate_java_compatibility("26.1.2", java21)
         assert compatible is False
-        assert "Java 25 or higher" in message
+        assert "requires Java 25" in message
 
     def test_validate_java_compatibility_java_25(self, service):
-        """Test Java compatibility validation for Java 25 scenarios"""
+        """Test Java compatibility validation for Java 25 scenarios (exact match)"""
         java25 = JavaVersionInfo(major_version=25, minor_version=0, patch_version=1)
 
-        # Java 25 should be compatible with Minecraft 26.x and newer
-        compatible, message = service.validate_java_compatibility("26.0.0", java25)
+        # Java 25 is accepted from the very start of the 26.x line (26.0.0)
+        compatible, _ = service.validate_java_compatibility("26.0.0", java25)
         assert compatible is True
 
-        compatible, message = service.validate_java_compatibility("26.1.2", java25)
+        compatible, _ = service.validate_java_compatibility("26.1.2", java25)
         assert compatible is True
 
-        # Java 25 remains compatible with older lines that need an older JRE
+        # Exact match: Java 25 is too new for the 1.21 (Java 21) band → blocked.
         compatible, message = service.validate_java_compatibility("1.21.0", java25)
+        assert compatible is False
+        assert "requires Java 21" in message
+
+    def test_validate_java_compatibility_java_7(self, service):
+        """Java 7 is accepted only for the <= 1.7.9 band."""
+        java7 = JavaVersionInfo(major_version=7, minor_version=0, patch_version=80)
+
+        compatible, _ = service.validate_java_compatibility("1.7.9", java7)
         assert compatible is True
+
+        compatible, message = service.validate_java_compatibility("1.7.10", java7)
+        assert compatible is False
+        assert "requires Java 8 or Java 11" in message
 
     def test_parse_java_version_modern_format(self, service):
         """Test parsing modern Java version format (Java 9+)"""
@@ -233,37 +281,32 @@ class TestJavaCompatibilityService:
         assert isinstance(matrix, dict)
         assert len(matrix) > 0
 
-        # Check for expected Java versions
-        java_versions = list(matrix.values())
-        assert 8 in java_versions
-        assert 16 in java_versions
-        assert 17 in java_versions
-        assert 21 in java_versions
-        assert 25 in java_versions
+        # Values are the ordered list of accepted Java majors per band.
+        all_majors = {major for accepted in matrix.values() for major in accepted}
+        assert {7, 8, 11, 16, 17, 21, 25}.issubset(all_majors)
+
+        # The legacy band lists Java 8 then its Java 11 fallback.
+        assert matrix["1.7.10 - 1.16.5"] == [8, 11]
+        # Floor and open-ended bands get special labels.
+        assert matrix["<= 1.7.9"] == [7]
+        assert matrix["26.0.0+"] == [25]
 
     def test_get_supported_minecraft_versions(self, service):
-        """Test getting supported Minecraft versions for Java version"""
+        """Each Java major supports exactly the bands that accept it."""
+        java7 = JavaVersionInfo(major_version=7, minor_version=0, patch_version=80)
         java8 = JavaVersionInfo(major_version=8, minor_version=0, patch_version=292)
+        java11 = JavaVersionInfo(major_version=11, minor_version=0, patch_version=2)
         java17 = JavaVersionInfo(major_version=17, minor_version=0, patch_version=1)
         java21 = JavaVersionInfo(major_version=21, minor_version=0, patch_version=1)
         java25 = JavaVersionInfo(major_version=25, minor_version=0, patch_version=1)
 
-        # Java 8 should only support older Minecraft versions
-        supported_8 = service.get_supported_minecraft_versions(java8)
-        assert len(supported_8) == 1  # Only the 1.8-1.16.5 range
-
-        # Java 17 should support more ranges
-        supported_17 = service.get_supported_minecraft_versions(java17)
-        assert len(supported_17) >= 2  # At least 1.17-1.17.1 and 1.18-1.20 ranges
-
-        # Java 21 should support every range except the 26.x+ (Java 25) band
-        supported_21 = service.get_supported_minecraft_versions(java21)
-        assert len(supported_21) == 4
-
-        # Java 25 should support all ranges, including the 26.x+ band
-        supported_25 = service.get_supported_minecraft_versions(java25)
-        assert len(supported_25) == 5
-        assert any(entry.startswith("26") for entry in supported_25)
+        assert service.get_supported_minecraft_versions(java7) == ["<= 1.7.9"]
+        # Both Java 8 and its Java 11 fallback cover the legacy band only.
+        assert service.get_supported_minecraft_versions(java8) == ["1.7.10 - 1.16.5"]
+        assert service.get_supported_minecraft_versions(java11) == ["1.7.10 - 1.16.5"]
+        assert service.get_supported_minecraft_versions(java17) == ["1.18.0 - 1.20.4"]
+        assert service.get_supported_minecraft_versions(java21) == ["1.20.5 - 1.21.11"]
+        assert service.get_supported_minecraft_versions(java25) == ["26.0.0+"]
 
     @pytest.mark.asyncio
     async def test_detect_java_version_success(self, service):
@@ -379,29 +422,58 @@ class TestJavaCompatibilityService:
 
             mock_discover.return_value = {8: java8, 17: java17, 21: java21}
 
-            # Test exact match
+            # Accepted major installed → returned
             result = await service.get_java_for_minecraft("1.8.9")
             assert result == java8
 
-            # Test compatible higher version
+            # 1.17 accepts only Java 16, which is not installed → None (block)
             result = await service.get_java_for_minecraft("1.17.1")
-            assert result.major_version >= 16
+            assert result is None
 
-            # Test latest requirements
+            # 1.18 - 1.20.4 accepts exactly Java 17
+            result = await service.get_java_for_minecraft("1.18.0")
+            assert result == java17
+
+            # 1.20.5 - 1.21.11 accepts exactly Java 21
             result = await service.get_java_for_minecraft("1.21.0")
             assert result == java21
 
     @pytest.mark.asyncio
+    async def test_get_java_for_minecraft_prefers_primary_then_fallback(self, service):
+        """The legacy band selects Java 8 first, then falls back to Java 11."""
+        with patch.object(service, "discover_java_installations") as mock_discover:
+            java8 = JavaVersionInfo(8, 0, 292, "OpenJDK", "", "/jvm/8/bin/java")
+            java11 = JavaVersionInfo(11, 0, 2, "OpenJDK", "", "/jvm/11/bin/java")
+
+            # Both present → Java 8 (primary) wins.
+            mock_discover.return_value = {8: java8, 11: java11}
+            result = await service.get_java_for_minecraft("1.16.5")
+            assert result == java8
+
+            # Only the Java 11 fallback present → it is used.
+            mock_discover.return_value = {11: java11}
+            result = await service.get_java_for_minecraft("1.16.5")
+            assert result == java11
+
+    @pytest.mark.asyncio
     async def test_get_java_for_minecraft_no_compatible(self, service):
-        """Test getting Java when no compatible version is available"""
+        """Test getting Java when no accepted version is installed"""
         with patch.object(service, "discover_java_installations") as mock_discover:
             java8 = JavaVersionInfo(
                 8, 0, 292, "OpenJDK", "", "/usr/lib/jvm/java-8/bin/java"
             )
             mock_discover.return_value = {8: java8}
 
-            # Test requiring newer Java than available
+            # 1.21 requires Java 21 (not installed); no fall-through to a newer
+            # runtime → None (caller blocks).
             result = await service.get_java_for_minecraft("1.21.0")
+            assert result is None
+
+            # A too-new-only host is also rejected: 1.16.5 needs Java 8 or 11.
+            mock_discover.return_value = {
+                25: JavaVersionInfo(25, 0, 0, "OpenJDK", "", "/jvm/25/bin/java")
+            }
+            result = await service.get_java_for_minecraft("1.16.5")
             assert result is None
 
     def test_find_java_executable(self, service):
@@ -459,8 +531,8 @@ class TestJavaCompatibilityServiceIntegration:
         matrix = java_compatibility_service.get_compatibility_matrix()
 
         # Should have entries for all major Java version requirements
-        java_versions = set(matrix.values())
-        expected_versions = {8, 16, 17, 21, 25}
+        java_versions = {major for accepted in matrix.values() for major in accepted}
+        expected_versions = {7, 8, 11, 16, 17, 21, 25}
 
         assert expected_versions.issubset(java_versions), (
             f"Missing Java versions: {expected_versions - java_versions}"
@@ -745,20 +817,19 @@ class TestJavaCompatibilityServiceMissingCoverage:
             assert result is None
 
     def test_get_required_java_version_exception_handling(self, service):
-        """Test exception handling in get_required_java_version (lines 312-315)"""
-        # Mock version parsing to raise exception
+        """An unparseable version falls back to the newest band (Java 25)."""
         with patch("packaging.version.Version", side_effect=Exception("Invalid version")):
             result = service.get_required_java_version("invalid-version-format")
 
             assert result == 25  # Should fall back to the newest known JRE
 
     def test_validate_java_compatibility_exception_handling(self, service):
-        """Test exception handling in validate_java_compatibility (lines 352-354)"""
+        """Test exception handling in validate_java_compatibility"""
         java17 = JavaVersionInfo(17, 0, 1)
 
-        # Mock get_required_java_version to raise exception
+        # Mock the resolver to raise; validate must degrade gracefully.
         with patch.object(
-            service, "get_required_java_version", side_effect=Exception("Version error")
+            service, "_resolve_accepted_java", side_effect=Exception("Version error")
         ):
             compatible, message = service.validate_java_compatibility("1.18.0", java17)
 
@@ -767,74 +838,58 @@ class TestJavaCompatibilityServiceMissingCoverage:
             assert "Version error" in message
 
     def test_validate_java_compatibility_internal_exception(self, service):
-        """Test internal exception in validate_java_compatibility (line 340).
+        """Test the ``except`` branch in validate_java_compatibility.
 
-        Previously this test patched ``builtins.getattr`` globally to force an
-        exception inside the body of ``validate_java_compatibility``. That is
-        catastrophic under pytest-xdist: ``getattr`` is invoked from countless
-        framework call sites (pytest, asyncio, logging, traceback rendering),
-        and the mock raising at one of those sites recursed indefinitely
-        inside the error-reporting machinery, killing the worker with
-        ``RecursionError`` and hanging CI (see PR #333 review follow-up).
-
-        The narrower replacement makes the ``java_version`` argument itself
-        raise from one of the ``is_compatible_with_java_*`` properties the
-        service consults, which exercises the same ``except Exception``
-        branch without poisoning the global namespace.
+        The narrow trigger makes the ``java_version`` argument raise from its
+        ``major_version`` access (which the ``in accepted`` membership test
+        reads), exercising the ``except Exception`` branch without patching a
+        global like ``getattr`` (see PR #333 review follow-up).
         """
 
         class _BoomVersion:
-            major_version = 17
-
             @property
-            def is_compatible_with_java_17(self) -> bool:
+            def major_version(self) -> int:
                 raise RuntimeError("Internal error")
 
-        with patch.object(service, "get_required_java_version", return_value=17):
-            compatible, message = service.validate_java_compatibility(
-                "1.18.0", _BoomVersion()
-            )
+        compatible, message = service.validate_java_compatibility(
+            "1.18.0", _BoomVersion()
+        )
 
-            assert compatible is False
-            assert "Failed to validate Java compatibility" in message
-            assert "Internal error" in message
+        assert compatible is False
+        assert "Failed to validate Java compatibility" in message
+        assert "Internal error" in message
 
-    def test_generate_compatibility_error_message_all_java_versions(self, service):
-        """Test error message generation for all Java versions (lines 376, 380, 381->384)"""
-        java7 = JavaVersionInfo(7, 0, 80, "OpenJDK")  # Lower than Java 8
+    def test_generate_compatibility_error_message_download_links(self, service):
+        """The error message lists accepted Java and links the primary runtime."""
+        java25 = JavaVersionInfo(25, 0, 0, "OpenJDK")
         java8 = JavaVersionInfo(8, 0, 292, "OpenJDK")
 
-        # Test Java 8 download link (current is Java 7, required is 8)
-        message8 = service._generate_compatibility_error_message("1.8.0", 8, java7)
-        assert (
-            "Download Java 8: https://adoptium.net/temurin/releases/?version=8"
-            in message8
-        )
-
-        # Test Java 16 download link (current is Java 8, required is 16)
-        message16 = service._generate_compatibility_error_message("1.17.0", 16, java8)
-        assert (
-            "Download Java 16: https://adoptium.net/temurin/releases/?version=16"
-            in message16
-        )
-
-        # Test Java 17 download link (current is Java 8, required is 17)
-        message17 = service._generate_compatibility_error_message("1.18.0", 17, java8)
+        # Single-major bands link their primary runtime.
+        message17 = service._generate_compatibility_error_message("1.18.0", (17,), java25)
+        assert "requires Java 17" in message17
         assert (
             "Download Java 17: https://adoptium.net/temurin/releases/?version=17"
             in message17
         )
 
-        # Test Java 21 download link (current is Java 8, required is 21)
-        message21 = service._generate_compatibility_error_message("1.21.0", 21, java8)
-        assert (
-            "Download Java 21: https://adoptium.net/temurin/releases/?version=21"
-            in message21
-        )
-
-        # Test Java 25 download link (current is Java 8, required is 25)
-        message25 = service._generate_compatibility_error_message("26.1.2", 25, java8)
+        message25 = service._generate_compatibility_error_message("26.1.2", (25,), java8)
         assert (
             "Download Java 25: https://adoptium.net/temurin/releases/?version=25"
             in message25
         )
+
+        # The legacy band lists both accepted majors and links the primary (8).
+        message_legacy = service._generate_compatibility_error_message(
+            "1.16.5", (8, 11), java25
+        )
+        assert "requires Java 8 or Java 11" in message_legacy
+        assert (
+            "Download Java 8: https://adoptium.net/temurin/releases/?version=8"
+            in message_legacy
+        )
+
+        # Java 7 is end-of-life: no Adoptium link, but a clear note instead.
+        message7 = service._generate_compatibility_error_message("1.5.0", (7,), java8)
+        assert "requires Java 7" in message7
+        assert "end-of-life" in message7
+        assert "adoptium.net" not in message7

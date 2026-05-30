@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- Java routing now pins each Minecraft line to a specific accepted Java
+  runtime and blocks a Java that is too old **or** too new, instead of
+  treating "newest Java runs everything". Adds a Java 7 line (≤ 1.7.9) and a
+  Java 11 fallback for 1.7.10 - 1.16.5, and wires `JAVA_7_PATH` /
+  `JAVA_11_PATH` (#420).
+  - **Operator note**: because the policy is exact-match, a host that only
+    has a newer-than-pinned JRE (e.g. only Java 21 for a 1.18 server) is now
+    **blocked** where it previously launched on the too-new runtime. Install
+    the JRE the line pins before upgrading.
+  - **Breaking (API response shape)**: `GET /java/compatibility` now reports
+    each band's accepted Java majors as a **list**
+    (`{"1.18.0 - 1.20.4": [17]}`) instead of a scalar
+    (`{"1.18.0 - 1.20.4": 17}`). Clients reading `compatibility_matrix`
+    values as a scalar must be updated.
+
 ### Fixed
 - Java compatibility matrix now maps Minecraft 26.x and newer to Java 25
   instead of silently selecting Java 21, and the unknown-version fallback

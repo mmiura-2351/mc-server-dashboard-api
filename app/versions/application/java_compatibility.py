@@ -29,6 +29,10 @@ class JavaVersionInfo:
         """Get version as string (e.g., '17.0.1')"""
         return f"{self.major_version}.{self.minor_version}.{self.patch_version}"
 
+    # NOTE: these ``is_compatible_with_java_*`` helpers are convenience checks
+    # for callers/tests. They are NOT the source of truth for routing —
+    # ``JavaCompatibilityService`` matches the installed Java against each
+    # band's accepted set (see ``_compatibility_matrix``).
     @property
     def is_compatible_with_java_8(self) -> bool:
         """Check if this version is compatible with Java 8 requirements"""
@@ -60,23 +64,41 @@ class JavaCompatibilityService:
 
     def __init__(self, java_check_timeout: int = 10):
         self.java_check_timeout = java_check_timeout
-        # Java-Minecraft compatibility matrix based on official requirements
-        self._compatibility_matrix = {
-            # Minecraft 1.8 - 1.16.5: Java 8
-            (version.Version("1.8.0"), version.Version("1.16.5")): 8,
+        # Java-Minecraft compatibility matrix.
+        #
+        # Each band maps a Minecraft version range to an *ordered set of
+        # accepted Java majors* (index 0 is the primary/preferred runtime,
+        # later entries are fallbacks). The installed Java must be one of the
+        # accepted majors; anything else — too old OR too new — is rejected
+        # rather than silently launched (see Issue #420). Only the legacy
+        # 1.7.10-1.16.5 line accepts a fallback (Java 11) because those builds
+        # break on Java 16+; every other line pins a single runtime.
+        #
+        # The lower bound of each band is the authoritative cut point: a
+        # version is resolved to the band with the greatest ``min_mc`` that is
+        # still ``<= mc`` (see ``_resolve_accepted_java``), so gaps between the
+        # listed upper bounds never fall through. ``max_mc`` is kept only for
+        # human-readable output. The floor band uses ``Version("0")`` so every
+        # parseable version resolves to something.
+        self._compatibility_matrix: Dict[
+            Tuple[version.Version, version.Version], Tuple[int, ...]
+        ] = {
+            # Minecraft <= 1.7.9: Java 7
+            (version.Version("0"), version.Version("1.7.9")): (7,),
+            # Minecraft 1.7.10 - 1.16.5: Java 8 (Java 11 fallback)
+            (version.Version("1.7.10"), version.Version("1.16.5")): (8, 11),
             # Minecraft 1.17 - 1.17.1: Java 16
-            (version.Version("1.17.0"), version.Version("1.17.1")): 16,
-            # Minecraft 1.18 - 1.20: Java 17
-            (version.Version("1.18.0"), version.Version("1.20.9")): 17,
-            # Minecraft 1.21 up to (but excluding) the 26.x line: Java 21.
-            # The upper bound is closed deliberately so newer major lines that
-            # ship a JRE-25 (or later) server.jar are not silently absorbed
-            # here and launched with too old a Java runtime.
-            (version.Version("1.21.0"), version.Version("25.99.99")): 21,
-            # Minecraft 26.x and newer: Java 25. The 26.x vanilla server.jar is
-            # compiled for class file version 69.0 (Java 25) and aborts at JVM
-            # class-load time under Java 21.
-            (version.Version("26.0.0"), version.Version("9999.99.99")): 25,
+            (version.Version("1.17.0"), version.Version("1.17.1")): (16,),
+            # Minecraft 1.18 - 1.20.4: Java 17
+            (version.Version("1.18.0"), version.Version("1.20.4")): (17,),
+            # Minecraft 1.20.5 - 1.21.11: Java 21
+            (version.Version("1.20.5"), version.Version("1.21.11")): (21,),
+            # Minecraft 26.x and newer: Java 25 (server.jar is compiled for
+            # class file version 69.0 and aborts at JVM class-load time under
+            # Java 21). The cut starts at 26.0.0 — not 26.1.0 — so any 26.0.x
+            # release/snapshot still routes to Java 25 instead of regressing to
+            # the Java 21 band and crashing (see Issue #415 / PR #419).
+            (version.Version("26.0.0"), version.Version("9999.99.99")): (25,),
         }
 
     async def discover_java_installations(self) -> Dict[int, JavaVersionInfo]:
@@ -84,7 +106,7 @@ class JavaCompatibilityService:
         java_installations = {}
 
         # Check configured paths first
-        for major_version in [8, 16, 17, 21, 25]:
+        for major_version in [7, 8, 11, 16, 17, 21, 25]:
             configured_path = settings.get_java_path(major_version)
             if configured_path:
                 java_info = await self._detect_java_at_path(configured_path)
@@ -118,20 +140,19 @@ class JavaCompatibilityService:
     async def get_java_for_minecraft(
         self, minecraft_version: str
     ) -> Optional[JavaVersionInfo]:
-        """Get appropriate Java installation for Minecraft version"""
-        required_java = self.get_required_java_version(minecraft_version)
+        """Get appropriate Java installation for Minecraft version.
+
+        Returns the first *accepted* Java major (in preference order) that is
+        actually installed. If none of the accepted majors is present the
+        caller is expected to block — we deliberately do not fall back to an
+        arbitrary newer runtime (Issue #420).
+        """
+        accepted_java = self._resolve_accepted_java(minecraft_version)
         installations = await self.discover_java_installations()
 
-        # Try exact match first
-        if required_java in installations:
-            return installations[required_java]
-
-        # Try compatible higher versions
-        compatible_versions = sorted(
-            [v for v in installations.keys() if v >= required_java]
-        )
-        if compatible_versions:
-            return installations[compatible_versions[0]]
+        for major in accepted_java:
+            if major in installations:
+                return installations[major]
 
         return None
 
@@ -311,88 +332,93 @@ class JavaCompatibilityService:
             logger.error(f"Error parsing Java version: {e}")
             return None
 
-    def get_required_java_version(self, minecraft_version: str) -> int:
-        """Get required Java major version for a Minecraft version"""
+    def _resolve_accepted_java(self, minecraft_version: str) -> Tuple[int, ...]:
+        """Resolve the ordered set of accepted Java majors for a version.
+
+        Picks the band with the greatest ``min_mc`` that is still ``<= mc``
+        (nearest-lower), so versions that fall in a gap between two listed
+        ranges resolve to the band just below them instead of dropping out.
+        On a parse error the newest band's tuple is returned so a brand-new,
+        not-yet-mapped line is not launched with an old runtime.
+        """
+        bands = sorted(self._compatibility_matrix.items(), key=lambda item: item[0][0])
+
         try:
             mc_version = version.Version(minecraft_version)
-
-            for (min_mc, max_mc), required_java in self._compatibility_matrix.items():
-                if min_mc <= mc_version <= max_mc:
-                    return required_java
-
-            # No band matched. Pick the fallback by where the version sits
-            # relative to the known bands: below the oldest band → the oldest
-            # JRE; otherwise (a future line above the newest band, or a gap) →
-            # the newest known JRE. This avoids launching a brand-new line with
-            # a runtime that is too old, while not over-shooting a pre-1.8 build
-            # to a JRE that is far too new.
-            bands = sorted(
-                self._compatibility_matrix.items(), key=lambda item: item[0][0]
-            )
-            oldest_min, _ = bands[0][0]
-            if mc_version < oldest_min:
-                oldest_java = bands[0][1]
-                logger.warning(
-                    f"Minecraft version {minecraft_version} predates the known "
-                    f"compatibility bands, defaulting to Java {oldest_java}"
-                )
-                return oldest_java
-
-            newest_java = max(self._compatibility_matrix.values())
-            logger.warning(
-                f"Unknown Minecraft version {minecraft_version}, "
-                f"defaulting to Java {newest_java}"
-            )
-            return newest_java
-
         except Exception as e:
-            logger.error(
-                f"Error determining required Java version for {minecraft_version}: {e}"
+            newest = bands[-1][1]
+            logger.warning(
+                f"Unable to parse Minecraft version {minecraft_version} "
+                f"({e}); defaulting to Java {self._format_accepted(newest)}"
             )
-            return max(self._compatibility_matrix.values())
+            return newest
+
+        chosen: Optional[Tuple[int, ...]] = None
+        for (min_mc, _max_mc), accepted in bands:
+            if min_mc <= mc_version:
+                chosen = accepted
+
+        if chosen is None:
+            # Defensive: the floor band starts at Version("0"), so a parseable
+            # version always matches at least one band.
+            chosen = bands[0][1]
+            logger.warning(
+                f"Minecraft version {minecraft_version} is below the known "
+                f"compatibility bands; defaulting to Java {self._format_accepted(chosen)}"
+            )
+
+        return chosen
+
+    @staticmethod
+    def _format_accepted(accepted: Tuple[int, ...]) -> str:
+        """Render an accepted-Java tuple for human-readable log/error output"""
+        return ", ".join(str(major) for major in accepted)
+
+    def get_required_java_version(self, minecraft_version: str) -> int:
+        """Get the primary (preferred) Java major version for a Minecraft version"""
+        return self._resolve_accepted_java(minecraft_version)[0]
+
+    def get_compatible_java_versions(self, minecraft_version: str) -> Tuple[int, ...]:
+        """Get the ordered set of Java majors accepted for a Minecraft version"""
+        return self._resolve_accepted_java(minecraft_version)
 
     def validate_java_compatibility(
         self, minecraft_version: str, java_version: JavaVersionInfo
     ) -> Tuple[bool, str]:
         """Validate Java version compatibility with Minecraft version"""
         try:
-            required_java = self.get_required_java_version(minecraft_version)
+            accepted_java = self._resolve_accepted_java(minecraft_version)
 
-            # Check if installed Java meets requirements
-            if required_java == 8:
-                compatible = java_version.is_compatible_with_java_8
-            elif required_java == 16:
-                compatible = java_version.is_compatible_with_java_16
-            elif required_java == 17:
-                compatible = java_version.is_compatible_with_java_17
-            elif required_java == 21:
-                compatible = java_version.is_compatible_with_java_21
-            elif required_java == 25:
-                compatible = java_version.is_compatible_with_java_25
-            else:
-                compatible = False
-
-            if compatible:
+            # Exact-match policy: the installed Java must be one of the
+            # accepted majors. Anything else — too old or too new — is
+            # rejected so the caller blocks instead of launching a runtime
+            # that may crash or silently misbehave (Issue #420).
+            if java_version.major_version in accepted_java:
                 return (
                     True,
-                    f"Java {java_version.major_version} is compatible with Minecraft {minecraft_version}",
+                    f"Java {java_version.major_version} is compatible with "
+                    f"Minecraft {minecraft_version}",
                 )
-            else:
-                return False, self._generate_compatibility_error_message(
-                    minecraft_version, required_java, java_version
-                )
+
+            return False, self._generate_compatibility_error_message(
+                minecraft_version, accepted_java, java_version
+            )
 
         except Exception as e:
             logger.error(f"Error validating Java compatibility: {e}")
             return False, f"Failed to validate Java compatibility: {e}"
 
     def _generate_compatibility_error_message(
-        self, minecraft_version: str, required_java: int, java_version: JavaVersionInfo
+        self,
+        minecraft_version: str,
+        accepted_java: Tuple[int, ...],
+        java_version: JavaVersionInfo,
     ) -> str:
         """Generate user-friendly error message for compatibility issues"""
+        accepted_str = " or ".join(f"Java {major}" for major in accepted_java)
         message = (
             f"Java version incompatibility detected:\n"
-            f"  • Minecraft {minecraft_version} requires Java {required_java} or higher\n"
+            f"  • Minecraft {minecraft_version} requires {accepted_str}\n"
             f"  • Currently installed: Java {java_version.major_version} "
             f"({java_version.version_string})"
         )
@@ -400,50 +426,60 @@ class JavaCompatibilityService:
         if java_version.vendor:
             message += f" [{java_version.vendor}]"
 
-        # Add specific guidance based on the version gap
-        if java_version.major_version < required_java:
-            message += f"\n\nPlease install Java {required_java} or higher to run this Minecraft version."
+        message += f"\n\nPlease install {accepted_str} to run this Minecraft version."
 
-            # Add helpful links for Java installation
-            if required_java == 8:
-                message += "\n\nDownload Java 8: https://adoptium.net/temurin/releases/?version=8"
-            elif required_java == 16:
-                message += "\n\nDownload Java 16: https://adoptium.net/temurin/releases/?version=16"
-            elif required_java == 17:
-                message += "\n\nDownload Java 17: https://adoptium.net/temurin/releases/?version=17"
-            elif required_java == 21:
-                message += "\n\nDownload Java 21: https://adoptium.net/temurin/releases/?version=21"
-            elif required_java == 25:
-                message += "\n\nDownload Java 25: https://adoptium.net/temurin/releases/?version=25"
+        # Add a helpful install link for the primary (preferred) runtime.
+        primary_java = accepted_java[0]
+        download_links = {
+            8: "https://adoptium.net/temurin/releases/?version=8",
+            11: "https://adoptium.net/temurin/releases/?version=11",
+            16: "https://adoptium.net/temurin/releases/?version=16",
+            17: "https://adoptium.net/temurin/releases/?version=17",
+            21: "https://adoptium.net/temurin/releases/?version=21",
+            25: "https://adoptium.net/temurin/releases/?version=25",
+        }
+        if primary_java in download_links:
+            message += f"\n\nDownload Java {primary_java}: {download_links[primary_java]}"
+        elif primary_java == 7:
+            message += (
+                "\n\nJava 7 is end-of-life; obtain it from a legacy "
+                "distribution (Adoptium does not publish Java 7 builds)."
+            )
 
         return message
 
-    def get_compatibility_matrix(self) -> Dict[str, int]:
-        """Get human-readable compatibility matrix"""
+    def _format_version_range(
+        self, min_version: version.Version, max_version: version.Version
+    ) -> str:
+        """Render a band's Minecraft range for human-readable output"""
+        if max_version.major >= 9999:  # Open-ended (newest line)
+            return f"{min_version}+"
+        if min_version <= version.Version("0"):  # Floor band
+            return f"<= {max_version}"
+        return f"{min_version} - {max_version}"
+
+    def get_compatibility_matrix(self) -> Dict[str, List[int]]:
+        """Get human-readable compatibility matrix.
+
+        Maps each Minecraft version range to the ordered list of accepted
+        Java majors (first entry is the preferred runtime).
+        """
         matrix = {}
-        for (
-            min_version,
-            max_version,
-        ), java_version in self._compatibility_matrix.items():
-            version_range = f"{min_version} - {max_version}"
-            if max_version.major >= 9999:  # Handle open-ended ranges
-                version_range = f"{min_version}+"
-            matrix[version_range] = java_version
+        for (min_version, max_version), accepted in self._compatibility_matrix.items():
+            version_range = self._format_version_range(min_version, max_version)
+            matrix[version_range] = list(accepted)
 
         return matrix
 
     def get_supported_minecraft_versions(
         self, java_version: JavaVersionInfo
     ) -> List[str]:
-        """Get list of Minecraft versions supported by a Java version"""
+        """Get list of Minecraft version ranges supported by a Java version"""
         supported_versions = []
 
-        for (min_mc, max_mc), required_java in self._compatibility_matrix.items():
-            if java_version.major_version >= required_java:
-                if max_mc.major >= 9999:
-                    supported_versions.append(f"{min_mc}+")
-                else:
-                    supported_versions.append(f"{min_mc} - {max_mc}")
+        for (min_mc, max_mc), accepted in self._compatibility_matrix.items():
+            if java_version.major_version in accepted:
+                supported_versions.append(self._format_version_range(min_mc, max_mc))
 
         return supported_versions
 

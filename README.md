@@ -57,7 +57,9 @@ A comprehensive FastAPI-based backend system for managing multiple Minecraft ser
    CORS_ORIGINS=http://localhost:3000,http://127.0.0.1:3000
 
    # Java Configuration (Optional - for specific Java paths)
+   JAVA_7_PATH=/usr/lib/jvm/java-7-openjdk/bin/java
    JAVA_8_PATH=/usr/lib/jvm/java-8-openjdk/bin/java
+   JAVA_11_PATH=/usr/lib/jvm/java-11-openjdk/bin/java
    JAVA_16_PATH=/usr/lib/jvm/java-16-openjdk/bin/java
    JAVA_17_PATH=/usr/lib/jvm/java-17-openjdk/bin/java
    JAVA_21_PATH=/usr/lib/jvm/java-21-openjdk/bin/java

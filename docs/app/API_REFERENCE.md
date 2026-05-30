@@ -287,11 +287,12 @@ POST /servers/
 }
 ```
 
-**Java Compatibility**: The system automatically validates and selects the appropriate Java version based on the Minecraft version:
-- Minecraft 1.8-1.16.5 requires Java 8
-- Minecraft 1.17 requires Java 16
-- Minecraft 1.18-1.20.x requires Java 17
-- Minecraft 1.21 - 25.x requires Java 21
+**Java Compatibility**: The system pins each Minecraft line to a specific Java runtime and rejects a Java that is too old **or** too new:
+- Minecraft ≤ 1.7.9 requires Java 7 (best-effort; officially unsupported)
+- Minecraft 1.7.10-1.16.5 requires Java 8 (Java 11 used as a fallback)
+- Minecraft 1.17-1.17.1 requires Java 16
+- Minecraft 1.18-1.20.4 requires Java 17
+- Minecraft 1.20.5-1.21.11 requires Java 21
 - Minecraft 26.x and newer requires Java 25
 
 **Error Response** (Java compatibility issues):

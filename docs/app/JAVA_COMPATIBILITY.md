@@ -6,13 +6,17 @@ The Minecraft Server Dashboard API includes a comprehensive Java version compati
 
 ## Supported Java Versions
 
-The system supports multiple Java versions to accommodate different Minecraft server requirements:
+The system pins each Minecraft line to a specific Java runtime. The
+installed Java must match the accepted runtime for that line — a Java that
+is too old **or** too new is rejected rather than launched (see
+[Compatibility model](#compatibility-model) below):
 
-- **Java 8**: Required for Minecraft 1.8 - 1.16.5
-- **Java 16**: Required for Minecraft 1.17
-- **Java 17**: Required for Minecraft 1.18 - 1.20.x
-- **Java 21**: Required for Minecraft 1.21 up to (but excluding) the 26.x line
-- **Java 25**: Required for Minecraft 26.x and newer
+- **Java 7**: Minecraft 1.7.9 and below (best-effort; officially unsupported)
+- **Java 8** (or **Java 11** as a fallback): Minecraft 1.7.10 - 1.16.5
+- **Java 16**: Minecraft 1.17 - 1.17.1
+- **Java 17**: Minecraft 1.18 - 1.20.4
+- **Java 21**: Minecraft 1.20.5 - 1.21.11
+- **Java 25**: Minecraft 26.x and newer
 
 ## Java Version Detection
 
@@ -24,7 +28,9 @@ Configure specific Java paths in your `.env` file:
 
 ```env
 # Java Configuration
+JAVA_7_PATH=/usr/lib/jvm/java-7-openjdk/bin/java
 JAVA_8_PATH=/usr/lib/jvm/java-8-openjdk/bin/java
+JAVA_11_PATH=/usr/lib/jvm/java-11-openjdk/bin/java
 JAVA_16_PATH=/usr/lib/jvm/java-16-openjdk/bin/java
 JAVA_17_PATH=/usr/lib/jvm/java-17-openjdk/bin/java
 JAVA_21_PATH=/usr/lib/jvm/java-21-openjdk/bin/java
@@ -84,13 +90,31 @@ JAVA_DISCOVERY_PATHS=/home/user/.sdkman/candidates/java
 
 ## Minecraft Version Compatibility Matrix
 
-| Minecraft Version | Required Java | Notes |
+| Minecraft Version | Accepted Java | Notes |
 |-------------------|---------------|-------|
-| 1.8 - 1.16.5      | Java 8        | Legacy versions |
-| 1.17              | Java 16       | First version requiring Java 16+ |
-| 1.18 - 1.20.x     | Java 17       | LTS Java version recommended |
-| 1.21 - 25.x       | Java 21       | Requires Java 21+ |
-| 26.x+             | Java 25       | server.jar is compiled for Java 25 (class file version 69.0) |
+| ≤ 1.7.9           | Java 7        | Best-effort; officially unsupported |
+| 1.7.10 - 1.16.5   | Java 8, or Java 11 | Java 8 preferred; Java 11 used when Java 8 is absent |
+| 1.17 - 1.17.1     | Java 16       | First line requiring Java 16 |
+| 1.18 - 1.20.4     | Java 17       | LTS Java version |
+| 1.20.5 - 1.21.11  | Java 21       | Java 21 line |
+| 26.x+ (from 26.0) | Java 25       | server.jar is compiled for Java 25 (class file version 69.0); the cut starts at 26.0 so no 26.0.x build is ever launched on Java 21 |
+
+## Compatibility model
+
+Each Minecraft line accepts a fixed set of Java majors (the table above).
+The installed Java must be **in** that set, otherwise server creation/start
+is blocked with an actionable error:
+
+- A Java that is **too old** would crash at JVM class-load time
+  (`UnsupportedClassVersionError`).
+- A Java that is **too new** is also rejected — older Minecraft builds break
+  on newer JREs, so the dashboard will not silently launch them on, say,
+  Java 25. Install the Java the line expects instead.
+
+Only the legacy `1.7.10 - 1.16.5` line accepts a fallback (Java 11) because
+those builds run on both Java 8 and 11; every other line pins a single Java.
+Versions that fall in a gap between two listed ranges resolve to the line
+just below them.
 
 ## Server Creation Process
 
