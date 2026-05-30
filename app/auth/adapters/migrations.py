@@ -16,7 +16,7 @@ COUNT query can be served from a single index range scan.
 import logging
 from typing import Any
 
-from sqlalchemy import text
+from app.core.db_ddl import create_index_if_not_exists
 
 logger = logging.getLogger(__name__)
 
@@ -44,11 +44,11 @@ def migrate_login_attempt_indexes(engine: Any) -> None:
     with engine.connect() as conn:
         for index_name, columns in _LOGIN_ATTEMPT_COMPOSITE_INDEXES:
             try:
-                conn.execute(
-                    text(
-                        f"CREATE INDEX IF NOT EXISTS {index_name} "
-                        f"ON login_attempts ({columns})"
-                    )
+                create_index_if_not_exists(
+                    conn,
+                    index_name=index_name,
+                    table="login_attempts",
+                    columns=columns,
                 )
             except Exception as exc:  # pragma: no cover - defensive
                 logger.warning(

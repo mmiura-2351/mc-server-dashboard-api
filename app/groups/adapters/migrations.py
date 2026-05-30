@@ -15,7 +15,7 @@ listings and the per-group server-attachment join.
 import logging
 from typing import Any
 
-from sqlalchemy import text
+from app.core.db_ddl import create_index_if_not_exists
 
 logger = logging.getLogger(__name__)
 
@@ -44,8 +44,8 @@ def migrate_group_indexes(engine: Any) -> None:
     with engine.connect() as conn:
         for table, index_name, column in _GROUP_INDEXES:
             try:
-                conn.execute(
-                    text(f"CREATE INDEX IF NOT EXISTS {index_name} ON {table} ({column})")
+                create_index_if_not_exists(
+                    conn, index_name=index_name, table=table, columns=column
                 )
             except Exception as exc:  # pragma: no cover - defensive
                 logger.warning(

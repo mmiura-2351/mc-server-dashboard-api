@@ -16,6 +16,8 @@ from typing import Any
 
 from sqlalchemy import text
 
+from app.core.db_ddl import create_index_if_not_exists
+
 logger = logging.getLogger(__name__)
 
 
@@ -131,11 +133,11 @@ def migrate_file_history_indexes(engine: Any) -> None:
     with engine.connect() as conn:
         for index_name, column in _FILE_HISTORY_INDEXES:
             try:
-                conn.execute(
-                    text(
-                        f"CREATE INDEX IF NOT EXISTS {index_name} "
-                        f"ON file_edit_history ({column})"
-                    )
+                create_index_if_not_exists(
+                    conn,
+                    index_name=index_name,
+                    table="file_edit_history",
+                    columns=column,
                 )
             except Exception as exc:  # pragma: no cover - defensive
                 logger.warning(

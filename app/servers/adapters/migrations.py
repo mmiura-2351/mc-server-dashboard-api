@@ -24,6 +24,8 @@ from typing import Any
 
 from sqlalchemy import text
 
+from app.core.db_ddl import create_index_if_not_exists
+
 logger = logging.getLogger(__name__)
 
 # Index names must match SQLAlchemy's auto-generated convention
@@ -58,8 +60,8 @@ def migrate_server_indexes(engine: Any) -> None:
     with engine.connect() as conn:
         for index_name, column in _SERVER_INDEXES:
             try:
-                conn.execute(
-                    text(f"CREATE INDEX IF NOT EXISTS {index_name} ON servers ({column})")
+                create_index_if_not_exists(
+                    conn, index_name=index_name, table="servers", columns=column
                 )
             except Exception as exc:  # pragma: no cover - defensive
                 logger.warning(
@@ -133,10 +135,11 @@ def migrate_drop_templates(engine: Any) -> None:
 
                 for index_name, column in _SERVER_INDEXES:
                     try:
-                        conn.execute(
-                            text(
-                                f"CREATE INDEX IF NOT EXISTS {index_name} ON servers ({column})"
-                            )
+                        create_index_if_not_exists(
+                            conn,
+                            index_name=index_name,
+                            table="servers",
+                            columns=column,
                         )
                     except Exception:
                         pass
