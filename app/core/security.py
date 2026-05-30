@@ -5,7 +5,9 @@ and other security vulnerabilities in file operations.
 """
 
 import re
+import stat
 import tarfile
+import zipfile
 from pathlib import Path
 from typing import Union
 
@@ -368,6 +370,189 @@ class TarExtractor:
         except (TypeError, ValueError):
             # Fallback for older Python versions without filter support
             tar.extract(member, path=target_dir)
+
+
+class ZipExtractor:
+    """Secure zip file extraction utility.
+
+    Mirrors ``TarExtractor`` for ZIP archives. Python's ``zipfile`` sanitises
+    member names on extraction, but it does not enforce size caps and silently
+    drops unsafe components rather than rejecting the archive, so the same
+    per-member and archive-level validation is applied here before extracting
+    anything. Limits are shared with ``TarExtractor`` so both archive paths
+    stay in lock-step.
+
+    Note on zip bombs: unlike ``TarExtractor``, this path deliberately does not
+    apply a per-member compression-ratio cap. ZIP records the exact compressed
+    size per member, but a single deflate stream tops out near the format's
+    ~1032:1 theoretical limit, so a ratio cap cannot distinguish a bomb from
+    legitimately compressible content (e.g. sparse Minecraft ``.mca`` region
+    files reach ~999:1). Real expansion damage is bounded instead by the
+    absolute ``MAX_MEMBER_SIZE`` and ``MAX_EXTRACTED_SIZE`` caps, which cap the
+    decompressed output directly. See PR #408 review for the analysis.
+    """
+
+    # Reuse the tar limits so both archive paths share one source of truth.
+    MAX_ARCHIVE_SIZE = TarExtractor.MAX_ARCHIVE_SIZE
+    MAX_EXTRACTED_SIZE = TarExtractor.MAX_EXTRACTED_SIZE
+    MAX_MEMBER_COUNT = TarExtractor.MAX_MEMBER_COUNT
+    MAX_MEMBER_SIZE = TarExtractor.MAX_MEMBER_SIZE
+
+    @staticmethod
+    def validate_zip_member(info: zipfile.ZipInfo, target_dir: Path) -> None:
+        """Validate a zip member for safe extraction.
+
+        Args:
+            info: The zip member to validate
+            target_dir: Target directory for extraction
+
+        Raises:
+            SecurityError: If the member is unsafe for extraction
+        """
+        name = info.filename
+
+        # Check for absolute paths (POSIX and Windows drive/UNC roots)
+        if name.startswith("/") or name.startswith("\\"):
+            raise SecurityError(f"Zip member has absolute path: {name}")
+
+        # Check for path traversal sequences
+        if ".." in name:
+            raise SecurityError(f"Zip member contains path traversal: {name}")
+
+        # Check for null bytes (can cause issues)
+        if "\x00" in name:
+            raise SecurityError(f"Zip member contains null bytes: {name}")
+
+        # Reject backslashes outright: ZIP names are forward-slash separated, so
+        # a backslash is either a Windows traversal attempt or a literal that
+        # would be misinterpreted on extraction.
+        if "\\" in name:
+            raise SecurityError(f"Zip member contains backslashes: {name}")
+
+        # Validate the target path would be within the target directory
+        target_path = target_dir / name
+        try:
+            target_path.resolve().relative_to(target_dir.resolve())
+        except ValueError as e:
+            raise SecurityError(
+                f"Zip member would extract outside target directory: {name}"
+            ) from e
+
+        # Reject symlink / non-regular members. ZIP encodes the Unix mode in the
+        # high 16 bits of ``external_attr``; default ``zipfile`` does not follow
+        # symlinks but extracting them is still a defence-in-depth risk.
+        mode = info.external_attr >> 16
+        if mode:
+            if stat.S_ISLNK(mode):
+                raise SecurityError(
+                    f"Zip member is a symbolic link (not allowed): {name}"
+                )
+            if (
+                stat.S_ISBLK(mode)
+                or stat.S_ISCHR(mode)
+                or stat.S_ISFIFO(mode)
+                or stat.S_ISSOCK(mode)
+            ):
+                raise SecurityError(f"Zip member is a special file (not allowed): {name}")
+
+        # Check for very long filenames that could cause issues
+        if len(name) > 1000:
+            raise SecurityError(f"Zip member name too long: {name[:100]}...")
+
+    @staticmethod
+    def validate_archive_safety(zip_path: Path) -> None:
+        """Validate zip archive safety before extraction.
+
+        Args:
+            zip_path: Path to the zip archive
+
+        Raises:
+            SecurityError: If the archive is unsafe
+        """
+        if not zip_path.exists():
+            raise SecurityError(f"Archive not found: {zip_path}")
+
+        # Check archive size
+        archive_size = zip_path.stat().st_size
+        if archive_size > ZipExtractor.MAX_ARCHIVE_SIZE:
+            raise SecurityError(
+                f"Archive too large: {archive_size} bytes "
+                f"(max {ZipExtractor.MAX_ARCHIVE_SIZE})"
+            )
+
+        try:
+            with zipfile.ZipFile(zip_path, "r") as zip_ref:
+                members = zip_ref.infolist()
+
+                # Check member count
+                if len(members) > ZipExtractor.MAX_MEMBER_COUNT:
+                    raise SecurityError(
+                        f"Too many files in archive: {len(members)} "
+                        f"(max {ZipExtractor.MAX_MEMBER_COUNT})"
+                    )
+
+                total_extracted_size = 0
+
+                for info in members:
+                    # Path-traversal / symlink / null-byte validation. Use a
+                    # dummy target since we are only inspecting, not extracting.
+                    dummy_target = Path("/tmp/dummy")
+                    ZipExtractor.validate_zip_member(info, dummy_target)
+
+                    # Check individual member size (uncompressed)
+                    if info.file_size > ZipExtractor.MAX_MEMBER_SIZE:
+                        raise SecurityError(
+                            f"File too large in archive: {info.filename} - "
+                            f"{info.file_size} bytes"
+                        )
+
+                    total_extracted_size += info.file_size
+
+                # Check total extracted size. Together with the per-member size
+                # cap above, this bounds decompression output and is the actual
+                # zip-bomb guard for the ZIP path (no ratio cap; see class docs).
+                if total_extracted_size > ZipExtractor.MAX_EXTRACTED_SIZE:
+                    raise SecurityError(
+                        f"Total extracted size too large: {total_extracted_size} bytes"
+                    )
+
+        except zipfile.BadZipFile as e:
+            raise SecurityError(f"Invalid or corrupted archive: {e}") from e
+
+    @staticmethod
+    def safe_extract_zip(zip_path: Path, target_dir: Path) -> list[str]:
+        """Safely extract a zip file with comprehensive security validation.
+
+        Args:
+            zip_path: Path to the zip file to extract
+            target_dir: Directory to extract to
+
+        Returns:
+            The list of member names contained in the archive.
+
+        Raises:
+            SecurityError: If any zip member is unsafe or the archive is malicious
+            FileNotFoundError: If the zip file doesn't exist
+        """
+        if not zip_path.exists():
+            raise FileNotFoundError(f"Zip file not found: {zip_path}")
+
+        # First, validate archive safety (size, member count, total size).
+        ZipExtractor.validate_archive_safety(zip_path)
+
+        # Ensure target directory exists
+        target_dir.mkdir(parents=True, exist_ok=True)
+
+        with zipfile.ZipFile(zip_path, "r") as zip_ref:
+            members = zip_ref.infolist()
+
+            # Validate every member against the real target before extracting any.
+            for info in members:
+                ZipExtractor.validate_zip_member(info, target_dir)
+
+            # All members are safe; extract them.
+            zip_ref.extractall(target_dir)
+            return zip_ref.namelist()
 
 
 class FileOperationValidator:

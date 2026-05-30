@@ -1,6 +1,5 @@
 import logging
 import shutil
-import zipfile
 from datetime import datetime
 from pathlib import Path
 from typing import ClassVar, List, Optional
@@ -16,6 +15,7 @@ from app.core.exceptions import (
     ServerNotFoundException,
     handle_file_error,
 )
+from app.core.security import SecurityError, ZipExtractor
 from app.files.adapters.legacy import file_history_service
 from app.files.application.encoding_handler import EncodingHandler
 from app.servers.adapters.read_port import SqlAlchemyServerReadPort
@@ -266,20 +266,25 @@ class FileOperationService:
             handle_file_error("move", f"{source} to {destination}", e)
 
     def extract_archive(self, archive_path: Path, extract_to: Path) -> List[str]:
-        """Extract archive and return list of extracted files"""
-        try:
-            extracted_files = []
+        """Extract archive and return list of extracted files.
 
+        ZIP members are validated for path traversal, symlinks, and zip-bomb
+        size caps via ``ZipExtractor.safe_extract_zip`` before anything is
+        written to disk. A rejected archive is the uploader's fault, so the
+        ``SecurityError`` is mapped to a 400 ``InvalidRequestException`` rather
+        than a generic 500 file error.
+        """
+        try:
             if archive_path.suffix.lower() == ".zip":
-                with zipfile.ZipFile(archive_path, "r") as zip_ref:
-                    zip_ref.extractall(extract_to)
-                    extracted_files = zip_ref.namelist()
+                return ZipExtractor.safe_extract_zip(archive_path, extract_to)
             else:
                 raise InvalidRequestException(
                     f"Unsupported archive format: {archive_path.suffix}"
                 )
 
-            return extracted_files
-
+        except InvalidRequestException:
+            raise
+        except SecurityError as e:
+            raise InvalidRequestException(f"Unsafe archive rejected: {e}") from e
         except Exception as e:
             handle_file_error("extract", str(archive_path), e)
