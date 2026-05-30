@@ -465,3 +465,49 @@ class TestServerService:
         result = service.update_server_status(1, ServerStatus.running, db=mock_db_session)
 
         assert result is False
+
+    # Test _sync_server_properties_after_update boolean serialization
+    @pytest.mark.asyncio
+    async def test_sync_properties_boolean_lowercase(self, service, tmp_path):
+        """Test that Python booleans are serialized as lowercase 'true'/'false'
+        for Minecraft's server.properties parser (issue #417)."""
+        # Create a minimal server.properties file
+        props_file = tmp_path / "server.properties"
+        props_file.write_text("#Minecraft server properties\npvp=true\n")
+
+        server = Mock(spec=Server)
+        server.id = 1
+        server.port = 25565
+        server.max_players = 20
+        server.directory_path = str(tmp_path)
+
+        await service._sync_server_properties_after_update(
+            server, custom_properties={"pvp": False, "online_mode": True}
+        )
+
+        content = props_file.read_text()
+        assert "pvp=false" in content
+        assert "online-mode=true" in content
+        # Ensure Python-cased booleans are NOT written
+        assert "pvp=False" not in content
+        assert "online-mode=True" not in content
+
+    @pytest.mark.asyncio
+    async def test_sync_properties_non_boolean_values_unchanged(self, service, tmp_path):
+        """Test that non-boolean custom properties are still serialized with str()."""
+        props_file = tmp_path / "server.properties"
+        props_file.write_text("#Minecraft server properties\n")
+
+        server = Mock(spec=Server)
+        server.id = 1
+        server.port = 25565
+        server.max_players = 20
+        server.directory_path = str(tmp_path)
+
+        await service._sync_server_properties_after_update(
+            server, custom_properties={"level-name": "my-world", "max-players": 50}
+        )
+
+        content = props_file.read_text()
+        assert "level-name=my-world" in content
+        assert "max-players=50" in content

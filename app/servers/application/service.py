@@ -1177,7 +1177,12 @@ class ServerService:
             if custom_properties:
                 for key, value in custom_properties.items():
                     normalized_key = key.replace("_", "-")
-                    properties[normalized_key] = str(value)
+                    # Minecraft expects lowercase "true"/"false" for booleans,
+                    # not Python's "True"/"False" from str().
+                    if isinstance(value, bool):
+                        properties[normalized_key] = "true" if value else "false"
+                    else:
+                        properties[normalized_key] = str(value)
 
             with open(properties_path, "w", encoding="utf-8") as f:
                 f.write("#Minecraft server properties\n")
