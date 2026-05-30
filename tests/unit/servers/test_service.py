@@ -435,6 +435,45 @@ class TestServerService:
         with pytest.raises(RuntimeError, match="vanished between validation and delete"):
             await service.delete_server(99, mock_db)
 
+    @pytest.mark.asyncio
+    async def test_sync_server_properties_after_update_boolean_values(
+        self, server_service, tmp_path
+    ):
+        """Booleans in custom_properties are written as lowercase Java literals."""
+        props_file = tmp_path / "server.properties"
+        props_file.write_text(
+            "#Minecraft server properties\nserver-port=25565\npvp=true\n"
+        )
+
+        server = Mock(spec=Server)
+        server.id = 1
+        server.directory_path = str(tmp_path)
+        server.port = 25565
+        server.max_players = 20
+
+        await server_service._sync_server_properties_after_update(
+            server,
+            custom_properties={
+                "pvp": False,
+                "enable_command_block": True,
+                "view_distance": 12,
+                "motd": "Hello",
+            },
+        )
+
+        written = {}
+        for line in props_file.read_text().splitlines():
+            if line and not line.startswith("#") and "=" in line:
+                k, v = line.split("=", 1)
+                written[k] = v
+
+        assert written["pvp"] == "false"
+        assert written["enable-command-block"] == "true"
+        assert written["view-distance"] == "12"
+        assert written["motd"] == "Hello"
+        assert written["server-port"] == "25565"
+        assert written["max-players"] == "20"
+
 
 class TestServerValidationServiceExtended:
     """Additional tests for ServerValidationService methods"""
