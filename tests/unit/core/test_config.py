@@ -482,13 +482,13 @@ class TestGetJavaPath:
         assert result == "/usr/lib/jvm/java-17-openjdk/bin/java"
 
     def test_get_java_path_unsupported_version(self):
-        """Test get_java_path for unsupported Java version"""
+        """Test get_java_path for an unmapped Java version"""
         settings = Settings(
             SECRET_KEY="this-is-a-very-secure-secret-key-with-sufficient-length",
             DATABASE_URL="sqlite:///test.db",
         )
 
-        result = settings.get_java_path(11)  # Unsupported version
+        result = settings.get_java_path(99)  # Unsupported version
         assert result is None
 
     def test_get_java_path_empty_path(self):
@@ -507,16 +507,22 @@ class TestGetJavaPath:
         settings = Settings(
             SECRET_KEY="this-is-a-very-secure-secret-key-with-sufficient-length",
             DATABASE_URL="sqlite:///test.db",
+            JAVA_7_PATH="/java7",
             JAVA_8_PATH="/java8",
+            JAVA_11_PATH="/java11",
             JAVA_16_PATH="/java16",
             JAVA_17_PATH="/java17",
             JAVA_21_PATH="/java21",
+            JAVA_25_PATH="/java25",
         )
 
+        assert settings.get_java_path(7) == "/java7"
         assert settings.get_java_path(8) == "/java8"
+        assert settings.get_java_path(11) == "/java11"
         assert settings.get_java_path(16) == "/java16"
         assert settings.get_java_path(17) == "/java17"
         assert settings.get_java_path(21) == "/java21"
+        assert settings.get_java_path(25) == "/java25"
 
 
 class TestSettingsDefaults:

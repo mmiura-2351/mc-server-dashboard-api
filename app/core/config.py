@@ -166,7 +166,9 @@ class Settings(BaseSettings):
     JAVA_DISCOVERY_PATHS: str = (
         ""  # Comma-separated paths to search for Java installations
     )
+    JAVA_7_PATH: str = ""  # Direct path to Java 7 executable
     JAVA_8_PATH: str = ""  # Direct path to Java 8 executable
+    JAVA_11_PATH: str = ""  # Direct path to Java 11 executable
     JAVA_16_PATH: str = ""  # Direct path to Java 16 executable
     JAVA_17_PATH: str = ""  # Direct path to Java 17 executable
     JAVA_21_PATH: str = ""  # Direct path to Java 21 executable
@@ -755,7 +757,9 @@ class Settings(BaseSettings):
     def get_java_path(self, major_version: int) -> Optional[str]:
         """Get configured Java path for specific major version"""
         java_paths = {
+            7: self.JAVA_7_PATH,
             8: self.JAVA_8_PATH,
+            11: self.JAVA_11_PATH,
             16: self.JAVA_16_PATH,
             17: self.JAVA_17_PATH,
             21: self.JAVA_21_PATH,
