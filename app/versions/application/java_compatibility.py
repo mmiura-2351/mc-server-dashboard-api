@@ -320,9 +320,24 @@ class JavaCompatibilityService:
                 if min_mc <= mc_version <= max_mc:
                     return required_java
 
-            # Default fallback for unknown versions: assume the newest known JRE
-            # rather than an older one, so an as-yet-unmapped major line is not
-            # launched with a Java runtime that is too old to load its server.jar.
+            # No band matched. Pick the fallback by where the version sits
+            # relative to the known bands: below the oldest band → the oldest
+            # JRE; otherwise (a future line above the newest band, or a gap) →
+            # the newest known JRE. This avoids launching a brand-new line with
+            # a runtime that is too old, while not over-shooting a pre-1.8 build
+            # to a JRE that is far too new.
+            bands = sorted(
+                self._compatibility_matrix.items(), key=lambda item: item[0][0]
+            )
+            oldest_min, _ = bands[0][0]
+            if mc_version < oldest_min:
+                oldest_java = bands[0][1]
+                logger.warning(
+                    f"Minecraft version {minecraft_version} predates the known "
+                    f"compatibility bands, defaulting to Java {oldest_java}"
+                )
+                return oldest_java
+
             newest_java = max(self._compatibility_matrix.values())
             logger.warning(
                 f"Unknown Minecraft version {minecraft_version}, "

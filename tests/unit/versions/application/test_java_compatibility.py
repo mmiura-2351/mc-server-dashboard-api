@@ -103,6 +103,13 @@ class TestJavaCompatibilityService:
         # 2.0.0 still falls inside the 1.21 .. 25.x band and maps to Java 21
         assert service.get_required_java_version("2.0.0") == 21
 
+    def test_get_required_java_version_below_oldest_band(self, service):
+        """Versions below the oldest known band fall back to the oldest JRE"""
+        # A pre-1.8 build should not be over-shot to the newest JRE; it maps to
+        # the oldest known requirement (Java 8) instead.
+        assert service.get_required_java_version("1.5.0") == 8
+        assert service.get_required_java_version("1.7.10") == 8
+
     def test_validate_java_compatibility_java_8(self, service):
         """Test Java compatibility validation for Java 8 scenarios"""
         java8 = JavaVersionInfo(major_version=8, minor_version=0, patch_version=292)
