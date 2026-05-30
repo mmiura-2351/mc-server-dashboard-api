@@ -134,6 +134,7 @@ ENVIRONMENT=production
 JAVA_8_PATH=/usr/lib/jvm/java-8-openjdk-amd64/bin/java
 JAVA_17_PATH=/usr/lib/jvm/java-17-openjdk-amd64/bin/java
 JAVA_21_PATH=/usr/lib/jvm/java-21-openjdk-amd64/bin/java
+JAVA_25_PATH=/usr/lib/jvm/java-25-openjdk-amd64/bin/java
 
 # Logging
 LOG_LEVEL=INFO

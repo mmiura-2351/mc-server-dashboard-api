@@ -11,7 +11,8 @@ The system supports multiple Java versions to accommodate different Minecraft se
 - **Java 8**: Required for Minecraft 1.8 - 1.16.5
 - **Java 16**: Required for Minecraft 1.17
 - **Java 17**: Required for Minecraft 1.18 - 1.20.x
-- **Java 21**: Required for Minecraft 1.21+
+- **Java 21**: Required for Minecraft 1.21 up to (but excluding) the 26.x line
+- **Java 25**: Required for Minecraft 26.x and newer
 
 ## Java Version Detection
 
@@ -27,6 +28,7 @@ JAVA_8_PATH=/usr/lib/jvm/java-8-openjdk/bin/java
 JAVA_16_PATH=/usr/lib/jvm/java-16-openjdk/bin/java
 JAVA_17_PATH=/usr/lib/jvm/java-17-openjdk/bin/java
 JAVA_21_PATH=/usr/lib/jvm/java-21-openjdk/bin/java
+JAVA_25_PATH=/usr/lib/jvm/java-25-openjdk/bin/java
 
 # Additional discovery paths (comma-separated)
 JAVA_DISCOVERY_PATHS=/opt/java,/usr/local/java,/home/user/.sdkman/candidates/java
@@ -87,7 +89,8 @@ JAVA_DISCOVERY_PATHS=/home/user/.sdkman/candidates/java
 | 1.8 - 1.16.5      | Java 8        | Legacy versions |
 | 1.17              | Java 16       | First version requiring Java 16+ |
 | 1.18 - 1.20.x     | Java 17       | LTS Java version recommended |
-| 1.21+             | Java 21       | Latest versions require Java 21+ |
+| 1.21 - 25.x       | Java 21       | Requires Java 21+ |
+| 26.x+             | Java 25       | server.jar is compiled for Java 25 (class file version 69.0) |
 
 ## Server Creation Process
 

@@ -61,6 +61,7 @@ A comprehensive FastAPI-based backend system for managing multiple Minecraft ser
    JAVA_16_PATH=/usr/lib/jvm/java-16-openjdk/bin/java
    JAVA_17_PATH=/usr/lib/jvm/java-17-openjdk/bin/java
    JAVA_21_PATH=/usr/lib/jvm/java-21-openjdk/bin/java
+   JAVA_25_PATH=/usr/lib/jvm/java-25-openjdk/bin/java
    JAVA_DISCOVERY_PATHS=/opt/java,/usr/local/java
 
    # All other knobs (DAEMON_*, DB_POOL_*, PASSWORD_*, BRUTE_FORCE_*,
