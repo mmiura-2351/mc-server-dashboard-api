@@ -340,6 +340,8 @@ class MonitoringMixin:
                         except (asyncio.QueueEmpty, AttributeError, TypeError):
                             break
 
+                server_process.log_buffer.clear()
+
                 # Remove PID file
                 try:
                     server_dir = server_process.server_directory or (
@@ -393,7 +395,8 @@ class MonitoringMixin:
                                 timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                                 formatted_line = f"[{timestamp}] {line.strip()}"
 
-                                # Put in queue (drop old logs if queue is full)
+                                server_process.log_buffer.append(formatted_line)
+
                                 try:
                                     server_process.log_queue.put_nowait(formatted_line)
                                 except asyncio.QueueFull:

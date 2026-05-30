@@ -345,20 +345,19 @@ class TestMinecraftServerManagerSimpleIntegration:
 
     @pytest.mark.asyncio
     async def test_get_server_logs_success(self, manager):
-        """Test lines 545-556: Get server logs"""
-        log_queue = asyncio.Queue()
+        """Test get_server_logs returns the most-recent N lines non-destructively."""
+        from collections import deque
 
-        # Add some test logs
         test_logs = ["Log 1", "Log 2", "Log 3"]
-        for log in test_logs:
-            await log_queue.put(log)
+        log_buffer = deque(test_logs, maxlen=10)
 
         server_process = ServerProcess(
             server_id=1,
             process=Mock(),
-            log_queue=log_queue,
+            log_queue=asyncio.Queue(),
             status=ServerStatus.running,
             started_at=datetime.now(),
+            log_buffer=log_buffer,
             pid=12345,
         )
         manager.processes[1] = server_process
@@ -366,8 +365,8 @@ class TestMinecraftServerManagerSimpleIntegration:
         logs = await manager.get_server_logs(1, lines=2)
 
         assert len(logs) == 2
-        assert logs[0] == "Log 1"
-        assert logs[1] == "Log 2"
+        assert logs == ["Log 2", "Log 3"]
+        assert len(log_buffer) == 3
 
     @pytest.mark.asyncio
     async def test_get_server_logs_server_not_running(self, manager):

@@ -8,6 +8,7 @@ manager (``self.processes``, ``self.base_directory``,
 
 import asyncio
 import json
+from collections import deque
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Optional
@@ -145,9 +146,8 @@ class PidFileMixin:
             except Exception as e:
                 logger.warning(f"Could not verify process {pid} command line: {e}")
 
-            # Create a pseudo subprocess object for monitoring
-            # Note: We can't fully recreate the original subprocess, but we can monitor the PID
             log_queue: asyncio.Queue[str] = asyncio.Queue(maxsize=self.log_queue_size)
+            log_buffer: deque = deque(maxlen=self.log_queue_size)
 
             # Parse started_at time
             try:
@@ -161,13 +161,14 @@ class PidFileMixin:
 
             server_process = ServerProcess(
                 server_id=server_id,
-                process=None,  # We'll set this to None since we can't recreate subprocess
+                process=None,
                 log_queue=log_queue,
-                status=ServerStatus.running,  # Assume running since process exists
+                status=ServerStatus.running,
                 started_at=started_at,
+                log_buffer=log_buffer,
                 pid=pid,
-                server_directory=server_dir,  # Store correct directory path for monitoring
-                rcon_port=rcon_port,  # Restore RCON configuration
+                server_directory=server_dir,
+                rcon_port=rcon_port,
                 rcon_password=rcon_password,
             )
 

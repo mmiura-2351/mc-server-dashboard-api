@@ -9,6 +9,7 @@ preflight, monitoring) and adds the public manager surface
 import asyncio
 import inspect
 import os
+from collections import deque
 from datetime import datetime
 from pathlib import Path
 from typing import (
@@ -325,12 +326,14 @@ class MinecraftServerManager(
 
             # Create server process tracking (without process object for daemon)
             log_queue: asyncio.Queue[str] = asyncio.Queue(maxsize=self.log_queue_size)
+            log_buffer: deque = deque(maxlen=self.log_queue_size)
             server_process = ServerProcess(
                 server_id=server.id,
                 process=None,  # No process object for daemon processes
                 log_queue=log_queue,
                 status=ServerStatus.starting,
                 started_at=datetime.now(),
+                log_buffer=log_buffer,
                 pid=daemon_pid,
                 server_directory=server_dir,  # Store correct directory path for monitoring
                 rcon_port=rcon_port,  # Store RCON configuration
@@ -569,22 +572,15 @@ class MinecraftServerManager(
         }
 
     async def get_server_logs(self, server_id: int, lines: int = 100) -> List[str]:
-        """Get recent server logs"""
+        """Get recent server logs (most-recent *lines* entries)."""
         if server_id not in self.processes:
             return []
 
         server_process = self.processes[server_id]
-        logs = []
-
-        # Get logs from queue (non-blocking)
-        for _ in range(min(lines, server_process.log_queue.qsize())):
-            try:
-                log_line = server_process.log_queue.get_nowait()
-                logs.append(log_line)
-            except asyncio.QueueEmpty:
-                break
-
-        return logs
+        buf = server_process.log_buffer
+        if len(buf) <= lines:
+            return list(buf)
+        return list(buf)[-lines:]
 
     async def stream_server_logs(self, server_id: int) -> AsyncGenerator[str, None]:
         """Stream server logs in real-time"""
@@ -664,12 +660,13 @@ class MinecraftServerManager(
                             task.cancel()
                         cleanup_tasks.extend(tasks_to_cancel)
 
-                    # Clear log queue to free memory
+                    # Clear log queue and buffer to free memory
                     try:
                         while not server_process.log_queue.empty():
                             server_process.log_queue.get_nowait()
                     except (asyncio.QueueEmpty, AttributeError):
                         pass
+                    server_process.log_buffer.clear()
 
                     # Remove from processes dict but keep PID file and don't kill process
                     del self.processes[server_id]

@@ -648,11 +648,9 @@ sys.exit(0)
 
     @pytest.mark.asyncio
     async def test_get_server_logs_with_real_queue(self, manager):
-        """Test lines 545-556: Log retrieval from real queue"""
+        """Test log retrieval returns the tail and is non-destructive."""
+        from collections import deque
 
-        log_queue = asyncio.Queue()
-
-        # Add logs with timestamps (simulating real log format)
         test_logs = [
             "[2024-01-01 12:34:56] Server starting...",
             "[2024-01-01 12:34:57] Loading world...",
@@ -661,29 +659,27 @@ sys.exit(0)
             "[2024-01-01 12:35:00] Player left",
         ]
 
-        for log in test_logs:
-            await log_queue.put(log)
+        log_buffer = deque(test_logs, maxlen=500)
 
         server_process = ServerProcess(
             server_id=1,
             process=Mock(),
-            log_queue=log_queue,
+            log_queue=asyncio.Queue(),
             status=ServerStatus.running,
             started_at=datetime.now(),
+            log_buffer=log_buffer,
             pid=12345,
         )
         manager.processes[1] = server_process
 
-        # Test retrieving limited logs
         logs = await manager.get_server_logs(1, lines=3)
 
         assert len(logs) == 3
-        assert logs[0] == "[2024-01-01 12:34:56] Server starting..."
-        assert logs[1] == "[2024-01-01 12:34:57] Loading world..."
-        assert logs[2] == "[2024-01-01 12:34:58] Server ready!"
+        assert logs[0] == "[2024-01-01 12:34:58] Server ready!"
+        assert logs[1] == "[2024-01-01 12:34:59] Player joined"
+        assert logs[2] == "[2024-01-01 12:35:00] Player left"
 
-        # Verify remaining logs are still in queue
-        assert log_queue.qsize() == 2
+        assert len(log_buffer) == 5
 
     @pytest.mark.asyncio
     async def test_stream_server_logs_real_streaming(self, manager):
@@ -772,3 +768,126 @@ sys.exit(0)
         # Verify timeout was handled and log was eventually received
         assert len(streamed_logs) == 1
         assert streamed_logs[0] == "Delayed log"
+
+    @pytest.mark.asyncio
+    async def test_get_server_logs_returns_tail(self, manager):
+        """get_server_logs returns the most-recent N lines, not the oldest."""
+        from collections import deque
+
+        log_buffer = deque(["a", "b", "c", "d", "e"], maxlen=10)
+
+        server_process = ServerProcess(
+            server_id=1,
+            process=Mock(),
+            log_queue=asyncio.Queue(),
+            status=ServerStatus.running,
+            started_at=datetime.now(),
+            log_buffer=log_buffer,
+            pid=12345,
+        )
+        manager.processes[1] = server_process
+
+        logs = await manager.get_server_logs(1, lines=3)
+        assert logs == ["c", "d", "e"]
+
+    @pytest.mark.asyncio
+    async def test_get_server_logs_is_non_destructive(self, manager):
+        """Calling get_server_logs twice returns the same result."""
+        from collections import deque
+
+        entries = [f"line-{i}" for i in range(5)]
+        log_buffer = deque(entries, maxlen=10)
+
+        server_process = ServerProcess(
+            server_id=1,
+            process=Mock(),
+            log_queue=asyncio.Queue(),
+            status=ServerStatus.running,
+            started_at=datetime.now(),
+            log_buffer=log_buffer,
+            pid=12345,
+        )
+        manager.processes[1] = server_process
+
+        first = await manager.get_server_logs(1, lines=3)
+        second = await manager.get_server_logs(1, lines=3)
+        assert first == second
+        assert len(log_buffer) == 5
+
+    @pytest.mark.asyncio
+    async def test_log_buffer_and_queue_dual_write(self, manager, tmp_path):
+        """_read_server_logs populates both log_queue and log_buffer."""
+        from collections import deque
+
+        server_dir = tmp_path / "server"
+        server_dir.mkdir()
+        log_file = server_dir / "server.log"
+        log_file.write_text("line one\nline two\nline three\n")
+
+        log_queue = asyncio.Queue(maxsize=50)
+        log_buffer = deque(maxlen=50)
+        server_process = ServerProcess(
+            server_id=1,
+            process=None,
+            log_queue=log_queue,
+            status=ServerStatus.running,
+            started_at=datetime.now(),
+            log_buffer=log_buffer,
+            pid=12345,
+            server_directory=server_dir,
+        )
+        manager.processes[1] = server_process
+
+        log_task = asyncio.create_task(manager._read_server_logs(server_process))
+        await asyncio.sleep(1.0)
+
+        del manager.processes[1]
+        log_task.cancel()
+        try:
+            await log_task
+        except asyncio.CancelledError:
+            pass
+
+        assert log_queue.qsize() == len(log_buffer)
+        queue_items = []
+        while not log_queue.empty():
+            queue_items.append(log_queue.get_nowait())
+        assert queue_items == list(log_buffer)
+
+    @pytest.mark.asyncio
+    async def test_log_buffer_evicts_oldest_on_overflow(self, manager, tmp_path):
+        """log_buffer with maxlen evicts the oldest entries when full."""
+        from collections import deque
+
+        server_dir = tmp_path / "server"
+        server_dir.mkdir()
+        log_file = server_dir / "server.log"
+        log_file.write_text("line 1\nline 2\nline 3\nline 4\nline 5\n")
+
+        log_buffer = deque(maxlen=3)
+        server_process = ServerProcess(
+            server_id=1,
+            process=None,
+            log_queue=asyncio.Queue(maxsize=100),
+            status=ServerStatus.running,
+            started_at=datetime.now(),
+            log_buffer=log_buffer,
+            pid=12345,
+            server_directory=server_dir,
+        )
+        manager.processes[1] = server_process
+
+        log_task = asyncio.create_task(manager._read_server_logs(server_process))
+        await asyncio.sleep(1.0)
+
+        del manager.processes[1]
+        log_task.cancel()
+        try:
+            await log_task
+        except asyncio.CancelledError:
+            pass
+
+        assert len(log_buffer) == 3
+        assert "line 3" in log_buffer[-3]
+        assert "line 4" in log_buffer[-2]
+        assert "line 5" in log_buffer[-1]
