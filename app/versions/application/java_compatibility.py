@@ -29,35 +29,6 @@ class JavaVersionInfo:
         """Get version as string (e.g., '17.0.1')"""
         return f"{self.major_version}.{self.minor_version}.{self.patch_version}"
 
-    # NOTE: these ``is_compatible_with_java_*`` helpers are convenience checks
-    # for callers/tests. They are NOT the source of truth for routing —
-    # ``JavaCompatibilityService`` matches the installed Java against each
-    # band's accepted set (see ``_compatibility_matrix``).
-    @property
-    def is_compatible_with_java_8(self) -> bool:
-        """Check if this version is compatible with Java 8 requirements"""
-        return self.major_version == 8
-
-    @property
-    def is_compatible_with_java_16(self) -> bool:
-        """Check if this version is compatible with Java 16 requirements"""
-        return self.major_version >= 16
-
-    @property
-    def is_compatible_with_java_17(self) -> bool:
-        """Check if this version is compatible with Java 17 requirements"""
-        return self.major_version >= 17
-
-    @property
-    def is_compatible_with_java_21(self) -> bool:
-        """Check if this version is compatible with Java 21 requirements"""
-        return self.major_version >= 21
-
-    @property
-    def is_compatible_with_java_25(self) -> bool:
-        """Check if this version is compatible with Java 25 requirements"""
-        return self.major_version >= 25
-
 
 class JavaCompatibilityService:
     """Service for Java version detection and Minecraft compatibility validation"""
