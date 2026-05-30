@@ -16,7 +16,7 @@ is too old **or** too new is rejected rather than launched (see
 - **Java 16**: Minecraft 1.17 - 1.17.1
 - **Java 17**: Minecraft 1.18 - 1.20.4
 - **Java 21**: Minecraft 1.20.5 - 1.21.11
-- **Java 25**: Minecraft 26.1 and newer
+- **Java 25**: Minecraft 26.x and newer
 
 ## Java Version Detection
 
@@ -97,7 +97,7 @@ JAVA_DISCOVERY_PATHS=/home/user/.sdkman/candidates/java
 | 1.17 - 1.17.1     | Java 16       | First line requiring Java 16 |
 | 1.18 - 1.20.4     | Java 17       | LTS Java version |
 | 1.20.5 - 1.21.11  | Java 21       | Java 21 line |
-| 26.1+             | Java 25       | server.jar is compiled for Java 25 (class file version 69.0) |
+| 26.x+ (from 26.0) | Java 25       | server.jar is compiled for Java 25 (class file version 69.0); the cut starts at 26.0 so no 26.0.x build is ever launched on Java 21 |
 
 ## Compatibility model
 

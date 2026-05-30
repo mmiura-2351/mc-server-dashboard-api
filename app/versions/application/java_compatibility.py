@@ -93,9 +93,12 @@ class JavaCompatibilityService:
             (version.Version("1.18.0"), version.Version("1.20.4")): (17,),
             # Minecraft 1.20.5 - 1.21.11: Java 21
             (version.Version("1.20.5"), version.Version("1.21.11")): (21,),
-            # Minecraft 26.1+ : Java 25 (server.jar is compiled for class file
-            # version 69.0 and aborts at JVM class-load time under Java 21).
-            (version.Version("26.1.0"), version.Version("9999.99.99")): (25,),
+            # Minecraft 26.x and newer: Java 25 (server.jar is compiled for
+            # class file version 69.0 and aborts at JVM class-load time under
+            # Java 21). The cut starts at 26.0.0 — not 26.1.0 — so any 26.0.x
+            # release/snapshot still routes to Java 25 instead of regressing to
+            # the Java 21 band and crashing (see Issue #415 / PR #419).
+            (version.Version("26.0.0"), version.Version("9999.99.99")): (25,),
         }
 
     async def discover_java_installations(self) -> Dict[int, JavaVersionInfo]:
@@ -346,7 +349,7 @@ class JavaCompatibilityService:
             newest = bands[-1][1]
             logger.warning(
                 f"Unable to parse Minecraft version {minecraft_version} "
-                f"({e}); defaulting to Java {newest}"
+                f"({e}); defaulting to Java {self._format_accepted(newest)}"
             )
             return newest
 
@@ -361,10 +364,15 @@ class JavaCompatibilityService:
             chosen = bands[0][1]
             logger.warning(
                 f"Minecraft version {minecraft_version} is below the known "
-                f"compatibility bands; defaulting to Java {chosen}"
+                f"compatibility bands; defaulting to Java {self._format_accepted(chosen)}"
             )
 
         return chosen
+
+    @staticmethod
+    def _format_accepted(accepted: Tuple[int, ...]) -> str:
+        """Render an accepted-Java tuple for human-readable log/error output"""
+        return ", ".join(str(major) for major in accepted)
 
     def get_required_java_version(self, minecraft_version: str) -> int:
         """Get the primary (preferred) Java major version for a Minecraft version"""

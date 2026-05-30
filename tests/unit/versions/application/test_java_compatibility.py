@@ -96,8 +96,9 @@ class TestJavaCompatibilityService:
         assert service.get_required_java_version("1.21.0") == 21
         assert service.get_required_java_version("1.21.11") == 21
 
-        # Java 25 (Minecraft 26.1+)
-        assert service.get_required_java_version("26.1.0") == 25
+        # Java 25 (Minecraft 26.x and newer; the cut is 26.0.0 so no 26.0.x
+        # release can regress to the Java 21 band and crash — see #415/#419)
+        assert service.get_required_java_version("26.0.0") == 25
         assert service.get_required_java_version("26.1.2") == 25
         assert service.get_required_java_version("27.0.0") == 25
 
@@ -120,8 +121,12 @@ class TestJavaCompatibilityService:
         # 1.16.8 does not exist but, if seen, must not jump to a newer JRE;
         # nearest-lower keeps it on the 1.7.10 - 1.16.5 (Java 8) band.
         assert service.get_required_java_version("1.16.8") == 8
-        # 26.0.x sits below the 26.1 cut-over and stays on the Java 21 band.
-        assert service.get_required_java_version("26.0.5") == 21
+        # The speculative 1.22.0 - 25.x window stays on the Java 21 band...
+        assert service.get_required_java_version("1.22.0") == 21
+        assert service.get_required_java_version("25.0.0") == 21
+        # ...but the entire 26.x line (incl. 26.0.x) routes to Java 25, so a
+        # class-file-69 server.jar is never launched on Java 21 (#415/#419).
+        assert service.get_required_java_version("26.0.5") == 25
 
     def test_validate_java_compatibility_java_8(self, service):
         """Test Java compatibility validation for Java 8 scenarios"""
@@ -203,8 +208,8 @@ class TestJavaCompatibilityService:
         """Test Java compatibility validation for Java 25 scenarios (exact match)"""
         java25 = JavaVersionInfo(major_version=25, minor_version=0, patch_version=1)
 
-        # Java 25 is accepted for Minecraft 26.1 and newer
-        compatible, _ = service.validate_java_compatibility("26.1.0", java25)
+        # Java 25 is accepted from the very start of the 26.x line (26.0.0)
+        compatible, _ = service.validate_java_compatibility("26.0.0", java25)
         assert compatible is True
 
         compatible, _ = service.validate_java_compatibility("26.1.2", java25)
@@ -284,7 +289,7 @@ class TestJavaCompatibilityService:
         assert matrix["1.7.10 - 1.16.5"] == [8, 11]
         # Floor and open-ended bands get special labels.
         assert matrix["<= 1.7.9"] == [7]
-        assert matrix["26.1.0+"] == [25]
+        assert matrix["26.0.0+"] == [25]
 
     def test_get_supported_minecraft_versions(self, service):
         """Each Java major supports exactly the bands that accept it."""
@@ -301,7 +306,7 @@ class TestJavaCompatibilityService:
         assert service.get_supported_minecraft_versions(java11) == ["1.7.10 - 1.16.5"]
         assert service.get_supported_minecraft_versions(java17) == ["1.18.0 - 1.20.4"]
         assert service.get_supported_minecraft_versions(java21) == ["1.20.5 - 1.21.11"]
-        assert service.get_supported_minecraft_versions(java25) == ["26.1.0+"]
+        assert service.get_supported_minecraft_versions(java25) == ["26.0.0+"]
 
     @pytest.mark.asyncio
     async def test_detect_java_version_success(self, service):
