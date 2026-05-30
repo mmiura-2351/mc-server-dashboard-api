@@ -23,6 +23,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     (`{"1.18.0 - 1.20.4": 17}`). Clients reading `compatibility_matrix`
     values as a scalar must be updated.
 
+### Removed
+- Dropped the unused `JavaVersionInfo.is_compatible_with_java_*` helper
+  properties. They were superseded by the accepted-set routing in #420 and
+  had inconsistent semantics (`== 8` vs `>= N`); nothing in production
+  referenced them (#423).
+
 ### Fixed
 - Java compatibility matrix now maps Minecraft 26.x and newer to Java 25
   instead of silently selecting Java 21, and the unknown-version fallback

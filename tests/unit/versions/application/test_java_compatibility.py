@@ -18,50 +18,6 @@ class TestJavaVersionInfo:
         java_info = JavaVersionInfo(major_version=17, minor_version=0, patch_version=1)
         assert java_info.version_string == "17.0.1"
 
-    def test_java_8_compatibility(self):
-        """Test Java 8 compatibility checks"""
-        java8 = JavaVersionInfo(major_version=8, minor_version=0, patch_version=292)
-        java17 = JavaVersionInfo(major_version=17, minor_version=0, patch_version=1)
-
-        assert java8.is_compatible_with_java_8 is True
-        assert java17.is_compatible_with_java_8 is False
-
-    def test_java_16_compatibility(self):
-        """Test Java 16+ compatibility checks"""
-        java8 = JavaVersionInfo(major_version=8, minor_version=0, patch_version=292)
-        java16 = JavaVersionInfo(major_version=16, minor_version=0, patch_version=1)
-        java17 = JavaVersionInfo(major_version=17, minor_version=0, patch_version=1)
-
-        assert java8.is_compatible_with_java_16 is False
-        assert java16.is_compatible_with_java_16 is True
-        assert java17.is_compatible_with_java_16 is True
-
-    def test_java_17_compatibility(self):
-        """Test Java 17+ compatibility checks"""
-        java8 = JavaVersionInfo(major_version=8, minor_version=0, patch_version=292)
-        java16 = JavaVersionInfo(major_version=16, minor_version=0, patch_version=1)
-        java17 = JavaVersionInfo(major_version=17, minor_version=0, patch_version=1)
-
-        assert java8.is_compatible_with_java_17 is False
-        assert java16.is_compatible_with_java_17 is False
-        assert java17.is_compatible_with_java_17 is True
-
-    def test_java_21_compatibility(self):
-        """Test Java 21+ compatibility checks"""
-        java17 = JavaVersionInfo(major_version=17, minor_version=0, patch_version=1)
-        java21 = JavaVersionInfo(major_version=21, minor_version=0, patch_version=1)
-
-        assert java17.is_compatible_with_java_21 is False
-        assert java21.is_compatible_with_java_21 is True
-
-    def test_java_25_compatibility(self):
-        """Test Java 25+ compatibility checks"""
-        java21 = JavaVersionInfo(major_version=21, minor_version=0, patch_version=1)
-        java25 = JavaVersionInfo(major_version=25, minor_version=0, patch_version=1)
-
-        assert java21.is_compatible_with_java_25 is False
-        assert java25.is_compatible_with_java_25 is True
-
 
 class TestJavaCompatibilityService:
     """Test JavaCompatibilityService"""
