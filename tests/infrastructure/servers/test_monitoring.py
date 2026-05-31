@@ -791,6 +791,26 @@ sys.exit(0)
         assert logs == ["c", "d", "e"]
 
     @pytest.mark.asyncio
+    async def test_get_server_logs_zero_lines(self, manager):
+        """lines=0 returns an empty list even when the buffer is populated."""
+        from collections import deque
+
+        log_buffer = deque(["a", "b", "c"], maxlen=10)
+        server_process = ServerProcess(
+            server_id=1,
+            process=Mock(),
+            log_queue=asyncio.Queue(),
+            status=ServerStatus.running,
+            started_at=datetime.now(),
+            log_buffer=log_buffer,
+            pid=12345,
+        )
+        manager.processes[1] = server_process
+
+        assert await manager.get_server_logs(1, lines=0) == []
+        assert await manager.get_server_logs(1, lines=-1) == []
+
+    @pytest.mark.asyncio
     async def test_get_server_logs_is_non_destructive(self, manager):
         """Calling get_server_logs twice returns the same result."""
         from collections import deque
