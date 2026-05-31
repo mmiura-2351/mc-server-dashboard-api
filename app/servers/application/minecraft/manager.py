@@ -326,7 +326,7 @@ class MinecraftServerManager(
 
             # Create server process tracking (without process object for daemon)
             log_queue: asyncio.Queue[str] = asyncio.Queue(maxsize=self.log_queue_size)
-            log_buffer: deque = deque(maxlen=self.log_queue_size)
+            log_buffer: deque[str] = deque(maxlen=self.log_queue_size)
             server_process = ServerProcess(
                 server_id=server.id,
                 process=None,  # No process object for daemon processes
@@ -573,7 +573,7 @@ class MinecraftServerManager(
 
     async def get_server_logs(self, server_id: int, lines: int = 100) -> List[str]:
         """Get recent server logs (most-recent *lines* entries)."""
-        if server_id not in self.processes:
+        if server_id not in self.processes or lines <= 0:
             return []
 
         server_process = self.processes[server_id]

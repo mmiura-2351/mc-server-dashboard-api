@@ -147,7 +147,7 @@ class PidFileMixin:
                 logger.warning(f"Could not verify process {pid} command line: {e}")
 
             log_queue: asyncio.Queue[str] = asyncio.Queue(maxsize=self.log_queue_size)
-            log_buffer: deque = deque(maxlen=self.log_queue_size)
+            log_buffer: deque[str] = deque(maxlen=self.log_queue_size)
 
             # Parse started_at time
             try:
