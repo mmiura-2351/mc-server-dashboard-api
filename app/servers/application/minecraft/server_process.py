@@ -1,7 +1,8 @@
 """``ServerProcess`` dataclass: in-memory record for a managed server."""
 
 import asyncio
-from dataclasses import dataclass
+from collections import deque
+from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
@@ -18,6 +19,9 @@ class ServerProcess:
     log_queue: asyncio.Queue[str]
     status: ServerStatus
     started_at: datetime
+    # Real call sites pass deque(maxlen=log_queue_size); the unbounded
+    # default exists only so test fixtures can omit the field.
+    log_buffer: deque[str] = field(default_factory=deque)
     pid: Optional[int] = None
     # Directory path for the server (needed for log monitoring)
     server_directory: Optional[Path] = None
