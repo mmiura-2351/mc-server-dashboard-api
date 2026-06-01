@@ -310,7 +310,10 @@ class TestServerService:
         server_service.filesystem_service.compute_archive_path = Mock(
             return_value=archived
         )
-        server_service.filesystem_service.archive_server_directory = AsyncMock()
+        # Archive succeeds -> directory_path is repointed at the archive.
+        server_service.filesystem_service.archive_server_directory = AsyncMock(
+            return_value=True
+        )
 
         result = await server_service.delete_server(1, mock_db)
 
@@ -407,7 +410,9 @@ class TestServerService:
         service.validation_service.validate_server_exists = Mock(return_value=mock_server)
         archived = Path("servers/.archived/42_20260601_120000")
         service.filesystem_service.compute_archive_path = Mock(return_value=archived)
-        service.filesystem_service.archive_server_directory = AsyncMock()
+        service.filesystem_service.archive_server_directory = AsyncMock(
+            return_value=True
+        )
         # Legacy path must NOT be used.
         service.database_service.soft_delete_server = Mock(
             side_effect=AssertionError("legacy path must not be used with UoW")
@@ -457,15 +462,20 @@ class TestServerService:
         service.filesystem_service.compute_archive_path = Mock(
             return_value=Path("servers/.archived/99_20260601_120000")
         )
+        service.filesystem_service.archive_server_directory = AsyncMock(
+            return_value=False
+        )
 
         with pytest.raises(RuntimeError, match="vanished between validation and delete"):
             await service.delete_server(99, mock_db)
 
     @pytest.mark.asyncio
-    async def test_delete_server_archive_failure_still_succeeds(
+    async def test_delete_server_archive_failure_keeps_original_path(
         self, server_service, mock_db
     ):
-        """If archiving the directory fails, soft-delete still succeeds."""
+        """If archiving fails/skips, soft-delete still succeeds but the row
+        keeps its original ``directory_path`` (passed as ``None``) rather
+        than repointing at an archive location that holds no files (#429)."""
         mock_server = Mock()
         mock_server.directory_path = "servers/test-server"
         server_service.validation_service.validate_server_exists = Mock(
@@ -476,14 +486,17 @@ class TestServerService:
         server_service.filesystem_service.compute_archive_path = Mock(
             return_value=archived
         )
+        # Archive returns False (move failed or source missing).
         server_service.filesystem_service.archive_server_directory = AsyncMock(
-            side_effect=OSError("Permission denied")
+            return_value=False
         )
 
         result = await server_service.delete_server(1, mock_db)
 
         assert result is True
-        server_service.database_service.soft_delete_server.assert_called_once()
+        server_service.database_service.soft_delete_server.assert_called_once_with(
+            mock_server, mock_db, directory_path=None
+        )
 
     @pytest.mark.asyncio
     async def test_sync_server_properties_after_update_boolean_values(
@@ -688,8 +701,9 @@ class TestServerFileSystemServiceExtended:
 
         dest = svc.base_directory / ".archived" / "1_20260601_120000"
 
-        await svc.archive_server_directory(source, dest)
+        moved = await svc.archive_server_directory(source, dest)
 
+        assert moved is True
         assert not source.exists()
         assert (dest / "server.jar").read_bytes() == b"jar-contents"
 
@@ -702,9 +716,32 @@ class TestServerFileSystemServiceExtended:
         source = svc.base_directory / "nonexistent"
         dest = svc.base_directory / ".archived" / "1_20260601_120000"
 
-        await svc.archive_server_directory(source, dest)
+        moved = await svc.archive_server_directory(source, dest)
 
+        assert moved is False
         assert not dest.exists()
+
+    @pytest.mark.asyncio
+    async def test_archive_server_directory_move_failure_returns_false(
+        self, tmp_path
+    ):
+        svc = ServerFileSystemService()
+        svc.base_directory = tmp_path / "servers"
+        svc.base_directory.mkdir()
+
+        source = svc.base_directory / "my-server"
+        source.mkdir()
+        dest = svc.base_directory / ".archived" / "1_20260601_120000"
+
+        with patch(
+            "app.servers.application.service.shutil.move",
+            side_effect=OSError("Permission denied"),
+        ):
+            moved = await svc.archive_server_directory(source, dest)
+
+        assert moved is False
+        # The atomic-rename guarantee: the source is left fully intact.
+        assert source.exists()
 
     @pytest.mark.asyncio
     async def test_archive_server_directory_creates_archived_parent(self, tmp_path):
@@ -718,8 +755,9 @@ class TestServerFileSystemServiceExtended:
         dest = svc.base_directory / ".archived" / "1_20260601_120000"
         assert not dest.parent.exists()
 
-        await svc.archive_server_directory(source, dest)
+        moved = await svc.archive_server_directory(source, dest)
 
+        assert moved is True
         assert dest.parent.exists()
         assert dest.exists()
 

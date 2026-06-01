@@ -368,19 +368,42 @@ exec java -Xmx"${{MAX_MEMORY}}"M -Xms"${{MIN_MEMORY}}"M -jar "$JAR_FILE" nogui
             logger.warning(f"Failed to cleanup server directory {server_dir}: {e}")
 
     def compute_archive_path(self, server_id: int) -> Path:
+        # The ``.archived`` dot-prefix is deliberate: server names cannot
+        # start with ``.`` (see ``ServerCreateRequest`` validation in
+        # ``schemas.py``), so an archived directory can never collide with
+        # or be mistaken for a live server directory. ``server_id`` is
+        # unique, so the second-precision timestamp suffix only needs to
+        # keep repeated deletes of the *same* id readable, not unique.
         timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
         return self.base_directory / ".archived" / f"{server_id}_{timestamp}"
 
-    async def archive_server_directory(self, source: Path, destination: Path) -> None:
+    async def archive_server_directory(self, source: Path, destination: Path) -> bool:
+        """Move a server directory into the ``.archived`` area.
+
+        Returns ``True`` only when the directory was actually moved.
+        Returns ``False`` when the source does not exist (nothing to
+        archive) or the move fails. The caller MUST keep the original
+        ``directory_path`` whenever this returns ``False`` — repointing
+        the row at an archive location that does not hold the files would
+        break backup-restore and still leave the original name occupied.
+
+        Because ``.archived`` lives under ``base_directory`` (same
+        filesystem), ``shutil.move`` is an atomic rename: a failure leaves
+        the source fully intact.
+        """
         if not source.exists():
             logger.warning(f"Server directory does not exist, skipping archive: {source}")
-            return
+            return False
         try:
             destination.parent.mkdir(parents=True, exist_ok=True)
             shutil.move(str(source), str(destination))
             logger.info(f"Archived server directory: {source} -> {destination}")
+            return True
         except Exception as e:
-            handle_file_error("archive directory", str(source), e)
+            logger.warning(
+                f"Failed to archive server directory {source} -> {destination}: {e}"
+            )
+            return False
 
 
 # `ServerJarService` and `ServerDatabaseService` (the SQLAlchemy-direct
@@ -934,35 +957,29 @@ class ServerService:
         current_dir = Path(server.directory_path)
         archived_path = self.filesystem_service.compute_archive_path(server_id)
 
+        # Archive the directory FIRST, then repoint ``directory_path`` only
+        # when the move actually happened (#429 review). Doing the DB write
+        # first would, on a failed/skipped move, leave the row pointing at
+        # an archive location that holds no files (breaking backup-restore)
+        # while ``servers/{name}`` stays occupied (blocking name reuse) —
+        # strictly worse than not touching ``directory_path`` at all. The
+        # move is an atomic rename within ``base_directory``, so on failure
+        # the source is intact and the original path remains valid.
+        moved = await self.filesystem_service.archive_server_directory(
+            current_dir, archived_path
+        )
+        dir_arg = str(archived_path) if moved else None
+
         if self._uow is not None:
             async with self._uow as uow:
-                deleted = await uow.servers.soft_delete(
-                    server_id, directory_path=str(archived_path)
-                )
+                deleted = await uow.servers.soft_delete(server_id, directory_path=dir_arg)
                 if not deleted:
                     raise RuntimeError(
                         f"Server {server_id} vanished between validation and delete"
                     )
                 await uow.commit()
         else:
-            self.database_service.soft_delete_server(
-                server, db, directory_path=str(archived_path)
-            )
-
-        try:
-            await self.filesystem_service.archive_server_directory(
-                current_dir, archived_path
-            )
-        except Exception as e:
-            logger.warning(
-                "server_archive_failed",
-                extra={
-                    "server_id": server_id,
-                    "source": str(current_dir),
-                    "destination": str(archived_path),
-                    "error": str(e),
-                },
-            )
+            self.database_service.soft_delete_server(server, db, directory_path=dir_arg)
 
         return True
 
