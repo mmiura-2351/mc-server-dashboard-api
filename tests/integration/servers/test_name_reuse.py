@@ -60,6 +60,11 @@ class TestServerNameReuseAfterDeletion:
         _seed_version(db)
         name = "reuse-me"
         created_dirs: list[Path] = []
+        # Ids whose directory gets archived by a delete in this test, so
+        # cleanup can target only the archives this test produced rather
+        # than wiping every ``servers/.archived/*`` (which may hold real
+        # archived servers in a developer's working tree).
+        archived_ids: list[int] = []
 
         try:
             with (
@@ -94,6 +99,7 @@ class TestServerNameReuseAfterDeletion:
                 )
                 assert deleted.status_code == status.HTTP_204_NO_CONTENT
                 assert not first_dir.exists()
+                archived_ids.append(first_body["id"])
 
                 # 3) Create a *second* server with the same name — this is the
                 #    behaviour #429 is about and must now succeed.
@@ -110,9 +116,10 @@ class TestServerNameReuseAfterDeletion:
                 created_dirs.append(second_dir)
                 assert second_dir.exists()
         finally:
-            archived = Path("servers/.archived")
-            if archived.exists():
-                shutil.rmtree(archived, ignore_errors=True)
+            archive_root = Path("servers/.archived")
+            for sid in archived_ids:
+                for d in archive_root.glob(f"{sid}_*"):
+                    shutil.rmtree(d, ignore_errors=True)
             for d in created_dirs:
                 if d.exists():
                     shutil.rmtree(d, ignore_errors=True)
