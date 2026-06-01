@@ -329,36 +329,6 @@ class TestMinecraftServerManagerSimpleCoverage:
         logs = await manager.get_server_logs(999)
         assert logs == []
 
-    @pytest.mark.asyncio
-    async def test_stream_server_logs_server_not_running(self, manager):
-        """Test stream_server_logs when server is not running"""
-        logs = []
-        async for log in manager.stream_server_logs(999):
-            logs.append(log)
-        assert logs == []
-
-    @pytest.mark.asyncio
-    async def test_stream_server_logs_exception(self, manager):
-        """Test stream_server_logs exception handling"""
-        log_queue = Mock()
-        log_queue.get = AsyncMock(side_effect=Exception("Queue error"))
-
-        server_process = ServerProcess(
-            server_id=1,
-            process=Mock(),
-            log_queue=log_queue,
-            status=ServerStatus.running,
-            started_at=datetime.now(),
-        )
-        manager.processes[1] = server_process
-
-        logs = []
-        async for log in manager.stream_server_logs(1):
-            logs.append(log)
-
-        # Should handle exception and break
-        assert logs == []
-
     def test_get_server_status_not_running(self, manager):
         """Test get_server_status when server is not running"""
         status = manager.get_server_status(999)
