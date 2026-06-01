@@ -554,10 +554,18 @@ class ServerDatabaseService:
             db.rollback()
             handle_database_error("update", "server", e)
 
-    def soft_delete_server(self, server: Server, db: Session) -> None:
+    def soft_delete_server(
+        self,
+        server: Server,
+        db: Session,
+        *,
+        directory_path: Optional[str] = None,
+    ) -> None:
         try:
             server.is_deleted = True
             server.status = ServerStatus.stopped
+            if directory_path is not None:
+                server.directory_path = directory_path
             db.commit()
             logger.info(f"Soft deleted server: {server.name} (ID: {server.id})")
         except Exception as e:

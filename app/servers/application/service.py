@@ -35,7 +35,8 @@ import fcntl
 import logging
 import re
 import shlex
-from datetime import datetime
+import shutil
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
@@ -361,12 +362,25 @@ exec java -Xmx"${{MAX_MEMORY}}"M -Xms"${{MIN_MEMORY}}"M -jar "$JAR_FILE" nogui
     async def cleanup_server_directory(self, server_dir: Path) -> None:
         try:
             if server_dir.exists():
-                import shutil
-
                 shutil.rmtree(server_dir)
                 logger.info(f"Cleaned up server directory: {server_dir}")
         except Exception as e:
             logger.warning(f"Failed to cleanup server directory {server_dir}: {e}")
+
+    def compute_archive_path(self, server_id: int) -> Path:
+        timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+        return self.base_directory / ".archived" / f"{server_id}_{timestamp}"
+
+    async def archive_server_directory(self, source: Path, destination: Path) -> None:
+        if not source.exists():
+            logger.warning(f"Server directory does not exist, skipping archive: {source}")
+            return
+        try:
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.move(str(source), str(destination))
+            logger.info(f"Archived server directory: {source} -> {destination}")
+        except Exception as e:
+            handle_file_error("archive directory", str(source), e)
 
 
 # `ServerJarService` and `ServerDatabaseService` (the SQLAlchemy-direct
@@ -917,18 +931,39 @@ class ServerService:
 
     async def delete_server(self, server_id: int, db: Session) -> bool:
         server = self.validation_service.validate_server_exists(server_id, db)
-        # Persist via UoW + repo when DI wired; legacy path otherwise
-        # (parity with `create_server` / `update_server`).
+        current_dir = Path(server.directory_path)
+        archived_path = self.filesystem_service.compute_archive_path(server_id)
+
         if self._uow is not None:
             async with self._uow as uow:
-                deleted = await uow.servers.soft_delete(server_id)
+                deleted = await uow.servers.soft_delete(
+                    server_id, directory_path=str(archived_path)
+                )
                 if not deleted:
                     raise RuntimeError(
                         f"Server {server_id} vanished between validation and delete"
                     )
                 await uow.commit()
         else:
-            self.database_service.soft_delete_server(server, db)
+            self.database_service.soft_delete_server(
+                server, db, directory_path=str(archived_path)
+            )
+
+        try:
+            await self.filesystem_service.archive_server_directory(
+                current_dir, archived_path
+            )
+        except Exception as e:
+            logger.warning(
+                "server_archive_failed",
+                extra={
+                    "server_id": server_id,
+                    "source": str(current_dir),
+                    "destination": str(archived_path),
+                    "error": str(e),
+                },
+            )
+
         return True
 
     # ===================

@@ -427,6 +427,42 @@ class TestServerRepositoryWrites:
     async def test_soft_delete_unknown_returns_false(self, repository):
         assert await repository.soft_delete(99999) is False
 
+    @pytest.mark.asyncio
+    async def test_soft_delete_updates_directory_path(
+        self, repository, db, admin_user
+    ):
+        row = _seed_server(
+            db, admin_user.id, name="sd-dir", port=25721
+        )
+        original_dir = row.directory_path
+
+        ok = await repository.soft_delete(
+            row.id, directory_path="servers/.archived/1_20260601_120000"
+        )
+        db.commit()
+        assert ok is True
+
+        db.expire_all()
+        refreshed = db.query(Server).filter(Server.id == row.id).one()
+        assert refreshed.directory_path == "servers/.archived/1_20260601_120000"
+        assert refreshed.directory_path != original_dir
+
+    @pytest.mark.asyncio
+    async def test_soft_delete_without_directory_path_preserves_original(
+        self, repository, db, admin_user
+    ):
+        row = _seed_server(
+            db, admin_user.id, name="sd-keep", port=25722
+        )
+        original_dir = row.directory_path
+
+        ok = await repository.soft_delete(row.id)
+        db.commit()
+
+        db.expire_all()
+        refreshed = db.query(Server).filter(Server.id == row.id).one()
+        assert refreshed.directory_path == original_dir
+
 
 # ---------------------------------------------------------------------------
 # Status writes (own-transaction with retry)

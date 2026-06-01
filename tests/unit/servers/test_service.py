@@ -301,10 +301,16 @@ class TestServerService:
     async def test_delete_server_success(self, server_service, mock_db):
         """Test successful server deletion (lines 659-663)"""
         mock_server = Mock()
+        mock_server.directory_path = "servers/test-server"
         server_service.validation_service.validate_server_exists = Mock(
             return_value=mock_server
         )
         server_service.database_service.soft_delete_server = Mock()
+        archived = Path("servers/.archived/1_20260601_120000")
+        server_service.filesystem_service.compute_archive_path = Mock(
+            return_value=archived
+        )
+        server_service.filesystem_service.archive_server_directory = AsyncMock()
 
         result = await server_service.delete_server(1, mock_db)
 
@@ -313,7 +319,10 @@ class TestServerService:
             1, mock_db
         )
         server_service.database_service.soft_delete_server.assert_called_once_with(
-            mock_server, mock_db
+            mock_server, mock_db, directory_path=str(archived)
+        )
+        server_service.filesystem_service.archive_server_directory.assert_awaited_once_with(
+            Path("servers/test-server"), archived
         )
 
     @pytest.mark.asyncio
@@ -364,10 +373,12 @@ class TestServerService:
 
         class _FakeServersRepo:
             def __init__(self) -> None:
-                self.soft_delete_called_with: list[int] = []
+                self.soft_delete_called_with: list[tuple] = []
 
-            async def soft_delete(self, server_id: int) -> bool:
-                self.soft_delete_called_with.append(server_id)
+            async def soft_delete(
+                self, server_id: int, *, directory_path: str | None = None
+            ) -> bool:
+                self.soft_delete_called_with.append((server_id, directory_path))
                 return True
 
         class _FakeUoW:
@@ -392,7 +403,11 @@ class TestServerService:
         uow = _FakeUoW()
         service = ServerService(uow=uow)
         mock_server = Mock()
+        mock_server.directory_path = "servers/test-server"
         service.validation_service.validate_server_exists = Mock(return_value=mock_server)
+        archived = Path("servers/.archived/42_20260601_120000")
+        service.filesystem_service.compute_archive_path = Mock(return_value=archived)
+        service.filesystem_service.archive_server_directory = AsyncMock()
         # Legacy path must NOT be used.
         service.database_service.soft_delete_server = Mock(
             side_effect=AssertionError("legacy path must not be used with UoW")
@@ -401,7 +416,9 @@ class TestServerService:
         result = await service.delete_server(42, mock_db)
 
         assert result is True
-        assert uow.servers.soft_delete_called_with == [42]
+        assert uow.servers.soft_delete_called_with == [
+            (42, str(archived))
+        ]
         assert uow.commits == 1
         assert uow.entered == 1
 
@@ -410,7 +427,9 @@ class TestServerService:
         """If the row vanishes between validation and UoW delete, raise."""
 
         class _FakeServersRepo:
-            async def soft_delete(self, server_id: int) -> bool:
+            async def soft_delete(
+                self, server_id: int, *, directory_path: str | None = None
+            ) -> bool:
                 return False
 
         class _FakeUoW:
@@ -430,10 +449,41 @@ class TestServerService:
                 pass
 
         service = ServerService(uow=_FakeUoW())
-        service.validation_service.validate_server_exists = Mock(return_value=Mock())
+        mock_server = Mock()
+        mock_server.directory_path = "servers/test-server"
+        service.validation_service.validate_server_exists = Mock(
+            return_value=mock_server
+        )
+        service.filesystem_service.compute_archive_path = Mock(
+            return_value=Path("servers/.archived/99_20260601_120000")
+        )
 
         with pytest.raises(RuntimeError, match="vanished between validation and delete"):
             await service.delete_server(99, mock_db)
+
+    @pytest.mark.asyncio
+    async def test_delete_server_archive_failure_still_succeeds(
+        self, server_service, mock_db
+    ):
+        """If archiving the directory fails, soft-delete still succeeds."""
+        mock_server = Mock()
+        mock_server.directory_path = "servers/test-server"
+        server_service.validation_service.validate_server_exists = Mock(
+            return_value=mock_server
+        )
+        server_service.database_service.soft_delete_server = Mock()
+        archived = Path("servers/.archived/1_20260601_120000")
+        server_service.filesystem_service.compute_archive_path = Mock(
+            return_value=archived
+        )
+        server_service.filesystem_service.archive_server_directory = AsyncMock(
+            side_effect=OSError("Permission denied")
+        )
+
+        result = await server_service.delete_server(1, mock_db)
+
+        assert result is True
+        server_service.database_service.soft_delete_server.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_sync_server_properties_after_update_boolean_values(
@@ -620,6 +670,59 @@ class TestServerFileSystemServiceExtended:
         filesystem_service._generate_eula_file.assert_called_once()
         filesystem_service._generate_startup_script.assert_called_once()
 
+    def test_compute_archive_path_format(self, filesystem_service):
+        result = filesystem_service.compute_archive_path(42)
+        assert result.parent == Path("servers/.archived")
+        assert result.name.startswith("42_")
+        assert len(result.name) == len("42_YYYYMMDD_HHMMSS")
+
+    @pytest.mark.asyncio
+    async def test_archive_server_directory_moves_dir(self, tmp_path):
+        svc = ServerFileSystemService()
+        svc.base_directory = tmp_path / "servers"
+        svc.base_directory.mkdir()
+
+        source = svc.base_directory / "my-server"
+        source.mkdir()
+        (source / "server.jar").write_bytes(b"jar-contents")
+
+        dest = svc.base_directory / ".archived" / "1_20260601_120000"
+
+        await svc.archive_server_directory(source, dest)
+
+        assert not source.exists()
+        assert (dest / "server.jar").read_bytes() == b"jar-contents"
+
+    @pytest.mark.asyncio
+    async def test_archive_server_directory_source_missing(self, tmp_path):
+        svc = ServerFileSystemService()
+        svc.base_directory = tmp_path / "servers"
+        svc.base_directory.mkdir()
+
+        source = svc.base_directory / "nonexistent"
+        dest = svc.base_directory / ".archived" / "1_20260601_120000"
+
+        await svc.archive_server_directory(source, dest)
+
+        assert not dest.exists()
+
+    @pytest.mark.asyncio
+    async def test_archive_server_directory_creates_archived_parent(self, tmp_path):
+        svc = ServerFileSystemService()
+        svc.base_directory = tmp_path / "servers"
+        svc.base_directory.mkdir()
+
+        source = svc.base_directory / "my-server"
+        source.mkdir()
+
+        dest = svc.base_directory / ".archived" / "1_20260601_120000"
+        assert not dest.parent.exists()
+
+        await svc.archive_server_directory(source, dest)
+
+        assert dest.parent.exists()
+        assert dest.exists()
+
 
 class TestServerDatabaseService:
     """Tests for ServerDatabaseService methods"""
@@ -668,4 +771,18 @@ class TestServerDatabaseService:
         database_service.soft_delete_server(mock_server, mock_db)
 
         assert mock_server.is_deleted is True
+        mock_db.commit.assert_called_once()
+
+    def test_soft_delete_server_updates_directory_path(self, database_service):
+        mock_server = Mock()
+        mock_server.is_deleted = False
+        mock_server.directory_path = "servers/old-server"
+        mock_db = Mock()
+
+        database_service.soft_delete_server(
+            mock_server, mock_db, directory_path="servers/.archived/1_20260601"
+        )
+
+        assert mock_server.is_deleted is True
+        assert mock_server.directory_path == "servers/.archived/1_20260601"
         mock_db.commit.assert_called_once()
