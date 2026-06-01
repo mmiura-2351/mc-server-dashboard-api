@@ -202,6 +202,20 @@ class TestProcessPersistence:
             server_process.process is None
         )  # Restored processes don't have subprocess handle
 
+        # Restored servers must run a log reader so the log buffer keeps
+        # filling after a dashboard restart (issue #427), alongside the monitor.
+        assert server_process.log_task is not None
+        assert not server_process.log_task.done()
+        assert server_process.monitor_task is not None
+
+        # Cancel background tasks so they don't leak past the test.
+        for task in (server_process.log_task, server_process.monitor_task):
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+
     @patch("psutil.pid_exists")
     async def test_process_restoration_failure_no_process(
         self, mock_pid_exists, manager, temp_server_dir

@@ -172,6 +172,12 @@ class PidFileMixin:
 
             self.processes[server_id] = server_process
 
+            # Start the log reader so the restored server keeps populating its
+            # log buffer (issue #427); track it for cleanup like start_server().
+            server_process.log_task = asyncio.create_task(
+                self._read_server_logs(server_process)
+            )
+
             # Start monitoring task for the restored process and track it
             server_process.monitor_task = asyncio.create_task(
                 self._monitor_restored_process(server_process)
