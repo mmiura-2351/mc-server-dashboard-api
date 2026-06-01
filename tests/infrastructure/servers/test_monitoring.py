@@ -764,3 +764,70 @@ sys.exit(0)
         assert "line 3" in log_buffer[-3]
         assert "line 4" in log_buffer[-2]
         assert "line 5" in log_buffer[-1]
+
+    @pytest.mark.asyncio
+    async def test_read_server_logs_tail_existing_backfills_then_forwards(
+        self, manager, tmp_path
+    ):
+        """Restore path backfills the tail verbatim, then stamps live lines.
+
+        issue #436: with tail_existing=True the reader must not re-read the whole
+        file or re-stamp historical lines with now(); it backfills the last N
+        lines preserving their original [HH:MM:SS] timestamps, then continues
+        forward from EOF (live lines get the [YYYY-MM-DD HH:MM:SS] prefix).
+        """
+        from collections import deque
+
+        server_dir = tmp_path / "server"
+        server_dir.mkdir()
+        log_file = server_dir / "server.log"
+        log_file.write_text(
+            "[12:34:56] [Server thread/INFO]: historical one\n"
+            "[12:34:57] [Server thread/INFO]: historical two\n"
+        )
+
+        log_buffer = deque(maxlen=50)
+        server_process = ServerProcess(
+            server_id=1,
+            process=None,
+            status=ServerStatus.running,
+            started_at=datetime.now(),
+            log_buffer=log_buffer,
+            pid=12345,
+            server_directory=server_dir,
+        )
+        manager.processes[1] = server_process
+
+        log_task = asyncio.create_task(
+            manager._read_server_logs(server_process, tail_existing=True)
+        )
+        try:
+            await asyncio.sleep(1.0)
+
+            # Historical lines are backfilled verbatim (no now() prefix).
+            assert list(log_buffer) == [
+                "[12:34:56] [Server thread/INFO]: historical one",
+                "[12:34:57] [Server thread/INFO]: historical two",
+            ]
+
+            # Append a new line; it must be read once, after EOF, and stamped.
+            with open(log_file, "a", encoding="utf-8") as f:
+                f.write("[12:35:00] [Server thread/INFO]: live line\n")
+            await asyncio.sleep(1.0)
+        finally:
+            del manager.processes[1]
+            log_task.cancel()
+            try:
+                await log_task
+            except asyncio.CancelledError:
+                pass
+
+        # No historical line was re-read; exactly one new entry was added.
+        assert len(log_buffer) == 3
+        live_entry = log_buffer[-1]
+        assert live_entry.endswith(
+            "[12:35:00] [Server thread/INFO]: live line"
+        )
+        # Live line carries the reader's [YYYY-MM-DD HH:MM:SS] prefix.
+        prefix = live_entry.split("] ", 1)[0].lstrip("[")
+        datetime.strptime(prefix, "%Y-%m-%d %H:%M:%S")

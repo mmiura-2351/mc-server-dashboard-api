@@ -9,6 +9,34 @@ from app.servers.application.minecraft._compat import logger
 from app.servers.application.minecraft.server_process import ServerProcess
 from app.servers.models import ServerStatus
 
+# Bound the restore-time tail read so a large existing server.log cannot cause a
+# one-time memory spike (issue #436).
+_LOG_TAIL_MAX_BYTES = 64 * 1024
+
+
+def _tail_file_lines(path: Path, max_bytes: int, max_lines: int) -> tuple[list[str], int]:
+    """Read the tail of ``path`` without loading the whole file.
+
+    Returns up to the last ``max_lines`` complete, non-empty lines found within
+    the final ``max_bytes`` of the file, together with the byte offset of EOF at
+    read time. Opens in binary mode so we can seek to an arbitrary byte offset,
+    then decodes as utf-8 ignoring errors (a multibyte char split at the window
+    boundary is simply dropped). When we seek into the middle of the file the
+    first line is likely partial, so it is discarded.
+    """
+    with open(path, "rb") as f:
+        f.seek(0, os.SEEK_END)
+        end = f.tell()
+        start = max(0, end - max_bytes)
+        f.seek(start)
+        data = f.read(end - start)
+
+    lines = data.decode("utf-8", errors="ignore").split("\n")
+    if start > 0 and lines:
+        lines = lines[1:]
+    lines = [line.strip() for line in lines if line.strip()]
+    return lines[-max_lines:], end
+
 
 class MonitoringMixin:
     """Mixin: log readers, status monitors, and resource cleanup."""
@@ -345,8 +373,17 @@ class MonitoringMixin:
                 f"Error during cleanup for server {server_id}: {type(e).__name__}: {e}"
             )
 
-    async def _read_server_logs(self, server_process: ServerProcess):
-        """Read server logs from file and append them to the log buffer"""
+    async def _read_server_logs(
+        self, server_process: ServerProcess, *, tail_existing: bool = False
+    ):
+        """Read server logs from file and append them to the log buffer.
+
+        ``tail_existing`` is set on the restore-from-PID path (issue #436), where
+        ``server.log`` can already be large. Instead of reading the whole file
+        from position 0 and re-stamping every historical line with ``now()``, we
+        backfill the buffer once from the tail of the file (preserving the lines'
+        original embedded timestamps), then continue forward from EOF.
+        """
         try:
             server_dir = server_process.server_directory or (
                 self.base_directory / str(server_process.server_id)
@@ -355,11 +392,31 @@ class MonitoringMixin:
 
             # Track last read position to avoid re-reading
             last_position = 0
+            backfilled = False
 
             while server_process.server_id in self.processes:
                 try:
                     # Check if log file exists
                     if not log_file_path.exists():
+                        await asyncio.sleep(0.5)
+                        continue
+
+                    if tail_existing and not backfilled:
+                        # One-time backfill from the tail of the existing log.
+                        # Historical lines keep their original content (no now()
+                        # prefix); `end` from the same read becomes the forward
+                        # start position, avoiding gaps/double-counting if the
+                        # server writes between stat() and read.
+                        backfilled = True
+                        max_lines = (
+                            server_process.log_buffer.maxlen or self.log_queue_size
+                        )
+                        historical, end = _tail_file_lines(
+                            log_file_path, _LOG_TAIL_MAX_BYTES, max_lines
+                        )
+                        for line in historical:
+                            server_process.log_buffer.append(line)
+                        last_position = end
                         await asyncio.sleep(0.5)
                         continue
 
