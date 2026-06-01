@@ -201,17 +201,27 @@ class TestDatabaseIntegration:
             session.close()
 
     def test_base_metadata_operations(self):
-        """Test Base metadata operations"""
-        from app.core.database import Base, engine
+        """Test Base metadata operations against an isolated engine.
 
-        # Test that Base.metadata can interact with engine
+        Uses a throwaway in-memory engine instead of the shared module-level
+        engine so create_all/drop_all do not mutate global schema and race
+        with other tests under pytest-xdist (Issue #435).
+        """
+        from sqlalchemy import create_engine
+
+        from app.core.database import Base
+
+        # Test that Base.metadata exposes the schema operations
         assert Base.metadata is not None
         assert hasattr(Base.metadata, "create_all")
         assert hasattr(Base.metadata, "drop_all")
 
-        # These operations should not fail (even if no models are defined)
-        Base.metadata.create_all(bind=engine)
-        Base.metadata.drop_all(bind=engine)
-
-        # Restore schema for subsequent tests (session-scoped fixture in conftest)
-        Base.metadata.create_all(bind=engine)
+        # These operations should not fail (even if no models are defined).
+        # Bind to a dedicated throwaway engine so the shared engine's schema
+        # is never disturbed.
+        throwaway_engine = create_engine("sqlite:///:memory:")
+        try:
+            Base.metadata.create_all(bind=throwaway_engine)
+            Base.metadata.drop_all(bind=throwaway_engine)
+        finally:
+            throwaway_engine.dispose()
