@@ -124,7 +124,9 @@ class ServerRepository(Protocol):
         self, server_id: int, command: UpdateServerCommand
     ) -> Optional[ServerEntity]: ...
 
-    async def soft_delete(self, server_id: int) -> bool: ...
+    async def soft_delete(
+        self, server_id: int, *, directory_path: Optional[str] = None
+    ) -> bool: ...
 
     # ----- Status writes (own-transaction via with_transaction) -----
 

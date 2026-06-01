@@ -227,12 +227,16 @@ class SqlAlchemyServerRepository:
         self._db.flush()
         return _server_to_entity(row)
 
-    async def soft_delete(self, server_id: int) -> bool:
+    async def soft_delete(
+        self, server_id: int, *, directory_path: Optional[str] = None
+    ) -> bool:
         row = self._db.query(Server).filter(Server.id == server_id).one_or_none()
         if row is None:
             return False
         row.is_deleted = True
         row.status = ServerStatus.stopped
+        if directory_path is not None:
+            row.directory_path = directory_path
         self._db.flush()
         return True
 

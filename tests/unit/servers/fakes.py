@@ -153,16 +153,20 @@ class FakeServerRepository:
         self._records[server_id] = updated
         return updated
 
-    async def soft_delete(self, server_id: int) -> bool:
+    async def soft_delete(
+        self, server_id: int, *, directory_path: Optional[str] = None
+    ) -> bool:
         existing = self._records.get(server_id)
         if existing is None:
             return False
-        self._records[server_id] = replace(
-            existing,
+        updates: dict = dict(
             is_deleted=True,
             status=ServerStatus.stopped,
             updated_at=utcnow(),
         )
+        if directory_path is not None:
+            updates["directory_path"] = directory_path
+        self._records[server_id] = replace(existing, **updates)
         return True
 
     # ----- Status writes (own-transaction in production; flat here) -----
