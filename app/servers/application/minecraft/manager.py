@@ -14,7 +14,6 @@ from datetime import datetime
 from pathlib import Path
 from typing import (
     Any,
-    AsyncGenerator,
     Awaitable,
     Callable,
     Dict,
@@ -581,25 +580,6 @@ class MinecraftServerManager(
         if len(buf) <= lines:
             return list(buf)
         return list(buf)[-lines:]
-
-    async def stream_server_logs(self, server_id: int) -> AsyncGenerator[str, None]:
-        """Stream server logs in real-time"""
-        if server_id not in self.processes:
-            return
-
-        server_process = self.processes[server_id]
-
-        while server_id in self.processes:
-            try:
-                log_line = await asyncio.wait_for(
-                    server_process.log_queue.get(), timeout=1.0
-                )
-                yield log_line
-            except asyncio.TimeoutError:
-                continue
-            except Exception as e:
-                logger.error(f"Error streaming logs for server {server_id}: {e}")
-                break
 
     async def shutdown_all(self, force_stop: bool = None):
         """Shutdown all running servers based on configuration
