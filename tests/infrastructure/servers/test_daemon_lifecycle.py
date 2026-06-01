@@ -254,7 +254,6 @@ class TestDaemonLifecycleComprehensive:
         server_process = ServerProcess(
             server_id=1,
             process=None,  # Daemon process
-            log_queue=asyncio.Queue(),
             status=ServerStatus.starting,
             started_at=datetime.now(),
             pid=22222,
@@ -349,14 +348,9 @@ class TestDaemonLifecycleComprehensive:
         server_dir = tmp_path / "daemon_cleanup"
         server_dir.mkdir()
 
-        log_queue = asyncio.Queue()
-        await log_queue.put("Test log 1")
-        await log_queue.put("Test log 2")
-
         server_process = ServerProcess(
             server_id=1,
             process=None,
-            log_queue=log_queue,
             status=ServerStatus.running,
             started_at=datetime.now(),
             pid=55555,
@@ -383,7 +377,6 @@ class TestDaemonLifecycleComprehensive:
         # Verify cleanup
         assert 1 not in manager.processes
         assert (1, ServerStatus.stopped) in status_changes
-        assert log_queue.qsize() == 0
 
     # ===== Full Integration Test =====
 

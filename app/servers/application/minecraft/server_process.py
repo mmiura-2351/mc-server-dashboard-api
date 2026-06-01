@@ -16,7 +16,6 @@ class ServerProcess:
 
     server_id: int
     process: asyncio.subprocess.Process
-    log_queue: asyncio.Queue[str]
     status: ServerStatus
     started_at: datetime
     # Real call sites pass deque(maxlen=log_queue_size); the unbounded

@@ -343,7 +343,6 @@ class TestProcessPersistence:
         server_process = ServerProcess(
             server_id=server_id,
             process=MagicMock(),
-            log_queue=asyncio.Queue(),
             status=ServerStatus.running,
             started_at=datetime.now(),
             pid=12345,
@@ -372,7 +371,6 @@ class TestProcessPersistence:
             server_process = ServerProcess(
                 server_id=server_id,
                 process=MagicMock(),
-                log_queue=asyncio.Queue(),
                 status=ServerStatus.running,
                 started_at=time.time(),
                 pid=12345 + server_id,
@@ -396,7 +394,6 @@ class TestProcessPersistence:
         server_process = ServerProcess(
             server_id=server_id,
             process=None,  # Restored process doesn't have subprocess handle
-            log_queue=asyncio.Queue(),
             status=ServerStatus.running,
             started_at=datetime.now(),
             pid=pid,

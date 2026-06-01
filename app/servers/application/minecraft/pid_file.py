@@ -146,7 +146,6 @@ class PidFileMixin:
             except Exception as e:
                 logger.warning(f"Could not verify process {pid} command line: {e}")
 
-            log_queue: asyncio.Queue[str] = asyncio.Queue(maxsize=self.log_queue_size)
             log_buffer: deque[str] = deque(maxlen=self.log_queue_size)
 
             # Parse started_at time
@@ -162,7 +161,6 @@ class PidFileMixin:
             server_process = ServerProcess(
                 server_id=server_id,
                 process=None,
-                log_queue=log_queue,
                 status=ServerStatus.running,
                 started_at=started_at,
                 log_buffer=log_buffer,

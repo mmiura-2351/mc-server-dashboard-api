@@ -321,25 +321,7 @@ class MonitoringMixin:
                     server_process.log_task = None
                     server_process.monitor_task = None
 
-                # Clear the log queue to free memory efficiently
-                try:
-                    queue_size = server_process.log_queue.qsize()
-                    for _ in range(queue_size):
-                        try:
-                            server_process.log_queue.get_nowait()
-                        except asyncio.QueueEmpty:
-                            break
-                except (AttributeError, TypeError):
-                    # Handle mock objects in tests that don't have qsize()
-                    # Fallback to while loop with safety limit
-                    count = 0
-                    while count < 1000:  # Safety limit to prevent infinite loops
-                        try:
-                            server_process.log_queue.get_nowait()
-                            count += 1
-                        except (asyncio.QueueEmpty, AttributeError, TypeError):
-                            break
-
+                # Clear the log buffer to free memory
                 server_process.log_buffer.clear()
 
                 # Remove PID file
@@ -364,7 +346,7 @@ class MonitoringMixin:
             )
 
     async def _read_server_logs(self, server_process: ServerProcess):
-        """Read server logs from file and put them in the queue"""
+        """Read server logs from file and append them to the log buffer"""
         try:
             server_dir = server_process.server_directory or (
                 self.base_directory / str(server_process.server_id)
@@ -396,18 +378,6 @@ class MonitoringMixin:
                                 formatted_line = f"[{timestamp}] {line.strip()}"
 
                                 server_process.log_buffer.append(formatted_line)
-
-                                try:
-                                    server_process.log_queue.put_nowait(formatted_line)
-                                except asyncio.QueueFull:
-                                    # Remove oldest log and add new one
-                                    try:
-                                        server_process.log_queue.get_nowait()
-                                        server_process.log_queue.put_nowait(
-                                            formatted_line
-                                        )
-                                    except asyncio.QueueEmpty:
-                                        pass
 
                                 # Note: Status updates are handled by _monitor_daemon_process
                                 # to avoid conflicts and ensure single source of truth

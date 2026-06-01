@@ -136,11 +136,9 @@ sys.exit(0)
 """
         log_file.write_text(log_content)
 
-        log_queue = asyncio.Queue(maxsize=50)
         server_process = ServerProcess(
             server_id=1,
             process=None,  # Daemon processes have None process
-            log_queue=log_queue,
             status=ServerStatus.starting,
             started_at=datetime.now(),
             pid=12345,  # Mock PID
@@ -203,51 +201,6 @@ sys.exit(0)
         shutil.rmtree(server_dir.parent)
 
     @pytest.mark.asyncio
-    async def test_read_server_logs_queue_overflow_handling(
-        self, manager, server_with_log_output
-    ):
-        """Test lines 590-596: Queue overflow protection"""
-
-        process = await asyncio.create_subprocess_exec(
-            *server_with_log_output,
-            stdin=asyncio.subprocess.PIPE,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.STDOUT,
-        )
-
-        # Create a small queue to trigger overflow
-        log_queue = asyncio.Queue(maxsize=3)
-        server_process = ServerProcess(
-            server_id=1,
-            process=process,
-            log_queue=log_queue,
-            status=ServerStatus.starting,
-            started_at=datetime.now(),
-            pid=process.pid,
-        )
-
-        # Start log reading
-        log_task = asyncio.create_task(manager._read_server_logs(server_process))
-
-        # Wait for overflow to occur
-        await asyncio.sleep(1.0)
-
-        # Verify queue management - queue should not exceed maxsize
-        # The overflow protection should remove old logs and add new ones
-        assert log_queue.qsize() <= 3
-
-        # Stop
-        if process.returncode is None:
-            process.terminate()
-            await process.wait()
-
-        log_task.cancel()
-        try:
-            await log_task
-        except asyncio.CancelledError:
-            pass
-
-    @pytest.mark.asyncio
     async def test_read_server_logs_exception_handling(self, manager, tmp_path):
         """Test lines 607-608: Log reading exception handling"""
 
@@ -260,7 +213,6 @@ sys.exit(0)
         server_process = ServerProcess(
             server_id=1,
             process=None,  # Daemon process
-            log_queue=asyncio.Queue(),
             status=ServerStatus.running,
             started_at=datetime.now(),
             pid=12345,
@@ -332,7 +284,6 @@ sys.exit(0)
         server_process = ServerProcess(
             server_id=1,
             process=process,
-            log_queue=asyncio.Queue(),
             status=ServerStatus.starting,
             started_at=datetime.now(),
             pid=process.pid,
@@ -382,7 +333,6 @@ sys.exit(0)
         server_process = ServerProcess(
             server_id=1,
             process=process,
-            log_queue=asyncio.Queue(),
             status=ServerStatus.starting,
             started_at=datetime.now(),
             pid=process.pid,
@@ -451,7 +401,6 @@ sys.exit(0)
         server_process = ServerProcess(
             server_id=1,
             process=mock_process,
-            log_queue=asyncio.Queue(),
             status=ServerStatus.starting,
             started_at=datetime.now(),
             pid=12345,
@@ -538,7 +487,6 @@ sys.exit(0)
         server_process = ServerProcess(
             server_id=1,
             process=mock_process,
-            log_queue=asyncio.Queue(),
             status=ServerStatus.starting,
             started_at=datetime.now(),
             pid=12345,
@@ -610,7 +558,6 @@ sys.exit(0)
         server_process = ServerProcess(
             server_id=1,
             process=mock_process,
-            log_queue=asyncio.Queue(),
             status=ServerStatus.starting,
             started_at=datetime.now(),
             pid=12345,
@@ -664,7 +611,6 @@ sys.exit(0)
         server_process = ServerProcess(
             server_id=1,
             process=Mock(),
-            log_queue=asyncio.Queue(),
             status=ServerStatus.running,
             started_at=datetime.now(),
             log_buffer=log_buffer,
@@ -691,7 +637,6 @@ sys.exit(0)
         server_process = ServerProcess(
             server_id=1,
             process=Mock(),
-            log_queue=asyncio.Queue(),
             status=ServerStatus.running,
             started_at=datetime.now(),
             log_buffer=log_buffer,
@@ -711,7 +656,6 @@ sys.exit(0)
         server_process = ServerProcess(
             server_id=1,
             process=Mock(),
-            log_queue=asyncio.Queue(),
             status=ServerStatus.running,
             started_at=datetime.now(),
             log_buffer=log_buffer,
@@ -733,7 +677,6 @@ sys.exit(0)
         server_process = ServerProcess(
             server_id=1,
             process=Mock(),
-            log_queue=asyncio.Queue(),
             status=ServerStatus.running,
             started_at=datetime.now(),
             log_buffer=log_buffer,
@@ -747,8 +690,8 @@ sys.exit(0)
         assert len(log_buffer) == 5
 
     @pytest.mark.asyncio
-    async def test_log_buffer_and_queue_dual_write(self, manager, tmp_path):
-        """_read_server_logs populates both log_queue and log_buffer."""
+    async def test_log_buffer_populated_from_file(self, manager, tmp_path):
+        """_read_server_logs populates log_buffer in file order."""
         from collections import deque
 
         server_dir = tmp_path / "server"
@@ -756,12 +699,10 @@ sys.exit(0)
         log_file = server_dir / "server.log"
         log_file.write_text("line one\nline two\nline three\n")
 
-        log_queue = asyncio.Queue(maxsize=50)
         log_buffer = deque(maxlen=50)
         server_process = ServerProcess(
             server_id=1,
             process=None,
-            log_queue=log_queue,
             status=ServerStatus.running,
             started_at=datetime.now(),
             log_buffer=log_buffer,
@@ -780,11 +721,12 @@ sys.exit(0)
         except asyncio.CancelledError:
             pass
 
-        assert log_queue.qsize() == len(log_buffer)
-        queue_items = []
-        while not log_queue.empty():
-            queue_items.append(log_queue.get_nowait())
-        assert queue_items == list(log_buffer)
+        # Each formatted entry preserves the original line, in order.
+        assert [entry.split("] ", 1)[1] for entry in log_buffer] == [
+            "line one",
+            "line two",
+            "line three",
+        ]
 
     @pytest.mark.asyncio
     async def test_log_buffer_evicts_oldest_on_overflow(self, manager, tmp_path):
@@ -800,7 +742,6 @@ sys.exit(0)
         server_process = ServerProcess(
             server_id=1,
             process=None,
-            log_queue=asyncio.Queue(maxsize=100),
             status=ServerStatus.running,
             started_at=datetime.now(),
             log_buffer=log_buffer,
