@@ -517,11 +517,9 @@ sys.exit(0)
         await asyncio.sleep(0.3)
 
         # Create server process tracking
-        log_queue = asyncio.Queue()
         server_process = ServerProcess(
             server_id=1,
             process=process,
-            log_queue=log_queue,
             status=ServerStatus.running,
             started_at=datetime.now(),
             pid=process.pid,
@@ -574,7 +572,6 @@ sys.exit(0)
         server_process = ServerProcess(
             server_id=1,
             process=mock_process,
-            log_queue=asyncio.Queue(),
             status=ServerStatus.running,
             started_at=datetime.now(),
             pid=12345,
@@ -640,7 +637,6 @@ sys.exit(0)
         server_process = ServerProcess(
             server_id=1,
             process=mock_process,
-            log_queue=asyncio.Queue(),
             status=ServerStatus.running,
             started_at=datetime.now(),
             pid=12345,
@@ -705,7 +701,6 @@ sys.exit(0)
         server_process = ServerProcess(
             server_id=1,
             process=process,
-            log_queue=asyncio.Queue(),
             status=ServerStatus.running,
             started_at=datetime.now(),
             pid=process.pid,
@@ -752,7 +747,6 @@ sys.exit(0)
         server_process = ServerProcess(
             server_id=1,
             process=mock_process,
-            log_queue=asyncio.Queue(),
             status=ServerStatus.running,
             started_at=datetime.now(),
             pid=12345,
@@ -845,7 +839,6 @@ sys.exit(0)
         server_process = ServerProcess(
             server_id=1,
             process=process,
-            log_queue=asyncio.Queue(),
             status=ServerStatus.running,
             started_at=datetime.now(),
             pid=process.pid,
@@ -894,7 +887,6 @@ sys.exit(0)
         server_process = ServerProcess(
             server_id=1,
             process=mock_process,
-            log_queue=asyncio.Queue(),
             status=ServerStatus.running,
             started_at=datetime.now(),
             pid=12345,
@@ -915,7 +907,6 @@ sys.exit(0)
         server_process = ServerProcess(
             server_id=1,
             process=mock_process,
-            log_queue=asyncio.Queue(),
             status=ServerStatus.running,
             started_at=datetime.now(),
             pid=12345,

@@ -3,7 +3,6 @@ Simple integration tests for MinecraftServerManager
 Focus on testing actual uncovered lines with minimal complexity
 """
 
-import asyncio
 import socket
 from datetime import datetime
 from pathlib import Path
@@ -248,7 +247,6 @@ class TestMinecraftServerManagerSimpleIntegration:
         server_process = ServerProcess(
             server_id=1,
             process=mock_process,
-            log_queue=asyncio.Queue(),
             status=ServerStatus.running,
             started_at=datetime.now(),
             pid=12345,
@@ -278,7 +276,6 @@ class TestMinecraftServerManagerSimpleIntegration:
         server_process = ServerProcess(
             server_id=1,
             process=mock_process,
-            log_queue=asyncio.Queue(),
             status=ServerStatus.running,
             started_at=datetime.now(),
             pid=12345,
@@ -301,7 +298,6 @@ class TestMinecraftServerManagerSimpleIntegration:
         server_process = ServerProcess(
             server_id=1,
             process=mock_process,
-            log_queue=asyncio.Queue(),
             status=ServerStatus.running,
             started_at=datetime.now(),
             pid=12345,
@@ -325,7 +321,6 @@ class TestMinecraftServerManagerSimpleIntegration:
         server_process = ServerProcess(
             server_id=1,
             process=mock_process,
-            log_queue=asyncio.Queue(),
             status=ServerStatus.running,
             started_at=datetime.now(),
             pid=12345,
@@ -354,7 +349,6 @@ class TestMinecraftServerManagerSimpleIntegration:
         server_process = ServerProcess(
             server_id=1,
             process=Mock(),
-            log_queue=asyncio.Queue(),
             status=ServerStatus.running,
             started_at=datetime.now(),
             log_buffer=log_buffer,
@@ -382,7 +376,6 @@ class TestMinecraftServerManagerSimpleIntegration:
         server_process = ServerProcess(
             server_id=1,
             process=Mock(),
-            log_queue=asyncio.Queue(),
             status=ServerStatus.running,
             started_at=datetime.now(),
             pid=12345,
@@ -397,32 +390,3 @@ class TestMinecraftServerManagerSimpleIntegration:
         """Test server status when not running"""
         status = manager.get_server_status(999)
         assert status == ServerStatus.stopped
-
-    # ===== Test Cleanup Error Handling =====
-
-    @pytest.mark.asyncio
-    async def test_cleanup_server_process_queue_exception(self, manager):
-        """Test lines 67-68: Cleanup with queue exception"""
-        # Create queue that will cause exception
-        log_queue = asyncio.Queue()
-        await log_queue.put("test log")
-
-        server_process = ServerProcess(
-            server_id=1,
-            process=Mock(),
-            log_queue=log_queue,
-            status=ServerStatus.running,
-            started_at=datetime.now(),
-            pid=12345,
-        )
-        manager.processes[1] = server_process
-
-        # Force exception by patching qsize
-        with patch.object(log_queue, "qsize", side_effect=Exception("Queue error")):
-            with patch("app.servers.application.minecraft_server.logger") as mock_logger:
-                await manager._cleanup_server_process(1)
-
-                mock_logger.warning.assert_called()
-                assert "Error during cleanup for server 1" in str(
-                    mock_logger.warning.call_args
-                )

@@ -324,12 +324,10 @@ class MinecraftServerManager(
                 )
 
             # Create server process tracking (without process object for daemon)
-            log_queue: asyncio.Queue[str] = asyncio.Queue(maxsize=self.log_queue_size)
             log_buffer: deque[str] = deque(maxlen=self.log_queue_size)
             server_process = ServerProcess(
                 server_id=server.id,
                 process=None,  # No process object for daemon processes
-                log_queue=log_queue,
                 status=ServerStatus.starting,
                 started_at=datetime.now(),
                 log_buffer=log_buffer,
@@ -640,12 +638,7 @@ class MinecraftServerManager(
                             task.cancel()
                         cleanup_tasks.extend(tasks_to_cancel)
 
-                    # Clear log queue and buffer to free memory
-                    try:
-                        while not server_process.log_queue.empty():
-                            server_process.log_queue.get_nowait()
-                    except (asyncio.QueueEmpty, AttributeError):
-                        pass
+                    # Clear log buffer to free memory
                     server_process.log_buffer.clear()
 
                     # Remove from processes dict but keep PID file and don't kill process

@@ -397,37 +397,6 @@ print("[12:35:01] [Server thread/INFO]: Server stopped")
                 mock_logger.error.call_args
             )
 
-    @pytest.mark.asyncio
-    async def test_cleanup_server_process_queue_exception(self, manager):
-        """Test lines 67-68: Queue cleanup exception handling in real scenario"""
-        # Create a real queue but force exception during cleanup
-        log_queue = asyncio.Queue()
-        await log_queue.put("test log")
-
-        # Create mock process
-        mock_process = Mock()
-        server_process = ServerProcess(
-            server_id=1,
-            process=mock_process,
-            log_queue=log_queue,
-            status=ServerStatus.running,
-            started_at=datetime.now(),
-        )
-        manager.processes[1] = server_process
-
-        # Force exception by patching qsize method
-        with patch.object(log_queue, "qsize", side_effect=Exception("Queue error")):
-            with patch("app.servers.application.minecraft_server.logger") as mock_logger:
-                await manager._cleanup_server_process(1)
-
-                # In new implementation, cleanup errors are logged as warnings, not errors
-                mock_logger.warning.assert_called()
-                # Check that the warning message contains the expected text
-                warning_calls = [str(call) for call in mock_logger.warning.call_args_list]
-                assert any(
-                    "Error during cleanup for server 1" in call for call in warning_calls
-                )
-
     # ===== Server Process Integration Tests =====
 
     @pytest.mark.asyncio
@@ -441,7 +410,6 @@ print("[12:35:01] [Server thread/INFO]: Server stopped")
         server_process = ServerProcess(
             server_id=1,
             process=mock_process,
-            log_queue=asyncio.Queue(),
             status=ServerStatus.running,
             started_at=start_time,
             pid=12345,
@@ -467,7 +435,6 @@ print("[12:35:01] [Server thread/INFO]: Server stopped")
             server_process = ServerProcess(
                 server_id=server_id,
                 process=mock_process,
-                log_queue=asyncio.Queue(),
                 status=ServerStatus.running,
                 started_at=datetime.now(),
                 pid=1000 + server_id,
@@ -493,7 +460,6 @@ print("[12:35:01] [Server thread/INFO]: Server stopped")
             server_process = ServerProcess(
                 server_id=server_id,
                 process=mock_process,
-                log_queue=asyncio.Queue(),
                 status=ServerStatus.running,
                 started_at=datetime.now(),
             )
@@ -568,26 +534,17 @@ class TestMinecraftServerManagerComplexIntegration:
     async def test_resource_cleanup_under_stress(self, manager):
         """Test resource cleanup under stress conditions"""
         # Create many server processes and clean them up rapidly
-        server_processes = []
-
         for i in range(10):
             mock_process = Mock()
             mock_process.pid = 2000 + i
-            log_queue = asyncio.Queue()
-
-            # Add some logs to the queue
-            for j in range(5):
-                await log_queue.put(f"Log {j} from server {i}")
 
             server_process = ServerProcess(
                 server_id=i + 1,
                 process=mock_process,
-                log_queue=log_queue,
                 status=ServerStatus.running,
                 started_at=datetime.now(),
                 pid=2000 + i,
             )
-            server_processes.append(server_process)
             manager.processes[i + 1] = server_process
 
         # Cleanup all processes concurrently
@@ -600,7 +557,3 @@ class TestMinecraftServerManagerComplexIntegration:
 
         # Verify all processes were cleaned up
         assert len(manager.processes) == 0
-
-        # Verify queues were emptied
-        for server_process in server_processes:
-            assert server_process.log_queue.qsize() == 0

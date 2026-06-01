@@ -2,8 +2,8 @@
 Simple test coverage for MinecraftServerManager to achieve coverage targets
 """
 
-import asyncio
 import tempfile
+from collections import deque
 from datetime import datetime
 from pathlib import Path
 from unittest.mock import AsyncMock, Mock, patch
@@ -41,100 +41,47 @@ class TestMinecraftServerManagerSimpleCoverage:
         assert manager.log_queue_size == 500
 
     @pytest.mark.asyncio
-    async def test_cleanup_server_process_queue_clear_with_qsize(self, manager):
-        """Test _cleanup_server_process with queue that has qsize method"""
-        # Create a mock queue with qsize
-        mock_queue = asyncio.Queue()
-        await mock_queue.put("log1")
-        await mock_queue.put("log2")
-
+    async def test_cleanup_server_process_clears_buffer(self, manager):
+        """Test _cleanup_server_process clears the log buffer and removes the process"""
+        log_buffer = deque(["log1", "log2"])
         mock_process = Mock()
         server_process = ServerProcess(
             server_id=1,
             process=mock_process,
-            log_queue=mock_queue,
             status=ServerStatus.running,
             started_at=datetime.now(),
+            log_buffer=log_buffer,
         )
         manager.processes[1] = server_process
 
         await manager._cleanup_server_process(1)
 
-        # Queue should be empty and process removed
-        assert mock_queue.qsize() == 0
-        assert 1 not in manager.processes
-
-    @pytest.mark.asyncio
-    async def test_cleanup_server_process_queue_clear_fallback(self, manager):
-        """Test _cleanup_server_process fallback queue clearing"""
-        # Create a mock queue without qsize method
-        mock_queue = Mock()
-        mock_queue.qsize.side_effect = AttributeError("No qsize method")
-        mock_queue.get_nowait.side_effect = [None, None, asyncio.QueueEmpty()]
-
-        mock_process = Mock()
-        server_process = ServerProcess(
-            server_id=1,
-            process=mock_process,
-            log_queue=mock_queue,
-            status=ServerStatus.running,
-            started_at=datetime.now(),
-        )
-        manager.processes[1] = server_process
-
-        await manager._cleanup_server_process(1)
-
-        # Process should be removed
-        assert 1 not in manager.processes
-
-    @pytest.mark.asyncio
-    async def test_cleanup_server_process_queue_clear_exception_safety_limit(
-        self, manager
-    ):
-        """Test _cleanup_server_process safety limit in fallback"""
-        # Create a mock queue that always returns items (test safety limit)
-        mock_queue = Mock()
-        mock_queue.qsize.side_effect = AttributeError("No qsize method")
-        mock_queue.get_nowait.return_value = "log"  # Always returns something
-
-        mock_process = Mock()
-        server_process = ServerProcess(
-            server_id=1,
-            process=mock_process,
-            log_queue=mock_queue,
-            status=ServerStatus.running,
-            started_at=datetime.now(),
-        )
-        manager.processes[1] = server_process
-
-        await manager._cleanup_server_process(1)
-
-        # Should stop after 1000 iterations and remove process
-        assert mock_queue.get_nowait.call_count == 1000
+        # Buffer should be cleared and process removed
+        assert len(log_buffer) == 0
         assert 1 not in manager.processes
 
     @pytest.mark.asyncio
     async def test_cleanup_server_process_exception_handling(self, manager):
         """Test _cleanup_server_process exception handling"""
-        # Create a server process that will cause an exception during cleanup
+        # Force an exception inside the cleanup's outer try block by making
+        # buffer clearing raise.
         mock_process = Mock()
-        mock_queue = Mock()
-        # Force exception to happen in the outer try block by making server_id in processes check fail
-        mock_queue.qsize.side_effect = Exception("Queue error")
+        mock_buffer = Mock()
+        mock_buffer.clear.side_effect = Exception("Buffer error")
 
         server_process = ServerProcess(
             server_id=1,
             process=mock_process,
-            log_queue=mock_queue,
             status=ServerStatus.running,
             started_at=datetime.now(),
+            log_buffer=mock_buffer,
         )
         manager.processes[1] = server_process
 
         with patch("app.servers.application.minecraft_server.logger") as mock_logger:
             await manager._cleanup_server_process(1)
 
-            # Should log warning and process may or may not be removed depending on when exception occurs
+            # Should log a warning when cleanup fails
             mock_logger.warning.assert_called()
 
     @pytest.mark.asyncio
@@ -264,7 +211,6 @@ class TestMinecraftServerManagerSimpleCoverage:
         server_process = ServerProcess(
             server_id=1,
             process=mock_process,
-            log_queue=Mock(),
             status=ServerStatus.running,
             started_at=datetime.now(),
         )
@@ -285,7 +231,6 @@ class TestMinecraftServerManagerSimpleCoverage:
         server_process = ServerProcess(
             server_id=1,
             process=mock_process,
-            log_queue=Mock(),
             status=ServerStatus.running,
             started_at=datetime.now(),
         )
@@ -314,7 +259,6 @@ class TestMinecraftServerManagerSimpleCoverage:
         server_process = ServerProcess(
             server_id=1,
             process=mock_process,
-            log_queue=Mock(),
             status=ServerStatus.running,
             started_at=datetime.now(),
         )
@@ -348,7 +292,6 @@ class TestMinecraftServerManagerSimpleCoverage:
         server_process = ServerProcess(
             server_id=1,
             process=mock_process,
-            log_queue=Mock(),
             status=ServerStatus.running,
             started_at=start_time,
             pid=12345,
@@ -393,7 +336,6 @@ class TestMinecraftServerManagerSimpleCoverage:
         server_process = ServerProcess(
             server_id=1,
             process=mock_process,
-            log_queue=Mock(),
             status=ServerStatus.starting,
             started_at=datetime.now(),
         )
@@ -413,7 +355,6 @@ class TestMinecraftServerManagerSimpleCoverage:
         server_process = ServerProcess(
             server_id=1,
             process=mock_process,
-            log_queue=Mock(),
             status=ServerStatus.starting,
             started_at=datetime.now(),
         )

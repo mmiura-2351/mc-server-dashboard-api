@@ -227,7 +227,6 @@ class TestDaemonDetachmentVerification:
         server_process = ServerProcess(
             server_id=1,
             process=None,  # Daemon process
-            log_queue=asyncio.Queue(),
             status=ServerStatus.running,
             started_at=datetime.now(),
             pid=test_pid,
