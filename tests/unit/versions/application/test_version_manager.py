@@ -467,14 +467,67 @@ class TestMinecraftVersionManagerMissingCoverage:
 
     @pytest.mark.asyncio
     async def test_get_forge_versions_success(self, manager):
-        """Test _get_forge_versions returns real API versions"""
-        result = await manager._get_forge_versions()
+        """Test _get_forge_versions parses Forge Maven metadata correctly"""
+        # Fixed Forge maven-metadata.xml fixture. Covers: supported versions,
+        # an unsupported (< 1.8) version that is filtered out, and both dedup
+        # branches across duplicate MC versions with two build numbers each:
+        #   - 1.20.1: lower build first -> the higher build replaces it
+        #   - 1.19.2: higher build first -> the lower build does not replace it
+        metadata_xml = """<?xml version="1.0" encoding="UTF-8"?>
+<metadata>
+  <groupId>net.minecraftforge</groupId>
+  <artifactId>forge</artifactId>
+  <versioning>
+    <versions>
+      <version>1.7.10-10.13.4.1614</version>
+      <version>1.18.2-40.2.0</version>
+      <version>1.19.2-43.4.0</version>
+      <version>1.19.2-42.0.1</version>
+      <version>1.20.1-46.0.14</version>
+      <version>1.20.1-47.2.0</version>
+    </versions>
+  </versioning>
+</metadata>"""
 
-        # Should return real versions from Forge API, not fallback
-        assert len(result) > 3  # More than the 3 fallback versions
+        forge_url = (
+            "https://maven.minecraftforge.net/net/minecraftforge/forge/"
+            "maven-metadata.xml"
+        )
+        forge_response = MockAiohttpResponse(status=200, text_data=metadata_xml)
+        mock_session = MockAiohttpSession({forge_url: forge_response})
+
+        with patch("aiohttp.ClientSession", return_value=mock_session):
+            result = await manager._get_forge_versions()
+
+        # 1.7.10 filtered out; 1.19.2 and 1.20.1 each deduped ->
+        # 1.18.2 + 1.19.2 + 1.20.1 == 3 versions
+        assert len(result) == 3
         assert all(v.server_type == ServerType.forge for v in result)
         assert all(
-            v.download_url.startswith("https://maven.minecraftforge.net") for v in result
+            v.download_url.startswith("https://maven.minecraftforge.net")
+            for v in result
+        )
+
+        by_version = {v.version: v for v in result}
+        assert set(by_version) == {"1.20.1", "1.19.2", "1.18.2"}
+
+        # Unsupported MC version excluded
+        assert "1.7.10" not in by_version
+
+        # Dedup, replace branch: lower build (46.0.14) seen first, then the
+        # higher build (47.2.0) replaces it.
+        assert by_version["1.20.1"].build_number == 47
+        assert by_version["1.20.1"].download_url == (
+            "https://maven.minecraftforge.net/net/minecraftforge/forge/"
+            "1.20.1-47.2.0/forge-1.20.1-47.2.0-installer.jar"
+        )
+
+        # Dedup, keep branch: higher build (43.4.0) seen first, so the later
+        # lower build (42.0.1) does not replace it.
+        assert by_version["1.19.2"].build_number == 43
+        assert by_version["1.19.2"].download_url == (
+            "https://maven.minecraftforge.net/net/minecraftforge/forge/"
+            "1.19.2-43.4.0/forge-1.19.2-43.4.0-installer.jar"
         )
 
     @pytest.mark.asyncio
