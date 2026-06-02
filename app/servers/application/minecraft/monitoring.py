@@ -407,6 +407,12 @@ class MonitoringMixin:
                         # prefix); `end` from the same read becomes the forward
                         # start position, avoiding gaps/double-counting if the
                         # server writes between stat() and read.
+                        #
+                        # Assumes server.log lines are newline-terminated (they
+                        # are for Minecraft). If the file ends mid-line at restore
+                        # time, that final fragment is backfilled as one entry and
+                        # its continuation is later read forward as a separate
+                        # stamped entry -- a rare, purely cosmetic split.
                         backfilled = True
                         max_lines = (
                             server_process.log_buffer.maxlen or self.log_queue_size
@@ -420,11 +426,17 @@ class MonitoringMixin:
                         await asyncio.sleep(0.5)
                         continue
 
-                    # Read new content from file
-                    with open(log_file_path, "r", encoding="utf-8", errors="ignore") as f:
+                    # Read new content from file. Open in binary so the seek
+                    # offset is always a plain byte count -- uniform with the
+                    # `end` offset produced by _tail_file_lines() and free of
+                    # text-mode seek()'s "offset must come from tell()"
+                    # restriction. Decode with errors="ignore" so a multibyte
+                    # char split at the read boundary is simply dropped.
+                    with open(log_file_path, "rb") as f:
                         f.seek(last_position)
-                        new_content = f.read()
+                        new_bytes = f.read()
                         last_position = f.tell()
+                    new_content = new_bytes.decode("utf-8", errors="ignore")
 
                     if new_content:
                         lines = new_content.strip().split("\n")
