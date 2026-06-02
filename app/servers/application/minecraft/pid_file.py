@@ -174,8 +174,11 @@ class PidFileMixin:
 
             # Start the log reader so the restored server keeps populating its
             # log buffer (issue #427); track it for cleanup like start_server().
+            # Tail the existing server.log instead of reading it whole, so a
+            # large pre-existing log neither spikes memory nor re-stamps history
+            # with the restart time (issue #436).
             server_process.log_task = asyncio.create_task(
-                self._read_server_logs(server_process)
+                self._read_server_logs(server_process, tail_existing=True)
             )
 
             # Start monitoring task for the restored process and track it
