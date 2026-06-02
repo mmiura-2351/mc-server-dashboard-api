@@ -467,14 +467,53 @@ class TestMinecraftVersionManagerMissingCoverage:
 
     @pytest.mark.asyncio
     async def test_get_forge_versions_success(self, manager):
-        """Test _get_forge_versions returns real API versions"""
-        result = await manager._get_forge_versions()
+        """Test _get_forge_versions parses Forge Maven metadata correctly"""
+        # Fixed Forge maven-metadata.xml fixture. Covers: supported versions,
+        # a duplicate MC version with two build numbers (dedup keeps the
+        # higher build), and an unsupported (< 1.8) version that is filtered out.
+        metadata_xml = """<?xml version="1.0" encoding="UTF-8"?>
+<metadata>
+  <groupId>net.minecraftforge</groupId>
+  <artifactId>forge</artifactId>
+  <versioning>
+    <versions>
+      <version>1.7.10-10.13.4.1614</version>
+      <version>1.18.2-40.2.0</version>
+      <version>1.20.1-46.0.14</version>
+      <version>1.20.1-47.2.0</version>
+    </versions>
+  </versioning>
+</metadata>"""
 
-        # Should return real versions from Forge API, not fallback
-        assert len(result) > 3  # More than the 3 fallback versions
+        forge_url = (
+            "https://maven.minecraftforge.net/net/minecraftforge/forge/"
+            "maven-metadata.xml"
+        )
+        forge_response = MockAiohttpResponse(status=200, text_data=metadata_xml)
+        mock_session = MockAiohttpSession({forge_url: forge_response})
+
+        with patch("aiohttp.ClientSession", return_value=mock_session):
+            result = await manager._get_forge_versions()
+
+        # 1.7.10 filtered out; 1.20.1 deduped -> 1.18.2 + 1.20.1 == 2 versions
+        assert len(result) == 2
         assert all(v.server_type == ServerType.forge for v in result)
         assert all(
-            v.download_url.startswith("https://maven.minecraftforge.net") for v in result
+            v.download_url.startswith("https://maven.minecraftforge.net")
+            for v in result
+        )
+
+        by_version = {v.version: v for v in result}
+        assert set(by_version) == {"1.20.1", "1.18.2"}
+
+        # Unsupported MC version excluded
+        assert "1.7.10" not in by_version
+
+        # Dedup keeps the higher build number (47.2.0 over 47.1.0)
+        assert by_version["1.20.1"].build_number == 47
+        assert by_version["1.20.1"].download_url == (
+            "https://maven.minecraftforge.net/net/minecraftforge/forge/"
+            "1.20.1-47.2.0/forge-1.20.1-47.2.0-installer.jar"
         )
 
     @pytest.mark.asyncio
