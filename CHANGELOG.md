@@ -22,6 +22,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     (`{"1.18.0 - 1.20.4": [17]}`) instead of a scalar
     (`{"1.18.0 - 1.20.4": 17}`). Clients reading `compatibility_matrix`
     values as a scalar must be updated.
+- On soft-delete, the server directory is now moved to
+  `servers/.archived/{id}_{timestamp}/` (and the `directory_path` column
+  updated so backup-restore paths still resolve), freeing the original name for
+  immediate reuse. The filesystem archive is best-effort: a failure logs a
+  warning but does not block the soft-delete (#429).
 
 ### Removed
 - Dropped the unused `JavaVersionInfo.is_compatible_with_java_*` helper
@@ -33,6 +38,51 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Java compatibility matrix now maps Minecraft 26.x and newer to Java 25
   instead of silently selecting Java 21, and the unknown-version fallback
   defaults to the newest known JRE rather than Java 21 (#415).
+- `GET /servers/{id}/logs` now returns the most-recent N lines
+  non-destructively from a ring buffer instead of draining the streaming
+  queue, so repeated calls are stable and no longer starve real-time
+  WebSocket log consumers (#416).
+- Server properties written back after an update now use Java-cased booleans
+  (`true` / `false`) in `server.properties` instead of Python-cased
+  (`True` / `False`) (#417).
+- Servers restored from PID files after a dashboard restart now start a log
+  reader, so `GET /servers/{id}/logs` returns lines again instead of staying
+  empty until the server is manually restarted (#427).
+- On restore, the existing server log is tailed within a bounded (~64 KB)
+  window rather than fully read into memory, and backfilled historical lines
+  keep their original embedded timestamps instead of being re-stamped with the
+  restart time (#436).
+- Archive-member traversal validation now uses a path-component check
+  (`".." in PureWindowsPath(name).parts`) instead of a bare substring test, so
+  legitimate names that merely contain `..` (e.g. `backup..2024.txt`) are no
+  longer falsely rejected; POSIX- and Windows-style traversal remain blocked
+  (#409).
+
+### Dependencies
+- Widened the starlette constraint upper bound to `<1.2.0` (#439).
+
+## [0.2.0] - 2026-05-30
+
+Released as a MINOR bump (`tagpr:minor`). Centered on extraction/DB hardening
+and a documentation restructure.
+
+### Performance
+- Offload the blocking database-retry sleep off the event loop so a transient
+  DB error no longer stalls the async runtime (#410).
+
+### Fixed
+- **Security**: validate ZIP archive members on extraction, rejecting path
+  traversal and unsafe members before any file is written (#407).
+- Centralize `CREATE INDEX` DDL behind a validated identifier helper that
+  quotes each identifier via the dialect's preparer, also fixing the
+  reserved-word `groups` table reference (#412).
+
+### Documentation
+- Refreshed and restructured the documentation set (#406).
+
+### Infrastructure
+- Disabled the uv cache for the tagpr release-tag run to avoid CI failures
+  (#404).
 
 ## [0.1.1] - 2026-05-28
 
@@ -141,7 +191,6 @@ work, and new observability / security surface.
 - Migrated pytest config to `pyproject.toml` and fixed an xdist race (#215).
 - Annotated Java-dependent integration tests with `@pytest.mark.requires_java`
   and fixed two pollution sources (#212).
-- Disabled the uv cache for the tagpr release-tag run to avoid CI failures (#404).
 
 ### Dependencies
 - Bumped Python to the latest 3.13.x patch (#391).
