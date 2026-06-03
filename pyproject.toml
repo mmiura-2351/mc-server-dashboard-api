@@ -1,6 +1,6 @@
 [project]
 name = "mc-server-dashboard-api"
-version = "0.2.0"
+version = "0.3.0"
 description = "Minecraft server management dashboard API"
 readme = "README.md"
 requires-python = ">=3.13"
