@@ -68,6 +68,26 @@ class TestTarExtractor:
                 with pytest.raises(SecurityError):
                     TarExtractor.validate_tar_member(member, target_dir)
 
+    def test_validate_tar_member_dots_in_filename(self):
+        """Names containing ".." as part of a component (not a traversal
+        segment) must pass — the check is path-component based, not a bare
+        substring (Issue #409)."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            target_dir = Path(temp_dir)
+
+            safe_names = [
+                "backup..2024.txt",
+                "v1..2/notes.md",
+                "dir/file..ext",
+            ]
+
+            for name in safe_names:
+                member = tarfile.TarInfo(name)
+                member.size = 5
+
+                # Should not raise an exception
+                TarExtractor.validate_tar_member(member, target_dir)
+
     def test_validate_tar_member_symlinks(self):
         """Test that symbolic links are rejected."""
         with tempfile.TemporaryDirectory() as temp_dir:

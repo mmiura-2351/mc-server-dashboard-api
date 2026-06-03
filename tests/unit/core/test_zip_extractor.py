@@ -59,6 +59,24 @@ class TestZipExtractorMemberValidation:
             with pytest.raises(SecurityError):
                 ZipExtractor.validate_zip_member(info, target_dir)
 
+    @pytest.mark.parametrize(
+        "name",
+        [
+            "backup..2024.txt",
+            "v1..2/notes.md",
+            "dir/file..ext",
+        ],
+    )
+    def test_dots_in_filename_accepted(self, name):
+        """Names containing ".." as part of a component (not a traversal
+        segment) must pass — the check is path-component based, not a bare
+        substring (Issue #409)."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            target_dir = Path(temp_dir)
+            info = zipfile.ZipInfo(name)
+            # Should not raise.
+            ZipExtractor.validate_zip_member(info, target_dir)
+
     def test_null_byte_rejected(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             target_dir = Path(temp_dir)
