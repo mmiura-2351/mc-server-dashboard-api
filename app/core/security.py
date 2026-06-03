@@ -8,7 +8,7 @@ import re
 import stat
 import tarfile
 import zipfile
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from typing import Union
 
 
@@ -278,8 +278,12 @@ class TarExtractor:
         if member.name.startswith("/"):
             raise SecurityError(f"Tar member has absolute path: {member.name}")
 
-        # Check for path traversal sequences
-        if ".." in member.name:
+        # Check for path traversal sequences. Use a path-component check (not a
+        # bare substring) so legitimate names containing ".." as part of a
+        # filename (e.g. "backup..2024.txt") are not falsely rejected.
+        # PureWindowsPath treats both "/" and "\" as separators, catching
+        # POSIX- and Windows-style traversal regardless of the host OS.
+        if ".." in PureWindowsPath(member.name).parts:
             raise SecurityError(f"Tar member contains path traversal: {member.name}")
 
         # Check for null bytes (can cause issues)
@@ -415,8 +419,12 @@ class ZipExtractor:
         if name.startswith("/") or name.startswith("\\"):
             raise SecurityError(f"Zip member has absolute path: {name}")
 
-        # Check for path traversal sequences
-        if ".." in name:
+        # Check for path traversal sequences. Use a path-component check (not a
+        # bare substring) so legitimate names containing ".." as part of a
+        # filename (e.g. "backup..2024.txt") are not falsely rejected.
+        # PureWindowsPath treats both "/" and "\" as separators, catching
+        # POSIX- and Windows-style traversal regardless of the host OS.
+        if ".." in PureWindowsPath(name).parts:
             raise SecurityError(f"Zip member contains path traversal: {name}")
 
         # Check for null bytes (can cause issues)
