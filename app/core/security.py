@@ -18,6 +18,19 @@ class SecurityError(Exception):
     pass
 
 
+def _has_traversal_component(name: str) -> bool:
+    """Return True if ``name`` contains a ``..`` path component.
+
+    Uses a path-component check (not a bare substring) so legitimate names
+    containing ".." as part of a filename (e.g. "backup..2024.txt") are not
+    treated as traversal. PureWindowsPath treats both "/" and "\\" as
+    separators, catching POSIX- and Windows-style traversal regardless of the
+    host OS. The ``resolve().relative_to()`` containment check in each archive
+    validator remains the authoritative guard; this is the precise fast-path.
+    """
+    return ".." in PureWindowsPath(name).parts
+
+
 class PathValidator:
     """Utility class for validating and sanitizing file paths."""
 
@@ -278,12 +291,8 @@ class TarExtractor:
         if member.name.startswith("/"):
             raise SecurityError(f"Tar member has absolute path: {member.name}")
 
-        # Check for path traversal sequences. Use a path-component check (not a
-        # bare substring) so legitimate names containing ".." as part of a
-        # filename (e.g. "backup..2024.txt") are not falsely rejected.
-        # PureWindowsPath treats both "/" and "\" as separators, catching
-        # POSIX- and Windows-style traversal regardless of the host OS.
-        if ".." in PureWindowsPath(member.name).parts:
+        # Check for path traversal sequences (path-component check).
+        if _has_traversal_component(member.name):
             raise SecurityError(f"Tar member contains path traversal: {member.name}")
 
         # Check for null bytes (can cause issues)
@@ -419,12 +428,8 @@ class ZipExtractor:
         if name.startswith("/") or name.startswith("\\"):
             raise SecurityError(f"Zip member has absolute path: {name}")
 
-        # Check for path traversal sequences. Use a path-component check (not a
-        # bare substring) so legitimate names containing ".." as part of a
-        # filename (e.g. "backup..2024.txt") are not falsely rejected.
-        # PureWindowsPath treats both "/" and "\" as separators, catching
-        # POSIX- and Windows-style traversal regardless of the host OS.
-        if ".." in PureWindowsPath(name).parts:
+        # Check for path traversal sequences (path-component check).
+        if _has_traversal_component(name):
             raise SecurityError(f"Zip member contains path traversal: {name}")
 
         # Check for null bytes (can cause issues)
